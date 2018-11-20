@@ -1,0 +1,4 @@
+[[package]]
+name = "ckb-cli"
+version = "0.1.0"
+
