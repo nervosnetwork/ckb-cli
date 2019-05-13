@@ -131,9 +131,7 @@ fn main() {
                     println!("{}", output);
                 }
                 ("get_live_cell", Some(m)) => {
-                    let block_hash = m.value_of("hash").map(|hash_str| {
-                        from_string(hash_str.to_string())
-                    }).unwrap_or(None);
+                    let block_hash = from_matches_opt(m, "hash");
                     let tx_hash = from_matches(m, "tx-hash");
                     let index = from_matches(m, "index");
                     let out_point = OutPoint {
@@ -168,4 +166,13 @@ where
     T: DeserializeOwned,
 {
     from_string(matches.value_of(name).unwrap().to_string())
+}
+
+fn from_matches_opt<T>(matches: &ArgMatches, name: &str) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    matches.value_of(name).map(|hash_str| {
+        from_string(hash_str.to_string())
+    }).unwrap_or(None)
 }
