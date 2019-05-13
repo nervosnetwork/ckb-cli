@@ -4,6 +4,7 @@ use std::env;
 use std::iter::FromIterator;
 use std::collections::HashMap;
 use serde::de::DeserializeOwned;
+use serde_json::to_string;
 // use numext_fixed_hash::H256;
 use jsonrpc_types::{
     CellOutPoint,
@@ -61,7 +62,10 @@ fn main() {
                      .help("Output index")),
             SubCommand::with_name("get_current_epoch"),
             SubCommand::with_name("get_epoch_by_number")
-                .arg(arg_number.clone().help("Epoch number"))
+                .arg(arg_number.clone().help("Epoch number")),
+            SubCommand::with_name("local_node_info"),
+            SubCommand::with_name("tx_pool_info"),
+            SubCommand::with_name("get_peers"),
         ]);
 
     let matches = App::new("ckb command line interface")
@@ -80,55 +84,36 @@ fn main() {
         .unwrap_or_else(|| env_map.remove("API_URL").unwrap());
 
     let mut client = rpc_client::RpcClient::from_uri(&server_uri);
+    let mut content = "".to_string();
     match matches.subcommand() {
         ("rpc", Some(sub_matches)) => {
             match sub_matches.subcommand() {
                 ("get_tip_header", _) => {
-                    let content = serde_json::to_string(&client.get_tip_header().call().unwrap()).unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
+                    content = to_string(&client.get_tip_header().call().unwrap()).unwrap();
                 }
                 ("get_block", Some(m)) => {
                     let hash = from_matches(m, "hash");
-                    let content = serde_json::to_string(&client.get_block(hash).call().unwrap()).unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
+                    content = to_string(&client.get_block(hash).call().unwrap()).unwrap();
                 }
                 ("get_block_hash", Some(m)) => {
                     let number = from_matches(m, "number");
-                    let content = serde_json::to_string(
+                    content = to_string(
                         &client.get_block_hash(number).call().unwrap()
                     ).unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
                 }
                 ("get_transaction", Some(m)) => {
                     let hash = from_matches(m, "hash");
-                    let content = serde_json::to_string(&client.get_transaction(hash).call().unwrap()).unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
+                    content = to_string(&client.get_transaction(hash).call().unwrap()).unwrap();
                 }
                 ("get_cells_by_lock_hash", Some(m)) => {
                     let lock_hash = from_matches(m, "hash");
                     let from_number = from_matches(m, "from");
                     let to_number = from_matches(m, "to");
-                    let content = serde_json::to_string(
+                    content = to_string(
                         &client.get_cells_by_lock_hash(lock_hash, from_number, to_number)
                             .call()
                             .unwrap()
                     ).unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
                 }
                 ("get_live_cell", Some(m)) => {
                     let block_hash = from_matches_opt(m, "hash");
@@ -138,12 +123,20 @@ fn main() {
                         cell: Some(CellOutPoint {tx_hash, index}),
                         block_hash,
                     };
-                    let content = serde_json::to_string(&client.get_live_cell(out_point).call().unwrap())
+                    content = to_string(&client.get_live_cell(out_point).call().unwrap())
                         .unwrap();
-                    let output = Colorizer::arbitrary()
-                        .colorize_json_str(content.as_str())
-                        .unwrap();
-                    println!("{}", output);
+                }
+                ("get_current_epoch", _) => {
+                    content = to_string(&client.get_current_epoch().call().unwrap()).unwrap();
+                }
+                ("local_node_info", _) => {
+                    content = to_string(&client.local_node_info().call().unwrap()).unwrap();
+                }
+                ("tx_pool_info", _) => {
+                    content = to_string(&client.tx_pool_info().call().unwrap()).unwrap();
+                }
+                ("get_peers", _) => {
+                    content = to_string(&client.get_peers().call().unwrap()).unwrap();
                 }
                 _ => {
                     println!("Invalid command");
@@ -153,6 +146,13 @@ fn main() {
         _ => {
             println!("Invalid command");
         }
+    }
+
+    if !content.is_empty() {
+        let output = Colorizer::arbitrary()
+            .colorize_json_str(content.as_str())
+            .unwrap();
+        println!("{}", output);
     }
 }
 
