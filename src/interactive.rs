@@ -175,7 +175,7 @@ fn handle_command(
 
     match parser.clone().get_matches_from_safe(args) {
         Ok(matches) => match matches.subcommand() {
-            ("switch", Some(m)) => {
+            ("config", Some(m)) => {
                 m.value_of("url").and_then(|url| {
                     config.set_url(url.to_string());
                     *rpc_client = HttpRpcClient::from_uri(config.get_url());
