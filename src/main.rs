@@ -133,6 +133,11 @@ pub fn build_interactive() -> App<'static, 'static> {
                 ),
         )
         .subcommand(SubCommand::with_name("info").about("Display global variables"))
+        .subcommand(
+            SubCommand::with_name("exit")
+                .visible_alias("quit")
+                .about("Exit the interactive interface"),
+        )
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
 }
