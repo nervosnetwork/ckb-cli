@@ -1,9 +1,8 @@
+use clap::{App, Arg, ArgMatches, SubCommand};
 
-use clap::{SubCommand, App, Arg, ArgMatches};
-
-use crate::utils::rpc_client::HttpRpcClient;
+use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
-use super::{CliSubCommand, from_matches};
+use crate::utils::rpc_client::HttpRpcClient;
 
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]
@@ -16,37 +15,36 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     pub fn subcommand() -> App<'static, 'static> {
-        SubCommand::with_name("wallet")
-            .subcommands(vec![
-                SubCommand::with_name("transfer")
-                    .arg(
-                        Arg::with_name("privkey")
-                            .long("privkey")
-                            .takes_value(true)
-                            .required(true)
-                            .help("Private key file path")
-                    )
-                    .arg(Arg::with_name("address")
-                         .long("address")
-                         .takes_value(true)
-                         .required(true)
-                         .help("Target address")
-                    )
-                    .arg(
-                        Arg::with_name("capacity")
-                            .long("capacity")
-                            .takes_value(true)
-                            .required(true)
-                            .help("The capacity (default unit: CKB)")
-                    )
-                    .arg(Arg::with_name("unit")
-                         .long("unit")
-                         .takes_value(true)
-                         .possible_values(&["CKB", "shannon"])
-                         .default_value("CKB")
-                         .help("Capacity unit, 1CKB = 10^8 shanon")
-                    )
-            ])
+        SubCommand::with_name("wallet").subcommands(vec![SubCommand::with_name("transfer")
+            .arg(
+                Arg::with_name("privkey")
+                    .long("privkey")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Private key file path"),
+            )
+            .arg(
+                Arg::with_name("address")
+                    .long("address")
+                    .takes_value(true)
+                    .required(true)
+                    .help("Target address"),
+            )
+            .arg(
+                Arg::with_name("capacity")
+                    .long("capacity")
+                    .takes_value(true)
+                    .required(true)
+                    .help("The capacity (default unit: CKB)"),
+            )
+            .arg(
+                Arg::with_name("unit")
+                    .long("unit")
+                    .takes_value(true)
+                    .possible_values(&["CKB", "shannon"])
+                    .default_value("CKB")
+                    .help("Capacity unit, 1CKB = 10^8 shanon"),
+            )])
     }
 }
 
@@ -60,7 +58,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let _unit: String = from_matches(m, "unit");
                 Ok(Box::new("null".to_string()))
             }
-            _ => Err(matches.usage().to_owned())
+            _ => Err(matches.usage().to_owned()),
         }
     }
 }

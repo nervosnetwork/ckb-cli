@@ -1,23 +1,23 @@
-use std::path::PathBuf;
-use std::io;
-use std::io::{Write, Read};
 use std::fs;
+use std::io;
+use std::io::{Read, Write};
+use std::path::PathBuf;
 
-use serde_json::{json};
+use serde_json::json;
 
-use ansi_term::Colour::{Green, Blue};
+use ansi_term::Colour::{Blue, Green};
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 
-use regex::{Regex};
+use regex::Regex;
 
-use crate::subcommands::{RpcSubCommand, WalletSubCommand, CliSubCommand};
+use crate::subcommands::{CliSubCommand, RpcSubCommand, WalletSubCommand};
+use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
 use crate::utils::printer::Printer;
 use crate::utils::rpc_client::HttpRpcClient;
-use crate::utils::completer::CkbCompleter;
 
 const ASCII_WORD: &str = r#"
   _   _   ______   _____   __      __   ____     _____
@@ -28,7 +28,6 @@ const ASCII_WORD: &str = r#"
  |_| \_| |______| |_|  \_\     \/      \____/  |_____/
 "#;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
-
 
 /// Interactive command line
 pub fn start(url: &str) -> io::Result<()> {
@@ -159,7 +158,6 @@ pub fn start_rustyline(
     }
     Ok(())
 }
-
 
 fn handle_command(
     line: &str,

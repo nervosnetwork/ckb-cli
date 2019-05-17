@@ -1,14 +1,9 @@
-
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
-pub use jsonrpc_types::{
-    BlockView, HeaderView, Node, Transaction, TransactionWithStatus,
-    TxPoolInfo, EpochExt,
-    BlockNumber,
-    CellWithStatus,
-    OutPoint,
-    CellOutputWithOutPoint,
-};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
+pub use jsonrpc_types::{
+    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, EpochExt, HeaderView, Node,
+    OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
+};
 use serde_derive::{Deserialize, Serialize};
 
 use numext_fixed_hash::H256;
@@ -51,9 +46,7 @@ jsonrpc_client!(pub struct RpcClient {
 impl RpcClient<HttpHandle> {
     pub fn from_uri(server: &str) -> RpcClient<HttpHandle> {
         let transport = HttpTransport::new().standalone().unwrap();
-        let transport_handle = transport
-            .handle(server)
-            .unwrap();
+        let transport_handle = transport.handle(server).unwrap();
         RpcClient::new(transport_handle)
     }
 }

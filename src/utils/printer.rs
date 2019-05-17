@@ -2,7 +2,7 @@ use std::env;
 use std::io;
 use std::rc::Rc;
 
-use ansi_term::Colour::{Red};
+use ansi_term::Colour::Red;
 use atty;
 
 use crate::utils::json_color::Colorizer;
@@ -132,7 +132,6 @@ impl Printable for Box<dyn Printable> {
         } else {
             value
         }
-
     }
 }
 

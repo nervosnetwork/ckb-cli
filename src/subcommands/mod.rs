@@ -4,15 +4,14 @@ pub mod wallet;
 pub use rpc::RpcSubCommand;
 pub use wallet::WalletSubCommand;
 
-use serde::de::{DeserializeOwned};
-use clap::{ArgMatches};
+use clap::ArgMatches;
+use serde::de::DeserializeOwned;
 
 use crate::utils::printer::Printable;
 
 pub trait CliSubCommand {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String>;
 }
-
 
 fn from_string<T: DeserializeOwned>(source: String) -> T {
     let value = serde_json::Value::String(source);
@@ -30,7 +29,8 @@ fn from_matches_opt<T>(matches: &ArgMatches, name: &str) -> Option<T>
 where
     T: DeserializeOwned,
 {
-    matches.value_of(name).map(|hash_str| {
-        from_string(hash_str.to_string())
-    }).unwrap_or(None)
+    matches
+        .value_of(name)
+        .map(|hash_str| from_string(hash_str.to_string()))
+        .unwrap_or(None)
 }

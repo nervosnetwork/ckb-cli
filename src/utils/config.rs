@@ -1,12 +1,12 @@
+use std::collections::HashMap;
 use std::env;
 use std::ops::Deref;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
-use ansi_term::Colour::{Yellow};
+use ansi_term::Colour::Yellow;
 use regex::{Captures, Regex};
 
-use crate::utils::printer::{Printable, OutputFormat};
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct GlobalConfig {
     url: String,
@@ -73,7 +73,7 @@ impl GlobalConfig {
 
     pub fn add_env_vars<T>(&mut self, vars: T)
     where
-         T: IntoIterator<Item = (String, serde_json::Value)>,
+        T: IntoIterator<Item = (String, serde_json::Value)>,
     {
         self.env_variable.extend(vars);
     }

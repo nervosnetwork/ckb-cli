@@ -1,23 +1,14 @@
 use std::rc::Rc;
 
-use serde_json::{to_string};
 use numext_fixed_hash::H256;
+use serde_json::to_string;
 
 use crate::utils::rpc_client::{
-    Node,
-    Nodes,
-    TxPoolInfo,
-    OptionTransactionWithStatus,
-    CellOutputWithOutPoints,
-    CellWithStatus,
-    HeaderView,
-    EpochExt,
-    OptionBlockView,
-    OptionH256,
+    CellOutputWithOutPoints, CellWithStatus, EpochExt, HeaderView, Node, Nodes, OptionBlockView,
+    OptionH256, OptionTransactionWithStatus, TxPoolInfo,
 };
 
-use crate::utils::printer::{Printable, OutputFormat};
-
+use crate::utils::printer::{OutputFormat, Printable};
 
 // FIXME: Implement printable
 

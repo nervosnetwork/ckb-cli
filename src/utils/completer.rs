@@ -1,14 +1,14 @@
-use std::sync::Arc;
-use std::iter;
-use std::collections::HashSet;
 use std::borrow::Cow::{self, Owned};
+use std::collections::HashSet;
+use std::iter;
+use std::sync::Arc;
 
 use ansi_term::Colour::{Green, Red};
 use rustyline::completion::{extract_word, Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::{Context, CompletionType, Helper};
+use rustyline::{CompletionType, Context, Helper};
 
 #[cfg(unix)]
 static DEFAULT_BREAK_CHARS: [u8; 18] = [
@@ -33,7 +33,6 @@ where
 {
     clap_app: Arc<clap::App<'a, 'b>>,
 }
-
 
 impl<'a, 'b> CkbCompleter<'a, 'b> {
     pub fn new(clap_app: clap::App<'a, 'b>) -> Self {
