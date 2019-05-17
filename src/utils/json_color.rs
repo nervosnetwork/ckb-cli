@@ -113,6 +113,7 @@ impl ColorizerBuilder {
             key: self.key.clone(),
             escape_sequence: self.escape_sequence.clone(),
             indent_level: 0,
+            array_empty: true,
             current_is_key: false,
         }
     }
@@ -128,6 +129,7 @@ pub struct Colorizer {
     pub key: Color,
     escape_sequence: Color,
     indent_level: usize,
+    array_empty: bool,
     current_is_key: bool,
 }
 
@@ -358,6 +360,7 @@ impl Formatter for Colorizer {
     where
         W: Write,
     {
+        self.array_empty = true;
         self.indent_level += 1;
         write!(writer, "[")
     }
@@ -367,13 +370,18 @@ impl Formatter for Colorizer {
         W: Write,
     {
         self.indent_level -= 1;
-        write!(writer, "\n{}]", self.get_indentation())
+        if self.array_empty {
+            write!(writer, "]")
+        } else {
+            write!(writer, "\n{}]", self.get_indentation())
+        }
     }
 
     fn begin_array_value<W: ?Sized>(&mut self, writer: &mut W, first: bool) -> Result<()>
     where
         W: Write,
     {
+        self.array_empty = false;
         if !first {
             write!(writer, ",")?;
         }

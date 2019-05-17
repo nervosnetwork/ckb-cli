@@ -13,8 +13,19 @@ jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develo
 ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 occupied-capacity = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 numext-fixed-hash = "~0.1"
+
 bytes = { version="0.4", features = ["serde"] }
 clap = "2.33.0"
 serde = "1.0"
 serde_json = "1.0"
+serde_derive = "1.0"
+ansi_term = "^0.11.0"
 colored = "^1.6.0"
+atty = "^0.2.10"
+rustyline = "4.0.0"
+shell-words = "0.1.0"
+regex = "1.1.6"
+dirs = "1.0.5"
+
+[build-dependencies]
+git2 = "0.8.0"
