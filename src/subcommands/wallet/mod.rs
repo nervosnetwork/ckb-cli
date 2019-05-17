@@ -3,9 +3,10 @@ use clap::{SubCommand, App, Arg, ArgMatches};
 
 use crate::utils::rpc_client::HttpRpcClient;
 use crate::utils::printer::Printable;
-use super::{CliSubCommand, from_matches, from_matches_opt, from_string};
+use super::{CliSubCommand, from_matches};
 
 pub struct WalletSubCommand<'a> {
+    #[allow(dead_code)]
     rpc_client: &'a mut HttpRpcClient,
 }
 
@@ -53,13 +54,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
-                let privkey_path: String = from_matches(m, "privkey");
-                let address: String = from_matches(m, "address");
-                let capacity: u64 = m.value_of("capacity").unwrap().parse().unwrap();
-                let unit: String = from_matches(m, "unit");
+                let _privkey_path: String = from_matches(m, "privkey");
+                let _address: String = from_matches(m, "address");
+                let _capacity: u64 = m.value_of("capacity").unwrap().parse().unwrap();
+                let _unit: String = from_matches(m, "unit");
                 Ok(Box::new("null".to_string()))
             }
-            (cmd, _) => Err(matches.usage().to_owned())
+            _ => Err(matches.usage().to_owned())
         }
     }
 }

@@ -3,13 +3,12 @@ use std::iter;
 use std::collections::HashSet;
 use std::borrow::Cow::{self, Owned};
 
-use ansi_term::Colour::{Green, Red, Yellow, RGB};
+use ansi_term::Colour::{Green, Red};
 use rustyline::completion::{extract_word, Completer, Pair};
-use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::{Context, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyPress};
+use rustyline::{Context, CompletionType, Helper};
 
 #[cfg(unix)]
 static DEFAULT_BREAK_CHARS: [u8; 18] = [

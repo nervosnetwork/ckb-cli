@@ -2,9 +2,8 @@ use std::env;
 use std::io;
 use std::rc::Rc;
 
-use ansi_term::Colour::{Red, Yellow};
+use ansi_term::Colour::{Red};
 use atty;
-use serde_json::{self, json};
 
 use crate::utils::json_color::Colorizer;
 
@@ -62,9 +61,9 @@ impl Default for Printer {
 }
 
 impl Printer {
-    pub fn color(&self) -> bool {
-        self.color != ColorWhen::Never
-    }
+    // pub fn color(&self) -> bool {
+    //     self.color != ColorWhen::Never
+    // }
 
     pub fn switch_format(&mut self) {
         match self.format {

@@ -5,16 +5,13 @@ use std::fs;
 
 use serde_json::{json};
 
-use ansi_term::Colour::{Green, Red, Yellow, RGB};
+use ansi_term::Colour::{Green, Blue};
 
-use rustyline::completion::{extract_word, Completer, Pair};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
-use rustyline::highlight::Highlighter;
-use rustyline::hint::Hinter;
-use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyPress};
+use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 
-use regex::{Captures, Regex};
+use regex::{Regex};
 
 use crate::subcommands::{RpcSubCommand, WalletSubCommand, CliSubCommand};
 use crate::utils::config::GlobalConfig;
@@ -22,12 +19,19 @@ use crate::utils::printer::Printer;
 use crate::utils::rpc_client::HttpRpcClient;
 use crate::utils::completer::CkbCompleter;
 
+const ASCII_WORD: &str = r#"
+  _   _   ______   _____   __      __   ____     _____
+ | \ | | |  ____| |  __ \  \ \    / /  / __ \   / ____|
+ |  \| | | |__    | |__) |  \ \  / /  | |  | | | (___
+ | . ` | |  __|   |  _  /    \ \/ /   | |  | |  \___ \
+ | |\  | | |____  | | \ \     \  /    | |__| |  ____) |
+ |_| \_| |______| |_|  \_\     \/      \____/  |_____/
+"#;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
 
 /// Interactive command line
-pub fn start(url: &str, rpc_client: &mut HttpRpcClient) -> io::Result<()> {
-    // TODO remote url argument
+pub fn start(url: &str) -> io::Result<()> {
     let mut config = GlobalConfig::new(url.to_string());
 
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
@@ -70,16 +74,9 @@ pub fn start(url: &str, rpc_client: &mut HttpRpcClient) -> io::Result<()> {
     if !config.json_format() {
         printer.switch_format();
     }
-    println!("{}", Red.bold().paint("NERVOS"));
+    println!("{}", Blue.bold().paint(ASCII_WORD));
     config.print();
-
-    start_rustyline(
-        &mut config,
-        &mut printer,
-        &config_file,
-        history_file,
-        rpc_client,
-    )
+    start_rustyline(&mut config, &mut printer, &config_file, history_file)
 }
 
 pub fn start_rustyline(
@@ -87,11 +84,11 @@ pub fn start_rustyline(
     printer: &mut Printer,
     config_file: &PathBuf,
     history_file: &str,
-    rpc_client: &mut HttpRpcClient,
 ) -> io::Result<()> {
     let env_regex = Regex::new(ENV_PATTERN).unwrap();
     let parser = crate::build_interactive();
-    let colored_prompt = Red.bold().paint("ckb> ").to_string();
+    let colored_prompt = Green.bold().paint("ckb> ").to_string();
+    let mut rpc_client = HttpRpcClient::from_uri(config.get_url());
 
     let rl_mode = |rl: &mut Editor<CkbCompleter>, config: &GlobalConfig| {
         if config.completion_style() {
@@ -125,14 +122,14 @@ pub fn start_rustyline(
         rl_mode(&mut rl, &config);
         match rl.readline(&colored_prompt) {
             Ok(line) => {
-                match handle_commands(
+                match handle_command(
                     line.as_str(),
                     config,
                     printer,
                     &parser,
                     &env_regex,
                     config_file,
-                    rpc_client,
+                    &mut rpc_client,
                 ) {
                     Ok(true) => {
                         break;
@@ -164,7 +161,7 @@ pub fn start_rustyline(
 }
 
 
-fn handle_commands(
+fn handle_command(
     line: &str,
     config: &mut GlobalConfig,
     printer: &mut Printer,
@@ -183,6 +180,7 @@ fn handle_commands(
             ("switch", Some(m)) => {
                 m.value_of("url").and_then(|url| {
                     config.set_url(url.to_string());
+                    *rpc_client = HttpRpcClient::from_uri(config.get_url());
                     Some(())
                 });
                 if m.is_present("color") {
@@ -231,6 +229,10 @@ fn handle_commands(
             ("get", Some(m)) => {
                 let key = m.value_of("key");
                 printer.println(&config.get(key).clone(), config.color());
+                Ok(())
+            }
+            ("info", _) => {
+                config.print();
                 Ok(())
             }
             ("rpc", Some(sub_matches)) => {

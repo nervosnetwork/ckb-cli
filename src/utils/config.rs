@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use ansi_term::Colour::{Green, Red, Yellow, RGB};
+use ansi_term::Colour::{Yellow};
 use regex::{Captures, Regex};
 
 use crate::utils::printer::{Printable, OutputFormat};

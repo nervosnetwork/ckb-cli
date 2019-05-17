@@ -5,7 +5,7 @@ pub use rpc::RpcSubCommand;
 pub use wallet::WalletSubCommand;
 
 use serde::de::{DeserializeOwned};
-use clap::{SubCommand, ArgMatches};
+use clap::{ArgMatches};
 
 use crate::utils::printer::Printable;
 
