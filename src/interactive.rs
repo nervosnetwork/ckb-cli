@@ -19,14 +19,6 @@ use crate::utils::config::GlobalConfig;
 use crate::utils::printer::Printer;
 use crate::utils::rpc_client::HttpRpcClient;
 
-const ASCII_WORD: &str = r#"
-  _   _   ______   _____   __      __   ____     _____
- | \ | | |  ____| |  __ \  \ \    / /  / __ \   / ____|
- |  \| | | |__    | |__) |  \ \  / /  | |  | | | (___
- | . ` | |  __|   |  _  /    \ \/ /   | |  | |  \___ \
- | |\  | | |____  | | \ \     \  /    | |__| |  ____) |
- |_| \_| |______| |_|  \_\     \/      \____/  |_____/
-"#;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
 /// Interactive command line
@@ -73,7 +65,25 @@ pub fn start(url: &str) -> io::Result<()> {
     if !config.json_format() {
         printer.switch_format();
     }
-    println!("{}", Blue.bold().paint(ASCII_WORD));
+    println!(
+        "{}",
+        format!(
+            r#"
+  _   _   ______   _____   __      __ {}   _____
+ | \ | | |  ____| |  __ \  \ \    / / {}  / ____|
+ |  \| | | |__    | |__) |  \ \  / /  {} | (___
+ | . ` | |  __|   |  _  /    \ \/ /   {}  \___ \
+ | |\  | | |____  | | \ \     \  /    {}  ____) |
+ |_| \_| |______| |_|  \_\     \/     {} |_____/
+"#,
+            Green.paint(r#"  ____  "#),
+            Green.paint(r#" / __ \ "#),
+            Green.paint(r#"| |  | |"#),
+            Green.paint(r#"| |  | |"#),
+            Green.paint(r#"| |__| |"#),
+            Green.paint(r#" \____/ "#),
+        )
+    );
     config.print();
     start_rustyline(&mut config, &mut printer, &config_file, history_file)
 }
@@ -86,7 +96,7 @@ pub fn start_rustyline(
 ) -> io::Result<()> {
     let env_regex = Regex::new(ENV_PATTERN).unwrap();
     let parser = crate::build_interactive();
-    let colored_prompt = Green.bold().paint("CKB> ").to_string();
+    let colored_prompt = Blue.bold().paint("CKB> ").to_string();
     let mut rpc_client = HttpRpcClient::from_uri(config.get_url());
 
     let rl_mode = |rl: &mut Editor<CkbCompleter>, config: &GlobalConfig| {
