@@ -2,7 +2,7 @@ pub mod rpc;
 pub mod wallet;
 
 pub use rpc::RpcSubCommand;
-pub use wallet::WalletSubCommand;
+pub use wallet::{WalletSubCommand};
 
 use clap::ArgMatches;
 use serde::de::DeserializeOwned;

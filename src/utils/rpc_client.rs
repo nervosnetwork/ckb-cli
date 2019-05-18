@@ -9,19 +9,19 @@ use serde_derive::{Deserialize, Serialize};
 use numext_fixed_hash::H256;
 
 #[derive(Serialize, Deserialize)]
-pub struct Nodes(Vec<Node>);
+pub struct Nodes(pub Vec<Node>);
 
 #[derive(Serialize, Deserialize)]
-pub struct OptionTransactionWithStatus(Option<TransactionWithStatus>);
+pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
 
 #[derive(Serialize, Deserialize)]
-pub struct CellOutputWithOutPoints(Vec<CellOutputWithOutPoint>);
+pub struct CellOutputWithOutPoints(pub Vec<CellOutputWithOutPoint>);
 
 #[derive(Serialize, Deserialize)]
-pub struct OptionBlockView(Option<BlockView>);
+pub struct OptionBlockView(pub Option<BlockView>);
 
 #[derive(Serialize, Deserialize)]
-pub struct OptionH256(Option<H256>);
+pub struct OptionH256(pub Option<H256>);
 
 jsonrpc_client!(pub struct RpcClient {
     pub fn local_node_info(&mut self) -> RpcRequest<Node>;

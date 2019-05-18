@@ -1,8 +1,12 @@
+pub mod index;
+
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use crate::utils::rpc_client::HttpRpcClient;
+
+pub use index::{UtxoDatabase, NetworkType, AddressFormat, Address, SecpUtxoInfo, IndexError};
 
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]

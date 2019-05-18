@@ -2,6 +2,8 @@ use std::fs;
 use std::io;
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 
@@ -14,10 +16,11 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use regex::Regex;
 
 use crate::subcommands::{CliSubCommand, RpcSubCommand, WalletSubCommand};
+use crate::subcommands::wallet::{UtxoDatabase, NetworkType};
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
 use crate::utils::printer::Printer;
-use crate::utils::rpc_client::HttpRpcClient;
+use crate::utils::rpc_client::{HttpRpcClient, BlockNumber};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -35,6 +38,10 @@ pub fn start(url: &str) -> io::Result<()> {
     let history_file = history_file.to_str().unwrap();
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
+    let mut index_file = ckb_cli_dir.clone();
+    index_file.push("utxo-index.db");
+    start_index_thread(url, index_file);
+
     if config_file.as_path().exists() {
         let mut file = fs::File::open(&config_file)?;
         let mut content = String::new();
@@ -76,12 +83,12 @@ pub fn start(url: &str) -> io::Result<()> {
  | |\  | | |____  | | \ \     \  /    {}  ____) |
  |_| \_| |______| |_|  \_\     \/     {} |_____/
 "#,
-            Green.paint(r#"  ____  "#),
-            Green.paint(r#" / __ \ "#),
-            Green.paint(r#"| |  | |"#),
-            Green.paint(r#"| |  | |"#),
-            Green.paint(r#"| |__| |"#),
-            Green.paint(r#" \____/ "#),
+            Green.bold().paint(r#"  ____  "#),
+            Green.bold().paint(r#" / __ \ "#),
+            Green.bold().paint(r#"| |  | |"#),
+            Green.bold().paint(r#"| |  | |"#),
+            Green.bold().paint(r#"| |__| |"#),
+            Green.bold().paint(r#" \____/ "#),
         )
     );
     config.print();
@@ -261,4 +268,42 @@ fn handle_command(
         Err(err) => Err(err.to_string()),
     }
     .map(|_| false)
+}
+
+fn start_index_thread(url: &str, index_file: PathBuf) {
+    let url = url.to_owned();
+    thread::sleep(Duration::from_secs(2));
+    thread::spawn(move || {
+        let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
+        let mut db = if index_file.as_path().exists() {
+            UtxoDatabase::from_file(&index_file).expect("Read database failed")
+        } else {
+            let genesis_block = rpc_client.get_block_by_number(BlockNumber(0))
+                .call()
+                .unwrap()
+                .0
+                .unwrap();
+            UtxoDatabase::from_genesis(NetworkType::TestNet, &genesis_block)
+        };
+        loop {
+            let tip_header = rpc_client.get_tip_header()
+                .call()
+                .unwrap();
+            db.update_tip(tip_header.clone());
+            while tip_header.inner.number.0 - 12 > db.current_number() {
+                let next_block = rpc_client
+                    .get_block_by_number(db.next_number())
+                    .call()
+                    .unwrap()
+                    .0
+                    .unwrap();
+                db.apply_next_block(&next_block)
+                    .expect("Add block failed");
+            }
+
+            println!(">> Height not enought");
+            db.save_to_file(&index_file).unwrap();
+            thread::sleep(Duration::from_secs(5));
+        }
+    });
 }
