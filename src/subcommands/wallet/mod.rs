@@ -35,7 +35,7 @@ pub use index::{
     Address, AddressFormat, IndexError, NetworkType, SecpUtxoInfo, UtxoDatabase, SECP_CODE_HASH,
 };
 
-const ONE_CKB: u64 = 10 ^ 8;
+const ONE_CKB: u64 = 10000_0000;
 const MIN_CELL_CAPACITY: u64 = 40 * ONE_CKB;
 
 pub struct WalletSubCommand<'a> {
@@ -163,7 +163,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         total_capacity,
                         ..
                     } => {
-                        println!("Got infos: {:?}", infos);
                         let total_capacity = total_capacity.unwrap_or(0);
                         if total_capacity < capacity + MIN_CELL_CAPACITY {
                             return Err(format!(
