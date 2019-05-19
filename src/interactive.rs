@@ -2,29 +2,26 @@ use std::fs;
 use std::io;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use serde_json::json;
 
 use ansi_term::Colour::{Blue, Green};
 use ckb_core::service::Request;
+use crossbeam_channel::Sender;
+use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
-use crossbeam_channel::{Sender};
-use regex::Regex;
 
 use crate::subcommands::{
-    CliSubCommand, RpcSubCommand, WalletSubCommand,
-    IndexRequest,
-    IndexResponse,
-    start_index_thread,
+    start_index_thread, CliSubCommand, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
 use crate::utils::printer::Printer;
-use crate::utils::rpc_client::{HttpRpcClient};
+use crate::utils::rpc_client::HttpRpcClient;
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -95,7 +92,13 @@ pub fn start(url: &str, ckb_cli_dir: PathBuf) -> io::Result<()> {
         )
     );
     config.print();
-    start_rustyline(&mut config, &mut printer, &config_file, history_file, index_sender)
+    start_rustyline(
+        &mut config,
+        &mut printer,
+        &config_file,
+        history_file,
+        index_sender,
+    )
 }
 
 pub fn start_rustyline(
@@ -262,7 +265,8 @@ fn handle_command(
                 Ok(())
             }
             ("wallet", Some(sub_matches)) => {
-                let value = WalletSubCommand::new(rpc_client, index_sender).process(&sub_matches)?;
+                let value =
+                    WalletSubCommand::new(rpc_client, index_sender).process(&sub_matches)?;
                 printer.println(&value, config.color());
                 Ok(())
             }

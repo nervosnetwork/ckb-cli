@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::env;
 use std::iter::FromIterator;
 use std::process;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
-use clap::{App, AppSettings, Arg, SubCommand};
 use clap::crate_version;
-use subcommands::{CliSubCommand, RpcSubCommand, WalletSubCommand, start_index_thread};
+use clap::{App, AppSettings, Arg, SubCommand};
+use subcommands::{start_index_thread, CliSubCommand, RpcSubCommand, WalletSubCommand};
 use url::Url;
 use utils::printer::Printer;
 use utils::rpc_client::RpcClient;

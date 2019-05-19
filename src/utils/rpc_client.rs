@@ -32,7 +32,6 @@ jsonrpc_client!(pub struct RpcClient {
 
     pub fn send_transaction(&mut self, tx: Transaction) -> RpcRequest<H256>;
     pub fn get_transaction(&mut self, hash: H256) -> RpcRequest<OptionTransactionWithStatus>;
-    pub fn compute_transaction_hash(&mut self, tx: Transaction) -> RpcRequest<H256>;
     pub fn get_cells_by_lock_hash(&mut self, lock_hash: H256, from: BlockNumber, to: BlockNumber) -> RpcRequest<CellOutputWithOutPoints>;
     pub fn get_live_cell(&mut self, out_point: OutPoint) -> RpcRequest<CellWithStatus>;
 

@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::env;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use ansi_term::Colour::Yellow;
 use regex::{Captures, Regex};

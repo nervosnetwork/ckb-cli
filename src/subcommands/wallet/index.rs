@@ -1,49 +1,35 @@
-
-
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::io;
-use std::io::{Write, BufRead, BufReader};
 use std::fs;
-use std::str::FromStr;
+use std::io;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use fs2::FileExt;
-use bech32::{Bech32, convert_bits};
-use crypto::secp::Pubkey;
-use hash::blake2b_256;
+use bech32::{convert_bits, Bech32};
 use bytes::Bytes;
-use serde_derive::{Deserialize, Serialize};
-use numext_fixed_hash::{h256, H256, H160};
 use ckb_core::{
-    script::{
-        Script as CoreScript,
-    },
+    script::Script as CoreScript,
     transaction::{
-        CellInput as CoreCellInput,
-        CellOutPoint as CoreCellOutPoint,
-        OutPoint as CoreOutPoint,
+        CellInput as CoreCellInput, CellOutPoint as CoreCellOutPoint, OutPoint as CoreOutPoint,
     },
 };
+use crypto::secp::Pubkey;
+use fs2::FileExt;
+use hash::blake2b_256;
 pub use jsonrpc_types::{
-    JsonBytes,
-    Script,
-    BlockNumber,
-    BlockView,
-    HeaderView,
-    Unsigned,
-    CellOutPoint,
-    Capacity,
-    Transaction,
-    TransactionView,
+    BlockNumber, BlockView, Capacity, CellOutPoint, HeaderView, JsonBytes, Script, Transaction,
+    TransactionView, Unsigned,
 };
-
+use numext_fixed_hash::{h256, H160, H256};
+use serde_derive::{Deserialize, Serialize};
 
 const PREFIX_MAINNET: &str = "ckb";
 const PREFIX_TESTNET: &str = "ckt";
 const P2PH_MARK: &[u8] = b"P2PH";
-pub const SECP_CODE_HASH: H256 = h256!("0x9e3b3557f11b2b3532ce352bfe8017e9fd11d154c4c7f9b7aaaa1e621b539a08");
+pub const SECP_CODE_HASH: H256 =
+    h256!("0x9e3b3557f11b2b3532ce352bfe8017e9fd11d154c4c7f9b7aaaa1e621b539a08");
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub enum NetworkType {
@@ -89,7 +75,6 @@ impl fmt::Display for NetworkType {
     }
 }
 
-
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AddressFormat {
     // SECP256K1 algorithm	PK
@@ -122,7 +107,7 @@ impl AddressFormat {
     fn to_bytes(&self) -> Result<Vec<u8>, String> {
         match self {
             AddressFormat::P2PH => Ok(P2PH_MARK.to_vec()),
-            _ => Err(format!("Unsupported address format: {:?}", self))
+            _ => Err(format!("Unsupported address format: {:?}", self)),
         }
     }
 }
@@ -159,17 +144,11 @@ impl Address {
 
     pub fn from_input(network: NetworkType, input: &str) -> Result<Address, String> {
         let value = Bech32::from_str(input).map_err(|err| err.to_string())?;
-        match network {
-            NetworkType::MainNet => {
-                if value.hrp() != PREFIX_MAINNET {
-                    return Err(format!("Invalid hrp({}) for {}", value.hrp(), network));
-                }
-            }
-            NetworkType::TestNet => {
-                if value.hrp() != PREFIX_TESTNET {
-                    return Err(format!("Invalid hrp({}) for {}", value.hrp(), network));
-                }
-            }
+        if NetworkType::from_prefix(value.hrp())
+            .filter(|input_network| input_network == &network)
+            .is_none()
+        {
+            return Err(format!("Invalid hrp({}) for {}", value.hrp(), network));
         }
         let data = convert_bits(value.data(), 5, 8, false).unwrap();
         if data.len() != 25 {
@@ -193,7 +172,6 @@ impl Address {
     }
 }
 
-
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct SecpUtxoInfo {
     pub out_point: Arc<CellOutPoint>,
@@ -208,7 +186,7 @@ pub struct SecpUtxoInfo {
 impl SecpUtxoInfo {
     pub fn core_input(&self) -> CoreCellInput {
         CoreCellInput {
-            previous_output: CoreOutPoint{
+            previous_output: CoreOutPoint {
                 cell: Some(CoreCellOutPoint::from(CellOutPoint::clone(&self.out_point))),
                 block_hash: None,
             },
@@ -220,7 +198,7 @@ impl SecpUtxoInfo {
 
 // Utxo index in a block
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
-struct UtxoIndex{
+struct UtxoIndex {
     // The transaction index in the block
     tx_index: u32,
     // The output index in the transaction
@@ -229,7 +207,10 @@ struct UtxoIndex{
 
 impl UtxoIndex {
     fn new(tx_index: u32, output_index: u32) -> UtxoIndex {
-        UtxoIndex { tx_index, output_index }
+        UtxoIndex {
+            tx_index,
+            output_index,
+        }
     }
 }
 
@@ -244,11 +225,10 @@ impl SecpUtxoMap {
         let capacity = info.capacity as u128;
 
         assert!(!self.map.contains_key(&info.out_point));
-        self.map.insert(Arc::clone(&info.out_point), Arc::clone(&info));
+        self.map
+            .insert(Arc::clone(&info.out_point), Arc::clone(&info));
 
-        let block_utxos = self.blocks
-            .entry(info.number)
-            .or_default();
+        let block_utxos = self.blocks.entry(info.number).or_default();
         assert!(!block_utxos.contains_key(&info.utxo_index));
         block_utxos.insert(info.utxo_index, info);
 
@@ -304,8 +284,6 @@ pub struct UtxoDatabase {
     tip_header: HeaderView,
     utxo_map: SecpUtxoMap,
     // Fields not to be serialized
-    genesis_header: HeaderView,
-    genesis_out_points: Vec<Vec<CellOutPoint>>,
     addresses: HashMap<Address, SecpUtxoMap>,
 }
 
@@ -315,10 +293,10 @@ impl UtxoDatabase {
         let mut file = fs::File::create(path)?;
         file.lock_exclusive()?;
         let network_string = self.network.to_string();
-        let last_header_string = serde_json::to_string(&self.last_header)
-            .expect("Serialize last header error");
-        let tip_header_string = serde_json::to_string(&self.tip_header)
-            .expect("Serialize tip header error");
+        let last_header_string =
+            serde_json::to_string(&self.last_header).expect("Serialize last header error");
+        let tip_header_string =
+            serde_json::to_string(&self.tip_header).expect("Serialize tip header error");
         let utxo_count = self.utxo_map.size().to_string();
         let total_capacity = self.utxo_map.total_capacity.to_string();
         file.write(format!("{}\n", network_string).as_bytes())?;
@@ -339,7 +317,7 @@ impl UtxoDatabase {
 
     pub fn from_file<P: AsRef<Path>>(
         path: P,
-        genesis_block: &BlockView,
+        _genesis_block: &BlockView,
     ) -> Result<UtxoDatabase, IndexError> {
         log::info!("Read database from file started");
         let file = fs::File::open(path)?;
@@ -347,29 +325,37 @@ impl UtxoDatabase {
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
 
-        let line_network = lines.next()
-            .ok_or(IndexError::FileBroken("read network field failed".to_owned()))??;
-        let network = NetworkType::from_str(line_network.as_str())
-            .ok_or(IndexError::FileBroken("parse network field failed".to_owned()))?;
+        let line_network = lines.next().ok_or(IndexError::FileBroken(
+            "read network field failed".to_owned(),
+        ))??;
+        let network = NetworkType::from_str(line_network.as_str()).ok_or(
+            IndexError::FileBroken("parse network field failed".to_owned()),
+        )?;
 
-        let line_last_header = lines.next()
-            .ok_or(IndexError::FileBroken("read last_header field failed".to_owned()))??;
+        let line_last_header = lines.next().ok_or(IndexError::FileBroken(
+            "read last_header field failed".to_owned(),
+        ))??;
         let last_header = serde_json::from_str(line_last_header.as_str())
             .map_err(|_| IndexError::FileBroken("parse last_header field failed".to_owned()))?;
 
-        let line_tip_header = lines.next()
-            .ok_or(IndexError::FileBroken("read tip_header field failed".to_owned()))??;
+        let line_tip_header = lines.next().ok_or(IndexError::FileBroken(
+            "read tip_header field failed".to_owned(),
+        ))??;
         let tip_header = serde_json::from_str(line_tip_header.as_str())
             .map_err(|_| IndexError::FileBroken("parse tip_header field failed".to_owned()))?;
 
-        let line_utxo_count = lines.next()
+        let line_utxo_count = lines
+            .next()
             .ok_or(IndexError::FileBroken("read utxo count failed".to_owned()))??;
-        let utxo_count: usize = line_utxo_count.parse()
+        let utxo_count: usize = line_utxo_count
+            .parse()
             .map_err(|_| IndexError::FileBroken("parse utxo count failed".to_owned()))?;
 
-        let line_total_capacity = lines.next()
+        let line_total_capacity = lines
+            .next()
             .ok_or(IndexError::FileBroken("read utxo count failed".to_owned()))??;
-        let total_capacity: u128 = line_total_capacity.parse()
+        let total_capacity: u128 = line_total_capacity
+            .parse()
             .map_err(|_| IndexError::FileBroken("parse utxo count failed".to_owned()))?;
 
         log::info!("utxo_count: {}", utxo_count);
@@ -378,21 +364,16 @@ impl UtxoDatabase {
             last_header,
             tip_header,
             utxo_map: SecpUtxoMap::default(),
-            genesis_header: genesis_block.header.clone(),
-            genesis_out_points: Vec::new(),
             addresses: HashMap::default(),
         };
-        database.apply_genesis(genesis_block);
 
         for idx in 0..utxo_count {
-            let line_utxo = lines.next()
-                .ok_or_else(|| IndexError::FileBroken(
-                    format!("read utxo record failed: number={}", idx+1)
-                ))??;
-            let info: SecpUtxoInfo = serde_json::from_str(line_utxo.as_str())
-                .map_err(|_| IndexError::FileBroken(
-                    format!("parse utxo record failed: number={}", idx+1)
-                ))?;
+            let line_utxo = lines.next().ok_or_else(|| {
+                IndexError::FileBroken(format!("read utxo record failed: number={}", idx + 1))
+            })??;
+            let info: SecpUtxoInfo = serde_json::from_str(line_utxo.as_str()).map_err(|_| {
+                IndexError::FileBroken(format!("parse utxo record failed: number={}", idx + 1))
+            })?;
             database.add_utxo(
                 Arc::clone(&info.out_point),
                 info.utxo_index,
@@ -416,11 +397,8 @@ impl UtxoDatabase {
             utxo_map: SecpUtxoMap::default(),
             last_header: genesis_header.clone(),
             tip_header: genesis_header.clone(),
-            genesis_header: genesis_block.header.clone(),
-            genesis_out_points: Vec::new(),
             addresses: HashMap::default(),
         };
-        database.apply_genesis(genesis_block);
         database.apply_block_unchecked(genesis_block);
         database
     }
@@ -459,17 +437,10 @@ impl UtxoDatabase {
         self.utxo_map.get(out_point)
     }
 
-    pub fn get_secp_dep(&self) -> CoreOutPoint {
-        CoreOutPoint {
-            cell: Some(self.genesis_out_points[0][1].clone().into()),
-            block_hash: None,
-        }
-    }
-
-    pub fn get_balance(&self, address: &Address) -> Option<u64> {
+    pub fn get_balance(&self, address: &Address) -> Option<(u64, usize)> {
         self.addresses
             .get(address)
-            .map(|utxo_map| utxo_map.total_capacity as u64)
+            .map(|utxo_map| (utxo_map.total_capacity as u64, utxo_map.size()))
     }
 
     pub fn get_utxo_infos(
@@ -477,7 +448,8 @@ impl UtxoDatabase {
         address: &Address,
         total_capacity: u64,
     ) -> (Vec<Arc<SecpUtxoInfo>>, Option<u64>) {
-        self.addresses.get(address)
+        self.addresses
+            .get(address)
             .map(|utxo_map| {
                 let mut result_total_capacity = 0;
                 let mut infos = Vec::new();
@@ -497,7 +469,8 @@ impl UtxoDatabase {
     }
 
     pub fn get_top_n(&self, n: usize) -> Vec<(Address, u64)> {
-        let mut pairs = self.addresses
+        let mut pairs = self
+            .addresses
             .iter()
             .map(|(address, utxo_map)| (address.clone(), utxo_map.total_capacity as u64))
             .collect::<Vec<_>>();
@@ -506,46 +479,13 @@ impl UtxoDatabase {
         pairs
     }
 
-    fn apply_genesis(&mut self, genesis_block: &BlockView) -> Result<(), String> {
-        let mut error = None;
-        self.genesis_out_points = genesis_block.transactions
-            .iter()
-            .enumerate()
-            .map(|(tx_index, tx)| {
-                tx.inner.outputs
-                    .iter()
-                    .enumerate()
-                    .map(|(index, output)| {
-                        if tx_index == 0 && index == 1 {
-                            let code_hash = H256::from_slice(&blake2b_256(output.data.as_bytes()))
-                                .expect("Convert to H256 error");
-                            if code_hash != SECP_CODE_HASH {
-                                error = Some(format!(
-                                    "System secp script code hash error! found: {}, expected: {}",
-                                    code_hash,
-                                    SECP_CODE_HASH,
-                                ));
-                            }
-                        }
-                        CellOutPoint {
-                            tx_hash: tx.hash.clone(),
-                            index: Unsigned(index as u64),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(err) = error {
-            Err(err)
-        } else {
-            Ok(())
-        }
-    }
-
     fn apply_block_unchecked(&mut self, block: &BlockView) -> (usize, usize) {
         let header = &block.header;
-        log::debug!("Process block: {} => {:#x}", header.inner.number.0, header.hash);
+        log::debug!(
+            "Process block: {} => {:#x}",
+            header.inner.number.0,
+            header.hash
+        );
         let number = header.inner.number.0;
         let mut removed_in_block = 0;
         let mut added_in_block = 0;
@@ -632,10 +572,7 @@ impl UtxoDatabase {
         );
 
         self.utxo_map.add(Arc::clone(&info));
-        self.addresses
-            .entry(address.clone())
-            .or_default()
-            .add(info);
+        self.addresses.entry(address.clone()).or_default().add(info);
     }
 
     fn remove_utxo(&mut self, out_point: &CellOutPoint) -> Option<Arc<SecpUtxoInfo>> {
@@ -648,12 +585,11 @@ impl UtxoDatabase {
                 info.address.to_string(self.network),
                 info.capacity,
             );
-            let map = self.addresses
+            let map = self
+                .addresses
                 .get_mut(&info.address)
                 .expect("Target address must exists: {}");
-            let inner_info = map
-                .remove(out_point)
-                .expect("Info must exists");
+            let inner_info = map.remove(out_point).expect("Info must exists");
             if map.is_empty() {
                 self.addresses.remove(&info.address);
             }

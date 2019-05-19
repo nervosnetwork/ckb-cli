@@ -1,50 +1,41 @@
 pub mod index;
 
-use std::path::PathBuf;
-use std::thread;
-use std::time::{Instant, Duration};
 use std::fs;
 use std::io::Read;
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use bytes::Bytes;
-use serde_derive::{Serialize, Deserialize};
-use hash::blake2b_256;
-use clap::{App, Arg, ArgMatches, SubCommand};
 use byteorder::{LittleEndian, WriteBytesExt};
-use crypto::secp::Privkey;
-use crossbeam_channel::{Sender, Receiver};
-use numext_fixed_hash::H256;
+use bytes::Bytes;
 use ckb_core::{
-    Capacity,
     service::Request,
     transaction::{
-        CellOutput as CoreCellOutput,
-        OutPoint as CoreOutPoint,
+        CellOutput as CoreCellOutput, OutPoint as CoreOutPoint,
         TransactionBuilder as CoreTransactionBuilder,
     },
+    Capacity,
 };
-use jsonrpc_types::{
-    BlockNumber, HeaderView, Transaction,
-    BlockView,
-    CellOutPoint,
-    JsonBytes,
-    Witness,
-    Unsigned,
-};
+use clap::{App, Arg, ArgMatches, SubCommand};
+use crossbeam_channel::{Receiver, Sender};
+use crypto::secp::Privkey;
+use hash::blake2b_256;
+use jsonrpc_types::{BlockNumber, BlockView, CellOutPoint, HeaderView, Transaction, Unsigned};
+use numext_fixed_hash::H256;
+use serde_derive::{Deserialize, Serialize};
 
-use super::{from_matches, from_matches_opt, CliSubCommand};
+use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use crate::utils::rpc_client::HttpRpcClient;
 
 pub use index::{
-    SECP_CODE_HASH,
-    UtxoDatabase, NetworkType, AddressFormat, Address, SecpUtxoInfo, IndexError,
+    Address, AddressFormat, IndexError, NetworkType, SecpUtxoInfo, UtxoDatabase, SECP_CODE_HASH,
 };
 
-const ONE_CKB: u64 = 10000_0000;
+const ONE_CKB: u64 = 10 ^ 8;
 const MIN_CELL_CAPACITY: u64 = 40 * ONE_CKB;
 
 pub struct WalletSubCommand<'a> {
@@ -59,18 +50,24 @@ impl<'a> WalletSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         index_sender: &'a Sender<Request<IndexRequest, IndexResponse>>,
     ) -> WalletSubCommand<'a> {
-        WalletSubCommand { rpc_client, index_sender, genesis_info: None }
+        WalletSubCommand {
+            rpc_client,
+            index_sender,
+            genesis_info: None,
+        }
     }
 
     pub fn genesis_info(&mut self) -> &GenesisInfo {
         if self.genesis_info.is_none() {
-            let genesis_block = self.rpc_client.get_block_by_number(BlockNumber(0))
+            let genesis_block = self
+                .rpc_client
+                .get_block_by_number(BlockNumber(0))
                 .call()
                 .unwrap()
                 .0
                 .unwrap();
-            self.genesis_info = Some(GenesisInfo::from_block(genesis_block)
-                .expect("Build genesis info failed"));
+            self.genesis_info =
+                Some(GenesisInfo::from_block(genesis_block).expect("Build genesis info failed"));
         }
         self.genesis_info.as_ref().unwrap()
     }
@@ -90,11 +87,13 @@ impl<'a> WalletSubCommand<'a> {
                         .required(true)
                         .help("Private key file path"),
                 )
-                .arg(Arg::with_name("to-address")
-                     .long("to-address")
-                     .takes_value(true)
-                     .required(true)
-                     .help("Target address"))
+                .arg(
+                    Arg::with_name("to-address")
+                        .long("to-address")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Target address"),
+                )
                 .arg(
                     Arg::with_name("capacity")
                         .long("capacity")
@@ -110,24 +109,22 @@ impl<'a> WalletSubCommand<'a> {
                         .default_value("CKB")
                         .help("Capacity unit, 1CKB = 10^8 shanon"),
                 ),
-            SubCommand::with_name("get-balance")
-                .arg(arg_address.clone()),
-            SubCommand::with_name("top")
-                .arg(
-                    Arg::with_name("number")
-                        .short("n")
-                        .long("number")
-                        .validator(|s| {
-                            let n = s.parse::<usize>().map_err(|err| err.to_string())?;
-                            if n < 1 {
-                                return Err("number should large than 0".to_owned());
-                            }
-                            Ok(())
-                        })
-                        .default_value("10")
-                        .takes_value(true)
-                        .help("Get top n capacity addresses (default: 10)")
-                ),
+            SubCommand::with_name("get-balance").arg(arg_address.clone()),
+            SubCommand::with_name("top").arg(
+                Arg::with_name("number")
+                    .short("n")
+                    .long("number")
+                    .validator(|s| {
+                        let n = s.parse::<usize>().map_err(|err| err.to_string())?;
+                        if n < 1 {
+                            return Err("number should large than 0".to_owned());
+                        }
+                        Ok(())
+                    })
+                    .default_value("10")
+                    .takes_value(true)
+                    .help("Get top n capacity addresses (default: 10)"),
+            ),
         ])
     }
 }
@@ -142,12 +139,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let unit: String = from_matches(m, "unit");
 
                 let mut privkey_string = String::new();
-                let mut file = fs::File::open(privkey_path)
-                    .map_err(|err| err.to_string())?;
+                let mut file = fs::File::open(privkey_path).map_err(|err| err.to_string())?;
                 file.read_to_string(&mut privkey_string)
                     .map_err(|err| err.to_string())?;
-                let from_privkey = Privkey::from_str(privkey_string.trim())
-                    .map_err(|err| err.to_string())?;
+                let from_privkey =
+                    Privkey::from_str(privkey_string.trim()).map_err(|err| err.to_string())?;
                 let to_address = Address::from_input(NetworkType::TestNet, to_address.as_str())?;
 
                 if unit == "CKB" {
@@ -162,7 +158,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     total_capacity: capacity + MIN_CELL_CAPACITY,
                 };
                 match Request::call(&self.index_sender, request).unwrap() {
-                    IndexResponse::UtxoInfos { infos, total_capacity, .. } => {
+                    IndexResponse::UtxoInfos {
+                        infos,
+                        total_capacity,
+                        ..
+                    } => {
                         println!("Got infos: {:?}", infos);
                         let total_capacity = total_capacity.unwrap_or(0);
                         if total_capacity < capacity + MIN_CELL_CAPACITY {
@@ -180,7 +180,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             to_capacity: capacity,
                         };
                         let tx = tx_args.build(infos, self.genesis_info().secp_dep());
-                        let resp = self.rpc_client
+                        let resp = self
+                            .rpc_client
                             .send_transaction(tx)
                             .call()
                             .map_err(|err| format!("Send transaction error: {:?}", err))?;
@@ -194,12 +195,17 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("get-balance", Some(m)) => {
                 let address_string: String = from_matches(m, "address");
                 let address = Address::from_input(NetworkType::TestNet, address_string.as_str())?;
-                let resp = Request::call(&self.index_sender, IndexRequest::GetBalance(address)).unwrap();
+                let resp =
+                    Request::call(&self.index_sender, IndexRequest::GetBalance(address)).unwrap();
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("top", Some(m)) => {
-                let n: usize = m.value_of("number").map(|n_str| n_str.parse().unwrap()).unwrap();
-                let resp = Request::call(&self.index_sender, IndexRequest::GetTopAddresses(n)).unwrap();
+                let n: usize = m
+                    .value_of("number")
+                    .map(|n_str| n_str.parse().unwrap())
+                    .unwrap();
+                let resp =
+                    Request::call(&self.index_sender, IndexRequest::GetTopAddresses(n)).unwrap();
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             _ => Err(matches.usage().to_owned()),
@@ -215,11 +221,13 @@ pub struct GenesisInfo {
 impl GenesisInfo {
     pub fn from_block(genesis_block: BlockView) -> Result<GenesisInfo, String> {
         let mut error = None;
-        let out_points = genesis_block.transactions
+        let out_points = genesis_block
+            .transactions
             .iter()
             .enumerate()
             .map(|(tx_index, tx)| {
-                tx.inner.outputs
+                tx.inner
+                    .outputs
                     .iter()
                     .enumerate()
                     .map(|(index, output)| {
@@ -229,8 +237,7 @@ impl GenesisInfo {
                             if code_hash != SECP_CODE_HASH {
                                 error = Some(format!(
                                     "System secp script code hash error! found: {}, expected: {}",
-                                    code_hash,
-                                    SECP_CODE_HASH,
+                                    code_hash, SECP_CODE_HASH,
                                 ));
                             }
                         }
@@ -246,7 +253,7 @@ impl GenesisInfo {
         if let Some(err) = error {
             Err(err)
         } else {
-            Ok(GenesisInfo {out_points})
+            Ok(GenesisInfo { out_points })
         }
     }
 
@@ -278,27 +285,23 @@ impl<'a> TransactionArgs<'a> {
         // TODO: calculate transaction fee
         // Send to user
         let mut from_capacity = self.from_capacity;
-        let mut outputs = vec![
-            CoreCellOutput {
-                capacity: Capacity::shannons(self.to_capacity),
-                data: Bytes::default(),
-                lock: self.to_address.lock_script(),
-                type_: None,
-            }
-        ];
+        let mut outputs = vec![CoreCellOutput {
+            capacity: Capacity::shannons(self.to_capacity),
+            data: Bytes::default(),
+            lock: self.to_address.lock_script(),
+            type_: None,
+        }];
         from_capacity -= self.to_capacity;
         from_capacity -= MIN_CELL_CAPACITY;
 
         if from_capacity > MIN_CELL_CAPACITY {
             // The rest send back to sender
-            outputs.push(
-                CoreCellOutput {
-                    capacity: Capacity::shannons(from_capacity),
-                    data: Bytes::default(),
-                    lock: self.from_address.lock_script(),
-                    type_: None,
-                }
-            );
+            outputs.push(CoreCellOutput {
+                capacity: Capacity::shannons(from_capacity),
+                data: Bytes::default(),
+                lock: self.from_address.lock_script(),
+                type_: None,
+            });
         }
 
         let core_tx = CoreTransactionBuilder::default()
@@ -317,24 +320,29 @@ impl<'a> TransactionArgs<'a> {
 
         let witnesses = inputs
             .iter()
-            .map(|_| vec![
-                Bytes::from(pubkey.clone()),
-                Bytes::from(signature_der.clone()),
-                Bytes::from(signature_size.clone()),
-            ])
+            .map(|_| {
+                vec![
+                    Bytes::from(pubkey.clone()),
+                    Bytes::from(signature_der.clone()),
+                    Bytes::from(signature_size.clone()),
+                ]
+            })
             .collect::<Vec<_>>();
         (&CoreTransactionBuilder::default()
             .inputs(inputs)
             .outputs(outputs)
             .dep(secp_dep)
             .witnesses(witnesses)
-            .build()
-         ).into()
+            .build())
+            .into()
     }
 }
 
 pub enum IndexRequest {
-    GetUtxoInfos {address: Address, total_capacity: u64},
+    GetUtxoInfos {
+        address: Address,
+        total_capacity: u64,
+    },
     GetTopAddresses(usize),
     GetBalance(Address),
     GetLastHeader,
@@ -355,6 +363,7 @@ pub enum IndexResponse {
     },
     Balance {
         capacity: Option<u64>,
+        utxo_count: Option<usize>,
         last_header: HeaderView,
     },
     LastHeader(HeaderView),
@@ -380,7 +389,8 @@ pub fn start_index_thread(
 
     thread::spawn(move || {
         let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
-        let genesis_block = rpc_client.get_block_by_number(BlockNumber(0))
+        let genesis_block = rpc_client
+            .get_block_by_number(BlockNumber(0))
             .call()
             .unwrap()
             .0
@@ -422,8 +432,8 @@ pub fn start_index_thread(
                     .unwrap()
                     .0
                     .unwrap();
-                let (removed_in_block, added_in_block) = db.apply_next_block(&next_block)
-                    .expect("Add block failed");
+                let (removed_in_block, added_in_block) =
+                    db.apply_next_block(&next_block).expect("Add block failed");
                 removed_in_loop += removed_in_block;
                 added_in_loop += added_in_block;
             }
@@ -460,44 +470,49 @@ fn try_recv(
     db: &mut UtxoDatabase,
 ) -> bool {
     match receiver.try_recv() {
-        Ok(Request { responder, arguments }) => {
-            match arguments {
-                IndexRequest::GetUtxoInfos { address, total_capacity } => {
-                    let (infos, total_capacity_opt) = db.get_utxo_infos(
-                        &address, total_capacity
-                    );
-                    responder.send(IndexResponse::UtxoInfos {
+        Ok(Request {
+            responder,
+            arguments,
+        }) => match arguments {
+            IndexRequest::GetUtxoInfos {
+                address,
+                total_capacity,
+            } => {
+                let (infos, total_capacity_opt) = db.get_utxo_infos(&address, total_capacity);
+                responder
+                    .send(IndexResponse::UtxoInfos {
                         infos,
                         total_capacity: total_capacity_opt,
                         last_header: db.last_header().clone(),
-                    }).is_err()
-                }
-                IndexRequest::GetTopAddresses(n) => {
-                    responder.send(IndexResponse::TopAddresses {
-                        capacity_list: db.get_top_n(n),
-                        last_header: db.last_header().clone(),
-                    }).is_err()
-                }
-                IndexRequest::GetBalance(address) => {
-                    let capacity = db.get_balance(&address);
-                    responder.send(IndexResponse::Balance {
-                        capacity,
-                        last_header: db.last_header().clone(),
-                    }).is_err()
-                }
-                IndexRequest::GetLastHeader => {
-                    responder.send(IndexResponse::LastHeader(db.last_header().clone())).is_err()
-                }
-                IndexRequest::RebuildIndex => {
-                    responder.send(IndexResponse::Ok).is_err()
-                }
-                IndexRequest::Shutdown => {
-                    let _ = responder.send(IndexResponse::Ok);
-                    log::info!("Received shutdown message");
-                    true
-                }
+                    })
+                    .is_err()
             }
-        }
+            IndexRequest::GetTopAddresses(n) => responder
+                .send(IndexResponse::TopAddresses {
+                    capacity_list: db.get_top_n(n),
+                    last_header: db.last_header().clone(),
+                })
+                .is_err(),
+            IndexRequest::GetBalance(address) => {
+                let result = db.get_balance(&address);
+                responder
+                    .send(IndexResponse::Balance {
+                        capacity: result.map(|value| value.0),
+                        utxo_count: result.map(|value| value.1),
+                        last_header: db.last_header().clone(),
+                    })
+                    .is_err()
+            }
+            IndexRequest::GetLastHeader => responder
+                .send(IndexResponse::LastHeader(db.last_header().clone()))
+                .is_err(),
+            IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
+            IndexRequest::Shutdown => {
+                let _ = responder.send(IndexResponse::Ok);
+                log::info!("Received shutdown message");
+                true
+            }
+        },
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
