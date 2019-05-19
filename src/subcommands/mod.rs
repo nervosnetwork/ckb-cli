@@ -2,7 +2,12 @@ pub mod rpc;
 pub mod wallet;
 
 pub use rpc::RpcSubCommand;
-pub use wallet::{WalletSubCommand};
+pub use wallet::{
+    WalletSubCommand,
+    IndexRequest,
+    IndexResponse,
+    start_index_thread,
+};
 
 use clap::ArgMatches;
 use serde::de::DeserializeOwned;
@@ -31,6 +36,6 @@ where
 {
     matches
         .value_of(name)
-        .map(|hash_str| from_string(hash_str.to_string()))
+        .map(|value_str| from_string(value_str.to_string()))
         .unwrap_or(None)
 }

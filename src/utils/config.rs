@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::env;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ansi_term::Colour::Yellow;
 use regex::{Captures, Regex};
@@ -17,10 +19,11 @@ pub struct GlobalConfig {
     completion_style: bool,
     edit_style: bool,
     env_variable: HashMap<String, serde_json::Value>,
+    db_ready: Arc<AtomicBool>,
 }
 
 impl GlobalConfig {
-    pub fn new(url: String) -> Self {
+    pub fn new(url: String, db_ready: Arc<AtomicBool>) -> Self {
         GlobalConfig {
             url,
             color: true,
@@ -30,6 +33,7 @@ impl GlobalConfig {
             completion_style: true,
             edit_style: true,
             env_variable: HashMap::new(),
+            db_ready,
         }
     }
 
@@ -178,14 +182,16 @@ impl GlobalConfig {
             "Circular"
         };
         let edit_style = if self.edit_style { "Emacs" } else { "Vi" };
+        let db_ready = self.db_ready.load(Ordering::Relaxed).to_string();
         let values = [
             ("url", self.url.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),
             ("json", json.as_str()),
-            ("completion_style", completion_style),
-            ("edit_style", edit_style),
+            ("completion style", completion_style),
+            ("edit style", edit_style),
+            ("index db ready", db_ready.as_str()),
         ];
 
         let max_width = values

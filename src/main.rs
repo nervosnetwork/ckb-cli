@@ -1,11 +1,13 @@
-use clap::{App, AppSettings, Arg, SubCommand};
 use std::collections::HashMap;
 use std::env;
 use std::iter::FromIterator;
 use std::process;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
+use clap::{App, AppSettings, Arg, SubCommand};
 use clap::crate_version;
-use subcommands::{CliSubCommand, RpcSubCommand, WalletSubCommand};
+use subcommands::{CliSubCommand, RpcSubCommand, WalletSubCommand, start_index_thread};
 use url::Url;
 use utils::printer::Printer;
 use utils::rpc_client::RpcClient;
@@ -19,6 +21,8 @@ include!(concat!(env!("OUT_DIR"), "/build_info.rs"));
 const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
 
 fn main() {
+    env_logger::init();
+
     let version = format!("{}+{}", crate_version!(), get_commit_id());
     let matches = build_cli(version.as_str()).get_matches();
 
@@ -29,15 +33,22 @@ fn main() {
         .or_else(|| env_map.remove("API_URL"))
         .unwrap_or_else(|| DEFAULT_JSONRPC_URL.to_owned());
 
+    let mut ckb_cli_dir = dirs::home_dir().unwrap();
+    ckb_cli_dir.push(".ckb-cli");
     let mut rpc_client = RpcClient::from_uri(&api_uri);
     let printer = Printer::default();
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
-            WalletSubCommand::new(&mut rpc_client).process(&sub_matches)
+            let mut index_file = ckb_cli_dir.clone();
+            index_file.push("utxo-index.db");
+            // TODO: sync db first
+            let index_db_ready = Arc::new(AtomicBool::new(false));
+            let index_sender = start_index_thread(&api_uri, index_file, index_db_ready);
+            WalletSubCommand::new(&mut rpc_client, &index_sender).process(&sub_matches)
         }
         _ => {
-            if let Err(err) = interactive::start(&api_uri) {
+            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir) {
                 eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
                 process::exit(1);
             }
