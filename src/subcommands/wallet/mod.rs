@@ -1,7 +1,7 @@
 pub mod index;
 
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +24,9 @@ use crossbeam_channel::{Receiver, Sender};
 use crypto::secp::{Generator, Privkey};
 use faster_hex::{hex_decode, hex_string};
 use hash::blake2b_256;
-use jsonrpc_types::{BlockNumber, BlockView, CellOutPoint, HeaderView, Transaction, Unsigned};
+use jsonrpc_types::{
+    BlockNumber, BlockView, CellOutPoint, EpochNumber, HeaderView, Transaction, Unsigned,
+};
 use numext_fixed_hash::H256;
 use secp256k1::key;
 use serde_derive::{Deserialize, Serialize};
@@ -96,6 +98,12 @@ impl<'a> WalletSubCommand<'a> {
                         .help("Target address"),
                 )
                 .arg(
+                    Arg::with_name("to-data")
+                        .long("to-data")
+                        .takes_value(true)
+                        .help("Hex data store in target cell (optional)"),
+                )
+                .arg(
                     Arg::with_name("capacity")
                         .long("capacity")
                         .takes_value(true)
@@ -110,7 +118,19 @@ impl<'a> WalletSubCommand<'a> {
                         .default_value("CKB")
                         .help("Capacity unit, 1CKB = 10^8 shanon"),
                 ),
-            SubCommand::with_name("generate-key"),
+            SubCommand::with_name("generate-key")
+                .arg(
+                    Arg::with_name("print")
+                        .long("print")
+                        .help("Print the result (default: no)"),
+                )
+                .arg(
+                    Arg::with_name("output-path")
+                        .long("output-path")
+                        .takes_value(true)
+                        .required(true)
+                        .help("Output file path (content = privkey + address)"),
+                ),
             SubCommand::with_name("key-info")
                 .arg(arg_privkey.clone())
                 .arg(
@@ -153,10 +173,31 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("transfer", Some(m)) => {
                 let privkey_path: String = from_matches(m, "privkey-path");
                 let to_address: String = from_matches(m, "to-address");
+                let to_data = m.value_of("to-data");
                 let mut capacity: u64 = m.value_of("capacity").unwrap().parse().unwrap();
                 let unit: String = from_matches(m, "unit");
 
                 let to_address = Address::from_input(NetworkType::TestNet, to_address.as_str())?;
+                let to_data = to_data
+                    .map(|data| {
+                        let data_hex = if data.starts_with("0x") || data.starts_with("0X") {
+                            &data[2..]
+                        } else {
+                            data
+                        };
+                        let mut data_bytes = vec![0; data_hex.len() / 2];
+                        hex_decode(data_hex.as_bytes(), &mut data_bytes)
+                            .map_err(|err| format!("parse to-data failed: {:?}", err))?;
+                        if data_bytes.len() as u64 > capacity {
+                            return Err(format!(
+                                "data size exceed capacity: {} > {}",
+                                data_bytes.len(),
+                                capacity,
+                            ));
+                        }
+                        Ok(Bytes::from(data_bytes))
+                    })
+                    .unwrap_or_else(|| Ok(Bytes::default()))?;
 
                 if unit == "CKB" {
                     capacity *= ONE_CKB;
@@ -188,10 +229,15 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             from_privkey: &from_privkey,
                             from_address: &from_address,
                             from_capacity: total_capacity,
+                            to_data: &to_data,
                             to_address: &to_address,
                             to_capacity: capacity,
                         };
                         let tx = tx_args.build(infos, self.genesis_info().secp_dep());
+                        println!(
+                            "[Send Transaction]:\n{}",
+                            serde_json::to_string_pretty(&tx).unwrap()
+                        );
                         let resp = self
                             .rpc_client
                             .send_transaction(tx)
@@ -204,18 +250,31 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     }
                 }
             }
-            ("generate-key", _) => {
+            ("generate-key", Some(m)) => {
                 let (privkey, pubkey) = Generator::new()
                     .random_keypair()
                     .expect("generate random key error");
+                let is_print = m.is_present("print");
+                let output_path = m.value_of("output-path").unwrap();
                 let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
                 let address_string = Address::from_pubkey(AddressFormat::default(), &pubkey)?
                     .to_string(NetworkType::TestNet);
-                let resp = json!({
-                    "privkey": privkey.to_string(),
-                    "pubkey": pubkey_string,
-                    "address": address_string,
-                });
+                let mut file = fs::File::create(output_path).map_err(|err| err.to_string())?;
+                file.write(format!("{}\n", privkey.to_string()).as_bytes())
+                    .map_err(|err| err.to_string())?;
+                file.write(format!("{}\n", address_string).as_bytes())
+                    .map_err(|err| err.to_string())?;
+                let resp = if is_print {
+                    json!({
+                        "privkey": privkey.to_string(),
+                        "pubkey": pubkey_string,
+                        "address": address_string,
+                    })
+                } else {
+                    json!({
+                        "message": format!("saved to file: {}", output_path),
+                    })
+                };
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("key-info", Some(m)) => {
@@ -330,10 +389,15 @@ impl GenesisInfo {
 }
 
 fn privkey_from_file(path: &str) -> Result<Privkey, String> {
-    let mut privkey_string = String::new();
+    let mut content = String::new();
     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-    file.read_to_string(&mut privkey_string)
+    file.read_to_string(&mut content)
         .map_err(|err| err.to_string())?;
+    let privkey_string: String = content
+        .split_whitespace()
+        .next()
+        .map(|s| s.to_owned())
+        .ok_or_else(|| "File is empty".to_string())?;
     let privkey_str = if privkey_string.starts_with("0x") || privkey_string.starts_with("0X") {
         &privkey_string[2..]
     } else {
@@ -342,10 +406,12 @@ fn privkey_from_file(path: &str) -> Result<Privkey, String> {
     Privkey::from_str(privkey_str.trim()).map_err(|err| err.to_string())
 }
 
+#[derive(Debug)]
 pub struct TransactionArgs<'a> {
     from_privkey: &'a Privkey,
     from_address: &'a Address,
     from_capacity: u64,
+    to_data: &'a Bytes,
     to_address: &'a Address,
     to_capacity: u64,
 }
@@ -364,7 +430,7 @@ impl<'a> TransactionArgs<'a> {
         let mut from_capacity = self.from_capacity;
         let mut outputs = vec![CoreCellOutput {
             capacity: Capacity::shannons(self.to_capacity),
-            data: Bytes::default(),
+            data: self.to_data.clone(),
             lock: self.to_address.lock_script(),
             type_: None,
         }];
@@ -436,23 +502,40 @@ pub struct CapacityResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleBlockInfo {
+    epoch: EpochNumber,
+    number: BlockNumber,
+    hash: H256,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexResponse {
     UtxoInfos {
         infos: Vec<Arc<UtxoInfo>>,
         total_capacity: Option<u64>,
-        last_header: HeaderView,
+        last_block: SimpleBlockInfo,
     },
     TopLocks {
         capacity_list: Vec<CapacityResult>,
-        last_header: HeaderView,
+        last_block: SimpleBlockInfo,
     },
     Capacity {
         capacity: Option<u64>,
         utxo_count: Option<usize>,
-        last_header: HeaderView,
+        last_block: SimpleBlockInfo,
     },
     LastHeader(HeaderView),
     Ok,
+}
+
+impl From<HeaderView> for SimpleBlockInfo {
+    fn from(view: HeaderView) -> SimpleBlockInfo {
+        SimpleBlockInfo {
+            number: view.inner.number,
+            epoch: view.inner.epoch,
+            hash: view.hash,
+        }
+    }
 }
 
 // impl IndexResponse {
@@ -569,7 +652,7 @@ fn try_recv(
                     .send(IndexResponse::UtxoInfos {
                         infos,
                         total_capacity: total_capacity_opt,
-                        last_header: db.last_header().clone(),
+                        last_block: db.last_header().clone().into(),
                     })
                     .is_err()
             }
@@ -587,7 +670,7 @@ fn try_recv(
                             }
                         })
                         .collect::<Vec<_>>(),
-                    last_header: db.last_header().clone(),
+                    last_block: db.last_header().clone().into(),
                 })
                 .is_err(),
 
@@ -597,7 +680,7 @@ fn try_recv(
                     .send(IndexResponse::Capacity {
                         capacity: result.map(|value| value.0),
                         utxo_count: result.map(|value| value.1),
-                        last_header: db.last_header().clone(),
+                        last_block: db.last_header().clone().into(),
                     })
                     .is_err()
             }
@@ -608,7 +691,7 @@ fn try_recv(
                     .send(IndexResponse::Capacity {
                         capacity: result.map(|value| value.0),
                         utxo_count: result.map(|value| value.1),
-                        last_header: db.last_header().clone(),
+                        last_block: db.last_header().clone().into(),
                     })
                     .is_err()
             }
