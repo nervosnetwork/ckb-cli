@@ -7,7 +7,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use bech32::{convert_bits, Bech32};
+use bech32::{convert_bits, Bech32, ToBase32};
 use bytes::Bytes;
 use ckb_core::{
     script::Script as CoreScript,
@@ -27,7 +27,8 @@ use serde_derive::{Deserialize, Serialize};
 
 const PREFIX_MAINNET: &str = "ckb";
 const PREFIX_TESTNET: &str = "ckt";
-const P2PH_MARK: &[u8] = b"P2PH";
+// \x01 is the P2PH version
+const P2PH_MARK: &[u8] = b"\x01P2PH";
 pub const SECP_CODE_HASH: H256 =
     h256!("0x9e3b3557f11b2b3532ce352bfe8017e9fd11d154c4c7f9b7aaaa1e621b539a08");
 
@@ -154,36 +155,36 @@ impl Address {
         if data.len() != 25 {
             return Err(format!("Invalid input data length {}", data.len()));
         }
-        let format = AddressFormat::from_bytes(&data[1..5])?;
+        let format = AddressFormat::from_bytes(&data[0..5])?;
         let hash = H160::from_slice(&data[5..25]).map_err(|err| err.to_string())?;
         Ok(Address { format, hash })
     }
 
     pub fn to_string(&self, network: NetworkType) -> String {
         let hrp = network.to_prefix();
-        let mut data = [0; 24];
+        let mut data = [0; 25];
         let format_data = self.format.to_bytes().expect("Invalid address format");
-        data[0..4].copy_from_slice(&format_data[0..4]);
-        data[4..24].copy_from_slice(self.hash.as_fixed_bytes());
-        let data_u5 = convert_bits(&data, 8, 5, true).unwrap();
-        let value = Bech32::new_check_data(hrp.to_string(), data_u5)
+        data[0..5].copy_from_slice(&format_data[0..5]);
+        data[5..25].copy_from_slice(self.hash.as_fixed_bytes());
+        let value = Bech32::new(hrp.to_string(), data.to_base32())
             .expect(&format!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
     }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct SecpUtxoInfo {
+pub struct UtxoInfo {
     pub out_point: Arc<CellOutPoint>,
-    pub address: Address,
+    pub lock_hash: H256,
+    // Secp256k1 address
     pub capacity: u64,
     // Block number
     pub number: u64,
     // Location in the block
-    utxo_index: UtxoIndex,
+    index: UtxoIndex,
 }
 
-impl SecpUtxoInfo {
+impl UtxoInfo {
     pub fn core_input(&self) -> CoreCellInput {
         CoreCellInput {
             previous_output: CoreOutPoint {
@@ -205,6 +206,12 @@ struct UtxoIndex {
     output_index: u32,
 }
 
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
+struct AddressIndex {
+    lock_hash: H256,
+    address: Address,
+}
+
 impl UtxoIndex {
     fn new(tx_index: u32, output_index: u32) -> UtxoIndex {
         UtxoIndex {
@@ -214,14 +221,14 @@ impl UtxoIndex {
     }
 }
 
-struct SecpUtxoMap {
-    map: HashMap<Arc<CellOutPoint>, Arc<SecpUtxoInfo>>,
-    blocks: BTreeMap<u64, HashMap<UtxoIndex, Arc<SecpUtxoInfo>>>,
+struct UtxoMap {
+    map: HashMap<Arc<CellOutPoint>, Arc<UtxoInfo>>,
+    blocks: BTreeMap<u64, HashMap<UtxoIndex, Arc<UtxoInfo>>>,
     total_capacity: u128,
 }
 
-impl SecpUtxoMap {
-    pub fn add(&mut self, info: Arc<SecpUtxoInfo>) {
+impl UtxoMap {
+    pub fn add(&mut self, info: Arc<UtxoInfo>) {
         let capacity = info.capacity as u128;
 
         assert!(!self.map.contains_key(&info.out_point));
@@ -229,18 +236,18 @@ impl SecpUtxoMap {
             .insert(Arc::clone(&info.out_point), Arc::clone(&info));
 
         let block_utxos = self.blocks.entry(info.number).or_default();
-        assert!(!block_utxos.contains_key(&info.utxo_index));
-        block_utxos.insert(info.utxo_index, info);
+        assert!(!block_utxos.contains_key(&info.index));
+        block_utxos.insert(info.index, info);
 
         self.total_capacity += capacity;
     }
 
-    pub fn remove(&mut self, out_point: &CellOutPoint) -> Option<Arc<SecpUtxoInfo>> {
+    pub fn remove(&mut self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
         let info_opt = self.map.remove(out_point);
         if let Some(ref info) = info_opt {
             let block_utxos = self.blocks.get_mut(&info.number).expect("Block not exists");
             let inner_info = block_utxos
-                .remove(&info.utxo_index)
+                .remove(&info.index)
                 .expect("Utxo not exists in blocks");
             assert_eq!(&inner_info, info);
             if block_utxos.is_empty() {
@@ -251,7 +258,7 @@ impl SecpUtxoMap {
         info_opt
     }
 
-    pub fn get(&self, out_point: &CellOutPoint) -> Option<Arc<SecpUtxoInfo>> {
+    pub fn get(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
         self.map.get(out_point).cloned()
     }
 
@@ -268,9 +275,9 @@ impl SecpUtxoMap {
     }
 }
 
-impl Default for SecpUtxoMap {
-    fn default() -> SecpUtxoMap {
-        SecpUtxoMap {
+impl Default for UtxoMap {
+    fn default() -> UtxoMap {
+        UtxoMap {
             map: HashMap::default(),
             blocks: BTreeMap::default(),
             total_capacity: 0,
@@ -282,9 +289,10 @@ pub struct UtxoDatabase {
     network: NetworkType,
     last_header: HeaderView,
     tip_header: HeaderView,
-    utxo_map: SecpUtxoMap,
+    utxo_map: UtxoMap,
+    secp_addrs: HashMap<H256, Address>,
     // Fields not to be serialized
-    addresses: HashMap<Address, SecpUtxoMap>,
+    locks: HashMap<H256, UtxoMap>,
 }
 
 impl UtxoDatabase {
@@ -297,17 +305,28 @@ impl UtxoDatabase {
             serde_json::to_string(&self.last_header).expect("Serialize last header error");
         let tip_header_string =
             serde_json::to_string(&self.tip_header).expect("Serialize tip header error");
-        let utxo_count = self.utxo_map.size().to_string();
         let total_capacity = self.utxo_map.total_capacity.to_string();
         file.write(format!("{}\n", network_string).as_bytes())?;
         file.write(format!("{}\n", last_header_string).as_bytes())?;
         file.write(format!("{}\n", tip_header_string).as_bytes())?;
-        file.write(format!("{}\n", utxo_count).as_bytes())?;
         file.write(format!("{}\n", total_capacity).as_bytes())?;
 
-        for (out_point, info) in self.utxo_map.map.iter() {
-            let utxo_string = serde_json::to_string(&info)
-                .expect(format!("Serialize UTXO {:?} failed", out_point).as_str());
+        let addr_index_count = self.secp_addrs.len().to_string();
+        file.write(format!("{}\n", addr_index_count).as_bytes())?;
+        for (lock_hash, address) in &self.secp_addrs {
+            let addr_index = AddressIndex {
+                lock_hash: lock_hash.clone(),
+                address: address.clone(),
+            };
+            let addr_index_string =
+                serde_json::to_string(&addr_index).expect("Serialize address index failed");
+            file.write(format!("{}\n", addr_index_string).as_bytes())?;
+        }
+
+        let utxo_count = self.utxo_map.size().to_string();
+        file.write(format!("{}\n", utxo_count).as_bytes())?;
+        for info in self.utxo_map.map.values() {
+            let utxo_string = serde_json::to_string(&info).expect("Serialize UTXO failed");
             file.write(format!("{}\n", utxo_string).as_bytes())?;
         }
 
@@ -325,6 +344,7 @@ impl UtxoDatabase {
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
 
+        // Load network type
         let line_network = lines.next().ok_or(IndexError::FileBroken(
             "read network field failed".to_owned(),
         ))??;
@@ -332,25 +352,30 @@ impl UtxoDatabase {
             IndexError::FileBroken("parse network field failed".to_owned()),
         )?;
 
+        // Load last header
         let line_last_header = lines.next().ok_or(IndexError::FileBroken(
             "read last_header field failed".to_owned(),
         ))??;
         let last_header = serde_json::from_str(line_last_header.as_str())
             .map_err(|_| IndexError::FileBroken("parse last_header field failed".to_owned()))?;
 
+        // Load tip header
         let line_tip_header = lines.next().ok_or(IndexError::FileBroken(
             "read tip_header field failed".to_owned(),
         ))??;
         let tip_header = serde_json::from_str(line_tip_header.as_str())
             .map_err(|_| IndexError::FileBroken("parse tip_header field failed".to_owned()))?;
 
-        let line_utxo_count = lines
-            .next()
-            .ok_or(IndexError::FileBroken("read utxo count failed".to_owned()))??;
-        let utxo_count: usize = line_utxo_count
-            .parse()
-            .map_err(|_| IndexError::FileBroken("parse utxo count failed".to_owned()))?;
+        let mut db = UtxoDatabase {
+            network,
+            last_header,
+            tip_header,
+            utxo_map: UtxoMap::default(),
+            secp_addrs: HashMap::default(),
+            locks: HashMap::default(),
+        };
 
+        // Load total capacity for check
         let line_total_capacity = lines
             .next()
             .ok_or(IndexError::FileBroken("read utxo count failed".to_owned()))??;
@@ -358,49 +383,71 @@ impl UtxoDatabase {
             .parse()
             .map_err(|_| IndexError::FileBroken("parse utxo count failed".to_owned()))?;
 
-        log::info!("utxo_count: {}", utxo_count);
-        let mut database = UtxoDatabase {
-            network,
-            last_header,
-            tip_header,
-            utxo_map: SecpUtxoMap::default(),
-            addresses: HashMap::default(),
-        };
+        // Load secp address index
+        let line_addr_index_count = lines.next().ok_or(IndexError::FileBroken(
+            "read address index count failed".to_owned(),
+        ))??;
+        let addr_index_count: usize = line_addr_index_count
+            .parse()
+            .map_err(|_| IndexError::FileBroken("parse address index count failed".to_owned()))?;
+        log::info!("addr_index_count: {}", addr_index_count);
+        for idx in 0..addr_index_count {
+            let line_addr_index = lines.next().ok_or_else(|| {
+                IndexError::FileBroken(format!(
+                    "read address index record failed: number={}",
+                    idx + 1
+                ))
+            })??;
+            let AddressIndex { lock_hash, address } =
+                serde_json::from_str(line_addr_index.as_str()).map_err(|_| {
+                    IndexError::FileBroken(format!("parse utxo record failed: number={}", idx + 1))
+                })?;
+            db.secp_addrs.insert(lock_hash, address);
+        }
 
+        // Load all utxo
+        let line_utxo_count = lines
+            .next()
+            .ok_or(IndexError::FileBroken("read utxo count failed".to_owned()))??;
+        let utxo_count: usize = line_utxo_count
+            .parse()
+            .map_err(|_| IndexError::FileBroken("parse utxo count failed".to_owned()))?;
+        log::info!("utxo_count: {}", utxo_count);
         for idx in 0..utxo_count {
             let line_utxo = lines.next().ok_or_else(|| {
                 IndexError::FileBroken(format!("read utxo record failed: number={}", idx + 1))
             })??;
-            let info: SecpUtxoInfo = serde_json::from_str(line_utxo.as_str()).map_err(|_| {
+            let info: UtxoInfo = serde_json::from_str(line_utxo.as_str()).map_err(|_| {
                 IndexError::FileBroken(format!("parse utxo record failed: number={}", idx + 1))
             })?;
-            database.add_utxo(
+            db.add_utxo(
                 Arc::clone(&info.out_point),
-                info.utxo_index,
-                info.address,
+                info.index,
+                info.lock_hash,
                 info.capacity,
                 info.number,
             );
         }
-        assert_eq!(total_capacity, database.utxo_map.total_capacity);
+        assert_eq!(total_capacity, db.utxo_map.total_capacity);
 
         log::info!("Read database from file finished");
-        Ok(database)
+        Ok(db)
     }
 
     pub fn from_fresh(network: NetworkType, genesis_block: &BlockView) -> UtxoDatabase {
         let genesis_header = &genesis_block.header;
         assert_eq!(genesis_header.inner.number.0, 0);
 
-        let mut database = UtxoDatabase {
+        let mut db = UtxoDatabase {
             network,
-            utxo_map: SecpUtxoMap::default(),
+            utxo_map: UtxoMap::default(),
             last_header: genesis_header.clone(),
             tip_header: genesis_header.clone(),
-            addresses: HashMap::default(),
+            secp_addrs: HashMap::default(),
+            locks: HashMap::default(),
         };
-        database.apply_block_unchecked(genesis_block);
-        database
+        db.apply_block_unchecked(genesis_block);
+        db
     }
 
     pub fn apply_next_block(&mut self, block: &BlockView) -> Result<(usize, usize), IndexError> {
@@ -433,23 +480,23 @@ impl UtxoDatabase {
         BlockNumber(self.last_header.inner.number.0 + 1)
     }
 
-    pub fn get_utxo(&self, out_point: &CellOutPoint) -> Option<Arc<SecpUtxoInfo>> {
+    pub fn get_utxo(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
         self.utxo_map.get(out_point)
     }
 
-    pub fn get_balance(&self, address: &Address) -> Option<(u64, usize)> {
-        self.addresses
-            .get(address)
+    pub fn get_balance(&self, lock_hash: &H256) -> Option<(u64, usize)> {
+        self.locks
+            .get(lock_hash)
             .map(|utxo_map| (utxo_map.total_capacity as u64, utxo_map.size()))
     }
 
     pub fn get_utxo_infos(
         &self,
-        address: &Address,
+        lock_hash: &H256,
         total_capacity: u64,
-    ) -> (Vec<Arc<SecpUtxoInfo>>, Option<u64>) {
-        self.addresses
-            .get(address)
+    ) -> (Vec<Arc<UtxoInfo>>, Option<u64>) {
+        self.locks
+            .get(lock_hash)
             .map(|utxo_map| {
                 let mut result_total_capacity = 0;
                 let mut infos = Vec::new();
@@ -468,13 +515,19 @@ impl UtxoDatabase {
             .unwrap_or_else(|| (Vec::new(), None))
     }
 
-    pub fn get_top_n(&self, n: usize) -> Vec<(Address, u64)> {
+    pub fn get_top_n(&self, n: usize) -> Vec<(H256, Option<Address>, u64)> {
         let mut pairs = self
-            .addresses
+            .locks
             .iter()
-            .map(|(address, utxo_map)| (address.clone(), utxo_map.total_capacity as u64))
+            .map(|(lock_hash, utxo_map)| {
+                (
+                    lock_hash.clone(),
+                    self.secp_addrs.get(lock_hash).cloned(),
+                    utxo_map.total_capacity as u64,
+                )
+            })
             .collect::<Vec<_>>();
-        pairs.sort_by(|a, b| b.1.cmp(&a.1));
+        pairs.sort_by(|a, b| b.2.cmp(&a.2));
         pairs.truncate(n);
         pairs
     }
@@ -522,28 +575,32 @@ impl UtxoDatabase {
             }
         }
         for (output_index, output) in tx.inner.outputs.iter().enumerate() {
+            let lock: CoreScript = output.lock.clone().into();
+            let lock_hash = lock.hash();
+            let capacity = output.capacity.0.as_u64();
+            let out_point = Arc::new(CellOutPoint {
+                tx_hash: tx.hash.clone(),
+                index: Unsigned(output_index as u64),
+            });
+            let index = UtxoIndex::new(tx_index, output_index as u32);
+            self.add_utxo(out_point, index, lock_hash.clone(), capacity, number);
+
             if output.lock.code_hash == SECP_CODE_HASH {
-                if output.lock.args.len() != 1 {
+                if output.lock.args.len() == 1 {
+                    let lock_arg = &output.lock.args[0];
+                    match Address::from_lock_arg(lock_arg.as_bytes()) {
+                        Ok(address) => {
+                            self.secp_addrs.insert(lock_hash, address);
+                        }
+                        Err(err) => {
+                            log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
+                        }
+                    }
+                } else {
                     log::info!("lock arg should given exact 1");
-                    continue;
-                }
-                let lock_arg = &output.lock.args[0];
-                match Address::from_lock_arg(lock_arg.as_bytes()) {
-                    Ok(address) => {
-                        let capacity = output.capacity.0.as_u64();
-                        let out_point = Arc::new(CellOutPoint {
-                            tx_hash: tx.hash.clone(),
-                            index: Unsigned(output_index as u64),
-                        });
-                        let utxo_index = UtxoIndex::new(tx_index, output_index as u32);
-                        self.add_utxo(out_point, utxo_index, address, capacity, number);
-                        added += 1;
-                    }
-                    Err(err) => {
-                        log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
-                    }
                 }
             }
+            added += 1;
         }
         (removed, added)
     }
@@ -551,47 +608,48 @@ impl UtxoDatabase {
     fn add_utxo(
         &mut self,
         out_point: Arc<CellOutPoint>,
-        utxo_index: UtxoIndex,
-        address: Address,
+        index: UtxoIndex,
+        lock_hash: H256,
         capacity: u64,
         number: u64,
     ) {
-        let info = Arc::new(SecpUtxoInfo {
+        let info = Arc::new(UtxoInfo {
             out_point: Arc::clone(&out_point),
-            utxo_index,
-            address: address.clone(),
+            index,
+            lock_hash: lock_hash.clone(),
             capacity,
             number,
         });
         log::trace!(
-            "add tx_hash={:#x}, index={}, address={}, capacity={}",
+            "add tx_hash={:#x}, index={}, lock_hash={}, capacity={}",
             out_point.tx_hash,
             out_point.index.0,
-            info.address.to_string(self.network),
+            info.lock_hash,
             info.capacity,
         );
 
         self.utxo_map.add(Arc::clone(&info));
-        self.addresses.entry(address.clone()).or_default().add(info);
+        self.locks.entry(lock_hash).or_default().add(info);
     }
 
-    fn remove_utxo(&mut self, out_point: &CellOutPoint) -> Option<Arc<SecpUtxoInfo>> {
+    fn remove_utxo(&mut self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
         let info_opt = self.utxo_map.remove(out_point);
         if let Some(ref info) = info_opt {
             log::trace!(
-                "remove tx_hash={:#x}, index={}, address={}, capacity={}",
+                "remove tx_hash={:#x}, index={}, lock_hash={}, capacity={}",
                 out_point.tx_hash,
                 out_point.index.0,
-                info.address.to_string(self.network),
+                info.lock_hash,
                 info.capacity,
             );
             let map = self
-                .addresses
-                .get_mut(&info.address)
+                .locks
+                .get_mut(&info.lock_hash)
                 .expect("Target address must exists: {}");
             let inner_info = map.remove(out_point).expect("Info must exists");
             if map.is_empty() {
-                self.addresses.remove(&info.address);
+                self.locks.remove(&info.lock_hash);
+                self.secp_addrs.remove(&info.lock_hash);
             }
             assert_eq!(info, &inner_info);
         }
