@@ -2,7 +2,7 @@ pub mod index;
 
 use std::fs;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -81,7 +81,7 @@ impl<'a> WalletSubCommand<'a> {
         let arg_privkey = Arg::with_name("privkey-path")
             .long("privkey-path")
             .takes_value(true)
-            .help("Private key file path");
+            .help("Private key file path (only read first line)");
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
@@ -120,9 +120,9 @@ impl<'a> WalletSubCommand<'a> {
                 ),
             SubCommand::with_name("generate-key")
                 .arg(
-                    Arg::with_name("print")
-                        .long("print")
-                        .help("Print the result (default: no)"),
+                    Arg::with_name("print-privkey")
+                        .long("print-privkey")
+                        .help("Print privkey key (default: no)"),
                 )
                 .arg(
                     Arg::with_name("output-path")
@@ -254,27 +254,43 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let (privkey, pubkey) = Generator::new()
                     .random_keypair()
                     .expect("generate random key error");
-                let is_print = m.is_present("print");
+                let print_privkey = m.is_present("print-privkey");
                 let output_path = m.value_of("output-path").unwrap();
                 let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
-                let address_string = Address::from_pubkey(AddressFormat::default(), &pubkey)?
-                    .to_string(NetworkType::TestNet);
+                let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
+                let address_string = address.to_string(NetworkType::TestNet);
+
+                if Path::new(output_path).exists() {
+                    return Err(format!(
+                        "ERROR: output path ( {} ) already exists",
+                        output_path
+                    ));
+                }
                 let mut file = fs::File::create(output_path).map_err(|err| err.to_string())?;
                 file.write(format!("{}\n", privkey.to_string()).as_bytes())
                     .map_err(|err| err.to_string())?;
                 file.write(format!("{}\n", address_string).as_bytes())
                     .map_err(|err| err.to_string())?;
-                let resp = if is_print {
-                    json!({
-                        "privkey": privkey.to_string(),
-                        "pubkey": pubkey_string,
-                        "address": address_string,
-                    })
-                } else {
-                    json!({
-                        "message": format!("saved to file: {}", output_path),
-                    })
-                };
+
+                println!(
+                    r#"Put this config in < ckb.toml >:
+
+[block_assembler]
+code_hash = "{:#x}"
+args = ["{:#x}"]
+"#,
+                    SECP_CODE_HASH,
+                    address.hash()
+                );
+                let mut resp = json!({
+                    "pubkey": pubkey_string,
+                    "address": address_string,
+                });
+                if print_privkey {
+                    resp.as_object_mut()
+                        .unwrap()
+                        .insert("privkey".to_owned(), privkey.to_string().into());
+                }
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("key-info", Some(m)) => {
@@ -302,8 +318,19 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             .map_err(|err| err.to_string())
                     })?;
                 let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
-                let address_string = Address::from_pubkey(AddressFormat::default(), &pubkey)
-                    .map(|address| address.to_string(NetworkType::TestNet))?;
+                let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
+                let address_string = address.to_string(NetworkType::TestNet);
+
+                println!(
+                    r#"Put this config in < ckb.toml >:
+
+[block_assembler]
+code_hash = "{:#x}"
+args = ["{:#x}"]
+"#,
+                    SECP_CODE_HASH,
+                    address.hash()
+                );
                 let resp = json!({
                     "pubkey": pubkey_string,
                     "address": address_string,

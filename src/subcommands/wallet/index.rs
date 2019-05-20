@@ -120,6 +120,10 @@ pub struct Address {
 }
 
 impl Address {
+    pub fn hash(&self) -> &H160 {
+        &self.hash
+    }
+
     pub fn lock_script(&self) -> CoreScript {
         CoreScript {
             args: vec![Bytes::from(self.hash.as_bytes())],
