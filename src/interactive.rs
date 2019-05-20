@@ -16,7 +16,7 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 
 use crate::subcommands::{
-    start_index_thread, CliSubCommand, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
+    CliSubCommand, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
@@ -26,7 +26,11 @@ use crate::utils::rpc_client::HttpRpcClient;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
 /// Interactive command line
-pub fn start(url: &str, ckb_cli_dir: PathBuf) -> io::Result<()> {
+pub fn start(
+    url: &str,
+    ckb_cli_dir: PathBuf,
+    index_sender: Sender<Request<IndexRequest, IndexResponse>>,
+) -> io::Result<()> {
     let index_db_ready = Arc::new(AtomicBool::new(false));
     let mut config = GlobalConfig::new(url.to_string(), Arc::clone(&index_db_ready));
 
@@ -38,9 +42,6 @@ pub fn start(url: &str, ckb_cli_dir: PathBuf) -> io::Result<()> {
     let history_file = history_file.to_str().unwrap();
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
-    let mut index_file = ckb_cli_dir.clone();
-    index_file.push("utxo-index.db");
-    let index_sender = start_index_thread(url, index_file, index_db_ready);
 
     if config_file.as_path().exists() {
         let mut file = fs::File::open(&config_file)?;
@@ -265,8 +266,8 @@ fn handle_command(
                 Ok(())
             }
             ("wallet", Some(sub_matches)) => {
-                let value =
-                    WalletSubCommand::new(rpc_client, index_sender).process(&sub_matches)?;
+                let value = WalletSubCommand::new(rpc_client, index_sender.clone())
+                    .process(&sub_matches)?;
                 printer.println(&value, config.color());
                 Ok(())
             }

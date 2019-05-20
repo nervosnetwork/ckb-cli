@@ -1,10 +1,10 @@
 pub mod index;
 
+use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,6 +19,7 @@ use ckb_core::{
     },
     Capacity,
 };
+use ckb_util::RwLock;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_channel::{Receiver, Sender};
 use crypto::secp::{Generator, Privkey};
@@ -46,14 +47,14 @@ const MIN_CELL_CAPACITY: u64 = 40 * ONE_CKB;
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]
     rpc_client: &'a mut HttpRpcClient,
-    index_sender: &'a Sender<Request<IndexRequest, IndexResponse>>,
+    index_sender: Sender<Request<IndexRequest, IndexResponse>>,
     genesis_info: Option<GenesisInfo>,
 }
 
 impl<'a> WalletSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        index_sender: &'a Sender<Request<IndexRequest, IndexResponse>>,
+        index_sender: Sender<Request<IndexRequest, IndexResponse>>,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
@@ -529,7 +530,7 @@ pub enum IndexRequest {
     GetBalance(Address),
     // GetLastHeader,
     // RebuildIndex,
-    // Shutdown,
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -576,24 +577,109 @@ impl From<HeaderView> for SimpleBlockInfo {
     }
 }
 
-// impl IndexResponse {
-//     fn is_ok(&self) -> bool {
-//         match self {
-//             IndexResponse::Ok => true,
-//             _ => false,
-//         }
-//     }
-// }
+#[derive(Debug, Clone)]
+pub enum IndexThreadState {
+    // wait first request to start
+    WaitToStart,
+    // Started init db
+    StartInit,
+    // Process after init db
+    Processing(SimpleBlockInfo),
+    // Thread exit
+    Stopped,
+}
 
-pub fn start_index_thread(
-    url: &str,
-    index_file: PathBuf,
-    db_ready: Arc<AtomicBool>,
-) -> Sender<Request<IndexRequest, IndexResponse>> {
+impl IndexThreadState {
+    fn start_init(&mut self) {
+        *self = IndexThreadState::StartInit;
+    }
+    fn processing(&mut self, header: HeaderView) {
+        *self = IndexThreadState::Processing(header.into());
+    }
+    fn stop(&mut self) {
+        *self = IndexThreadState::Stopped;
+    }
+    fn is_stopped(&self) -> bool {
+        match self {
+            IndexThreadState::Stopped => true,
+            _ => false,
+        }
+    }
+    fn is_processing(&self) -> bool {
+        match self {
+            IndexThreadState::Processing(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for IndexThreadState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let output = match self {
+            IndexThreadState::WaitToStart => "waiting".to_owned(),
+            IndexThreadState::StartInit => "initializating".to_owned(),
+            IndexThreadState::Processing(SimpleBlockInfo { number, .. }) => {
+                format!("processing block#{}", number.0)
+            }
+            IndexThreadState::Stopped => "stopped".to_owned(),
+        };
+        write!(f, "{}", output)
+    }
+}
+
+impl Default for IndexThreadState {
+    fn default() -> IndexThreadState {
+        IndexThreadState::WaitToStart
+    }
+}
+
+pub struct IndexController {
+    state: Arc<RwLock<IndexThreadState>>,
+    sender: Sender<Request<IndexRequest, IndexResponse>>,
+}
+
+impl IndexController {
+    pub fn sender(&self) -> Sender<Request<IndexRequest, IndexResponse>> {
+        self.sender.clone()
+    }
+    pub fn shutdown(&self) {
+        let start_time = Instant::now();
+        let _ = Request::call(&self.sender, IndexRequest::Shutdown);
+        while !self.state.read().is_stopped() {
+            if start_time.elapsed() < Duration::from_secs(10) {
+                thread::sleep(Duration::from_millis(50));
+            } else {
+                eprintln!("Stop index thread timeout, give up");
+                return;
+            }
+        }
+    }
+}
+
+pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
     let url = url.to_owned();
-    let (sender, receiver) = crossbeam_channel::bounded(1);
+    let (sender, receiver) = crossbeam_channel::bounded::<Request<IndexRequest, IndexResponse>>(1);
+    let state = Arc::new(RwLock::new(IndexThreadState::default()));
+    let state_clone = Arc::clone(&state);
 
     thread::spawn(move || {
+        let mut first_request = match receiver.recv() {
+            Ok(request) => {
+                match request.arguments {
+                    IndexRequest::Shutdown => {
+                        state.write().stop();
+                        return;
+                    }
+                    _ => {}
+                }
+                Some(request)
+            }
+            Err(err) => {
+                log::error!("index db receiver error: {:?}", err);
+                None
+            }
+        };
+        state.write().start_init();
         let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
         let genesis_block = rpc_client
             .get_block_by_number(BlockNumber(0))
@@ -629,8 +715,9 @@ pub fn start_index_thread(
             }
 
             while tip_header.inner.number.0 - 4 > db.last_number() {
-                if db_ready.load(Ordering::SeqCst) {
+                if state.read().is_processing() {
                     if try_recv(&receiver, &mut db) {
+                        state.write().stop();
                         break;
                     }
                 }
@@ -645,9 +732,22 @@ pub fn start_index_thread(
                 removed_in_loop += removed_in_block;
                 added_in_loop += added_in_block;
             }
-            db_ready.store(true, Ordering::SeqCst);
-            if try_recv(&receiver, &mut db) {
+
+            if first_request
+                .take()
+                .map(|request| process_request(request, &mut db))
+                .unwrap_or(false)
+            {
                 break;
+            }
+            if try_recv(&receiver, &mut db) {
+                state.write().stop();
+                break;
+            }
+            if state.read().is_stopped() {
+                break;
+            } else {
+                state.write().processing(db.last_header().clone());
             }
 
             // TODO: the saving logic is wrong
@@ -668,9 +768,15 @@ pub fn start_index_thread(
             }
             thread::sleep(Duration::from_millis(100));
         }
+
+        state.write().stop();
         log::info!("Index database thread stopped");
     });
-    sender
+
+    IndexController {
+        state: state_clone,
+        sender,
+    }
 }
 
 fn try_recv(
@@ -678,72 +784,7 @@ fn try_recv(
     db: &mut UtxoDatabase,
 ) -> bool {
     match receiver.try_recv() {
-        Ok(Request {
-            responder,
-            arguments,
-        }) => match arguments {
-            IndexRequest::GetUtxoInfos {
-                address,
-                total_capacity,
-            } => {
-                let lock_hash = address.lock_script().hash();
-                let (infos, total_capacity_opt) = db.get_utxo_infos(&lock_hash, total_capacity);
-                responder
-                    .send(IndexResponse::UtxoInfos {
-                        infos,
-                        total_capacity: total_capacity_opt,
-                        last_block: db.last_header().clone().into(),
-                    })
-                    .is_err()
-            }
-            IndexRequest::GetTopLocks(n) => responder
-                .send(IndexResponse::TopLocks {
-                    capacity_list: db
-                        .get_top_n(n)
-                        .into_iter()
-                        .map(|(lock_hash, address, capacity)| {
-                            let address = address.map(|addr| addr.to_string(NetworkType::TestNet));
-                            CapacityResult {
-                                lock_hash,
-                                address,
-                                capacity,
-                            }
-                        })
-                        .collect::<Vec<_>>(),
-                    last_block: db.last_header().clone().into(),
-                })
-                .is_err(),
-
-            IndexRequest::GetCapacity(lock_hash) => {
-                let result = db.get_balance(&lock_hash);
-                responder
-                    .send(IndexResponse::Capacity {
-                        capacity: result.map(|value| value.0),
-                        utxo_count: result.map(|value| value.1),
-                        last_block: db.last_header().clone().into(),
-                    })
-                    .is_err()
-            }
-            IndexRequest::GetBalance(address) => {
-                let lock_hash = address.lock_script().hash();
-                let result = db.get_balance(&lock_hash);
-                responder
-                    .send(IndexResponse::Capacity {
-                        capacity: result.map(|value| value.0),
-                        utxo_count: result.map(|value| value.1),
-                        last_block: db.last_header().clone().into(),
-                    })
-                    .is_err()
-            } // IndexRequest::GetLastHeader => responder
-              //     .send(IndexResponse::LastHeader(db.last_header().clone()))
-              //     .is_err(),
-              // IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
-              // IndexRequest::Shutdown => {
-              //     let _ = responder.send(IndexResponse::Ok);
-              //     log::info!("Received shutdown message");
-              //     true
-              // }
-        },
+        Ok(request) => process_request(request, db),
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
@@ -751,6 +792,78 @@ fn try_recv(
             } else {
                 false
             }
+        }
+    }
+}
+
+fn process_request(request: Request<IndexRequest, IndexResponse>, db: &mut UtxoDatabase) -> bool {
+    let Request {
+        responder,
+        arguments,
+    } = request;
+    match arguments {
+        IndexRequest::GetUtxoInfos {
+            address,
+            total_capacity,
+        } => {
+            let lock_hash = address.lock_script().hash();
+            let (infos, total_capacity_opt) = db.get_utxo_infos(&lock_hash, total_capacity);
+            responder
+                .send(IndexResponse::UtxoInfos {
+                    infos,
+                    total_capacity: total_capacity_opt,
+                    last_block: db.last_header().clone().into(),
+                })
+                .is_err()
+        }
+        IndexRequest::GetTopLocks(n) => responder
+            .send(IndexResponse::TopLocks {
+                capacity_list: db
+                    .get_top_n(n)
+                    .into_iter()
+                    .map(|(lock_hash, address, capacity)| {
+                        let address = address.map(|addr| addr.to_string(NetworkType::TestNet));
+                        CapacityResult {
+                            lock_hash,
+                            address,
+                            capacity,
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                last_block: db.last_header().clone().into(),
+            })
+            .is_err(),
+
+        IndexRequest::GetCapacity(lock_hash) => {
+            let result = db.get_balance(&lock_hash);
+            responder
+                .send(IndexResponse::Capacity {
+                    capacity: result.map(|value| value.0),
+                    utxo_count: result.map(|value| value.1),
+                    last_block: db.last_header().clone().into(),
+                })
+                .is_err()
+        }
+        IndexRequest::GetBalance(address) => {
+            let lock_hash = address.lock_script().hash();
+            let result = db.get_balance(&lock_hash);
+            responder
+                .send(IndexResponse::Capacity {
+                    capacity: result.map(|value| value.0),
+                    utxo_count: result.map(|value| value.1),
+                    last_block: db.last_header().clone().into(),
+                })
+                .is_err()
+        }
+
+        // IndexRequest::GetLastHeader => responder
+        //     .send(IndexResponse::LastHeader(db.last_header().clone()))
+        //     .is_err(),
+        // IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
+        IndexRequest::Shutdown => {
+            let _ = responder.send(IndexResponse::Ok);
+            log::info!("Received shutdown message");
+            true
         }
     }
 }

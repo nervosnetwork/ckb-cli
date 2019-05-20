@@ -2,7 +2,9 @@ pub mod rpc;
 pub mod wallet;
 
 pub use rpc::RpcSubCommand;
-pub use wallet::{start_index_thread, IndexRequest, IndexResponse, WalletSubCommand};
+pub use wallet::{
+    start_index_thread, IndexRequest, IndexResponse, IndexThreadState, WalletSubCommand,
+};
 
 use clap::ArgMatches;
 use serde::de::DeserializeOwned;

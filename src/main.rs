@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::env;
 use std::iter::FromIterator;
 use std::process;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -33,25 +31,27 @@ fn main() {
         .or_else(|| env_map.remove("API_URL"))
         .unwrap_or_else(|| DEFAULT_JSONRPC_URL.to_owned());
 
-    let mut ckb_cli_dir = dirs::home_dir().unwrap();
-    ckb_cli_dir.push(".ckb-cli");
     let mut rpc_client = RpcClient::from_uri(&api_uri);
     let printer = Printer::default();
+
+    let mut ckb_cli_dir = dirs::home_dir().unwrap();
+    ckb_cli_dir.push(".ckb-cli");
+    let mut index_file = ckb_cli_dir.clone();
+    index_file.push("utxo-index.db");
+    let index_controller = start_index_thread(&api_uri, index_file);
+
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
-            let mut index_file = ckb_cli_dir.clone();
-            index_file.push("utxo-index.db");
-            // TODO: sync db first
-            let index_db_ready = Arc::new(AtomicBool::new(false));
-            let index_sender = start_index_thread(&api_uri, index_file, index_db_ready);
-            WalletSubCommand::new(&mut rpc_client, &index_sender).process(&sub_matches)
+            WalletSubCommand::new(&mut rpc_client, index_controller.sender()).process(&sub_matches)
         }
         _ => {
-            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir) {
+            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir, index_controller.sender()) {
                 eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
+                index_controller.shutdown();
                 process::exit(1);
             }
+            index_controller.shutdown();
             process::exit(0)
         }
     };
@@ -60,10 +60,12 @@ fn main() {
     match result {
         Ok(message) => {
             printer.println(&message, color);
+            index_controller.shutdown();
         }
         Err(err) => {
             printer.eprintln(&format!("API_URL: {}", api_uri), false);
             printer.eprintln(&err, color);
+            index_controller.shutdown();
             process::exit(1);
         }
     }
