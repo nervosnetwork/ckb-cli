@@ -125,11 +125,11 @@ impl<'a> WalletSubCommand<'a> {
                         .help("Print privkey key (default: no)"),
                 )
                 .arg(
-                    Arg::with_name("output-path")
-                        .long("output-path")
+                    Arg::with_name("privkey-path")
+                        .long("privkey-path")
                         .takes_value(true)
                         .required(true)
-                        .help("Output file path (content = privkey + address)"),
+                        .help("Output privkey file path (content = privkey + address)"),
                 ),
             SubCommand::with_name("key-info")
                 .arg(arg_privkey.clone())
@@ -255,18 +255,18 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .random_keypair()
                     .expect("generate random key error");
                 let print_privkey = m.is_present("print-privkey");
-                let output_path = m.value_of("output-path").unwrap();
+                let privkey_path = m.value_of("privkey-path").unwrap();
                 let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
                 let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
                 let address_string = address.to_string(NetworkType::TestNet);
 
-                if Path::new(output_path).exists() {
+                if Path::new(privkey_path).exists() {
                     return Err(format!(
                         "ERROR: output path ( {} ) already exists",
-                        output_path
+                        privkey_path
                     ));
                 }
-                let mut file = fs::File::create(output_path).map_err(|err| err.to_string())?;
+                let mut file = fs::File::create(privkey_path).map_err(|err| err.to_string())?;
                 file.write(format!("{}\n", privkey.to_string()).as_bytes())
                     .map_err(|err| err.to_string())?;
                 file.write(format!("{}\n", address_string).as_bytes())
@@ -516,9 +516,9 @@ pub enum IndexRequest {
     GetTopLocks(usize),
     GetCapacity(H256),
     GetBalance(Address),
-    GetLastHeader,
-    RebuildIndex,
-    Shutdown,
+    // GetLastHeader,
+    // RebuildIndex,
+    // Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -721,16 +721,15 @@ fn try_recv(
                         last_block: db.last_header().clone().into(),
                     })
                     .is_err()
-            }
-            IndexRequest::GetLastHeader => responder
-                .send(IndexResponse::LastHeader(db.last_header().clone()))
-                .is_err(),
-            IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
-            IndexRequest::Shutdown => {
-                let _ = responder.send(IndexResponse::Ok);
-                log::info!("Received shutdown message");
-                true
-            }
+            } // IndexRequest::GetLastHeader => responder
+              //     .send(IndexResponse::LastHeader(db.last_header().clone()))
+              //     .is_err(),
+              // IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
+              // IndexRequest::Shutdown => {
+              //     let _ = responder.send(IndexResponse::Ok);
+              //     log::info!("Received shutdown message");
+              //     true
+              // }
         },
         Err(err) => {
             if err.is_disconnected() {

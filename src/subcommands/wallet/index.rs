@@ -262,9 +262,9 @@ impl UtxoMap {
         info_opt
     }
 
-    pub fn get(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
-        self.map.get(out_point).cloned()
-    }
+    // pub fn get(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
+    //     self.map.get(out_point).cloned()
+    // }
 
     pub fn size(&self) -> usize {
         self.map.len()
@@ -484,9 +484,9 @@ impl UtxoDatabase {
         BlockNumber(self.last_header.inner.number.0 + 1)
     }
 
-    pub fn get_utxo(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
-        self.utxo_map.get(out_point)
-    }
+    // pub fn get_utxo(&self, out_point: &CellOutPoint) -> Option<Arc<UtxoInfo>> {
+    //     self.utxo_map.get(out_point)
+    // }
 
     pub fn get_balance(&self, lock_hash: &H256) -> Option<(u64, usize)> {
         self.locks
