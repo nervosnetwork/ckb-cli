@@ -616,10 +616,10 @@ impl IndexThreadState {
 impl fmt::Display for IndexThreadState {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let output = match self {
-            IndexThreadState::WaitToStart => "waiting".to_owned(),
+            IndexThreadState::WaitToStart => "waiting for first query".to_owned(),
             IndexThreadState::StartInit => "initializating".to_owned(),
             IndexThreadState::Processing(SimpleBlockInfo { number, .. }) => {
-                format!("processing block#{}", number.0)
+                format!("processed block#{}", number.0)
             }
             IndexThreadState::Stopped => "stopped".to_owned(),
         };
@@ -638,9 +638,21 @@ pub struct IndexController {
     sender: Sender<Request<IndexRequest, IndexResponse>>,
 }
 
+impl Clone for IndexController {
+    fn clone(&self) -> IndexController {
+        IndexController {
+            state: Arc::clone(&self.state),
+            sender: self.sender.clone(),
+        }
+    }
+}
+
 impl IndexController {
-    pub fn sender(&self) -> Sender<Request<IndexRequest, IndexResponse>> {
-        self.sender.clone()
+    pub fn state(&self) -> &Arc<RwLock<IndexThreadState>> {
+        &self.state
+    }
+    pub fn sender(&self) -> &Sender<Request<IndexRequest, IndexResponse>> {
+        &self.sender
     }
     pub fn shutdown(&self) {
         let start_time = Instant::now();

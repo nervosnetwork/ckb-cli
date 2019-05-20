@@ -3,7 +3,8 @@ pub mod wallet;
 
 pub use rpc::RpcSubCommand;
 pub use wallet::{
-    start_index_thread, IndexRequest, IndexResponse, IndexThreadState, WalletSubCommand,
+    start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,
+    WalletSubCommand,
 };
 
 use clap::ArgMatches;

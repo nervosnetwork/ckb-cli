@@ -43,10 +43,11 @@ fn main() {
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
-            WalletSubCommand::new(&mut rpc_client, index_controller.sender()).process(&sub_matches)
+            WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())
+                .process(&sub_matches)
         }
         _ => {
-            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir, index_controller.sender()) {
+            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir, index_controller.clone()) {
                 eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
                 index_controller.shutdown();
                 process::exit(1);

@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::env;
 use std::ops::Deref;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use ansi_term::Colour::Yellow;
+use ckb_util::RwLock;
 use regex::{Captures, Regex};
 
+use crate::subcommands::wallet::IndexThreadState;
 use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct GlobalConfig {
@@ -19,11 +20,11 @@ pub struct GlobalConfig {
     completion_style: bool,
     edit_style: bool,
     env_variable: HashMap<String, serde_json::Value>,
-    db_ready: Arc<AtomicBool>,
+    index_state: Arc<RwLock<IndexThreadState>>,
 }
 
 impl GlobalConfig {
-    pub fn new(url: String, db_ready: Arc<AtomicBool>) -> Self {
+    pub fn new(url: String, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
         GlobalConfig {
             url,
             color: true,
@@ -33,7 +34,7 @@ impl GlobalConfig {
             completion_style: true,
             edit_style: true,
             env_variable: HashMap::new(),
-            db_ready,
+            index_state,
         }
     }
 
@@ -182,7 +183,7 @@ impl GlobalConfig {
             "Circular"
         };
         let edit_style = if self.edit_style { "Emacs" } else { "Vi" };
-        let db_ready = self.db_ready.load(Ordering::Relaxed).to_string();
+        let index_state = self.index_state.read().to_string();
         let values = [
             ("url", self.url.as_str()),
             ("pwd", path.deref()),
@@ -191,7 +192,7 @@ impl GlobalConfig {
             ("json", json.as_str()),
             ("completion style", completion_style),
             ("edit style", edit_style),
-            ("index db ready", db_ready.as_str()),
+            ("index db state", index_state.as_str()),
         ];
 
         let max_width = values

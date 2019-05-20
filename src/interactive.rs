@@ -2,10 +2,6 @@ use std::fs;
 use std::io;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-
-use serde_json::json;
 
 use ansi_term::Colour::{Blue, Green};
 use ckb_core::service::Request;
@@ -14,9 +10,10 @@ use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
+use serde_json::json;
 
 use crate::subcommands::{
-    CliSubCommand, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
+    CliSubCommand, IndexController, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
@@ -26,13 +23,8 @@ use crate::utils::rpc_client::HttpRpcClient;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
 /// Interactive command line
-pub fn start(
-    url: &str,
-    ckb_cli_dir: PathBuf,
-    index_sender: Sender<Request<IndexRequest, IndexResponse>>,
-) -> io::Result<()> {
-    let index_db_ready = Arc::new(AtomicBool::new(false));
-    let mut config = GlobalConfig::new(url.to_string(), Arc::clone(&index_db_ready));
+pub fn start(url: &str, ckb_cli_dir: PathBuf, index_controller: IndexController) -> io::Result<()> {
+    let mut config = GlobalConfig::new(url.to_string(), index_controller.state().clone());
 
     if !ckb_cli_dir.as_path().exists() {
         fs::create_dir(&ckb_cli_dir)?;
@@ -98,7 +90,7 @@ pub fn start(
         &mut printer,
         &config_file,
         history_file,
-        index_sender,
+        index_controller.sender().clone(),
     )
 }
 
