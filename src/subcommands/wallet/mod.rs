@@ -86,84 +86,95 @@ impl<'a> WalletSubCommand<'a> {
             .long("address")
             .takes_value(true)
             .required(true)
-            .help("Target address");
-        SubCommand::with_name("wallet").subcommands(vec![
-            SubCommand::with_name("transfer")
-                .arg(arg_privkey.clone().required(true))
-                .arg(
-                    Arg::with_name("to-address")
-                        .long("to-address")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Target address"),
-                )
-                .arg(
-                    Arg::with_name("to-data")
-                        .long("to-data")
-                        .takes_value(true)
-                        .help("Hex data store in target cell (optional)"),
-                )
-                .arg(
-                    Arg::with_name("capacity")
-                        .long("capacity")
-                        .takes_value(true)
-                        .required(true)
-                        .help("The capacity (default unit: CKB)"),
-                )
-                .arg(
-                    Arg::with_name("unit")
-                        .long("unit")
-                        .takes_value(true)
-                        .possible_values(&["CKB", "shannon"])
-                        .default_value("CKB")
-                        .help("Capacity unit, 1CKB = 10^8 shanon"),
-                ),
-            SubCommand::with_name("generate-key")
-                .arg(
-                    Arg::with_name("print-privkey")
-                        .long("print-privkey")
-                        .help("Print privkey key (default: no)"),
-                )
-                .arg(
-                    Arg::with_name("privkey-path")
-                        .long("privkey-path")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Output privkey file path (content = privkey + address)"),
-                ),
-            SubCommand::with_name("key-info")
-                .arg(arg_privkey.clone())
-                .arg(
-                    Arg::with_name("pubkey")
-                        .long("pubkey")
-                        .takes_value(true)
-                        .required_if("privkey-path", "")
-                        .help("Public key (hex string, compressed format)"),
-                ),
-            SubCommand::with_name("get-capacity").arg(
-                Arg::with_name("lock-hash")
-                    .long("lock-hash")
-                    .takes_value(true)
-                    .required(true)
-                    .help("Lock hash"),
-            ),
-            SubCommand::with_name("get-balance").arg(arg_address.clone()),
-            SubCommand::with_name("top").arg(
-                Arg::with_name("number")
-                    .short("n")
-                    .long("number")
-                    .validator(|s| {
-                        let n = s.parse::<usize>().map_err(|err| err.to_string())?;
-                        if n < 1 {
-                            return Err("number should large than 0".to_owned());
-                        }
-                        Ok(())
-                    })
-                    .default_value("10")
-                    .takes_value(true)
-                    .help("Get top n capacity addresses (default: 10)"),
-            ),
-        ])
+            .help("Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)");
+        SubCommand::with_name("wallet")
+            .about("tranfer / query balance(with local index) / key utils")
+            .subcommands(vec![
+                SubCommand::with_name("transfer")
+                    .about("Transfer capacity to a address (can have data)")
+                    .arg(arg_privkey.clone().required(true))
+                    .arg(
+                        Arg::with_name("to-address")
+                            .long("to-address")
+                            .takes_value(true)
+                            .required(true)
+                            .help("Target address"),
+                    )
+                    .arg(
+                        Arg::with_name("to-data")
+                            .long("to-data")
+                            .takes_value(true)
+                            .help("Hex data store in target cell (optional)"),
+                    )
+                    .arg(
+                        Arg::with_name("capacity")
+                            .long("capacity")
+                            .takes_value(true)
+                            .required(true)
+                            .help("The capacity (default unit: CKB)"),
+                    )
+                    .arg(
+                        Arg::with_name("unit")
+                            .long("unit")
+                            .takes_value(true)
+                            .possible_values(&["CKB", "shannon"])
+                            .default_value("CKB")
+                            .help("Capacity unit, 1CKB = 10^8 shanon"),
+                    ),
+                SubCommand::with_name("generate-key")
+                    .about("Generate a random secp256k1 privkey and save to file (print block_assembler config)")
+                    .arg(
+                        Arg::with_name("print-privkey")
+                            .long("print-privkey")
+                            .help("Print privkey key (default: no)"),
+                    )
+                    .arg(
+                        Arg::with_name("privkey-path")
+                            .long("privkey-path")
+                            .takes_value(true)
+                            .required(true)
+                            .help("Output privkey file path (content = privkey + address)"),
+                    ),
+                SubCommand::with_name("key-info")
+                    .about("Show public information of a secp256k1 private key (file)")
+                    .arg(arg_privkey.clone())
+                    .arg(
+                        Arg::with_name("pubkey")
+                            .long("pubkey")
+                            .takes_value(true)
+                            .required_if("privkey-path", "")
+                            .help("Public key (hex string, compressed format)"),
+                    ),
+                SubCommand::with_name("get-capacity")
+                    .about("Get capacity by lock script hash")
+                    .arg(
+                        Arg::with_name("lock-hash")
+                            .long("lock-hash")
+                            .takes_value(true)
+                            .required(true)
+                            .help("Lock hash"),
+                    ),
+                SubCommand::with_name("get-balance")
+                    .about("Get balance by address (balance is capacity)")
+                    .arg(arg_address.clone()),
+                SubCommand::with_name("top")
+                    .about("Show top n capacity owned by lock script hash")
+                    .arg(
+                        Arg::with_name("number")
+                            .short("n")
+                            .long("number")
+                            .validator(|s| {
+                                let n = s.parse::<usize>().map_err(|err| err.to_string())?;
+                                if n < 1 {
+                                    return Err("number should large than 0".to_owned());
+                                }
+                                Ok(())
+                            })
+                            .default_value("10")
+                            .takes_value(true)
+                            .help("Get top n capacity addresses (default: 10)"),
+                    ),
+            ])
     }
 }
 

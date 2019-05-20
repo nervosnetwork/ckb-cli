@@ -5,7 +5,7 @@ use serde_json::to_string_pretty;
 
 use crate::utils::rpc_client::{
     CellOutputWithOutPoints, CellWithStatus, EpochExt, HeaderView, Node, Nodes, OptionBlockView,
-    OptionH256, OptionTransactionWithStatus, TxPoolInfo,
+    OptionEpochExt, OptionH256, OptionTransactionWithStatus, TxPoolInfo,
 };
 
 use crate::utils::printer::{OutputFormat, Printable};
@@ -73,6 +73,12 @@ impl Printable for OptionBlockView {
 }
 
 impl Printable for OptionH256 {
+    fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {
+        Rc::new(to_string_pretty(&self).unwrap())
+    }
+}
+
+impl Printable for OptionEpochExt {
     fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {
         Rc::new(to_string_pretty(&self).unwrap())
     }

@@ -27,51 +27,64 @@ impl<'a> RpcSubCommand<'a> {
             .required(true)
             .help("Block number");
 
-        SubCommand::with_name("rpc").subcommands(vec![
-            SubCommand::with_name("get_tip_header"),
-            SubCommand::with_name("get_block").arg(arg_hash.clone().help("Block hash")),
-            SubCommand::with_name("get_block_hash").arg(arg_number.clone()),
-            SubCommand::with_name("get_block_by_number").arg(arg_number.clone()),
-            SubCommand::with_name("get_transaction").arg(arg_hash.clone().help("Tx hash")),
-            SubCommand::with_name("get_cells_by_lock_hash")
-                .arg(arg_hash.clone().help("Lock hash"))
-                .arg(
-                    Arg::with_name("from")
-                        .long("from")
-                        .takes_value(true)
-                        .required(true)
-                        .help("From block number"),
-                )
-                .arg(
-                    Arg::with_name("to")
-                        .long("to")
-                        .takes_value(true)
-                        .required(true)
-                        .help("To block number"),
-                ),
-            SubCommand::with_name("get_live_cell")
-                .arg(arg_hash.clone().required(false).help("Block hash"))
-                .arg(
-                    Arg::with_name("tx-hash")
-                        .long("tx-hash")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Tx hash"),
-                )
-                .arg(
-                    Arg::with_name("index")
-                        .long("index")
-                        .takes_value(true)
-                        .required(true)
-                        .help("Output index"),
-                ),
-            SubCommand::with_name("get_current_epoch"),
-            SubCommand::with_name("get_epoch_by_number")
-                .arg(arg_number.clone().help("Epoch number")),
-            SubCommand::with_name("local_node_info"),
-            SubCommand::with_name("tx_pool_info"),
-            SubCommand::with_name("get_peers"),
-        ])
+        SubCommand::with_name("rpc")
+            .about("Invoke RPC call to node")
+            .subcommands(vec![
+                SubCommand::with_name("get_tip_header").about("Get tip header"),
+                SubCommand::with_name("get_block")
+                    .about("Get block content by hash")
+                    .arg(arg_hash.clone().help("Block hash")),
+                SubCommand::with_name("get_block_hash")
+                    .about("Get block hash by block number")
+                    .arg(arg_number.clone()),
+                SubCommand::with_name("get_block_by_number")
+                    .about("Get block content by block number")
+                    .arg(arg_number.clone()),
+                SubCommand::with_name("get_transaction")
+                    .about("Get transaction content by transaction hash")
+                    .arg(arg_hash.clone().help("Tx hash")),
+                SubCommand::with_name("get_cells_by_lock_hash")
+                    .about("Get cells by lock script hash")
+                    .arg(arg_hash.clone().help("Lock hash"))
+                    .arg(
+                        Arg::with_name("from")
+                            .long("from")
+                            .takes_value(true)
+                            .required(true)
+                            .help("From block number"),
+                    )
+                    .arg(
+                        Arg::with_name("to")
+                            .long("to")
+                            .takes_value(true)
+                            .required(true)
+                            .help("To block number"),
+                    ),
+                SubCommand::with_name("get_live_cell")
+                    .about("Get live cell (live means unspent)")
+                    .arg(arg_hash.clone().required(false).help("Block hash"))
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .required(true)
+                            .help("Tx hash"),
+                    )
+                    .arg(
+                        Arg::with_name("index")
+                            .long("index")
+                            .takes_value(true)
+                            .required(true)
+                            .help("Output index"),
+                    ),
+                SubCommand::with_name("get_current_epoch").about("Get current epoch information"),
+                SubCommand::with_name("get_epoch_by_number")
+                    .about("Get epoch information by epoch number")
+                    .arg(arg_number.clone().help("Epoch number")),
+                SubCommand::with_name("local_node_info").about("Get local node information"),
+                SubCommand::with_name("tx_pool_info").about("Get transaction pool information"),
+                SubCommand::with_name("get_peers").about("Get connected peers"),
+            ])
     }
 }
 
@@ -158,6 +171,15 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let resp = self
                     .rpc_client
                     .get_current_epoch()
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(Box::new(resp))
+            }
+            ("get_epoch_by_number", Some(m)) => {
+                let number = from_matches(m, "number");
+                let resp = self
+                    .rpc_client
+                    .get_epoch_by_number(number)
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))

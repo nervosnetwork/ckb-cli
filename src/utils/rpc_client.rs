@@ -1,8 +1,8 @@
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
 pub use jsonrpc_types::{
-    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, EpochExt, HeaderView, Node,
-    OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
+    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, EpochExt, EpochNumber,
+    HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -23,6 +23,9 @@ pub struct OptionBlockView(pub Option<BlockView>);
 #[derive(Serialize, Deserialize)]
 pub struct OptionH256(pub Option<H256>);
 
+#[derive(Serialize, Deserialize)]
+pub struct OptionEpochExt(pub Option<EpochExt>);
+
 jsonrpc_client!(pub struct RpcClient {
     pub fn local_node_info(&mut self) -> RpcRequest<Node>;
     pub fn get_peers(&mut self) -> RpcRequest<Nodes>;
@@ -37,6 +40,7 @@ jsonrpc_client!(pub struct RpcClient {
 
     pub fn get_tip_header(&mut self) -> RpcRequest<HeaderView>;
     pub fn get_current_epoch(&mut self) -> RpcRequest<EpochExt>;
+    pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> RpcRequest<OptionEpochExt>;
     pub fn get_block(&mut self, hash: H256) -> RpcRequest<OptionBlockView>;
     pub fn get_block_hash(&mut self, number: BlockNumber) -> RpcRequest<OptionH256>;
     pub fn get_block_by_number(&mut self, number: BlockNumber) -> RpcRequest<OptionBlockView>;

@@ -1,6 +1,35 @@
 # ckb-cli
 CKB command line tool
 
+## Features
+```
+>> rpc: Invoke RPC call to node
+
+    get_tip_header            Get tip header
+    get_block                 Get block content by hash
+    get_block_hash            Get block hash by block number
+    get_block_by_number       Get block content by block number
+    get_transaction           Get transaction content by transaction hash
+    get_cells_by_lock_hash    Get cells by lock script hash
+    get_live_cell             Get live cell (live means unspent)
+    get_current_epoch         Get current epoch information
+    get_epoch_by_number       Get epoch information by epoch number
+    local_node_info           Get local node information
+    tx_pool_info              Get transaction pool information
+    get_peers                 Get connected peers
+    
+
+>> wallet: tranfer / query balance(with local index) / key utils
+
+    transfer        Transfer capacity to a address (can have data)
+    get-capacity    Get capacity by lock script hash
+    get-balance     Get balance by address (balance is capacity)
+    top             Show top n capacity owned by lock script hash
+    generate-key    Generate a random secp256k1 privkey and save to file (print block_assembler config)
+    key-info        Show public information of a secp256k1 private key (file)
+
+```
+
 ## Build this project
 ```
 cargo build
@@ -14,40 +43,18 @@ Better export an env first (or give in argument)
 export API_URL=http://127.0.0.1:8114
 ```
 
+Directly go to **gorgeous** interactive mode:
+
+```
+ckb-cli
+```
+
 Show available commands
 ``` shell
 # Top level help doc
 ./target/debug/ckb-cli --help
 # RPC help doc
 ./target/debug/ckb-cli rpc --help
-```
-
-
-**RPC help doc:**
-```
-$ ./target/debug/ckb-cli rpc --help
-ckb-cli-rpc
-
-USAGE:
-    ckb-cli rpc [SUBCOMMAND]
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-SUBCOMMANDS:
-    get_block
-    get_block_hash
-    get_cells_by_lock_hash
-    get_current_epoch
-    get_epoch_by_number
-    get_live_cell
-    get_peers
-    get_tip_header
-    get_transaction
-    help                      Prints this message or the help of the given subcommand(s)
-    local_node_info
-    tx_pool_info
 ```
 
 ### Example: Get tip header

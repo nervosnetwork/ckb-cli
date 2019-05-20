@@ -99,7 +99,7 @@ pub fn build_cli(version: &str) -> App {
 pub fn build_interactive() -> App<'static, 'static> {
     App::new("interactive")
         .version(crate_version!())
-        .setting(AppSettings::NoBinaryName)
+        .global_setting(AppSettings::NoBinaryName)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
         .global_setting(AppSettings::DisableVersion)
