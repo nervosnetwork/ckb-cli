@@ -629,8 +629,10 @@ pub fn start_index_thread(
             }
 
             while tip_header.inner.number.0 - 4 > db.last_number() {
-                if try_recv(&receiver, &mut db) {
-                    break;
+                if db_ready.load(Ordering::SeqCst) {
+                    if try_recv(&receiver, &mut db) {
+                        break;
+                    }
                 }
                 let next_block = rpc_client
                     .get_block_by_number(db.next_number())
