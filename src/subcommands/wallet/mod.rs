@@ -726,7 +726,7 @@ pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
                 log::debug!("Update to tip {}", tip_header.inner.number.0);
             }
 
-            while tip_header.inner.number.0 - 4 > db.last_number() {
+            while tip_header.inner.number.0.saturating_sub(4) > db.last_number() {
                 if state.read().is_processing() {
                     if try_recv(&receiver, &mut db) {
                         state.write().stop();
@@ -764,7 +764,7 @@ pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
 
             // TODO: the saving logic is wrong
             log::debug!("> Height not enought, waiting...");
-            if tip_header.inner.number.0 - last_saved_number > 100 {
+            if tip_header.inner.number.0.saturating_sub(last_saved_number) > 100 {
                 log::info!(
                     "{} utxo removed, {} utxo added, saving to file",
                     removed_in_loop,
