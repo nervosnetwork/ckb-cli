@@ -3,6 +3,7 @@ use std::env;
 use std::iter::FromIterator;
 use std::process;
 
+use build_info::Version;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
 use subcommands::{start_index_thread, CliSubCommand, RpcSubCommand, WalletSubCommand};
@@ -14,15 +15,15 @@ mod interactive;
 mod subcommands;
 mod utils;
 
-include!(concat!(env!("OUT_DIR"), "/build_info.rs"));
-
 const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
 
 fn main() {
     env_logger::init();
 
-    let version = format!("{}+{}", crate_version!(), get_commit_id());
-    let matches = build_cli(version.as_str()).get_matches();
+    let version = get_version();
+    let version_short = version.short();
+    let version_long = version.long();
+    let matches = build_cli(&version_short, &version_long).get_matches();
 
     let mut env_map: HashMap<String, String> = HashMap::from_iter(env::vars());
     let api_uri = matches
@@ -72,9 +73,43 @@ fn main() {
     }
 }
 
-pub fn build_cli(version: &str) -> App {
+fn get_version() -> Version {
+    let major = env!("CARGO_PKG_VERSION_MAJOR")
+        .parse::<u8>()
+        .expect("CARGO_PKG_VERSION_MAJOR parse success");
+    let minor = env!("CARGO_PKG_VERSION_MINOR")
+        .parse::<u8>()
+        .expect("CARGO_PKG_VERSION_MINOR parse success");
+    let patch = env!("CARGO_PKG_VERSION_PATCH")
+        .parse::<u16>()
+        .expect("CARGO_PKG_VERSION_PATCH parse success");
+    let dash_pre = {
+        let pre = env!("CARGO_PKG_VERSION_PRE");
+        if pre == "" {
+            pre.to_string()
+        } else {
+            "-".to_string() + pre
+        }
+    };
+
+    let commit_describe = option_env!("COMMIT_DESCRIBE").map(ToString::to_string);
+    #[cfg(docker)]
+    let commit_describe = commit_describe.map(|s| s.replace("-dirty", ""));
+    let commit_date = option_env!("COMMIT_DATE").map(ToString::to_string);
+    Version {
+        major,
+        minor,
+        patch,
+        dash_pre,
+        commit_describe,
+        commit_date,
+    }
+}
+
+pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, 'a> {
     App::new("ckb-cli")
-        .version(version)
+        .version(version_short)
+        .long_version(version_long)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
