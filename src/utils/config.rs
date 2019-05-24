@@ -11,8 +11,10 @@ use regex::{Captures, Regex};
 use crate::subcommands::wallet::IndexThreadState;
 use crate::utils::printer::{OutputFormat, Printable};
 
+const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
+
 pub struct GlobalConfig {
-    url: String,
+    url: Option<String>,
     color: bool,
     debug: bool,
     json_format: bool,
@@ -24,7 +26,7 @@ pub struct GlobalConfig {
 }
 
 impl GlobalConfig {
-    pub fn new(url: String, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
+    pub fn new(url: Option<String>, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
         GlobalConfig {
             url,
             color: true,
@@ -102,14 +104,18 @@ impl GlobalConfig {
 
     pub fn set_url(&mut self, value: String) {
         if value.starts_with("http://") || value.starts_with("https://") {
-            self.url = value;
+            self.url = Some(value);
         } else {
-            self.url = "http://".to_owned() + &value;
+            self.url = Some("http://".to_owned() + &value);
         }
     }
 
-    pub fn get_url(&self) -> &String {
-        &self.url
+    pub fn get_url(&self) -> &str {
+        &self
+            .url
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or(DEFAULT_JSONRPC_URL)
     }
 
     pub fn switch_color(&mut self) {
@@ -185,7 +191,7 @@ impl GlobalConfig {
         let edit_style = if self.edit_style { "Emacs" } else { "Vi" };
         let index_state = self.index_state.read().to_string();
         let values = [
-            ("url", self.url.as_str()),
+            ("url", self.get_url()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),

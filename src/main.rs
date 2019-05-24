@@ -1,13 +1,20 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::io::{self, Read};
 use std::iter::FromIterator;
 use std::process;
+use std::sync::Arc;
 
 use build_info::Version;
+use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
-use subcommands::{start_index_thread, CliSubCommand, RpcSubCommand, WalletSubCommand};
+use subcommands::{
+    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
+};
 use url::Url;
+use utils::config::GlobalConfig;
 use utils::printer::Printer;
 use utils::rpc_client::RpcClient;
 
@@ -15,9 +22,7 @@ mod interactive;
 mod subcommands;
 mod utils;
 
-const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
-
-fn main() {
+fn main() -> Result<(), io::Error> {
     env_logger::init();
 
     let version = get_version();
@@ -26,20 +31,41 @@ fn main() {
     let matches = build_cli(&version_short, &version_long).get_matches();
 
     let mut env_map: HashMap<String, String> = HashMap::from_iter(env::vars());
-    let api_uri = matches
+    let api_uri_opt = matches
         .value_of("url")
         .map(|value| value.to_owned())
-        .or_else(|| env_map.remove("API_URL"))
-        .unwrap_or_else(|| DEFAULT_JSONRPC_URL.to_owned());
+        .or_else(|| env_map.remove("API_URL"));
 
-    let mut rpc_client = RpcClient::from_uri(&api_uri);
     let printer = Printer::default();
 
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
     ckb_cli_dir.push(".ckb-cli");
     let mut index_file = ckb_cli_dir.clone();
     index_file.push("utxo-index.db");
-    let index_controller = start_index_thread(&api_uri, index_file);
+    let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
+
+    let mut config = GlobalConfig::new(api_uri_opt, Arc::clone(&index_state));
+    let mut config_file = ckb_cli_dir.clone();
+    config_file.push("config");
+
+    if config_file.as_path().exists() {
+        let mut file = fs::File::open(&config_file)?;
+        let mut content = String::new();
+        file.read_to_string(&mut content)?;
+        let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
+        if let Some(value) = configs["url"].as_str() {
+            config.set_url(value.to_string());
+        }
+        config.set_debug(configs["debug"].as_bool().unwrap_or(false));
+        config.set_color(configs["color"].as_bool().unwrap_or(true));
+        config.set_json_format(configs["json_format"].as_bool().unwrap_or(true));
+        config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
+        config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
+    }
+
+    let api_uri = config.get_url().to_string();
+    let index_controller = start_index_thread(api_uri.as_str(), index_file, index_state);
+    let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
@@ -48,7 +74,7 @@ fn main() {
                 .process(&sub_matches)
         }
         _ => {
-            if let Err(err) = interactive::start(&api_uri, ckb_cli_dir, index_controller.clone()) {
+            if let Err(err) = interactive::start(ckb_cli_dir, config, index_controller.clone()) {
                 eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
                 index_controller.shutdown();
                 process::exit(1);
@@ -71,6 +97,7 @@ fn main() {
             process::exit(1);
         }
     }
+    Ok(())
 }
 
 fn get_version() -> Version {

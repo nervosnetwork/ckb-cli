@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::PathBuf;
 
 use ansi_term::Colour::{Blue, Green};
@@ -23,9 +23,11 @@ use crate::utils::rpc_client::HttpRpcClient;
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
 /// Interactive command line
-pub fn start(url: &str, ckb_cli_dir: PathBuf, index_controller: IndexController) -> io::Result<()> {
-    let mut config = GlobalConfig::new(url.to_string(), index_controller.state().clone());
-
+pub fn start(
+    ckb_cli_dir: PathBuf,
+    mut config: GlobalConfig,
+    index_controller: IndexController,
+) -> io::Result<()> {
     if !ckb_cli_dir.as_path().exists() {
         fs::create_dir(&ckb_cli_dir)?;
     }
@@ -34,21 +36,6 @@ pub fn start(url: &str, ckb_cli_dir: PathBuf, index_controller: IndexController)
     let history_file = history_file.to_str().unwrap();
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
-
-    if config_file.as_path().exists() {
-        let mut file = fs::File::open(&config_file)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-        let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
-        if let Some(value) = configs["url"].as_str() {
-            config.set_url(value.to_string());
-        }
-        config.set_debug(configs["debug"].as_bool().unwrap_or(false));
-        config.set_color(configs["color"].as_bool().unwrap_or(true));
-        config.set_json_format(configs["json_format"].as_bool().unwrap_or(true));
-        config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
-        config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
-    }
 
     let mut env_file = ckb_cli_dir.clone();
     env_file.push("env_vars");
@@ -196,6 +183,7 @@ fn handle_command(
         Ok(matches) => match matches.subcommand() {
             ("config", Some(m)) => {
                 m.value_of("url").and_then(|url| {
+                    Request::call(&index_sender, IndexRequest::UpdateUrl(url.to_string()));
                     config.set_url(url.to_string());
                     *rpc_client = HttpRpcClient::from_uri(config.get_url());
                     Some(())

@@ -532,6 +532,7 @@ impl<'a> TransactionArgs<'a> {
 }
 
 pub enum IndexRequest {
+    UpdateUrl(String),
     GetUtxoInfos {
         address: Address,
         total_capacity: u64,
@@ -668,7 +669,7 @@ impl IndexController {
     pub fn shutdown(&self) {
         let start_time = Instant::now();
         let _ = Request::call(&self.sender, IndexRequest::Shutdown);
-        while !self.state.read().is_stopped() {
+        while !self.state().read().is_stopped() {
             if start_time.elapsed() < Duration::from_secs(10) {
                 thread::sleep(Duration::from_millis(50));
             } else {
@@ -679,10 +680,13 @@ impl IndexController {
     }
 }
 
-pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
+pub fn start_index_thread(
+    url: &str,
+    index_file: PathBuf,
+    state: Arc<RwLock<IndexThreadState>>,
+) -> IndexController {
     let url = url.to_owned();
     let (sender, receiver) = crossbeam_channel::bounded::<Request<IndexRequest, IndexResponse>>(1);
-    let state = Arc::new(RwLock::new(IndexThreadState::default()));
     let state_clone = Arc::clone(&state);
 
     thread::spawn(move || {
@@ -739,7 +743,7 @@ pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
 
             while tip_header.inner.number.0.saturating_sub(4) > db.last_number() {
                 if state.read().is_processing() {
-                    if try_recv(&receiver, &mut db) {
+                    if try_recv(&receiver, &mut db, &mut rpc_client) {
                         state.write().stop();
                         break;
                     }
@@ -758,12 +762,12 @@ pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
 
             if first_request
                 .take()
-                .map(|request| process_request(request, &mut db))
+                .map(|request| process_request(request, &mut db, &mut rpc_client))
                 .unwrap_or(false)
             {
                 break;
             }
-            if try_recv(&receiver, &mut db) {
+            if try_recv(&receiver, &mut db, &mut rpc_client) {
                 state.write().stop();
                 break;
             }
@@ -805,9 +809,10 @@ pub fn start_index_thread(url: &str, index_file: PathBuf) -> IndexController {
 fn try_recv(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
     db: &mut UtxoDatabase,
+    rpc_client: &mut HttpRpcClient,
 ) -> bool {
     match receiver.try_recv() {
-        Ok(request) => process_request(request, db),
+        Ok(request) => process_request(request, db, rpc_client),
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
@@ -819,12 +824,20 @@ fn try_recv(
     }
 }
 
-fn process_request(request: Request<IndexRequest, IndexResponse>, db: &mut UtxoDatabase) -> bool {
+fn process_request(
+    request: Request<IndexRequest, IndexResponse>,
+    db: &mut UtxoDatabase,
+    rpc_client: &mut HttpRpcClient,
+) -> bool {
     let Request {
         responder,
         arguments,
     } = request;
     match arguments {
+        IndexRequest::UpdateUrl(url) => {
+            *rpc_client = HttpRpcClient::from_uri(url.as_str());
+            responder.send(IndexResponse::Ok).is_err()
+        }
         IndexRequest::GetUtxoInfos {
             address,
             total_capacity,
