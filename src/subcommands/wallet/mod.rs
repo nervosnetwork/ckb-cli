@@ -42,7 +42,7 @@ pub use index::{
 };
 
 const ONE_CKB: u64 = 10000_0000;
-const MIN_CELL_CAPACITY: u64 = 40 * ONE_CKB;
+const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
 
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]
@@ -214,6 +214,18 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 if unit == "CKB" {
                     capacity *= ONE_CKB;
                 }
+                if capacity < MIN_SECP_CELL_CAPACITY {
+                    return Err(format!(
+                        "Capacity can not less than {} shannons",
+                        MIN_SECP_CELL_CAPACITY
+                    ));
+                }
+                if capacity < MIN_SECP_CELL_CAPACITY + to_data.len() as u64 {
+                    return Err(format!(
+                        "Capacity can not hold {} bytes of data",
+                        to_data.len()
+                    ));
+                }
 
                 let from_privkey = privkey_from_file(privkey_path.as_str())?;
                 let from_pubkey = from_privkey.pubkey().unwrap();
@@ -221,7 +233,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                 let request = IndexRequest::GetUtxoInfos {
                     address: from_address.clone(),
-                    total_capacity: capacity + MIN_CELL_CAPACITY,
+                    total_capacity: capacity,
                 };
                 match Request::call(&self.index_sender, request).unwrap() {
                     IndexResponse::UtxoInfos {
@@ -230,7 +242,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         ..
                     } => {
                         let total_capacity = total_capacity.unwrap_or(0);
-                        if total_capacity < capacity + MIN_CELL_CAPACITY {
+                        if total_capacity < capacity {
                             return Err(format!(
                                 "Capacity not enough: {} => {}",
                                 from_address.to_string(NetworkType::TestNet),
@@ -457,7 +469,7 @@ pub struct TransactionArgs<'a> {
 
 impl<'a> TransactionArgs<'a> {
     fn build(&self, input_infos: Vec<Arc<UtxoInfo>>, secp_dep: CoreOutPoint) -> Transaction {
-        assert!(self.from_capacity >= self.to_capacity + MIN_CELL_CAPACITY);
+        assert!(self.from_capacity >= self.to_capacity);
 
         let inputs = input_infos
             .iter()
@@ -474,9 +486,8 @@ impl<'a> TransactionArgs<'a> {
             type_: None,
         }];
         from_capacity -= self.to_capacity;
-        from_capacity -= MIN_CELL_CAPACITY;
 
-        if from_capacity > MIN_CELL_CAPACITY {
+        if from_capacity > MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
             outputs.push(CoreCellOutput {
                 capacity: Capacity::shannons(from_capacity),
