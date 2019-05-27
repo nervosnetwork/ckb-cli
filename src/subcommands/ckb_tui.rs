@@ -36,11 +36,10 @@ impl<'a> TuiSubCommand<'a> {
         terminal.hide_cursor().map_err(|err| err.to_string())?;
 
         let events = Events::new();
-        let mut menu_active = true;
-
         // App
         let mut app = App {
-            tabs: TabsState::new(vec!["Summary       ", "Recent Blocks ", "Peers         "]),
+            menu_active: true,
+            tabs: TabsState::new(vec!["Summary", "Recent Blocks", "Peers"]),
         };
 
         // Main loop
@@ -63,7 +62,7 @@ impl<'a> TuiSubCommand<'a> {
 
                     let banner_block = Block::default().borders(Borders::ALL);
                     let texts = [
-                        Text::raw("<"),
+                        Text::raw(" <"),
                         Text::styled("testnet", Style::default().fg(Color::Green)),
                         Text::raw("> "),
                         Text::styled(
@@ -84,7 +83,7 @@ impl<'a> TuiSubCommand<'a> {
                         // .bg(Color::LightBlue)
                         .fg(Color::Black)
                         .modifier(Modifier::BOLD);
-                    if menu_active {
+                    if app.menu_active {
                         menu_block = menu_block
                             .border_style(Style::default().fg(Color::Green))
                             .title_style(Style::default().modifier(Modifier::BOLD));
@@ -92,18 +91,18 @@ impl<'a> TuiSubCommand<'a> {
                     }
                     SelectableList::default()
                         .block(menu_block)
-                        .items(&app.tabs.titles)
+                        .items(&app.tabs.fixed_titles())
                         .select(Some(app.tabs.index))
                         .highlight_style(highlight_style)
                         .render(&mut f, menu_chunks[0]);
                     // Menu doc
                     let docs = vec![
                         Text::raw("\n"),
-                        Text::styled("Quit : ", Style::default().modifier(Modifier::BOLD)),
-                        Text::raw("Q"),
+                        Text::styled("Quit ", Style::default().modifier(Modifier::BOLD)),
+                        Text::raw(": Q"),
                         Text::raw("\n"),
-                        Text::styled("Help : ", Style::default().modifier(Modifier::BOLD)),
-                        Text::raw("?"),
+                        Text::styled("Help ", Style::default().modifier(Modifier::BOLD)),
+                        Text::raw(": ?"),
                         Text::raw("\n"),
                     ];
                     Paragraph::new(docs.iter())
@@ -115,7 +114,7 @@ impl<'a> TuiSubCommand<'a> {
                     let mut content_block = Block::default()
                         .title(app.tabs.titles[app.tabs.index].trim())
                         .borders(Borders::ALL);
-                    if !menu_active {
+                    if !app.menu_active {
                         content_block = content_block
                             .border_style(Style::default().fg(Color::Green))
                             .title_style(Style::default().modifier(Modifier::BOLD));
@@ -135,18 +134,18 @@ impl<'a> TuiSubCommand<'a> {
                         break;
                     }
                     Key::Left | Key::Char('h') => {
-                        menu_active = true;
+                        app.menu_active = true;
                     }
                     Key::Right | Key::Char('l') => {
-                        menu_active = false;
+                        app.menu_active = false;
                     }
                     Key::Down | Key::Char('j') => {
-                        if menu_active {
+                        if app.menu_active {
                             app.tabs.next();
                         }
                     }
                     Key::Up | Key::Char('k') => {
-                        if menu_active {
+                        if app.menu_active {
                             app.tabs.previous();
                         }
                     }
@@ -161,6 +160,47 @@ impl<'a> TuiSubCommand<'a> {
 
 fn render_summary<B: Backend>(block: &mut Block, frame: &mut Frame<B>, area: Rect) {
     block.render(frame, area);
+}
+
+struct App {
+    menu_active: bool,
+    tabs: TabsState,
+}
+
+pub struct TabsState {
+    pub titles: Vec<String>,
+    pub index: usize,
+}
+
+impl TabsState {
+    pub fn new(titles: Vec<&str>) -> TabsState {
+        let titles = titles.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        TabsState { titles, index: 0 }
+    }
+    pub fn fixed_titles(&self) -> Vec<String> {
+        let max_length = self
+            .titles
+            .iter()
+            .map(|title| title.len())
+            .max()
+            .unwrap_or(0)
+            + 1;
+        self.titles
+            .iter()
+            .map(|title| format!("{:^width$}", title, width = max_length))
+            .collect::<Vec<_>>()
+    }
+    pub fn next(&mut self) {
+        self.index = (self.index + 1) % self.titles.len();
+    }
+
+    pub fn previous(&mut self) {
+        if self.index > 0 {
+            self.index -= 1;
+        } else {
+            self.index = self.titles.len() - 1;
+        }
+    }
 }
 
 pub enum Event<I> {
@@ -238,31 +278,5 @@ impl Events {
 
     pub fn next(&self) -> Result<Event<Key>, mpsc::RecvError> {
         self.rx.recv()
-    }
-}
-
-struct App<'a> {
-    tabs: TabsState<'a>,
-}
-
-pub struct TabsState<'a> {
-    pub titles: Vec<&'a str>,
-    pub index: usize,
-}
-
-impl<'a> TabsState<'a> {
-    pub fn new(titles: Vec<&'a str>) -> TabsState {
-        TabsState { titles, index: 0 }
-    }
-    pub fn next(&mut self) {
-        self.index = (self.index + 1) % self.titles.len();
-    }
-
-    pub fn previous(&mut self) {
-        if self.index > 0 {
-            self.index -= 1;
-        } else {
-            self.index = self.titles.len() - 1;
-        }
     }
 }
