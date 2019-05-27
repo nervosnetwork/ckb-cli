@@ -11,7 +11,8 @@ use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
+    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, TuiSubCommand,
+    WalletSubCommand,
 };
 use url::Url;
 use utils::config::GlobalConfig;
@@ -68,6 +69,7 @@ fn main() -> Result<(), io::Error> {
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {
+        ("tui", _) => TuiSubCommand::new(&mut rpc_client).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
             WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())
@@ -139,6 +141,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .long_version(version_long)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
+        .subcommand(SubCommand::with_name("tui").about("Entry TUI mode"))
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
         .arg(

@@ -1,6 +1,8 @@
+pub mod ckb_tui;
 pub mod rpc;
 pub mod wallet;
 
+pub use ckb_tui::TuiSubCommand;
 pub use rpc::RpcSubCommand;
 pub use wallet::{
     start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,

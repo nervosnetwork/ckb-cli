@@ -702,7 +702,7 @@ pub fn start_index_thread(
                 Some(request)
             }
             Err(err) => {
-                log::error!("index db receiver error: {:?}", err);
+                log::debug!("index db receiver error: {:?}", err);
                 None
             }
         };

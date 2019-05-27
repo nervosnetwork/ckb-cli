@@ -15,8 +15,8 @@ ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 occupied-capacity = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
+build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 
 secp256k1 = {version = "0.12.2" }
 faster-hex = "0.3"
@@ -39,6 +39,8 @@ url = "1.7.2"
 log = "0.4.6"
 bech32 = "0.6.0"
 fs2 = "0.4.3"
+tui = "0.6.0"
+termion = "1.5"
 
 [build-dependencies]
 build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
