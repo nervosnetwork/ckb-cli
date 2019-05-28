@@ -695,19 +695,21 @@ pub fn start_index_thread(
 
     thread::spawn(move || {
         let mut first_request = match receiver.recv() {
-            Ok(request) => {
-                match request.arguments {
-                    IndexRequest::UpdateUrl(ref url) => {
-                        rpc_url = url.clone();
-                    }
-                    IndexRequest::Shutdown => {
-                        state.write().stop();
+            Ok(request) => match request.arguments {
+                IndexRequest::UpdateUrl(ref url) => {
+                    rpc_url = url.clone();
+                    if let Err(err) = request.responder.send(IndexResponse::Ok) {
+                        log::debug!("response first change url failed {:?}", err);
                         return;
-                    }
-                    _ => {}
+                    };
+                    None
                 }
-                Some(request)
-            }
+                IndexRequest::Shutdown => {
+                    state.write().stop();
+                    return;
+                }
+                _ => Some(request),
+            },
             Err(err) => {
                 log::debug!("index db receiver error: {:?}", err);
                 None
