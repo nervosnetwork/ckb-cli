@@ -689,7 +689,7 @@ pub fn start_index_thread(
     index_file: PathBuf,
     state: Arc<RwLock<IndexThreadState>>,
 ) -> IndexController {
-    let url = url.to_owned();
+    let mut rpc_url = url.to_owned();
     let (sender, receiver) = crossbeam_channel::bounded::<Request<IndexRequest, IndexResponse>>(1);
     let state_clone = Arc::clone(&state);
 
@@ -697,6 +697,9 @@ pub fn start_index_thread(
         let mut first_request = match receiver.recv() {
             Ok(request) => {
                 match request.arguments {
+                    IndexRequest::UpdateUrl(ref url) => {
+                        rpc_url = url.clone();
+                    }
                     IndexRequest::Shutdown => {
                         state.write().stop();
                         return;
@@ -711,7 +714,7 @@ pub fn start_index_thread(
             }
         };
         state.write().start_init();
-        let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
+        let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
         let genesis_block = rpc_client
             .get_block_by_number(BlockNumber(0))
             .call()
