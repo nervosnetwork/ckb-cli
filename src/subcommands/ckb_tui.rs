@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
 use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ckb_core::header::Header;
 use ckb_util::RwLock;
@@ -177,57 +177,76 @@ fn render_summary<B: Backend>(state: &State, ctx: ContentContext<B>) {
         peer_count,
     } = state.summary();
     let mut lines = vec![Text::raw("\n")];
-    let mut push_pair = |name: &str, content: Option<String>| {
+    let mut push_pair = |name: &str, content_opt: Option<String>, style_opt: Option<Style>| {
         lines.push(Text::styled(
             format!("{} ", name),
             Style::default().modifier(Modifier::BOLD),
         ));
-        lines.push(Text::raw(format!(
-            ": {}",
-            content.unwrap_or("<unknown>".to_string())
-        )));
+
+        let content = content_opt.unwrap_or("<unknown>".to_string());
+        if let Some(style) = style_opt {
+            lines.push(Text::raw(": "));
+            lines.push(Text::styled(content, style));
+        } else {
+            lines.push(Text::raw(format!(": {}", content)));
+        }
         lines.push(Text::raw("\n"));
     };
-    push_pair(
-        " Chain     ",
-        chain.as_ref().map(|info| info.chain.to_string()),
-    );
-    push_pair(
-        " Epoch     ",
-        chain.as_ref().map(|info| info.epoch.0.to_string()),
-    );
-    push_pair(
-        " Difficulty",
-        chain.as_ref().map(|info| info.difficulty.to_string()),
-    );
-    push_pair(
-        " IBD       ",
-        chain
-            .as_ref()
-            .map(|info| info.is_initial_block_download.to_string()),
-    );
-    push_pair(
-        " Warnings  ",
-        chain.as_ref().map(|info| info.warnings.to_string()),
-    );
-    push_pair(
-        " Tip       ",
-        tip.map(|block| format!("{} => {}", block.header.number(), block.header.hash())),
-    );
-    push_pair(
-        " TxPool    ",
-        tx_pool.map(|info| {
-            format!(
-                "pending={},proposed={},orphan={}",
-                info.pending.0, info.proposed.0, info.orphan.0,
-            )
-        }),
-    );
-    push_pair(" Peers     ", Some(format!("{}", peer_count)));
+
+    let chain_name = chain.as_ref().map(|info| info.chain.to_string());
+    let epoch = chain.as_ref().map(|info| info.epoch.0.to_string());
+    let difficulty = chain.as_ref().map(|info| info.difficulty.to_string());
+    let ibd = chain
+        .as_ref()
+        .map(|info| info.is_initial_block_download.to_string());
+    let warnings = chain.as_ref().and_then(|info| {
+        if info.warnings.is_empty() {
+            None
+        } else {
+            Some(info.warnings.to_string())
+        }
+    });
+    let tip_info = tip
+        .as_ref()
+        .map(|block| format!("{} => {}", block.header.number(), block.header.hash()));
+    let tx_pool_info = tx_pool.map(|info| {
+        format!(
+            "pending={}, proposed={}, orphan={}",
+            info.pending.0, info.proposed.0, info.orphan.0,
+        )
+    });
+    let peers_count = Some(format!("{}", peer_count));
+
+    let tip_style = tip.as_ref().and_then(|block| {
+        if ts_now().saturating_sub(block.got_at) < 2000 {
+            Some(Style::default().fg(Color::Black).bg(Color::LightBlue))
+        } else {
+            None
+        }
+    });
+    let warn_style = Style::default().fg(Color::Yellow).modifier(Modifier::BOLD);
+    push_pair(" Chain     ", chain_name, None);
+    push_pair(" Epoch     ", epoch, None);
+    push_pair(" Difficulty", difficulty, None);
+    push_pair(" IBD       ", ibd, None);
+    push_pair(" Tip Block ", tip_info, tip_style);
+    push_pair(" TxPool    ", tx_pool_info, None);
+    push_pair(" Peers     ", peers_count, None);
+    if warnings.is_some() {
+        push_pair(" Warnings  ", warnings, Some(warn_style));
+    }
+
     Paragraph::new(lines.iter())
         .block(ctx.block)
         .alignment(Alignment::Left)
         .render(ctx.frame, ctx.rect);
+}
+
+fn ts_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis() as u64
 }
 
 struct ContentContext<'a, 'b, B: Backend> {
@@ -317,6 +336,7 @@ pub struct SummaryInfo {
 #[derive(Clone, Debug)]
 pub struct BlockInfo {
     header: Header,
+    got_at: u64,
     uncle_count: usize,
     commit_tx_count: usize,
     proposal_tx_count: usize,
@@ -338,8 +358,10 @@ impl From<BlockView> for BlockInfo {
             input_count += tx.inner.inputs.len();
             output_count += tx.inner.outputs.len();
         }
+        let got_at = ts_now();
         BlockInfo {
             header,
+            got_at,
             uncle_count,
             commit_tx_count,
             proposal_tx_count,
