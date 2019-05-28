@@ -307,7 +307,7 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
             Text::raw(format!("{}:", node.node_id,)),
             Text::raw(format!(
                 "  {}, {}, version({})",
-                node.version, direction, node.addresses[0].address,
+                node.addresses[0].address, direction, node.version,
             )),
         ]
     });
