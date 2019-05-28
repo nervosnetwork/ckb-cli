@@ -1,8 +1,12 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
+use ckb_core::header::Header;
+use ckb_util::RwLock;
+use jsonrpc_types::{BlockView, ChainInfo, Node, TxPoolInfo};
 use termion::event::Key;
 use termion::input::{MouseTerminal, TermRead};
 use termion::raw::IntoRawMode;
@@ -16,13 +20,13 @@ use tui::{Frame, Terminal};
 use crate::utils::printer::Printable;
 use crate::utils::rpc_client::HttpRpcClient;
 
-pub struct TuiSubCommand<'a> {
-    rpc_client: &'a mut HttpRpcClient,
+pub struct TuiSubCommand {
+    url: String,
 }
 
-impl<'a> TuiSubCommand<'a> {
-    pub fn new(rpc_client: &'a mut HttpRpcClient) -> TuiSubCommand<'a> {
-        TuiSubCommand { rpc_client }
+impl TuiSubCommand {
+    pub fn new(url: String) -> TuiSubCommand {
+        TuiSubCommand { url }
     }
 
     pub fn start(self) -> Result<Box<dyn Printable>, String> {
@@ -36,6 +40,8 @@ impl<'a> TuiSubCommand<'a> {
         terminal.hide_cursor().map_err(|err| err.to_string())?;
 
         let events = Events::new();
+        let state = Arc::new(RwLock::new(State::default()));
+        start_rpc_thread(self.url, Arc::clone(&state));
         // App
         let mut app = App {
             menu_active: true,
@@ -119,10 +125,15 @@ impl<'a> TuiSubCommand<'a> {
                             .border_style(Style::default().fg(Color::Green))
                             .title_style(Style::default().modifier(Modifier::BOLD));
                     }
+                    let content_context = ContentContext {
+                        block: content_block,
+                        frame: &mut f,
+                        rect: body_chunks[1],
+                    };
                     match app.tabs.index {
-                        0 => render_summary(&mut content_block, &mut f, body_chunks[1]),
-                        1 => content_block.render(&mut f, body_chunks[1]),
-                        2 => content_block.render(&mut f, body_chunks[1]),
+                        0 => render_summary(&state.read(), content_context),
+                        1 => {}
+                        2 => {}
                         _ => {}
                     }
                 })
@@ -158,13 +169,185 @@ impl<'a> TuiSubCommand<'a> {
     }
 }
 
-fn render_summary<B: Backend>(block: &mut Block, frame: &mut Frame<B>, area: Rect) {
-    block.render(frame, area);
+fn render_summary<B: Backend>(state: &State, ctx: ContentContext<B>) {
+    let SummaryInfo {
+        chain,
+        tip,
+        tx_pool,
+        peer_count,
+    } = state.summary();
+    let mut lines = vec![Text::raw("\n")];
+    let mut push_pair = |name: &str, content: Option<String>| {
+        lines.push(Text::styled(
+            format!("{} ", name),
+            Style::default().modifier(Modifier::BOLD),
+        ));
+        lines.push(Text::raw(format!(
+            ": {}",
+            content.unwrap_or("<unknown>".to_string())
+        )));
+        lines.push(Text::raw("\n"));
+    };
+    push_pair(
+        " Chain     ",
+        chain.as_ref().map(|info| info.chain.to_string()),
+    );
+    push_pair(
+        " Epoch     ",
+        chain.as_ref().map(|info| info.epoch.0.to_string()),
+    );
+    push_pair(
+        " Difficulty",
+        chain.as_ref().map(|info| info.difficulty.to_string()),
+    );
+    push_pair(
+        " IBD       ",
+        chain
+            .as_ref()
+            .map(|info| info.is_initial_block_download.to_string()),
+    );
+    push_pair(
+        " Warnings  ",
+        chain.as_ref().map(|info| info.warnings.to_string()),
+    );
+    push_pair(
+        " Tip       ",
+        tip.map(|block| format!("{} => {}", block.header.number(), block.header.hash())),
+    );
+    push_pair(
+        " TxPool    ",
+        tx_pool.map(|info| {
+            format!(
+                "pending={},proposed={},orphan={}",
+                info.pending.0, info.proposed.0, info.orphan.0,
+            )
+        }),
+    );
+    push_pair(" Peers     ", Some(format!("{}", peer_count)));
+    Paragraph::new(lines.iter())
+        .block(ctx.block)
+        .alignment(Alignment::Left)
+        .render(ctx.frame, ctx.rect);
+}
+
+struct ContentContext<'a, 'b, B: Backend> {
+    block: Block<'a>,
+    frame: &'a mut Frame<'b, B>,
+    rect: Rect,
+}
+
+fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
+    let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
+    thread::spawn(move || loop {
+        let chain_info = rpc_client.get_blockchain_info().call().unwrap();
+        let tx_pool_info = rpc_client.tx_pool_info().call().unwrap();
+        let peers = rpc_client.get_peers().call().unwrap();
+        let tip_header: Header = rpc_client.get_tip_header().call().unwrap().into();
+        let new_block = {
+            if state
+                .read()
+                .tip_header
+                .as_ref()
+                .map(|header| header.hash() != tip_header.hash())
+                .unwrap_or(true)
+            {
+                rpc_client
+                    .get_block(tip_header.hash().clone())
+                    .call()
+                    .unwrap()
+                    .0
+            } else {
+                None
+            }
+        };
+        {
+            let mut state_mut = state.write();
+            state_mut.tip_header = Some(tip_header);
+            state_mut.chain = Some(chain_info);
+            state_mut.tx_pool = Some(tx_pool_info);
+            state_mut.peers = peers.0;
+            if let Some(block) = new_block {
+                let number = block.header.inner.number.0;
+                state_mut.blocks.insert(number, block.into());
+            }
+        }
+        thread::sleep(Duration::from_secs(1));
+    });
 }
 
 struct App {
     menu_active: bool,
     tabs: TabsState,
+}
+
+#[derive(Default)]
+pub struct State {
+    blocks: BTreeMap<u64, BlockInfo>,
+    tip_header: Option<Header>,
+    peers: Vec<Node>,
+    chain: Option<ChainInfo>,
+    tx_pool: Option<TxPoolInfo>,
+}
+
+impl State {
+    pub fn summary(&self) -> SummaryInfo {
+        SummaryInfo {
+            tip: self.blocks.values().last().cloned(),
+            chain: self.chain.as_ref().map(|info| ChainInfo {
+                chain: info.chain.clone(),
+                median_time: info.median_time.clone(),
+                epoch: info.epoch.clone(),
+                difficulty: info.difficulty.clone(),
+                is_initial_block_download: info.is_initial_block_download,
+                warnings: info.warnings.clone(),
+            }),
+            tx_pool: self.tx_pool.clone(),
+            peer_count: self.peers.len(),
+        }
+    }
+}
+
+pub struct SummaryInfo {
+    chain: Option<ChainInfo>,
+    tip: Option<BlockInfo>,
+    tx_pool: Option<TxPoolInfo>,
+    peer_count: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlockInfo {
+    header: Header,
+    uncle_count: usize,
+    commit_tx_count: usize,
+    proposal_tx_count: usize,
+    input_count: usize,
+    output_count: usize,
+    cellbase_capacity: u64,
+}
+
+impl From<BlockView> for BlockInfo {
+    fn from(view: BlockView) -> BlockInfo {
+        let header = view.header.into();
+        let uncle_count = view.uncles.len();
+        let commit_tx_count = view.transactions.len();
+        let proposal_tx_count = view.proposals.len();
+        let cellbase_capacity = view.transactions[0].inner.outputs[0].capacity.0.as_u64();
+        let mut input_count = 0;
+        let mut output_count = 0;
+        for tx in &view.transactions {
+            input_count += tx.inner.inputs.len();
+            output_count += tx.inner.outputs.len();
+        }
+        BlockInfo {
+            header,
+            uncle_count,
+            commit_tx_count,
+            proposal_tx_count,
+            input_count,
+            output_count,
+            cellbase_capacity,
+        }
+    }
 }
 
 pub struct TabsState {

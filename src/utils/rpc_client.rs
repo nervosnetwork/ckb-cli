@@ -1,8 +1,8 @@
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
 pub use jsonrpc_types::{
-    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, EpochExt, EpochNumber,
-    HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
+    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, ChainInfo, EpochExt,
+    EpochNumber, HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
 };
 use serde_derive::{Deserialize, Serialize};
 
@@ -27,6 +27,7 @@ pub struct OptionH256(pub Option<H256>);
 pub struct OptionEpochExt(pub Option<EpochExt>);
 
 jsonrpc_client!(pub struct RpcClient {
+    pub fn get_blockchain_info(&mut self) -> RpcRequest<ChainInfo>;
     pub fn local_node_info(&mut self) -> RpcRequest<Node>;
     pub fn get_peers(&mut self) -> RpcRequest<Nodes>;
     pub fn add_node(&mut self, peer_id: String, address: String) -> RpcRequest<()>;
