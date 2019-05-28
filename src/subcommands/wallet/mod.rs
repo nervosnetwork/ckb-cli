@@ -306,9 +306,11 @@ args = ["{:#x}"]
                     SECP_CODE_HASH,
                     address.hash()
                 );
+
                 let mut resp = json!({
                     "pubkey": pubkey_string,
                     "address": address_string,
+                    "lock_hash": address.lock_script().hash(),
                 });
                 if print_privkey {
                     resp.as_object_mut()
@@ -355,9 +357,11 @@ args = ["{:#x}"]
                     SECP_CODE_HASH,
                     address.hash()
                 );
+
                 let resp = json!({
                     "pubkey": pubkey_string,
                     "address": address_string,
+                    "lock_hash": address.lock_script().hash(),
                 });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
