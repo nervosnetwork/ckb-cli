@@ -3,12 +3,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ckb_core::header::Header;
+use ckb_core::{header::Header, script::Script};
 use ckb_util::RwLock;
 use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
 use crate::utils::rpc_client::HttpRpcClient;
+
+const MAX_SAVE_BLOCKS: usize = 100;
 
 pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
     let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
@@ -58,7 +60,7 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
             }
 
             // Handle init and fork
-            while state_mut.blocks.len() < 10 {
+            while state_mut.blocks.len() < MAX_SAVE_BLOCKS {
                 let first_number = state_mut.blocks.keys().next().cloned().unwrap();
                 if first_number < 1 {
                     break;
@@ -75,7 +77,7 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
                 }
             }
             // Remove old blocks
-            while state_mut.blocks.len() > 10 {
+            while state_mut.blocks.len() > MAX_SAVE_BLOCKS {
                 let first_number = state_mut.blocks.keys().next().cloned().unwrap();
                 state_mut.blocks.remove(&first_number);
             }
@@ -129,7 +131,7 @@ pub struct BlockInfo {
     pub(crate) proposal_tx_count: usize,
     pub(crate) input_count: usize,
     pub(crate) output_count: usize,
-    pub(crate) cellbase_capacity: u64,
+    pub(crate) cellbase_outputs: Vec<(u64, Script)>,
 }
 
 impl From<BlockView> for BlockInfo {
@@ -138,7 +140,12 @@ impl From<BlockView> for BlockInfo {
         let uncle_count = view.uncles.len();
         let commit_tx_count = view.transactions.len();
         let proposal_tx_count = view.proposals.len();
-        let cellbase_capacity = view.transactions[0].inner.outputs[0].capacity.0.as_u64();
+        let cellbase = &view.transactions[0].inner;
+        let cellbase_outputs = cellbase
+            .outputs
+            .iter()
+            .map(|output| (output.capacity.0.as_u64(), output.lock.clone().into()))
+            .collect::<Vec<(u64, Script)>>();
         let mut input_count = 0;
         let mut output_count = 0;
         for tx in &view.transactions {
@@ -154,7 +161,7 @@ impl From<BlockView> for BlockInfo {
             proposal_tx_count,
             input_count,
             output_count,
-            cellbase_capacity,
+            cellbase_outputs,
         }
     }
 }

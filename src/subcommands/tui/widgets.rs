@@ -40,10 +40,10 @@ where
         }
     }
 
-    pub fn block(mut self, block: Block<'b>) -> List<'b, L> {
-        self.block = Some(block);
-        self
-    }
+    // pub fn block(mut self, block: Block<'b>) -> List<'b, L> {
+    //     self.block = Some(block);
+    //     self
+    // }
 }
 
 impl<'b, L> Widget for List<'b, L>

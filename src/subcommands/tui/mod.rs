@@ -4,6 +4,7 @@ mod widgets;
 
 use std::io;
 use std::sync::Arc;
+// use std::collections::BTreeMap;
 
 use ckb_util::RwLock;
 use termion::event::Key;
@@ -13,8 +14,11 @@ use termion::screen::AlternateScreen;
 use tui::backend::{Backend, TermionBackend};
 use tui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use tui::style::{Color, Modifier, Style};
+// use tui::widgets::canvas::{Canvas, Map, MapResolution, Rectangle};
+// use tui::widgets::{Dataset, Axis, Chart, Marker};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
+// use chrono::{Local, DateTime, TimeZone};
 
 use crate::utils::printer::Printable;
 use state::{start_rpc_thread, State, SummaryInfo};
@@ -46,7 +50,7 @@ impl TuiSubCommand {
         // App
         let mut app = App {
             menu_active: true,
-            tabs: TabsState::new(vec!["Summary", "Recent Blocks", "Peers"]),
+            tabs: TabsState::new(vec!["Summary", "Recent Blocks", "Peers", "Top Capacity"]),
         };
 
         // Main loop
@@ -172,10 +176,7 @@ fn render_menu<B: Backend>(app: &App, ctx: RenderContext<B>) {
 
     // Menu
     let mut menu_block = ctx.block.title("Menu");
-    let mut highlight_style = Style::default()
-        // .bg(Color::LightBlue)
-        .fg(Color::Black)
-        .modifier(Modifier::BOLD);
+    let mut highlight_style = Style::default().fg(Color::Black).modifier(Modifier::BOLD);
     if app.menu_active {
         menu_block = menu_block
             .border_style(Style::default().fg(Color::Green))
@@ -188,6 +189,7 @@ fn render_menu<B: Backend>(app: &App, ctx: RenderContext<B>) {
         .select(Some(app.tabs.index))
         .highlight_style(highlight_style)
         .render(ctx.frame, menu_chunks[0]);
+
     // Menu doc
     let docs = vec![
         Text::raw("\n"),
@@ -211,8 +213,10 @@ fn render_summary<B: Backend>(state: &State, ctx: RenderContext<B>) {
         tx_pool,
         peer_count,
     } = state.summary();
-    let mut lines = vec![Text::raw("\n")];
+    let mut length: u16 = 0;
+    let mut lines = vec![];
     let mut push_pair = |name: &str, content_opt: Option<String>, style_opt: Option<Style>| {
+        length += 1;
         lines.push(Text::styled(
             format!("{} ", name),
             Style::default().modifier(Modifier::BOLD),
@@ -271,10 +275,86 @@ fn render_summary<B: Backend>(state: &State, ctx: RenderContext<B>) {
         push_pair(" Warnings  ", warnings, Some(warn_style));
     }
 
+    ctx.block.clone().render(ctx.frame, ctx.rect);
+    let summary_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(length),
+                Constraint::Length(2),
+                Constraint::Min(2),
+            ]
+            .as_ref(),
+        )
+        .split(ctx.rect);
     Paragraph::new(lines.iter())
-        .block(ctx.block)
         .alignment(Alignment::Left)
-        .render(ctx.frame, ctx.rect);
+        .render(ctx.frame, summary_chunks[0]);
+
+    // let now = Local::now();
+    // let five_minutes_ago = now - chrono::Duration::minutes(5);
+    // let ten_minutes_ago = now - chrono::Duration::minutes(10);
+    // let blocks = state.blocks
+    //     .iter()
+    //     .filter(|(_, block)| {
+    //         block.header.timestamp() >= ten_minutes_ago.timestamp_millis() as u64
+    //     })
+    //     .collect::<BTreeMap<_, _>>();
+    // let min_number = blocks.keys().next().map(|n| **n).unwrap_or(0);
+    // let max_number = blocks.keys().rev().next().map(|n| **n).unwrap_or(0);
+    // let mid_number = (min_number + max_number) / 2;
+    // let heights = blocks
+    //     .iter()
+    //     .filter(|(_, block)| {
+    //         block.header.timestamp() >= ten_minutes_ago.timestamp_millis() as u64
+    //     })
+    //     .map(|(number, block)| {
+    //         ((block.header.timestamp() / 1000) as f64, **number as f64)
+    //     })
+    //     .collect::<Vec<_>>();
+    // Chart::default()
+    //     .block(Block::default().borders(Borders::ALL))
+    //     .x_axis(
+    //         Axis::default()
+    //             .title("Time")
+    //             .style(Style::default().fg(Color::Gray))
+    //             .bounds([
+    //                 (ten_minutes_ago.timestamp_millis() / 1000) as f64,
+    //                 (now.timestamp_millis() / 1000) as f64,
+    //             ])
+    //             .labels(&[
+    //                 &format!("{}", ten_minutes_ago.format("%H:%M:%S").to_string()),
+    //                 &format!("{}", five_minutes_ago.format("%H:%M:%S").to_string()),
+    //                 &format!("{}", now.format("%H:%M:%S").to_string()),
+    //             ]),
+    //     )
+    //     .y_axis(
+    //         Axis::default()
+    //             .title("Height")
+    //             .style(Style::default().fg(Color::Gray))
+    //             .bounds([min_number as f64, max_number as f64])
+    //             .labels(&[min_number.to_string(), mid_number.to_string(), max_number.to_string()]),
+    //     )
+    //     .datasets(&[
+    //         Dataset::default()
+    //             .marker(Marker::Dot)
+    //             .style(Style::default().fg(Color::Yellow))
+    //             .data(&heights),
+    //     ])
+    //     .render(ctx.frame, summary_chunks[2]);
+
+    // Canvas::default()
+    //     .paint(|ctx| {
+    //         ctx.draw(&Map {
+    //             color: Color::White,
+    //             resolution: MapResolution::High,
+    //         });
+    //         ctx.print(0.0, 0.0, "x", Color::Yellow);
+    //     })
+    //     .x_bounds([-180.0, 180.0])
+    //     .y_bounds([-90.0, 90.0])
+    //     .render(ctx.frame, summary_chunks[2]);
 }
 
 fn render_blocks<B: Backend>(state: &State, ctx: RenderContext<B>) {
@@ -282,36 +362,68 @@ fn render_blocks<B: Backend>(state: &State, ctx: RenderContext<B>) {
         let header = &block.header;
         vec![
             Text::styled(
-                format!("{} => {:#x}", header.number(), header.hash(),),
+                format!("{} => {:x}", header.number(), header.hash(),),
                 Style::default().modifier(Modifier::BOLD),
             ),
             Text::raw(format!(
-                "  commited={}, proposed={}, uncles={}",
-                block.commit_tx_count, block.proposal_tx_count, block.uncle_count,
+                "  commited={}, proposed={}, uncles={}, inputs={}, outputs={}, cellbase={}",
+                block.commit_tx_count,
+                block.proposal_tx_count,
+                block.uncle_count,
+                block.input_count,
+                block.output_count,
+                block
+                    .cellbase_outputs
+                    .iter()
+                    .map(|(capacity, _)| *capacity)
+                    .sum::<u64>(),
             )),
         ]
     });
-    List::new(blocks)
-        .block(ctx.block)
-        .render(ctx.frame, ctx.rect);
+
+    ctx.block.clone().render(ctx.frame, ctx.rect);
+    let blocks_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(ctx.rect);
+    List::new(blocks).render(ctx.frame, blocks_chunks[0]);
 }
 
 fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
+    let max_width = state
+        .peers
+        .iter()
+        .map(|node| node.addresses[0].address.len())
+        .max()
+        .unwrap_or(10);
     let peers = state.peers.iter().flat_map(|node| {
-        let direction = if node.is_outbound.unwrap_or(true) {
-            "outbound"
-        } else {
-            "inbound"
-        };
-        vec![
-            Text::raw(format!("{}:", node.node_id,)),
-            Text::raw(format!(
-                "  {}, {}, version({})",
-                node.addresses[0].address, direction, node.version,
-            )),
-        ]
+        let direction = node
+            .is_outbound
+            .map(
+                |is_outbound| {
+                    if is_outbound {
+                        "outbound"
+                    } else {
+                        "inbound"
+                    }
+                },
+            )
+            .unwrap_or("unknown");
+        vec![Text::raw(format!(
+            "{:<width$} {:8} version({})",
+            node.addresses[0].address,
+            direction,
+            node.version,
+            width = max_width,
+        ))]
     });
-    List::new(peers)
-        .block(ctx.block)
-        .render(ctx.frame, ctx.rect);
+
+    ctx.block.clone().render(ctx.frame, ctx.rect);
+    let peers_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(ctx.rect);
+    List::new(peers).render(ctx.frame, peers_chunks[0]);
 }
