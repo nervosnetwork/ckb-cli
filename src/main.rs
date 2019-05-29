@@ -71,7 +71,7 @@ fn main() -> Result<(), io::Error> {
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {
-        ("tui", _) => TuiSubCommand::new(api_uri.to_string()).start(),
+        ("tui", _) => TuiSubCommand::new(api_uri.to_string(), index_controller.clone()).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
             WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())

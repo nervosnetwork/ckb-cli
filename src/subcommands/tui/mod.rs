@@ -19,7 +19,9 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
+use ckb_core::service::Request;
 
+use super::wallet::{IndexController, IndexRequest, IndexResponse};
 use crate::utils::printer::Printable;
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{ts_now, App, Event, Events, TabsState};
@@ -27,11 +29,15 @@ use widgets::List;
 
 pub struct TuiSubCommand {
     url: String,
+    index_controller: IndexController,
 }
 
 impl TuiSubCommand {
-    pub fn new(url: String) -> TuiSubCommand {
-        TuiSubCommand { url }
+    pub fn new(url: String, index_controller: IndexController) -> TuiSubCommand {
+        TuiSubCommand {
+            url,
+            index_controller,
+        }
     }
 
     pub fn start(self) -> Result<Box<dyn Printable>, String> {
@@ -46,7 +52,11 @@ impl TuiSubCommand {
 
         let events = Events::new();
         let state = Arc::new(RwLock::new(State::default()));
-        start_rpc_thread(self.url, Arc::clone(&state));
+        Request::call(
+            self.index_controller.sender(),
+            IndexRequest::UpdateUrl(self.url.clone()),
+        );
+        start_rpc_thread(self.url.clone(), Arc::clone(&state));
         // App
         let mut app = App {
             menu_active: true,
@@ -99,6 +109,7 @@ impl TuiSubCommand {
                         0 => render_summary(&state.read(), content_context),
                         1 => render_blocks(&state.read(), content_context),
                         2 => render_peers(&state.read(), content_context),
+                        3 => render_top_capacity(&self.index_controller, content_context),
                         _ => {}
                     }
                 })
@@ -426,4 +437,40 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
     List::new(peers).render(ctx.frame, peers_chunks[0]);
+}
+
+fn render_top_capacity<B: Backend>(index: &IndexController, ctx: RenderContext<B>) {
+    ctx.block.clone().render(ctx.frame, ctx.rect);
+    let top_capacity_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([Constraint::Percentage(100)].as_ref())
+        .split(ctx.rect);
+    if index.state().read().is_processing() {
+        if let IndexResponse::TopLocks { capacity_list, .. } =
+            Request::call(index.sender(), IndexRequest::GetTopLocks(50)).unwrap()
+        {
+            let lines = capacity_list.iter().flat_map(|result| {
+                vec![
+                    Text::styled(
+                        format!("{:x}", result.lock_hash),
+                        Style::default().modifier(Modifier::BOLD),
+                    ),
+                    Text::raw(format!(
+                        "  [address ]: {}",
+                        result
+                            .address
+                            .as_ref()
+                            .map(|s| s.as_str())
+                            .unwrap_or("null")
+                    )),
+                    Text::raw(format!("  [capacity]: {}", result.capacity)),
+                ]
+            });
+            List::new(lines).render(ctx.frame, top_capacity_chunks[0]);
+        }
+    } else {
+        let lines = vec![Text::raw(format!("{}", index.state().read().to_string()))];
+        List::new(lines.into_iter()).render(ctx.frame, top_capacity_chunks[0]);
+    }
 }

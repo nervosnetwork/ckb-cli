@@ -615,13 +615,13 @@ impl IndexThreadState {
     fn stop(&mut self) {
         *self = IndexThreadState::Stopped;
     }
-    fn is_stopped(&self) -> bool {
+    pub fn is_stopped(&self) -> bool {
         match self {
             IndexThreadState::Stopped => true,
             _ => false,
         }
     }
-    fn is_processing(&self) -> bool {
+    pub fn is_processing(&self) -> bool {
         match self {
             IndexThreadState::Processing(_) => true,
             _ => false,
