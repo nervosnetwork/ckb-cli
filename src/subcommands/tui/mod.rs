@@ -24,7 +24,7 @@ use ckb_core::service::Request;
 use super::wallet::{IndexController, IndexRequest, IndexResponse};
 use crate::utils::printer::Printable;
 use state::{start_rpc_thread, State, SummaryInfo};
-use util::{ts_now, App, Event, Events, TabsState};
+use util::{human_capacity, ts_now, App, Event, Events, TabsState};
 use widgets::List;
 
 pub struct TuiSubCommand {
@@ -464,7 +464,11 @@ fn render_top_capacity<B: Backend>(index: &IndexController, ctx: RenderContext<B
                             .map(|s| s.as_str())
                             .unwrap_or("null")
                     )),
-                    Text::raw(format!("  [capacity]: {}", result.capacity)),
+                    Text::raw(format!(
+                        "  [capacity]: {} ({})",
+                        result.capacity,
+                        human_capacity(result.capacity)
+                    )),
                 ]
             });
             List::new(lines).render(ctx.frame, top_capacity_chunks[0]);
