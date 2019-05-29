@@ -45,7 +45,7 @@ fn main() -> Result<(), io::Error> {
     index_file.push("utxo-index.db");
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
-    let mut config = GlobalConfig::new(api_uri_opt, Arc::clone(&index_state));
+    let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
 
@@ -54,8 +54,10 @@ fn main() -> Result<(), io::Error> {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
         let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
-        if let Some(value) = configs["url"].as_str() {
-            config.set_url(value.to_string());
+        if api_uri_opt.is_none() {
+            if let Some(value) = configs["url"].as_str() {
+                config.set_url(value.to_string());
+            }
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
         config.set_color(configs["color"].as_bool().unwrap_or(true));
