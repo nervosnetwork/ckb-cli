@@ -15,7 +15,7 @@ const MAX_SAVE_BLOCKS: usize = 100;
 pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
     let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
     thread::spawn(move || loop {
-        let chain_info = rpc_client.get_blockchain_info().call().unwrap();
+        let chain_info_opt = rpc_client.get_blockchain_info().call().ok();
         let local_node_info = rpc_client.local_node_info().call().unwrap();
         let tx_pool_info = rpc_client.tx_pool_info().call().unwrap();
         let peers = rpc_client.get_peers().call().unwrap();
@@ -39,8 +39,8 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
         };
         {
             let mut state_mut = state.write();
+            state_mut.chain = chain_info_opt;
             state_mut.tip_header = Some(tip_header.clone());
-            state_mut.chain = Some(chain_info);
             state_mut.local_node = Some(local_node_info);
             state_mut.tx_pool = Some(tx_pool_info);
             state_mut.peers = peers.0;
@@ -59,27 +59,34 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
                 state_mut.blocks.insert(number, block.into());
             }
 
-            // Handle init and fork
-            while state_mut.blocks.len() < MAX_SAVE_BLOCKS {
-                let first_number = state_mut.blocks.keys().next().cloned().unwrap();
-                if first_number < 1 {
-                    break;
+            if state_mut
+                .chain
+                .as_ref()
+                .map(|chain| !chain.is_initial_block_download)
+                .unwrap_or(false)
+            {
+                // Handle init and fork
+                while state_mut.blocks.len() < MAX_SAVE_BLOCKS {
+                    let first_number = state_mut.blocks.keys().next().cloned().unwrap();
+                    if first_number < 1 {
+                        break;
+                    }
+                    if let Some(block) = rpc_client
+                        .get_block_by_number(BlockNumber(first_number - 1))
+                        .call()
+                        .unwrap()
+                        .0
+                    {
+                        state_mut.blocks.insert(first_number - 1, block.into());
+                    } else {
+                        break;
+                    }
                 }
-                if let Some(block) = rpc_client
-                    .get_block_by_number(BlockNumber(first_number - 1))
-                    .call()
-                    .unwrap()
-                    .0
-                {
-                    state_mut.blocks.insert(first_number - 1, block.into());
-                } else {
-                    break;
+                // Remove old blocks
+                while state_mut.blocks.len() > MAX_SAVE_BLOCKS {
+                    let first_number = state_mut.blocks.keys().next().cloned().unwrap();
+                    state_mut.blocks.remove(&first_number);
                 }
-            }
-            // Remove old blocks
-            while state_mut.blocks.len() > MAX_SAVE_BLOCKS {
-                let first_number = state_mut.blocks.keys().next().cloned().unwrap();
-                state_mut.blocks.remove(&first_number);
             }
         }
         thread::sleep(Duration::from_secs(1));
