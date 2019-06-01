@@ -42,7 +42,7 @@ fn main() -> Result<(), io::Error> {
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
     ckb_cli_dir.push(".ckb-cli");
     let mut index_file = ckb_cli_dir.clone();
-    index_file.push("utxo-index.db");
+    index_file.push("live-cell-index.db");
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
     let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));

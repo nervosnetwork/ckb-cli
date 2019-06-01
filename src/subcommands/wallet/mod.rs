@@ -38,7 +38,7 @@ use crate::utils::printer::Printable;
 use crate::utils::rpc_client::HttpRpcClient;
 
 pub use index::{
-    Address, AddressFormat, IndexError, NetworkType, UtxoDatabase, UtxoInfo, SECP_CODE_HASH,
+    Address, AddressFormat, IndexError, LiveCellDatabase, LiveCellInfo, NetworkType, SECP_CODE_HASH,
 };
 
 const ONE_CKB: u64 = 10000_0000;
@@ -231,12 +231,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_pubkey = from_privkey.pubkey().unwrap();
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
-                let request = IndexRequest::GetUtxoInfos {
+                let request = IndexRequest::GetLiveCellInfos {
                     address: from_address.clone(),
                     total_capacity: capacity,
                 };
                 match Request::call(&self.index_sender, request).unwrap() {
-                    IndexResponse::UtxoInfos {
+                    IndexResponse::LiveCellInfos {
                         infos,
                         total_capacity,
                         ..
@@ -472,7 +472,7 @@ pub struct TransactionArgs<'a> {
 }
 
 impl<'a> TransactionArgs<'a> {
-    fn build(&self, input_infos: Vec<Arc<UtxoInfo>>, secp_dep: CoreOutPoint) -> Transaction {
+    fn build(&self, input_infos: Vec<Arc<LiveCellInfo>>, secp_dep: CoreOutPoint) -> Transaction {
         assert!(self.from_capacity >= self.to_capacity);
 
         let inputs = input_infos
@@ -537,7 +537,7 @@ impl<'a> TransactionArgs<'a> {
 
 pub enum IndexRequest {
     UpdateUrl(String),
-    GetUtxoInfos {
+    GetLiveCellInfos {
         address: Address,
         total_capacity: u64,
     },
@@ -565,8 +565,8 @@ pub struct SimpleBlockInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexResponse {
-    UtxoInfos {
-        infos: Vec<Arc<UtxoInfo>>,
+    LiveCellInfos {
+        infos: Vec<Arc<LiveCellInfo>>,
         total_capacity: Option<u64>,
         last_block: SimpleBlockInfo,
     },
@@ -576,7 +576,7 @@ pub enum IndexResponse {
     },
     Capacity {
         capacity: Option<u64>,
-        utxo_count: Option<usize>,
+        live_cell_count: Option<usize>,
         last_block: SimpleBlockInfo,
     },
     LastHeader(HeaderView),
@@ -724,15 +724,15 @@ pub fn start_index_thread(
             .0
             .unwrap();
         let mut db = if index_file.as_path().exists() {
-            match UtxoDatabase::from_file(&index_file, &genesis_block) {
+            match LiveCellDatabase::from_file(&index_file, &genesis_block) {
                 Ok(db) => db,
                 Err(err) => {
                     log::info!("Index database broken: {:?}", err);
-                    UtxoDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
+                    LiveCellDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
                 }
             }
         } else {
-            UtxoDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
+            LiveCellDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
         };
 
         let mut removed_in_loop = 0;
@@ -790,7 +790,7 @@ pub fn start_index_thread(
             log::debug!("> Height not enought, waiting...");
             if tip_header.inner.number.0.saturating_sub(last_saved_number) > 100 {
                 log::info!(
-                    "{} utxo removed, {} utxo added, saving to file",
+                    "{} live_cell removed, {} live_cell added, saving to file",
                     removed_in_loop,
                     added_in_loop,
                 );
@@ -817,7 +817,7 @@ pub fn start_index_thread(
 
 fn try_recv(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
-    db: &mut UtxoDatabase,
+    db: &mut LiveCellDatabase,
     rpc_client: &mut HttpRpcClient,
 ) -> bool {
     match receiver.try_recv() {
@@ -835,7 +835,7 @@ fn try_recv(
 
 fn process_request(
     request: Request<IndexRequest, IndexResponse>,
-    db: &mut UtxoDatabase,
+    db: &mut LiveCellDatabase,
     rpc_client: &mut HttpRpcClient,
 ) -> bool {
     let Request {
@@ -847,14 +847,14 @@ fn process_request(
             *rpc_client = HttpRpcClient::from_uri(url.as_str());
             responder.send(IndexResponse::Ok).is_err()
         }
-        IndexRequest::GetUtxoInfos {
+        IndexRequest::GetLiveCellInfos {
             address,
             total_capacity,
         } => {
             let lock_hash = address.lock_script().hash();
-            let (infos, total_capacity_opt) = db.get_utxo_infos(&lock_hash, total_capacity);
+            let (infos, total_capacity_opt) = db.get_live_cell_infos(&lock_hash, total_capacity);
             responder
-                .send(IndexResponse::UtxoInfos {
+                .send(IndexResponse::LiveCellInfos {
                     infos,
                     total_capacity: total_capacity_opt,
                     last_block: db.last_header().clone().into(),
@@ -884,7 +884,7 @@ fn process_request(
             responder
                 .send(IndexResponse::Capacity {
                     capacity: result.map(|value| value.0),
-                    utxo_count: result.map(|value| value.1),
+                    live_cell_count: result.map(|value| value.1),
                     last_block: db.last_header().clone().into(),
                 })
                 .is_err()
@@ -895,7 +895,7 @@ fn process_request(
             responder
                 .send(IndexResponse::Capacity {
                     capacity: result.map(|value| value.0),
-                    utxo_count: result.map(|value| value.1),
+                    live_cell_count: result.map(|value| value.1),
                     last_block: db.last_header().clone().into(),
                 })
                 .is_err()
