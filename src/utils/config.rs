@@ -205,13 +205,12 @@ impl GlobalConfig {
             .iter()
             .map(|(name, _)| name.len())
             .max()
-            .unwrap_or(20)
-            + 2;
+            .unwrap_or(20);
         let output = values
             .iter()
             .map(|(name, value)| {
                 format!(
-                    "[{:^width$}]: {}",
+                    "[ {:>width$} ]: {}",
                     name,
                     Yellow.paint(*value),
                     width = max_width
