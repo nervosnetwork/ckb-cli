@@ -4,8 +4,8 @@ use numext_fixed_hash::H256;
 use serde_json::to_string_pretty;
 
 use crate::utils::rpc_client::{
-    CellOutputWithOutPoints, CellWithStatus, EpochExt, HeaderView, Node, Nodes, OptionBlockView,
-    OptionEpochExt, OptionH256, OptionTransactionWithStatus, TxPoolInfo,
+    CellOutputWithOutPoints, CellWithStatus, ChainInfo, EpochExt, HeaderView, Node, Nodes,
+    OptionBlockView, OptionEpochExt, OptionH256, OptionTransactionWithStatus, TxPoolInfo,
 };
 
 use crate::utils::printer::{OutputFormat, Printable};
@@ -19,6 +19,12 @@ impl Printable for H256 {
 }
 
 impl Printable for Node {
+    fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {
+        Rc::new(to_string_pretty(&self).unwrap())
+    }
+}
+
+impl Printable for ChainInfo {
     fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {
         Rc::new(to_string_pretty(&self).unwrap())
     }

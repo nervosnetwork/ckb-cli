@@ -82,6 +82,7 @@ impl<'a> RpcSubCommand<'a> {
                     .about("Get epoch information by epoch number")
                     .arg(arg_number.clone().help("Epoch number")),
                 SubCommand::with_name("local_node_info").about("Get local node information"),
+                SubCommand::with_name("get_blockchain_info").about("Get chain information"),
                 SubCommand::with_name("tx_pool_info").about("Get transaction pool information"),
                 SubCommand::with_name("get_peers").about("Get connected peers"),
             ])
@@ -180,6 +181,14 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let resp = self
                     .rpc_client
                     .get_epoch_by_number(number)
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(Box::new(resp))
+            }
+            ("get_blockchain_info", _) => {
+                let resp = self
+                    .rpc_client
+                    .get_blockchain_info()
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
