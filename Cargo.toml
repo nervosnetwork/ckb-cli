@@ -42,6 +42,8 @@ fs2 = "0.4.3"
 tui = "0.6.0"
 termion = "1.5"
 chrono = "0.4"
+rkv = "0.9.5"
+bincode = "1.1.4"
 
 [build-dependencies]
 build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
