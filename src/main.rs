@@ -41,8 +41,8 @@ fn main() -> Result<(), io::Error> {
 
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
     ckb_cli_dir.push(".ckb-cli");
-    let mut index_file = ckb_cli_dir.clone();
-    index_file.push("live-cell-index.db");
+    let mut index_dir = ckb_cli_dir.clone();
+    index_dir.push("index");
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
     let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
@@ -67,7 +67,7 @@ fn main() -> Result<(), io::Error> {
     }
 
     let api_uri = config.get_url().to_string();
-    let index_controller = start_index_thread(api_uri.as_str(), index_file, index_state);
+    let index_controller = start_index_thread(api_uri.as_str(), index_dir, index_state);
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {

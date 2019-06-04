@@ -43,6 +43,7 @@ tui = "0.6.0"
 termion = "1.5"
 chrono = "0.4"
 rkv = "0.9.5"
+# lmdb-zero = "0.4.4"
 bincode = "1.1.4"
 
 [build-dependencies]

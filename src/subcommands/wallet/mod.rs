@@ -241,7 +241,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         total_capacity,
                         ..
                     } => {
-                        let total_capacity = total_capacity.unwrap_or(0);
                         if total_capacity < capacity {
                             return Err(format!(
                                 "Capacity not enough: {} => {}",
@@ -472,7 +471,7 @@ pub struct TransactionArgs<'a> {
 }
 
 impl<'a> TransactionArgs<'a> {
-    fn build(&self, input_infos: Vec<Arc<LiveCellInfo>>, secp_dep: CoreOutPoint) -> Transaction {
+    fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: CoreOutPoint) -> Transaction {
         assert!(self.from_capacity >= self.to_capacity);
 
         let inputs = input_infos
@@ -566,8 +565,8 @@ pub struct SimpleBlockInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexResponse {
     LiveCellInfos {
-        infos: Vec<Arc<LiveCellInfo>>,
-        total_capacity: Option<u64>,
+        infos: Vec<LiveCellInfo>,
+        total_capacity: u64,
         last_block: SimpleBlockInfo,
     },
     TopLocks {
@@ -576,7 +575,7 @@ pub enum IndexResponse {
     },
     Capacity {
         capacity: Option<u64>,
-        live_cell_count: Option<usize>,
+        // live_cell_count: Option<usize>,
         last_block: SimpleBlockInfo,
     },
     LastHeader(HeaderView),
@@ -686,7 +685,7 @@ impl IndexController {
 
 pub fn start_index_thread(
     url: &str,
-    index_file: PathBuf,
+    index_dir: PathBuf,
     state: Arc<RwLock<IndexThreadState>>,
 ) -> IndexController {
     let mut rpc_url = url.to_owned();
@@ -723,22 +722,13 @@ pub fn start_index_thread(
             .unwrap()
             .0
             .unwrap();
-        let mut db = if index_file.as_path().exists() {
-            match LiveCellDatabase::from_file(&index_file, &genesis_block) {
-                Ok(db) => db,
-                Err(err) => {
-                    log::info!("Index database broken: {:?}", err);
-                    LiveCellDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
-                }
-            }
-        } else {
-            LiveCellDatabase::from_fresh(NetworkType::TestNet, &genesis_block)
-        };
+        let mut db = LiveCellDatabase::from_path(
+            NetworkType::TestNet,
+            &genesis_block,
+            index_dir,
+        ).unwrap();
 
-        let mut removed_in_loop = 0;
-        let mut added_in_loop = 0;
         let mut last_get_tip = Instant::now();
-        let mut last_saved_number = db.last_number();
         let mut tip_header = rpc_client.get_tip_header().call().unwrap();
         db.update_tip(tip_header.clone());
 
@@ -763,10 +753,8 @@ pub fn start_index_thread(
                     .unwrap()
                     .0
                     .unwrap();
-                let (removed_in_block, added_in_block) =
+                let (_removed_in_block, _added_in_block) =
                     db.apply_next_block(&next_block).expect("Add block failed");
-                removed_in_loop += removed_in_block;
-                added_in_loop += added_in_block;
             }
 
             if first_request
@@ -786,22 +774,6 @@ pub fn start_index_thread(
                 state.write().processing(db.last_header().clone());
             }
 
-            // TODO: the saving logic is wrong
-            log::debug!("> Height not enought, waiting...");
-            if tip_header.inner.number.0.saturating_sub(last_saved_number) > 100 {
-                log::info!(
-                    "{} live_cell removed, {} live_cell added, saving to file",
-                    removed_in_loop,
-                    added_in_loop,
-                );
-
-                db.save_to_file(&index_file).unwrap();
-
-                removed_in_loop = 0;
-                added_in_loop = 0;
-                last_saved_number = db.last_number();
-                log::info!("saving index finished");
-            }
             thread::sleep(Duration::from_millis(100));
         }
 
@@ -852,11 +824,11 @@ fn process_request(
             total_capacity,
         } => {
             let lock_hash = address.lock_script().hash();
-            let (infos, total_capacity_opt) = db.get_live_cell_infos(&lock_hash, total_capacity);
+            let (infos, total_capacity) = db.get_live_cell_infos(lock_hash, total_capacity);
             responder
                 .send(IndexResponse::LiveCellInfos {
                     infos,
-                    total_capacity: total_capacity_opt,
+                    total_capacity,
                     last_block: db.last_header().clone().into(),
                 })
                 .is_err()
@@ -880,22 +852,20 @@ fn process_request(
             .is_err(),
 
         IndexRequest::GetCapacity(lock_hash) => {
-            let result = db.get_balance(&lock_hash);
             responder
                 .send(IndexResponse::Capacity {
-                    capacity: result.map(|value| value.0),
-                    live_cell_count: result.map(|value| value.1),
+                    capacity: db.get_capacity(lock_hash),
+                    // live_cell_count: result.map(|value| value.1),
                     last_block: db.last_header().clone().into(),
                 })
                 .is_err()
         }
         IndexRequest::GetBalance(address) => {
             let lock_hash = address.lock_script().hash();
-            let result = db.get_balance(&lock_hash);
             responder
                 .send(IndexResponse::Capacity {
-                    capacity: result.map(|value| value.0),
-                    live_cell_count: result.map(|value| value.1),
+                    capacity: db.get_capacity(lock_hash),
+                    // live_cell_count: result.map(|value| value.1),
                     last_block: db.last_header().clone().into(),
                 })
                 .is_err()

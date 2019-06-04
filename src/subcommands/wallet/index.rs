@@ -1,11 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::fs;
 use std::io;
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
 
 use bech32::{convert_bits, Bech32, ToBase32};
 use bytes::Bytes;
@@ -16,7 +14,6 @@ use ckb_core::{
     },
 };
 use crypto::secp::Pubkey;
-use fs2::FileExt;
 use hash::blake2b_256;
 pub use jsonrpc_types::{
     BlockNumber, BlockView, Capacity, CellOutPoint, HeaderView, JsonBytes, Script, Transaction,
@@ -32,6 +29,7 @@ const P2PH_MARK: &[u8] = b"\x01P2PH";
 pub const SECP_CODE_HASH: H256 =
     h256!("0x9e3b3557f11b2b3532ce352bfe8017e9fd11d154c4c7f9b7aaaa1e621b539a08");
 
+#[derive(Eq, PartialEq, Debug, Hash, Clone, Copy)]
 #[repr(u16)]
 enum KeyType {
     // key => value: {type} => {block-hash}
@@ -40,78 +38,110 @@ enum KeyType {
     Network = 1,
     // key => value: {type} => {HeaderView}
     LastHeader = 2,
+    // key => value: {type} => u128
+    TotalCapacity = 3,
 
     // >> hash-type: block, transaction, lock, data
     // key => value: {type}:{hash} => {hash-type}
     GlobalHash = 100,
-    // key => value: {type}:{tx-hash} => {TransactionInfo}
-    TxSummary = 102,
+    // key => value: {type}:{tx-hash} => {TxInfo}
+    TxMap = 101,
     // key => value: {type}:{Address} => {lock-hash}
-    SecpAddrLock = 103,
+    SecpAddrLock = 102,
 
     // key => value: {type}:{CellOutPoint} => {LiveCellInfo}
     LiveCellMap = 200,
     // key => value: {type}:{block-number}:{CellIndex} => {CellOutPoint}
     LiveCellIndex = 201,
-    // key => value: {type} => u128
-    TotalCapacity = 202,
 
     // >> Store live cell owned by certain lock
     // key => value: {type}:{lock-hash} => CoreScript
     LockScript = 300,
     // key => value: {type}:{lock-hash} => u64
     LockTotalCapacity = 301,
-    // >> removed when capacity changed
-    // key => value: {type}:{capacity(u64)}:{lock-hash} => ()
+    // >> NOTE: Remove when capacity changed
+    // key => value: {type}:{capacity(u64::MAX - u64)}:{lock-hash} => ()
     LockTotalCapacityIndex = 302,
-    // key => value: {type}:{lock-hash}:{CellOutPoint} => ()
-    LockLiveCell = 303,
     // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {CellOutPoint}
-    LockLiveCellIndex = 304,
-    // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {tx-hash}
-    LockTx = 305,
+    LockLiveCellIndex = 303,
+    // key => value: {type}:{lock-hash}:{block-number}:{tx-index(u32)} => {tx-hash}
+    LockTx = 304,
+
+    // >> for rollback block when fork happen (keep 1000 blocks?)
+    // key = value: {type}:{block-number} => {BlockDeltaInfo}
+    BlockDelta = 400,
 }
 
 impl KeyType {
     fn to_bytes(&self) -> Vec<u8> {
         (*self as u16).to_be_bytes().to_vec()
     }
+
+    fn from_bytes(bytes: [u8; 2]) -> KeyType {
+        match u16::from_be_bytes(bytes) {
+            0 => KeyType::GenesisHash,
+            1 => KeyType::Network,
+            2 => KeyType::LastHeader,
+            3 => KeyType::TotalCapacity,
+
+            100 => KeyType::GlobalHash,
+            101 => KeyType::TxMap,
+            102 => KeyType::SecpAddrLock,
+
+            200 => KeyType::LiveCellMap,
+            201 => KeyType::LiveCellIndex,
+
+            300 => KeyType::LockScript,
+            301 => KeyType::LockTotalCapacity,
+            302 => KeyType::LockTotalCapacityIndex,
+            303 => KeyType::LockLiveCellIndex,
+            304 => KeyType::LockTx,
+
+            400 => KeyType::BlockDelta,
+            value => panic!("Unexpected key type: value={}", value),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-enum Key<'a> {
+enum Key {
     GenesisHash,
     Network,
     LastHeader,
-
-    GlobalHash(&'a H256),
-    TxSummary(&'a H256),
-    SecpAddrLock(&'a Address),
-
-    LiveCellMap(&'a CellOutPoint),
-    LiveCellIndex(u64, CellIndex),
     TotalCapacity,
 
-    LockScript(&'a H256),
-    LockTotalCapacity(&'a H256),
-    LockLiveCell(&'a H256, &'a CellOutPoint),
-    LockLiveCellIndex(&'a H256, u64, CellIndex),
-    LockTx(&'a H256, u64, CellIndex),
+    GlobalHash(H256),
+    TxMap(H256),
+    SecpAddrLock(Address),
+
+    LiveCellMap(CellOutPoint),
+    LiveCellIndex(u64, CellIndex),
+
+    LockScript(H256),
+    LockTotalCapacity(H256),
+    LockTotalCapacityIndex(u64, H256),
+    // LockLiveCell(H256, CellOutPoint),
+    LockLiveCellIndexPrefix(H256),
+    LockLiveCellIndex(H256, u64, CellIndex),
+    LockTx(H256, u64, u32),
+
+    BlockDelta(u64),
 }
 
-impl<'a> Key<'a> {
+impl Key {
     fn to_bytes(&self) -> Vec<u8> {
         match self {
             Key::GenesisHash => KeyType::GenesisHash.to_bytes(),
             Key::Network => KeyType::Network.to_bytes(),
             Key::LastHeader => KeyType::LastHeader.to_bytes(),
+            Key::TotalCapacity => KeyType::TotalCapacity.to_bytes(),
             Key::GlobalHash(hash) => {
                 let mut bytes = KeyType::GlobalHash.to_bytes();
                 bytes.extend(bincode::serialize(hash).unwrap());
                 bytes
             }
-            Key::TxSummary(tx_hash) => {
-                let mut bytes = KeyType::TxSummary.to_bytes();
+            Key::TxMap(tx_hash) => {
+                let mut bytes = KeyType::TxMap.to_bytes();
                 bytes.extend(bincode::serialize(tx_hash).unwrap());
                 bytes
             }
@@ -132,7 +162,6 @@ impl<'a> Key<'a> {
                 bytes.extend(cell_index.to_bytes());
                 bytes
             }
-            Key::TotalCapacity => KeyType::TotalCapacity.to_bytes(),
             Key::LockScript(lock_hash) => {
                 let mut bytes = KeyType::LockScript.to_bytes();
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
@@ -143,10 +172,23 @@ impl<'a> Key<'a> {
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
                 bytes
             }
-            Key::LockLiveCell(lock_hash, out_point) => {
-                let mut bytes = KeyType::LockLiveCell.to_bytes();
+            Key::LockTotalCapacityIndex(capacity, lock_hash) => {
+                // NOTE: large capacity stay front
+                let capacity = std::u64::MAX - capacity;
+                let mut bytes = KeyType::LockTotalCapacityIndex.to_bytes();
+                bytes.extend(capacity.to_be_bytes().to_vec());
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
-                bytes.extend(bincode::serialize(out_point).unwrap());
+                bytes
+            }
+            // Key::LockLiveCell(lock_hash, out_point) => {
+            //     let mut bytes = KeyType::LockLiveCell.to_bytes();
+            //     bytes.extend(bincode::serialize(lock_hash).unwrap());
+            //     bytes.extend(bincode::serialize(out_point).unwrap());
+            //     bytes
+            // }
+            Key::LockLiveCellIndexPrefix(lock_hash) => {
+                let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
+                bytes.extend(bincode::serialize(lock_hash).unwrap());
                 bytes
             }
             Key::LockLiveCellIndex(lock_hash, number, cell_index) => {
@@ -157,127 +199,238 @@ impl<'a> Key<'a> {
                 bytes.extend(cell_index.to_bytes());
                 bytes
             }
-            Key::LockTx(lock_hash, number, cell_index) => {
+            Key::LockTx(lock_hash, number, tx_index) => {
                 let mut bytes = KeyType::LockTx.to_bytes();
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
-                bytes.extend(cell_index.to_bytes());
+                bytes.extend(tx_index.to_be_bytes().to_vec());
+                bytes
+            }
+            Key::BlockDelta(number) => {
+                let mut bytes = KeyType::LockTx.to_bytes();
+                bytes.extend(number.to_be_bytes().to_vec());
                 bytes
             }
         }
     }
 
-    fn pair_genesis_hash(&self, value: &H256) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::GenesisHash => {}
-            key => panic!("Invalid key for genesis hash: {:?}", key),
+    fn from_bytes(bytes: &[u8]) -> Key {
+        let type_bytes = [bytes[0], bytes[1]];
+        let key_type = KeyType::from_bytes(type_bytes);
+        let args_bytes = &bytes[2..];
+        match key_type {
+            KeyType::GenesisHash => Key::GenesisHash,
+            KeyType::Network => Key::Network,
+            KeyType::LastHeader => Key::LastHeader,
+            KeyType::TotalCapacity => Key::TotalCapacity,
+            KeyType::GlobalHash => {
+                let hash = bincode::deserialize(args_bytes).unwrap();
+                Key::GlobalHash(hash)
+            }
+            KeyType::TxMap => {
+                let tx_hash = bincode::deserialize(args_bytes).unwrap();
+                Key::TxMap(tx_hash)
+            }
+            KeyType::SecpAddrLock => {
+                let address = bincode::deserialize(args_bytes).unwrap();
+                Key::SecpAddrLock(address)
+            }
+            KeyType::LiveCellMap => {
+                let out_point = bincode::deserialize(args_bytes).unwrap();
+                Key::LiveCellMap(out_point)
+            }
+            KeyType::LiveCellIndex => {
+                let mut number_bytes = [0u8; 8];
+                let mut cell_index_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(&args_bytes[..8]);
+                cell_index_bytes.copy_from_slice(&args_bytes[8..]);
+                let number = u64::from_be_bytes(number_bytes);
+                let cell_index = CellIndex::from_bytes(cell_index_bytes);
+                Key::LiveCellIndex(number, cell_index)
+            }
+            KeyType::LockScript => {
+                let lock_hash = bincode::deserialize(args_bytes).unwrap();
+                Key::LockScript(lock_hash)
+            }
+            KeyType::LockTotalCapacity => {
+                let lock_hash = bincode::deserialize(args_bytes).unwrap();
+                Key::LockTotalCapacity(lock_hash)
+            }
+            KeyType::LockTotalCapacityIndex => {
+                let mut capacity_bytes = [0u8; 8];
+                capacity_bytes.copy_from_slice(&args_bytes[..8]);
+                let lock_hash_bytes = &args_bytes[8..];
+                // NOTE: large capacity stay front
+                let capacity = std::u64::MAX - u64::from_be_bytes(capacity_bytes);
+                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                Key::LockTotalCapacityIndex(capacity, lock_hash)
+            }
+            // KeyType::LockLiveCell => {
+                // let lock_hash_bytes = &args_bytes[..32];
+                // let out_point_bytes = &args_bytes[32..];
+                // let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                // let out_point = bincode::deserialize(out_point_bytes).unwrap();
+                // Key::LockLiveCell(lock_hash, out_point)
+            // }
+            KeyType::LockLiveCellIndex => {
+                let lock_hash_bytes = &args_bytes[..32];
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(&args_bytes[32..40]);
+                let mut cell_index_bytes = [0u8; 8];
+                cell_index_bytes.copy_from_slice(&args_bytes[40..]);
+                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                let number = u64::from_be_bytes(number_bytes);
+                let cell_index = CellIndex::from_bytes(cell_index_bytes);
+                Key::LockLiveCellIndex(lock_hash, number, cell_index)
+            }
+            KeyType::LockTx => {
+                let lock_hash_bytes = &args_bytes[..32];
+                let mut number_bytes = [0u8; 8];
+                let mut tx_index_bytes = [0u8; 4];
+                number_bytes.copy_from_slice(&args_bytes[32..40]);
+                tx_index_bytes.copy_from_slice(&args_bytes[40..]);
+                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                let number = u64::from_be_bytes(number_bytes);
+                let tx_index = u32::from_be_bytes(tx_index_bytes);
+                Key::LockTx(lock_hash, number, tx_index)
+            }
+            KeyType::BlockDelta => {
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(args_bytes);
+                let number = u64::from_be_bytes(number_bytes);
+                Key::BlockDelta(number)
+            }
         }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
     }
 
-    fn pair_network(&self, value: &NetworkType) -> (Vec<u8>, Vec<u8>) {
+    fn key_type(&self) -> KeyType {
         match self {
-            Key::Network => {}
-            key => panic!("Invalid key for network: {:?}", key),
+            Key::GenesisHash => KeyType::GenesisHash,
+            Key::Network => KeyType::Network,
+            Key::LastHeader => KeyType::LastHeader,
+            Key::TotalCapacity => KeyType::TotalCapacity,
+            Key::GlobalHash(..) => KeyType::GlobalHash,
+            Key::TxMap(..) => KeyType::TxMap,
+            Key::SecpAddrLock(..) => KeyType::SecpAddrLock,
+            Key::LiveCellMap(..) => KeyType::LiveCellMap,
+            Key::LiveCellIndex(..) => KeyType::LiveCellIndex,
+            Key::LockScript(..) => KeyType::LockScript,
+            Key::LockTotalCapacity(..) => KeyType::LockTotalCapacity,
+            Key::LockTotalCapacityIndex(..) => KeyType::LockTotalCapacityIndex,
+            // Key::LockLiveCell(..) => KeyType::LockLiveCell,
+            Key::LockLiveCellIndexPrefix(..) => KeyType::LockLiveCellIndex,
+            Key::LockLiveCellIndex(..) => KeyType::LockLiveCellIndex,
+            Key::LockTx(..) => KeyType::LockTx,
+            Key::BlockDelta(..) => KeyType::BlockDelta,
         }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
     }
 
-    fn pair_last_header(&self, value: &HeaderView) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LastHeader => {}
-            key => panic!("Invalid key for last header: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
+    fn pair_genesis_hash(value: &H256) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::GenesisHash.to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_network(value: &NetworkType) -> (Vec<u8>, Vec<u8>) {
+        (Key::Network.to_bytes(), bincode::serialize(value).unwrap())
+    }
+    fn pair_last_header(value: &HeaderView) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LastHeader.to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_total_capacity(value: &u128) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::TotalCapacity.to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
     }
 
-    fn pair_global_hash(&self, value: &HashType) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::GlobalHash(..) => {}
-            key => panic!("Invalid key for global hash: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
+    fn pair_global_hash(hash: H256, value: &HashType) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::GlobalHash(hash).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_tx_map(tx_hash: H256, value: &TxInfo) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::TxMap(tx_hash).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_secp_addr_lock(address: Address, value: &H256) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::SecpAddrLock(address).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
     }
 
-    fn pair_tx_summary(&self, value: &TransactionInfo) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::TxSummary(..) => {}
-            key => panic!("Invalid key for tx summary: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
+    fn pair_live_cell_map(out_point: CellOutPoint, value: &LiveCellInfo) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LiveCellMap(out_point).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_live_cell_index(
+        (number, cell_index): (u64, CellIndex),
+        value: &CellOutPoint,
+    ) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LiveCellIndex(number, cell_index).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
     }
 
-    fn pair_secp_addr_lock(&self, value: &H256) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::SecpAddrLock(..) => {}
-            key => panic!("Invalid key for secp addr lock: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
+    fn pair_lock_script(lock_hash: H256, value: &CoreScript) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LockScript(lock_hash).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_lock_total_capacity(lock_hash: H256, value: &u64) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LockTotalCapacity(lock_hash).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_lock_total_capacity_index((capacity, lock_hash): (u64, H256)) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LockTotalCapacityIndex(capacity, lock_hash).to_bytes(),
+            [0u8].to_vec(),
+        )
+    }
+    // fn pair_lock_live_cell((lock_hash, out_point): (H256, CellOutPoint)) -> (Vec<u8>, Vec<u8>) {
+    //     (
+    //         Key::LockLiveCell(lock_hash, out_point).to_bytes(),
+    //         [0u8].to_vec(),
+    //     )
+    // }
+    fn pair_lock_live_cell_index(
+        (lock_hash, number, cell_index): (H256, u64, CellIndex),
+        value: &CellOutPoint,
+    ) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LockLiveCellIndex(lock_hash, number, cell_index).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    fn pair_lock_tx(
+        (lock_hash, number, tx_index): (H256, u64, u32),
+        value: &H256,
+    ) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::LockTx(lock_hash, number, tx_index).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
     }
 
-    fn pair_live_cell_map(&self, value: &LiveCellInfo) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LiveCellMap(..) => {}
-            key => panic!("Invalid key for live cell map: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_live_cell_index(&self, value: &CellOutPoint) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LiveCellIndex(..) => {}
-            key => panic!("Invalid key for live cell index: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_total_capacity(&self, value: &u128) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::TotalCapacity => {}
-            key => panic!("Invalid key for total capacity: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_lock_script(&self, value: &CoreScript) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LockScript(..) => {}
-            key => panic!("Invalid key for lock script: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_lock_total_capacity(&self, value: &u64) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LockTotalCapacity(..) => {}
-            key => panic!("Invalid key for lock total capacity: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_lock_live_cell(&self) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LockLiveCell(..) => {}
-            key => panic!("Invalid key for lock live cell: {:?}", key),
-        }
-        (self.to_bytes(), [0u8].to_vec())
-    }
-
-    fn pair_lock_live_cell_index(&self, value: &CellOutPoint) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LockLiveCellIndex(..) => {}
-            key => panic!("Invalid key for lock live cell index: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
-    }
-
-    fn pair_lock_tx(&self, value: &H256) -> (Vec<u8>, Vec<u8>) {
-        match self {
-            Key::LockTx(..) => {}
-            key => panic!("Invalid key for lock tx: {:?}", key),
-        }
-        (self.to_bytes(), bincode::serialize(value).unwrap())
+    fn pair_block_delta(number: u64, value: &BlockDeltaInfo) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::BlockDelta(number).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
     }
 }
 
@@ -435,8 +588,183 @@ impl Address {
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+struct BlockDeltaInfo {
+    header: HeaderView,
+    txs: Vec<RichTxInfo>,
+    locks: Vec<CoreScript>,
+}
+
+impl BlockDeltaInfo {
+    fn from_view(
+        block: &BlockView,
+        store: &rkv::SingleStore,
+        reader: &rkv::Reader,
+    ) -> BlockDeltaInfo {
+        let header = block.header.clone();
+        let number = block.header.inner.number.0;
+        let timestamp = block.header.inner.timestamp.0;
+        let mut locks = Vec::new();
+        let txs = block.transactions
+            .iter()
+            .enumerate()
+            .map(|(tx_index, tx)| {
+                let mut inputs = Vec::new();
+                let mut outputs = Vec::new();
+
+                for input in &tx.inner.inputs {
+                    if let Some(ref out_point) = input.previous_output.cell {
+                        let live_cell_info: LiveCellInfo = store
+                            .get(reader, Key::LiveCellMap(out_point.clone()).to_bytes())
+                            .unwrap()
+                            .map(|value| value.to_bytes().unwrap())
+                            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+                            .unwrap();
+                        inputs.push(live_cell_info);
+                    }
+                }
+
+                for (output_index, output) in tx.inner.outputs.iter().enumerate() {
+                    let lock: CoreScript = output.lock.clone().into();
+                    let lock_hash = lock.hash();
+                    let capacity = output.capacity.0.as_u64();
+                    let out_point = CellOutPoint {
+                        tx_hash: tx.hash.clone(),
+                        index: Unsigned(output_index as u64),
+                    };
+                    let cell_index = CellIndex::new(tx_index as u32, output_index as u32);
+
+                    locks.push(output.lock.clone().into());
+
+                    let live_cell_info = LiveCellInfo {
+                        out_point,
+                        index: cell_index,
+                        lock_hash: lock_hash,
+                        capacity,
+                        number,
+                    };
+                    outputs.push(live_cell_info);
+                }
+
+                RichTxInfo {
+                    tx_hash: tx.hash.clone(),
+                    tx_index: tx_index as u32,
+                    block_number: number,
+                    block_timestamp: timestamp,
+                    inputs,
+                    outputs,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        BlockDeltaInfo{ header, txs, locks }
+    }
+
+    fn apply(&self, store: &rkv::SingleStore, writer: &mut rkv::Writer) {
+        put_pair(store, writer, Key::pair_last_header(&self.header));
+        let mut capacity_deltas: HashMap<&H256, i64> = HashMap::default();
+        for tx in &self.txs {
+            put_pair(store, writer, Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()));
+            for LiveCellInfo {out_point, lock_hash, capacity, number, index} in &tx.inputs {
+                *capacity_deltas.entry(lock_hash).or_default() -= *capacity as i64;
+                put_pair(store, writer, Key::pair_lock_tx(
+                    (lock_hash.clone(), *number, index.tx_index),
+                    &tx.tx_hash,
+                ));
+                store.delete(writer, Key::LiveCellMap(out_point.clone()).to_bytes()).unwrap();
+                store.delete(writer, Key::LiveCellIndex(*number, *index).to_bytes()).unwrap();
+                store.delete(writer, Key::LockLiveCellIndex(
+                    lock_hash.clone(),
+                    *number,
+                    *index,
+                ).to_bytes()).unwrap();
+            }
+            for live_cell_info in &tx.outputs {
+                let LiveCellInfo {out_point, lock_hash, capacity, number, index} = live_cell_info;
+                *capacity_deltas.entry(lock_hash).or_default() += *capacity as i64;
+                put_pair(store, writer, Key::pair_lock_tx(
+                    (lock_hash.clone(), *number, index.tx_index),
+                    &tx.tx_hash,
+                ));
+                put_pair(store, writer, Key::pair_live_cell_map(out_point.clone(), live_cell_info));
+                put_pair(store, writer, Key::pair_live_cell_index((*number, *index), out_point));
+                put_pair(store, writer, Key::pair_lock_live_cell_index(
+                    (lock_hash.clone(), *number, *index),
+                    out_point,
+                ));
+            }
+        }
+
+        // Update capacity group by lock
+        let mut capacity_delta: i64 = 0;
+        for (lock_hash, delta) in capacity_deltas.iter().filter(|(_, delta)| **delta != 0) {
+            capacity_delta += delta;
+            let mut lock_capacity: u64 = store
+                .get(writer, Key::LockTotalCapacity((*lock_hash).clone()).to_bytes())
+                .unwrap()
+                .map(|value| bincode::deserialize(&value.to_bytes().unwrap()).unwrap())
+                .unwrap_or(0);
+            store.delete(writer, Key::LockTotalCapacityIndex(
+                lock_capacity,
+                (*lock_hash).clone()).to_bytes(),
+            ).unwrap();
+            if *delta > 0 {
+                lock_capacity += *delta as u64;
+            } else if *delta < 0 {
+                lock_capacity -= delta.abs() as u64;
+            }
+            put_pair(store, writer, Key::pair_lock_total_capacity((*lock_hash).clone(), &lock_capacity));
+            put_pair(store, writer, Key::pair_lock_total_capacity_index((lock_capacity, (*lock_hash).clone())));
+        }
+        // Update chain total capacity
+        if capacity_delta != 0 {
+            let mut chain_capacity: u128 = store
+                .get(writer, Key::TotalCapacity.to_bytes())
+                .unwrap()
+                .map(|value| bincode::deserialize(&value.to_bytes().unwrap()).unwrap())
+                .unwrap_or(0);
+            if capacity_delta > 0 {
+                chain_capacity += capacity_delta as u128;
+            } else if capacity_delta < 0 {
+                chain_capacity -= capacity_delta.abs() as u128;
+            }
+            put_pair(store, writer, Key::pair_total_capacity(&chain_capacity));
+        }
+
+        for lock in &self.locks {
+            let lock_hash = lock.hash();
+            put_pair(store, writer, Key::pair_global_hash(lock_hash.clone(), &HashType::Lock));
+            put_pair(store, writer, Key::pair_lock_script(lock_hash.clone(), lock));
+            if lock.code_hash == SECP_CODE_HASH {
+                if lock.args.len() == 1 {
+                    let lock_arg = &lock.args[0];
+                    match Address::from_lock_arg(&lock_arg) {
+                        Ok(address) => {
+                            put_pair(store, writer, Key::pair_secp_addr_lock(address, &lock_hash));
+                        }
+                        Err(err) => {
+                            log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
+                        }
+                    }
+                } else {
+                    log::info!("lock arg should given exact 1");
+                }
+            }
+        }
+    }
+
+    fn rollback(&self, _store: &rkv::SingleStore, _writer: &mut rkv::Writer) {
+        // TODO: rollback when fork happened
+        unimplemented!();
+    }
+}
+
+fn put_pair(store: &rkv::SingleStore, writer: &mut rkv::Writer, (key, value): (Vec<u8>, Vec<u8>)) {
+    store.put(writer, key, &rkv::Value::Blob(&value)).unwrap();
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct LiveCellInfo {
-    pub out_point: Arc<CellOutPoint>,
+    pub out_point: CellOutPoint,
     pub lock_hash: H256,
     // Secp256k1 address
     pub capacity: u64,
@@ -474,6 +802,17 @@ impl CellIndex {
         bytes.extend(self.output_index.to_be_bytes().to_vec());
         bytes
     }
+
+    fn from_bytes(bytes: [u8; 8]) -> CellIndex {
+        let mut tx_index_bytes = [0u8; 4];
+        let mut output_index_bytes = [0u8; 4];
+        tx_index_bytes.copy_from_slice(&bytes[..4]);
+        output_index_bytes.copy_from_slice(&bytes[4..]);
+        CellIndex {
+            tx_index: u32::from_be_bytes(tx_index_bytes),
+            output_index: u32::from_be_bytes(output_index_bytes),
+        }
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
@@ -492,93 +831,38 @@ impl CellIndex {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
-struct TransactionIO {
-    lock_hash: H256,
-    capacity: u64,
-    address: Option<Address>,
+struct RichTxInfo {
+    tx_hash: H256,
+    // Transaction index in target block
+    tx_index: u32,
+    block_number: u64,
+    block_timestamp: u64,
+    inputs: Vec<LiveCellInfo>,
+    outputs: Vec<LiveCellInfo>,
+}
+
+impl RichTxInfo {
+    fn to_thin(&self) -> TxInfo {
+        TxInfo {
+            tx_hash: self.tx_hash.clone(),
+            tx_index: self.tx_index,
+            block_number: self.block_number,
+            block_timestamp: self.block_timestamp,
+            inputs: self.inputs.iter().map(|info| info.out_point.clone()).collect::<Vec<_>>(),
+            outputs: self.outputs.iter().map(|info| info.out_point.clone()).collect::<Vec<_>>(),
+        }
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
-struct TransactionInfo {
-    hash: H256,
+struct TxInfo {
+    tx_hash: H256,
+    // Transaction index in target block
+    tx_index: u32,
     block_number: u64,
     block_timestamp: u64,
-    inputs: Vec<TransactionIO>,
-    outputs: Vec<TransactionIO>,
-}
-
-struct LiveCellMap {
-    map: HashMap<Arc<CellOutPoint>, Arc<LiveCellInfo>>,
-    blocks: BTreeMap<u64, HashMap<CellIndex, Arc<LiveCellInfo>>>,
-    total_capacity: u128,
-}
-
-impl LiveCellMap {
-    pub fn add(
-        &mut self,
-        store: rkv::SingleStore,
-        writer: &mut rkv::Writer,
-        info: Arc<LiveCellInfo>,
-    ) {
-        let capacity = info.capacity as u128;
-
-        assert!(!self.map.contains_key(&info.out_point));
-        self.map
-            .insert(Arc::clone(&info.out_point), Arc::clone(&info));
-
-        let block_live_cells = self.blocks.entry(info.number).or_default();
-        assert!(!block_live_cells.contains_key(&info.index));
-        block_live_cells.insert(info.index, info);
-
-        self.total_capacity += capacity;
-    }
-
-    pub fn remove(
-        &mut self,
-        store: rkv::SingleStore,
-        writer: &mut rkv::Writer,
-        out_point: &CellOutPoint,
-    ) -> Option<Arc<LiveCellInfo>> {
-        let info_opt = self.map.remove(out_point);
-        if let Some(ref info) = info_opt {
-            let block_live_cells = self.blocks.get_mut(&info.number).expect("Block not exists");
-            let inner_info = block_live_cells
-                .remove(&info.index)
-                .expect("LiveCell not exists in blocks");
-            assert_eq!(&inner_info, info);
-            if block_live_cells.is_empty() {
-                self.blocks.remove(&info.number);
-            }
-            self.total_capacity -= info.capacity as u128;
-        }
-        info_opt
-    }
-
-    // pub fn get(&self, out_point: &CellOutPoint) -> Option<Arc<LiveCellInfo>> {
-    //     self.map.get(out_point).cloned()
-    // }
-
-    pub fn size(&self) -> usize {
-        self.map.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        let is_empty = self.map.is_empty();
-        if is_empty {
-            assert!(self.blocks.is_empty());
-        }
-        is_empty
-    }
-}
-
-impl Default for LiveCellMap {
-    fn default() -> LiveCellMap {
-        LiveCellMap {
-            map: HashMap::default(),
-            blocks: BTreeMap::default(),
-            total_capacity: 0,
-        }
-    }
+    inputs: Vec<CellOutPoint>,
+    outputs: Vec<CellOutPoint>,
 }
 
 pub struct LiveCellDatabase {
@@ -603,7 +887,7 @@ impl LiveCellDatabase {
         let genesis_header = &genesis_block.header;
         assert_eq!(genesis_header.inner.number.0, 0);
 
-        std::fs::create_dir_all(directory);
+        std::fs::create_dir_all(&directory)?;
         let env_arc = rkv::Manager::singleton()
             .write()
             .unwrap()
@@ -615,12 +899,31 @@ impl LiveCellDatabase {
             let store: rkv::SingleStore = env_read
                 .open_single("index", rkv::StoreOptions::create())
                 .unwrap();
-            let reader = env_read.read().expect("reader");
-            let last_header = store
-                .get(&reader, Key::LastHeader.to_bytes())
-                .unwrap()
-                .map(|value| bincode::deserialize(&value.to_bytes().unwrap()).unwrap())
-                .unwrap_or(genesis_header.clone());
+            let genesis_hash_opt: Option<H256> = {
+                let reader = env_read.read().expect("reader");
+                store
+                    .get(&reader, Key::GenesisHash.to_bytes())
+                    .unwrap()
+                    .map(|value| bincode::deserialize(&value.to_bytes().unwrap()).unwrap())
+            };
+            if let Some(genesis_hash) = genesis_hash_opt {
+                if genesis_hash != genesis_header.hash {
+                    return Err(IndexError::InvalidGenesis(format!("{:#x}", genesis_hash)));
+                }
+            } else {
+                log::info!("genesis not found, init db");
+                let mut writer = env_read.write().unwrap();
+                put_pair(&store, &mut writer, Key::pair_genesis_hash(&genesis_header.hash));
+            }
+
+            let last_header = {
+                let reader = env_read.read().expect("reader");
+                store
+                    .get(&reader, Key::LastHeader.to_bytes())
+                    .unwrap()
+                    .map(|value| bincode::deserialize(&value.to_bytes().unwrap()).unwrap())
+                    .unwrap_or(genesis_header.clone())
+            };
             (store, last_header)
         };
 
@@ -632,24 +935,6 @@ impl LiveCellDatabase {
             tip_header: genesis_header.clone(),
         })
     }
-
-    /*
-    pub fn from_fresh(network: NetworkType, genesis_block: &BlockView) -> LiveCellDatabase {
-        let genesis_header = &genesis_block.header;
-        assert_eq!(genesis_header.inner.number.0, 0);
-
-        let mut db = LiveCellDatabase {
-            network,
-            // live_cell_map: LiveCellMap::default(),
-            // last_header: genesis_header.clone(),
-            tip_header: genesis_header.clone(),
-            // secp_addrs: HashMap::default(),
-            // locks: HashMap::default(),
-        };
-        db.apply_block_unchecked(genesis_block);
-        db
-    }
-    */
 
     pub fn apply_next_block(&mut self, block: &BlockView) -> Result<(usize, usize), IndexError> {
         if block.header.inner.number.0 != self.last_header().inner.number.0 + 1 {
@@ -681,63 +966,98 @@ impl LiveCellDatabase {
         BlockNumber(self.last_header.inner.number.0 + 1)
     }
 
-    // pub fn get_live_cell(&self, out_point: &CellOutPoint) -> Option<Arc<LiveCellInfo>> {
-    //     self.live_cell_map.get(out_point)
-    // }
-
-    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
+    fn get(&self, reader: &rkv::Reader, key: &[u8]) -> Option<Vec<u8>> {
         self.store
-            .get(&reader, key)
+            .get(reader, key)
             .unwrap()
             .map(|value| value.to_bytes().unwrap())
     }
 
-    pub fn get_balance(&self, lock_hash: &H256) -> Option<u128> {
-        self.get(&Key::LockTotalCapacity(lock_hash).to_bytes())
-            .map(|value| bincode::deserialize(&value).unwrap())
+    fn get_address_inner(&self, reader: &rkv::Reader, lock_hash: H256) -> Option<Address> {
+        self.get(reader, &Key::LockScript(lock_hash).to_bytes())
+            .and_then(|bytes| {
+                let script: CoreScript = bincode::deserialize(&bytes).unwrap();
+                script.args
+                    .get(0)
+                    .and_then(|arg| Address::from_lock_arg(&arg).ok())
+            })
     }
+
+    fn get_live_cell_info(
+        &self,
+        reader: &rkv::Reader,
+        out_point: CellOutPoint,
+    ) -> Option<LiveCellInfo> {
+        self.get(reader, &Key::LiveCellMap(out_point).to_bytes())
+            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+    }
+
+    pub fn get_capacity(&self, lock_hash: H256) -> Option<u64> {
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        self.get(&reader, &Key::LockTotalCapacity(lock_hash).to_bytes())
+            .and_then(|bytes| bincode::deserialize(&bytes).unwrap())
+    }
+
+    // pub fn get_address(&self, lock_hash: H256) -> Option<Address> {
+    //     let env_read = self.env_arc.read().unwrap();
+    //     let reader = env_read.read().unwrap();
+    //     self.get_address_inner(&reader, lock_hash)
+    // }
 
     pub fn get_live_cell_infos(
         &self,
-        lock_hash: &H256,
+        lock_hash: H256,
         total_capacity: u64,
-    ) -> (Vec<Arc<LiveCellInfo>>, Option<u64>) {
-        self.locks
-            .get(lock_hash)
-            .map(|live_cell_map| {
-                let mut result_total_capacity = 0;
-                let mut infos = Vec::new();
-                for live_cells in live_cell_map.blocks.values() {
-                    for info in live_cells.values() {
-                        if result_total_capacity < total_capacity {
-                            infos.push(Arc::clone(info));
-                            result_total_capacity += info.capacity;
-                        } else {
-                            return (infos, Some(result_total_capacity));
-                        }
-                    }
-                }
-                (infos, Some(result_total_capacity))
-            })
-            .unwrap_or_else(|| (Vec::new(), None))
+    ) -> (Vec<LiveCellInfo>, u64) {
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        let key_prefix: Vec<u8> = Key::LockLiveCellIndexPrefix(lock_hash).to_bytes();
+
+        let mut infos = Vec::new();
+        let mut result_total_capacity = 0;
+        for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
+            let (key_bytes, value_bytes_opt) = item.unwrap();
+            if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+                log::debug!("Reach the end of this lock");
+                break;
+            }
+            let out_point: CellOutPoint = bincode::deserialize(
+                &value_bytes_opt.unwrap().to_bytes().unwrap()
+            ).unwrap();
+            let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
+            result_total_capacity += live_cell_info.capacity;
+            infos.push(live_cell_info);
+            if result_total_capacity >= total_capacity {
+                log::trace!("Got enough capacity");
+                break;
+            }
+        }
+        (infos, result_total_capacity)
     }
 
     pub fn get_top_n(&self, n: usize) -> Vec<(H256, Option<Address>, u64)> {
-        let mut pairs = self
-            .locks
-            .iter()
-            .map(|(lock_hash, live_cell_map)| {
-                (
-                    lock_hash.clone(),
-                    self.secp_addrs.get(lock_hash).cloned(),
-                    live_cell_map.total_capacity as u64,
-                )
-            })
-            .collect::<Vec<_>>();
-        pairs.sort_by(|a, b| b.2.cmp(&a.2));
-        pairs.truncate(n);
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        let key_prefix: Vec<u8> = KeyType::LockTotalCapacityIndex.to_bytes();
+
+        let mut pairs = Vec::new();
+        for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
+            let (key_bytes, _) = item.unwrap();
+            if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+                log::debug!("Reach the end of this type");
+                break;
+            }
+            if let Key::LockTotalCapacityIndex(capacity, lock_hash) = Key::from_bytes(key_bytes) {
+                let address_opt = self.get_address_inner(&reader, lock_hash.clone());
+                pairs.push((lock_hash, address_opt, capacity));
+            } else {
+                panic!("Got invalid key: {:?}", key_bytes);
+            }
+            if pairs.len() >= n {
+                break;
+            }
+        }
         pairs
     }
 
@@ -749,120 +1069,29 @@ impl LiveCellDatabase {
             header.hash
         );
         let number = header.inner.number.0;
-        let mut removed_in_block = 0;
-        let mut added_in_block = 0;
-        for (tx_index, tx) in block.transactions.iter().enumerate() {
-            let (removed_in_tx, added_in_tx) = self.apply_transaction(tx, tx_index as u32, number);
-            removed_in_block += removed_in_tx;
-            added_in_block += added_in_tx;
-        }
+        let removed_in_block = 0;
+        let added_in_block = 0;
+
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        let block_delta_info = BlockDeltaInfo::from_view(block, &self.store, &reader);
+        let mut writer = env_read.write().unwrap();
+        block_delta_info.apply(&self.store, &mut writer);
+
         self.last_header = block.header.clone();
+
+        writer.commit().unwrap();
+
         log::info!(
             "Process block: {} => {:#x} (total_capacity={}), removed={}, added={}",
-            header.inner.number.0,
+            number,
             header.hash,
-            self.live_cell_map.total_capacity,
+            // TODO: self.live_cell_map.total_capacity,
+            0,
             removed_in_block,
             added_in_block,
         );
         (removed_in_block, added_in_block)
-    }
-
-    fn apply_transaction(
-        &mut self,
-        tx: &TransactionView,
-        tx_index: u32,
-        number: u64,
-    ) -> (usize, usize) {
-        let mut removed = 0;
-        let mut added = 0;
-        for input in &tx.inner.inputs {
-            if let Some(ref out_point) = input.previous_output.cell {
-                if self.remove_live_cell(&out_point).is_some() {
-                    removed += 1;
-                }
-            }
-        }
-        for (output_index, output) in tx.inner.outputs.iter().enumerate() {
-            let lock: CoreScript = output.lock.clone().into();
-            let lock_hash = lock.hash();
-            let capacity = output.capacity.0.as_u64();
-            let out_point = Arc::new(CellOutPoint {
-                tx_hash: tx.hash.clone(),
-                index: Unsigned(output_index as u64),
-            });
-            let index = CellIndex::new(tx_index, output_index as u32);
-            self.add_live_cell(out_point, index, lock_hash.clone(), capacity, number);
-
-            if output.lock.code_hash == SECP_CODE_HASH {
-                if output.lock.args.len() == 1 {
-                    let lock_arg = &output.lock.args[0];
-                    match Address::from_lock_arg(lock_arg.as_bytes()) {
-                        Ok(address) => {
-                            self.secp_addrs.insert(lock_hash, address);
-                        }
-                        Err(err) => {
-                            log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
-                        }
-                    }
-                } else {
-                    log::info!("lock arg should given exact 1");
-                }
-            }
-            added += 1;
-        }
-        (removed, added)
-    }
-
-    fn add_live_cell(
-        &mut self,
-        out_point: Arc<CellOutPoint>,
-        index: CellIndex,
-        lock_hash: H256,
-        capacity: u64,
-        number: u64,
-    ) {
-        let info = Arc::new(LiveCellInfo {
-            out_point: Arc::clone(&out_point),
-            index,
-            lock_hash: lock_hash.clone(),
-            capacity,
-            number,
-        });
-        log::trace!(
-            "add tx_hash={:#x}, index={}, lock_hash={}, capacity={}",
-            out_point.tx_hash,
-            out_point.index.0,
-            info.lock_hash,
-            info.capacity,
-        );
-
-        self.live_cell_map.add(Arc::clone(&info));
-        self.locks.entry(lock_hash).or_default().add(info);
-    }
-
-    fn remove_live_cell(&mut self, out_point: &CellOutPoint) -> Option<Arc<LiveCellInfo>> {
-        let info_opt = self.live_cell_map.remove(out_point);
-        if let Some(ref info) = info_opt {
-            log::trace!(
-                "remove tx_hash={:#x}, index={}, lock_hash={}, capacity={}",
-                out_point.tx_hash,
-                out_point.index.0,
-                info.lock_hash,
-                info.capacity,
-            );
-            let map = self
-                .locks
-                .get_mut(&info.lock_hash)
-                .expect("Target address must exists: {}");
-            let inner_info = map.remove(out_point).expect("Info must exists");
-            if map.is_empty() {
-                self.locks.remove(&info.lock_hash);
-                self.secp_addrs.remove(&info.lock_hash);
-            }
-            assert_eq!(info, &inner_info);
-        }
-        info_opt
     }
 }
 
@@ -872,7 +1101,7 @@ pub enum IndexError {
     BlockTooEarly,
     BlockInvalid,
     IoError(String),
-    FileBroken(String),
+    InvalidGenesis(String),
 }
 
 impl From<io::Error> for IndexError {
