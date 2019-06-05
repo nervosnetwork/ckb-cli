@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use ckb_core::{
+    header::Header as CoreHeader,
     service::Request,
     transaction::{
         CellOutput as CoreCellOutput, OutPoint as CoreOutPoint,
@@ -557,8 +558,8 @@ pub struct CapacityResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleBlockInfo {
-    epoch: EpochNumber,
-    number: BlockNumber,
+    epoch: u64,
+    number: u64,
     hash: H256,
 }
 
@@ -578,16 +579,16 @@ pub enum IndexResponse {
         // live_cell_count: Option<usize>,
         last_block: SimpleBlockInfo,
     },
-    LastHeader(HeaderView),
+    LastHeader(CoreHeader),
     Ok,
 }
 
-impl From<HeaderView> for SimpleBlockInfo {
-    fn from(view: HeaderView) -> SimpleBlockInfo {
+impl From<CoreHeader> for SimpleBlockInfo {
+    fn from(header: CoreHeader) -> SimpleBlockInfo {
         SimpleBlockInfo {
-            number: view.inner.number,
-            epoch: view.inner.epoch,
-            hash: view.hash,
+            number: header.number(),
+            epoch: header.epoch(),
+            hash: header.hash().clone(),
         }
     }
 }
@@ -608,7 +609,7 @@ impl IndexThreadState {
     fn start_init(&mut self) {
         *self = IndexThreadState::StartInit;
     }
-    fn processing(&mut self, header: HeaderView) {
+    fn processing(&mut self, header: CoreHeader) {
         *self = IndexThreadState::Processing(header.into());
     }
     fn stop(&mut self) {
@@ -634,7 +635,7 @@ impl fmt::Display for IndexThreadState {
             IndexThreadState::WaitToStart => "waiting for first query".to_owned(),
             IndexThreadState::StartInit => "initializating".to_owned(),
             IndexThreadState::Processing(SimpleBlockInfo { number, .. }) => {
-                format!("processed block#{}", number.0)
+                format!("processed block#{}", number)
             }
             IndexThreadState::Stopped => "stopped".to_owned(),
         };
@@ -722,11 +723,8 @@ pub fn start_index_thread(
             .unwrap()
             .0
             .unwrap();
-        let mut db = LiveCellDatabase::from_path(
-            NetworkType::TestNet,
-            &genesis_block,
-            index_dir,
-        ).unwrap();
+        let mut db =
+            LiveCellDatabase::from_path(NetworkType::TestNet, &genesis_block, index_dir).unwrap();
 
         let mut last_get_tip = Instant::now();
         let mut tip_header = rpc_client.get_tip_header().call().unwrap();

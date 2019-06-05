@@ -48,6 +48,11 @@ pub fn start(
         }
     }
 
+    Request::call(
+        index_controller.sender(),
+        IndexRequest::UpdateUrl(config.get_url().to_string()),
+    );
+
     let mut printer = Printer::default();
     if !config.json_format() {
         printer.switch_format();
