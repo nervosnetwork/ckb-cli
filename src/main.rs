@@ -29,7 +29,6 @@ fn main() -> Result<(), io::Error> {
     let version = get_version();
     let version_short = version.short();
     let version_long = version.long();
-    println!("version={:?}", version);
     let matches = build_cli(&version_short, &version_long).get_matches();
 
     let mut env_map: HashMap<String, String> = HashMap::from_iter(env::vars());
