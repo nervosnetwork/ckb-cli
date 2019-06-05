@@ -12,7 +12,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::Key;
-use super::{put_pair, value_to_bytes};
+use super::util::{put_pair, value_to_bytes};
 use crate::{Address, SECP_CODE_HASH};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]

@@ -1,5 +1,6 @@
 mod key;
 mod types;
+mod util;
 
 use std::io;
 use std::path::PathBuf;
@@ -18,19 +19,10 @@ const LMDB_MAX_MAP_SIZE: usize = 200 * 1024 * 1024 * 1024;
 const LMDB_MAX_DBS: u32 = 6;
 
 pub use key::{Key, KeyType};
-use types::BlockDeltaInfo;
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
-fn put_pair(store: &rkv::SingleStore, writer: &mut rkv::Writer, (key, value): (Vec<u8>, Vec<u8>)) {
-    store.put(writer, key, &rkv::Value::Blob(&value)).unwrap();
-}
-
-fn value_to_bytes<'a>(value: &'a rkv::Value) -> &'a [u8] {
-    match value {
-        rkv::Value::Blob(inner) => inner,
-        _ => panic!("Invalid value type: {:?}", value),
-    }
-}
+use types::BlockDeltaInfo;
+use util::{put_pair, value_to_bytes};
 
 pub struct LiveCellDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
