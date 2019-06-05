@@ -33,7 +33,7 @@ use serde_json::json;
 
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
-use crate::utils::rpc_client::HttpRpcClient;
+use ckb_sdk::rpc::HttpRpcClient;
 
 use ckb_sdk::{LiveCellDatabase, LiveCellInfo};
 

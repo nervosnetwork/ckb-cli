@@ -8,7 +8,7 @@ use ckb_util::RwLock;
 use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
-use crate::utils::rpc_client::HttpRpcClient;
+use ckb_sdk::rpc::HttpRpcClient;
 
 const MAX_SAVE_BLOCKS: usize = 100;
 

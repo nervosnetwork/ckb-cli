@@ -3,7 +3,7 @@ use std::rc::Rc;
 use numext_fixed_hash::H256;
 use serde_json::to_string_pretty;
 
-use crate::utils::rpc_client::{
+use ckb_sdk::rpc::{
     CellOutputWithOutPoints, CellWithStatus, ChainInfo, EpochExt, HeaderView, Node, Nodes,
     OptionBlockView, OptionEpochExt, OptionH256, OptionTransactionWithStatus, TxPoolInfo,
 };

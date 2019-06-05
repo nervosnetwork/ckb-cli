@@ -18,7 +18,7 @@ use crate::subcommands::{
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
 use crate::utils::printer::Printer;
-use crate::utils::rpc_client::HttpRpcClient;
+use ckb_sdk::rpc::HttpRpcClient;
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 

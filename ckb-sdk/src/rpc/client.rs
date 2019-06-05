@@ -1,6 +1,6 @@
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
-pub use jsonrpc_types::{
+use jsonrpc_types::{
     BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, ChainInfo, EpochExt,
     EpochNumber, HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
 };

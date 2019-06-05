@@ -5,7 +5,7 @@ use jsonrpc_types::{CellOutPoint, OutPoint};
 
 use super::{from_matches, from_matches_opt, CliSubCommand};
 use crate::utils::printer::Printable;
-use crate::utils::rpc_client::HttpRpcClient;
+use ckb_sdk::rpc::HttpRpcClient;
 
 pub struct RpcSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,

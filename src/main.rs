@@ -7,6 +7,7 @@ use std::process;
 use std::sync::Arc;
 
 use build_info::Version;
+use ckb_sdk::rpc::RpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -17,7 +18,6 @@ use subcommands::{
 use url::Url;
 use utils::config::GlobalConfig;
 use utils::printer::Printer;
-use utils::rpc_client::RpcClient;
 
 mod interactive;
 mod subcommands;
