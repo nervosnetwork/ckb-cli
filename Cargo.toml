@@ -18,7 +18,6 @@ ckb-sdk = { path = "ckb-sdk" }
 
 secp256k1 = {version = "0.12.2" }
 faster-hex = "0.3"
-byteorder = "1.3.1"
 env_logger = "0.6"
 bytes = { version="0.4", features = ["serde"] }
 crossbeam-channel = "0.3"
