@@ -17,7 +17,7 @@ rkv = "0.9.5"
 jsonrpc-client-core = "0.5.0"
 jsonrpc-client-http = "0.5.0"
 
-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0", features = ["secp", "bech32"] }
+jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.14.0" }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.14.0" }
+hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.14.0" }
+crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.14.0", features = ["secp", "bech32"] }
