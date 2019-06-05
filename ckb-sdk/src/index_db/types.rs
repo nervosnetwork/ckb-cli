@@ -302,7 +302,6 @@ impl LiveCellInfo {
                 block_hash: None,
             },
             since: 0,
-            args: vec![],
         }
     }
 }
