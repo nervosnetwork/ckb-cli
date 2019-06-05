@@ -7,25 +7,15 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
-use ckb_core::{
-    header::Header as CoreHeader,
-    service::Request,
-    transaction::{
-        CellOutput as CoreCellOutput, OutPoint as CoreOutPoint,
-        TransactionBuilder as CoreTransactionBuilder,
-    },
-    Capacity,
-};
+use ckb_core::{header::Header as CoreHeader, service::Request};
 use ckb_sdk::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
 use ckb_util::RwLock;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_channel::{Receiver, Sender};
 use crypto::secp::{Generator, Privkey};
 use faster_hex::{hex_decode, hex_string};
-use hash::blake2b_256;
-use jsonrpc_types::{BlockNumber, BlockView, CellOutPoint, HeaderView, Transaction, Unsigned};
+use jsonrpc_types::{BlockNumber, HeaderView};
 use numext_fixed_hash::H256;
 use secp256k1::key;
 use serde_derive::{Deserialize, Serialize};
@@ -34,11 +24,10 @@ use serde_json::json;
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use ckb_sdk::rpc::HttpRpcClient;
-
-use ckb_sdk::{LiveCellDatabase, LiveCellInfo};
-
-const ONE_CKB: u64 = 10000_0000;
-const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
+use ckb_sdk::{
+    GenesisInfo, LiveCellDatabase, LiveCellInfo, TransactionBuilder, MIN_SECP_CELL_CAPACITY,
+    ONE_CKB,
+};
 
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]
@@ -244,7 +233,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 total_capacity,
                             ));
                         }
-                        let tx_args = TransactionArgs {
+                        let tx_args = TransactionBuilder {
                             from_privkey: &from_privkey,
                             from_address: &from_address,
                             from_capacity: total_capacity,
@@ -387,58 +376,6 @@ args = ["{:#x}"]
     }
 }
 
-pub struct GenesisInfo {
-    // header: HeaderView,
-    out_points: Vec<Vec<CellOutPoint>>,
-}
-
-impl GenesisInfo {
-    pub fn from_block(genesis_block: BlockView) -> Result<GenesisInfo, String> {
-        let mut error = None;
-        let out_points = genesis_block
-            .transactions
-            .iter()
-            .enumerate()
-            .map(|(tx_index, tx)| {
-                tx.inner
-                    .outputs
-                    .iter()
-                    .enumerate()
-                    .map(|(index, output)| {
-                        if tx_index == 0 && index == 1 {
-                            let code_hash = H256::from_slice(&blake2b_256(output.data.as_bytes()))
-                                .expect("Convert to H256 error");
-                            if code_hash != SECP_CODE_HASH {
-                                error = Some(format!(
-                                    "System secp script code hash error! found: {}, expected: {}",
-                                    code_hash, SECP_CODE_HASH,
-                                ));
-                            }
-                        }
-                        CellOutPoint {
-                            tx_hash: tx.hash.clone(),
-                            index: Unsigned(index as u64),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
-        if let Some(err) = error {
-            Err(err)
-        } else {
-            Ok(GenesisInfo { out_points })
-        }
-    }
-
-    pub fn secp_dep(&self) -> CoreOutPoint {
-        CoreOutPoint {
-            cell: Some(self.out_points[0][1].clone().into()),
-            block_hash: None,
-        }
-    }
-}
-
 fn privkey_from_file(path: &str) -> Result<Privkey, String> {
     let mut content = String::new();
     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
@@ -455,80 +392,6 @@ fn privkey_from_file(path: &str) -> Result<Privkey, String> {
         privkey_string.as_str()
     };
     Privkey::from_str(privkey_str.trim()).map_err(|err| err.to_string())
-}
-
-#[derive(Debug)]
-pub struct TransactionArgs<'a> {
-    from_privkey: &'a Privkey,
-    from_address: &'a Address,
-    from_capacity: u64,
-    to_data: &'a Bytes,
-    to_address: &'a Address,
-    to_capacity: u64,
-}
-
-impl<'a> TransactionArgs<'a> {
-    fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: CoreOutPoint) -> Transaction {
-        assert!(self.from_capacity >= self.to_capacity);
-
-        let inputs = input_infos
-            .iter()
-            .map(|info| info.core_input())
-            .collect::<Vec<_>>();
-
-        // TODO: calculate transaction fee
-        // Send to user
-        let mut from_capacity = self.from_capacity;
-        let mut outputs = vec![CoreCellOutput {
-            capacity: Capacity::shannons(self.to_capacity),
-            data: self.to_data.clone(),
-            lock: self.to_address.lock_script(),
-            type_: None,
-        }];
-        from_capacity -= self.to_capacity;
-
-        if from_capacity > MIN_SECP_CELL_CAPACITY {
-            // The rest send back to sender
-            outputs.push(CoreCellOutput {
-                capacity: Capacity::shannons(from_capacity),
-                data: Bytes::default(),
-                lock: self.from_address.lock_script(),
-                type_: None,
-            });
-        }
-
-        let core_tx = CoreTransactionBuilder::default()
-            .inputs(inputs.clone())
-            .outputs(outputs.clone())
-            .dep(secp_dep.clone())
-            .build();
-
-        let pubkey = self.from_privkey.pubkey().unwrap().serialize();
-        let signature = self.from_privkey.sign_recoverable(&core_tx.hash()).unwrap();
-        let signature_der = signature.serialize_der();
-        let mut signature_size = vec![];
-        signature_size
-            .write_u64::<LittleEndian>(signature_der.len() as u64)
-            .unwrap();
-
-        let witnesses = inputs
-            .iter()
-            .map(|_| {
-                vec![
-                    Bytes::from(pubkey.clone()),
-                    Bytes::from(signature_der.clone()),
-                    Bytes::from(signature_size.clone()),
-                ]
-            })
-            .collect::<Vec<_>>();
-        (&CoreTransactionBuilder::default()
-            .inputs(inputs)
-            .outputs(outputs)
-            .dep(secp_dep)
-            .witnesses(witnesses)
-            .build())
-            .into()
-    }
 }
 
 pub enum IndexRequest {
