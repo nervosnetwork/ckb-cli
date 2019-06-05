@@ -198,6 +198,7 @@ dependencies = [
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "chrono 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-core 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
+ "ckb-sdk 0.1.0",
  "ckb-util 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "colored 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -260,6 +261,10 @@ dependencies = [
  "merkle-cbt 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "numext-fixed-hash 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
+
+[[package]]
+name = "ckb-sdk"
+version = "0.1.0"
 
 [[package]]
 name = "ckb-util"

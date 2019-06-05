@@ -17,6 +17,7 @@ hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
 ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
 crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0", features = ["secp", "bech32"] }
 build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-sdk = { path = "ckb-sdk" }
 
 secp256k1 = {version = "0.12.2" }
 faster-hex = "0.3"
@@ -43,8 +44,10 @@ tui = "0.6.0"
 termion = "1.5"
 chrono = "0.4"
 rkv = "0.9.5"
-# lmdb-zero = "0.4.4"
 bincode = "1.1.4"
 
 [build-dependencies]
 build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+
+[workspace]
+members = ["ckb-sdk"]
