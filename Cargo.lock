@@ -265,6 +265,20 @@ dependencies = [
 [[package]]
 name = "ckb-sdk"
 version = "0.1.0"
+dependencies = [
+ "bech32 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bincode 1.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ckb-core 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
+ "crypto 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
+ "hash 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
+ "jsonrpc-types 0.13.0 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.13.0)",
+ "log 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "numext-fixed-hash 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rkv 0.9.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.91 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.91 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "ckb-util"

@@ -5,3 +5,16 @@ authors = ["Linfeng Qian <thewawar@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+serde = { version = "1.0", features = ["rc"] }
+serde_derive = "1.0"
+numext-fixed-hash = "~0.1"
+bech32 = "0.6.0"
+bytes = { version="0.4", features = ["serde"] }
+bincode = "1.1.4"
+log = "0.4.6"
+rkv = "0.9.5"
+
+jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0", features = ["secp", "bech32"] }

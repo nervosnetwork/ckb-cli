@@ -1,5 +1,3 @@
-pub mod index;
-
 use std::fmt;
 use std::fs;
 use std::io::{Read, Write};
@@ -20,6 +18,7 @@ use ckb_core::{
     },
     Capacity,
 };
+use ckb_sdk::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
 use ckb_util::RwLock;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crossbeam_channel::{Receiver, Sender};
@@ -36,9 +35,7 @@ use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use crate::utils::rpc_client::HttpRpcClient;
 
-pub use index::{
-    Address, AddressFormat, IndexError, LiveCellDatabase, LiveCellInfo, NetworkType, SECP_CODE_HASH,
-};
+use ckb_sdk::{LiveCellDatabase, LiveCellInfo};
 
 const ONE_CKB: u64 = 10000_0000;
 const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
