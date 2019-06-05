@@ -1037,10 +1037,7 @@ impl LiveCellDatabase {
                 store
                     .get(&reader, Key::LastHeader.to_bytes())
                     .unwrap()
-                    .map(|value| {
-                        log::debug!("last_header: {:?}", value_to_bytes(&value));
-                        bincode::deserialize(value_to_bytes(&value)).unwrap()
-                    })
+                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap())
                     .unwrap_or(genesis_header.clone().into())
             };
             (store, last_header)
@@ -1116,7 +1113,7 @@ impl LiveCellDatabase {
         let env_read = self.env_arc.read().unwrap();
         let reader = env_read.read().unwrap();
         self.get(&reader, &Key::LockTotalCapacity(lock_hash).to_bytes())
-            .and_then(|bytes| bincode::deserialize(&bytes).unwrap())
+            .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
     // pub fn get_address(&self, lock_hash: H256) -> Option<Address> {
