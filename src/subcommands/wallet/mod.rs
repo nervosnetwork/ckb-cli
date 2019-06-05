@@ -26,9 +26,7 @@ use crossbeam_channel::{Receiver, Sender};
 use crypto::secp::{Generator, Privkey};
 use faster_hex::{hex_decode, hex_string};
 use hash::blake2b_256;
-use jsonrpc_types::{
-    BlockNumber, BlockView, CellOutPoint, EpochNumber, HeaderView, Transaction, Unsigned,
-};
+use jsonrpc_types::{BlockNumber, BlockView, CellOutPoint, HeaderView, Transaction, Unsigned};
 use numext_fixed_hash::H256;
 use secp256k1::key;
 use serde_derive::{Deserialize, Serialize};
@@ -725,7 +723,8 @@ pub fn start_index_thread(
             .0
             .unwrap();
         let mut db =
-            LiveCellDatabase::from_path(NetworkType::TestNet, &genesis_block, index_dir).unwrap();
+            LiveCellDatabase::from_path(NetworkType::TestNet, &genesis_block, index_dir.clone())
+                .unwrap();
 
         let mut last_get_tip = Instant::now();
         let mut tip_header = rpc_client.get_tip_header().call().unwrap();
@@ -741,7 +740,13 @@ pub fn start_index_thread(
 
             while tip_header.inner.number.0.saturating_sub(4) > db.last_number() {
                 if state.read().is_processing() {
-                    if try_recv(&receiver, &mut db, &mut rpc_client) {
+                    if try_recv(
+                        &receiver,
+                        &mut db,
+                        &index_dir,
+                        &mut tip_header,
+                        &mut rpc_client,
+                    ) {
                         state.write().stop();
                         break;
                     }
@@ -752,19 +757,31 @@ pub fn start_index_thread(
                     .unwrap()
                     .0
                     .unwrap();
-                let (_removed_in_block, _added_in_block) =
-                    db.apply_next_block(&next_block).expect("Add block failed");
+                db.apply_next_block(&next_block).expect("Add block failed");
             }
 
             if first_request
                 .take()
-                .map(|request| process_request(request, &mut db, &mut rpc_client))
+                .map(|request| {
+                    process_request(
+                        request,
+                        &mut db,
+                        &index_dir,
+                        &mut tip_header,
+                        &mut rpc_client,
+                    )
+                })
                 .unwrap_or(false)
             {
                 break;
             }
-            if try_recv(&receiver, &mut db, &mut rpc_client) {
-                state.write().stop();
+            if try_recv(
+                &receiver,
+                &mut db,
+                &index_dir,
+                &mut tip_header,
+                &mut rpc_client,
+            ) {
                 break;
             }
             if state.read().is_stopped() {
@@ -789,10 +806,12 @@ pub fn start_index_thread(
 fn try_recv(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
     db: &mut LiveCellDatabase,
+    index_dir: &PathBuf,
+    tip_header: &mut HeaderView,
     rpc_client: &mut HttpRpcClient,
 ) -> bool {
     match receiver.try_recv() {
-        Ok(request) => process_request(request, db, rpc_client),
+        Ok(request) => process_request(request, db, index_dir, tip_header, rpc_client),
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
@@ -807,6 +826,8 @@ fn try_recv(
 fn process_request(
     request: Request<IndexRequest, IndexResponse>,
     db: &mut LiveCellDatabase,
+    index_dir: &PathBuf,
+    tip_header: &mut HeaderView,
     rpc_client: &mut HttpRpcClient,
 ) -> bool {
     let Request {
@@ -816,6 +837,20 @@ fn process_request(
     match arguments {
         IndexRequest::UpdateUrl(url) => {
             *rpc_client = HttpRpcClient::from_uri(url.as_str());
+            let genesis_block = rpc_client
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .unwrap()
+                .0
+                .unwrap();
+            *db = LiveCellDatabase::from_path(
+                NetworkType::TestNet,
+                &genesis_block,
+                index_dir.clone(),
+            )
+            .unwrap();
+            *tip_header = rpc_client.get_tip_header().call().unwrap();
+            db.update_tip(tip_header.clone());
             responder.send(IndexResponse::Ok).is_err()
         }
         IndexRequest::GetLiveCellInfos {

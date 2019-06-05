@@ -954,8 +954,7 @@ struct TxInfo {
 pub struct LiveCellDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
     store: rkv::SingleStore,
-    // TODO: add genesis hash
-    network: NetworkType,
+    // network: NetworkType,
     last_header: CoreHeader,
     tip_header: HeaderView,
     // live_cell_map: LiveCellMap,
@@ -968,11 +967,12 @@ impl LiveCellDatabase {
     pub fn from_path(
         network: NetworkType,
         genesis_block: &BlockView,
-        directory: PathBuf,
+        mut directory: PathBuf,
     ) -> Result<LiveCellDatabase, IndexError> {
         let genesis_header = &genesis_block.header;
         assert_eq!(genesis_header.inner.number.0, 0);
 
+        directory.push(format!("{:#x}", genesis_header.hash));
         std::fs::create_dir_all(&directory)?;
         let env_arc = rkv::Manager::singleton()
             .write()
@@ -990,20 +990,32 @@ impl LiveCellDatabase {
             let store: rkv::SingleStore = env_read
                 .open_single("index", rkv::StoreOptions::create())
                 .unwrap();
-            let genesis_hash_opt: Option<H256> = {
+            let (genesis_hash_opt, network_opt): (Option<H256>, Option<NetworkType>) = {
                 let reader = env_read.read().expect("reader");
-                store
+                let genesis_hash_opt = store
                     .get(&reader, Key::GenesisHash.to_bytes())
                     .unwrap()
-                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap())
+                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap());
+                let network_opt = store
+                    .get(&reader, Key::Network.to_bytes())
+                    .unwrap()
+                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap());
+                (genesis_hash_opt, network_opt)
             };
             if let Some(genesis_hash) = genesis_hash_opt {
+                if network_opt != Some(network) {
+                    return Err(IndexError::InvalidNetworkType(format!(
+                        "expected: {}, found: {:?}",
+                        network, network_opt
+                    )));
+                }
                 if genesis_hash != genesis_header.hash {
                     return Err(IndexError::InvalidGenesis(format!("{:#x}", genesis_hash)));
                 }
             } else {
                 log::info!("genesis not found, init db");
                 let mut writer = env_read.write().unwrap();
+                put_pair(&store, &mut writer, Key::pair_network(&network));
                 put_pair(
                     &store,
                     &mut writer,
@@ -1026,13 +1038,13 @@ impl LiveCellDatabase {
         Ok(LiveCellDatabase {
             env_arc,
             store,
-            network,
+            // network,
             last_header,
             tip_header: genesis_header.clone(),
         })
     }
 
-    pub fn apply_next_block(&mut self, block: &BlockView) -> Result<(usize, usize), IndexError> {
+    pub fn apply_next_block(&mut self, block: &BlockView) -> Result<(), IndexError> {
         if block.header.inner.number.0 != self.last_header().number() + 1 {
             return Err(IndexError::BlockTooEarly);
         }
@@ -1042,8 +1054,8 @@ impl LiveCellDatabase {
         if block.header.inner.number.0 + 3 >= self.tip_header.inner.number.0 {
             return Err(IndexError::BlockImmature);
         }
-
-        Ok(self.apply_block_unchecked(block))
+        self.apply_block_unchecked(block);
+        Ok(())
     }
 
     pub fn update_tip(&mut self, header: HeaderView) {
@@ -1158,7 +1170,7 @@ impl LiveCellDatabase {
         pairs
     }
 
-    fn apply_block_unchecked(&mut self, block: &BlockView) -> (usize, usize) {
+    fn apply_block_unchecked(&mut self, block: &BlockView) {
         let header = &block.header;
         log::debug!("Block: {} => {:x}", header.inner.number.0, header.hash);
         let number = header.inner.number.0;
@@ -1186,7 +1198,6 @@ impl LiveCellDatabase {
             result.cell_removed,
             result.cell_added,
         );
-        (result.cell_removed, result.cell_added)
     }
 }
 
@@ -1197,6 +1208,7 @@ pub enum IndexError {
     BlockInvalid,
     IoError(String),
     InvalidGenesis(String),
+    InvalidNetworkType(String),
 }
 
 impl From<io::Error> for IndexError {
