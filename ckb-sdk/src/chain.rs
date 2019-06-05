@@ -14,6 +14,7 @@ use jsonrpc_types::{BlockView, CellOutPoint, Transaction, Unsigned};
 use numext_fixed_hash::H256;
 
 pub const ONE_CKB: u64 = 10000_0000;
+// H256(secp code hash) + H160 (secp pubkey hash) + u64(capacity) = 32 + 20 + 8 = 60
 pub const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
 
 pub struct GenesisInfo {
