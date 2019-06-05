@@ -15,7 +15,7 @@ const PREFIX_TESTNET: &str = "ckt";
 // \x01 is the P2PH version
 const P2PH_MARK: &[u8] = b"\x01P2PH";
 pub const SECP_CODE_HASH: H256 =
-    h256!("0x9e3b3557f11b2b3532ce352bfe8017e9fd11d154c4c7f9b7aaaa1e621b539a08");
+    h256!("0xf1951123466e4479842387a66fabfd6b65fc87fd84ae8e6cd3053edb27fff2fd");
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NetworkType {
