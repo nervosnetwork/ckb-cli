@@ -258,10 +258,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             to_capacity: capacity,
                         };
                         let tx = tx_args.build(infos, self.genesis_info().secp_dep());
-                        println!(
-                            "[Send Transaction]:\n{}",
-                            serde_json::to_string_pretty(&tx).unwrap()
-                        );
+                        // TODO: print when debug
+                        // println!(
+                        //     "[Send Transaction]:\n{}",
+                        //     serde_json::to_string_pretty(&tx).unwrap()
+                        // );
                         let resp = self
                             .rpc_client
                             .send_transaction(tx)

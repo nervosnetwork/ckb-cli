@@ -53,9 +53,9 @@ enum KeyType {
     // key => value: {type}:{Address} => {lock-hash}
     SecpAddrLock = 102,
 
-    // key => value: {type}:{CellOutPoint} => {LiveCellInfo}
+    // key => value: {type}:{CoreCellOutPoint} => {LiveCellInfo}
     LiveCellMap = 200,
-    // key => value: {type}:{block-number}:{CellIndex} => {CellOutPoint}
+    // key => value: {type}:{block-number}:{CellIndex} => {CoreCellOutPoint}
     LiveCellIndex = 201,
 
     // >> Store live cell owned by certain lock
@@ -66,7 +66,7 @@ enum KeyType {
     // >> NOTE: Remove when capacity changed
     // key => value: {type}:{capacity(u64::MAX - u64)}:{lock-hash} => ()
     LockTotalCapacityIndex = 302,
-    // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {CellOutPoint}
+    // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {CoreCellOutPoint}
     LockLiveCellIndex = 303,
     // key => value: {type}:{lock-hash}:{block-number}:{tx-index(u32)} => {tx-hash}
     LockTx = 304,
@@ -124,7 +124,6 @@ enum Key {
     LockScript(H256),
     LockTotalCapacity(H256),
     LockTotalCapacityIndex(u64, H256),
-    // LockLiveCell(H256, CellOutPoint),
     LockLiveCellIndexPrefix(H256),
     LockLiveCellIndex(H256, u64, CellIndex),
     LockTx(H256, u64, u32),
@@ -184,12 +183,6 @@ impl Key {
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
                 bytes
             }
-            // Key::LockLiveCell(lock_hash, out_point) => {
-            //     let mut bytes = KeyType::LockLiveCell.to_bytes();
-            //     bytes.extend(bincode::serialize(lock_hash).unwrap());
-            //     bytes.extend(bincode::serialize(out_point).unwrap());
-            //     bytes
-            // }
             Key::LockLiveCellIndexPrefix(lock_hash) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
@@ -270,13 +263,6 @@ impl Key {
                 let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
                 Key::LockTotalCapacityIndex(capacity, lock_hash)
             }
-            // KeyType::LockLiveCell => {
-            // let lock_hash_bytes = &args_bytes[..32];
-            // let out_point_bytes = &args_bytes[32..];
-            // let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
-            // let out_point = bincode::deserialize(out_point_bytes).unwrap();
-            // Key::LockLiveCell(lock_hash, out_point)
-            // }
             KeyType::LockLiveCellIndex => {
                 let lock_hash_bytes = &args_bytes[..32];
                 let mut number_bytes = [0u8; 8];
@@ -405,12 +391,6 @@ impl Key {
             [0u8].to_vec(),
         )
     }
-    // fn pair_lock_live_cell((lock_hash, out_point): (H256, CellOutPoint)) -> (Vec<u8>, Vec<u8>) {
-    //     (
-    //         Key::LockLiveCell(lock_hash, out_point).to_bytes(),
-    //         [0u8].to_vec(),
-    //     )
-    // }
     fn pair_lock_live_cell_index(
         (lock_hash, number, cell_index): (H256, u64, CellIndex),
         value: &CoreCellOutPoint,
@@ -1103,9 +1083,9 @@ impl LiveCellDatabase {
     fn get_live_cell_info(
         &self,
         reader: &rkv::Reader,
-        out_point: CellOutPoint,
+        out_point: CoreCellOutPoint,
     ) -> Option<LiveCellInfo> {
-        self.get(reader, &Key::LiveCellMap(out_point.into()).to_bytes())
+        self.get(reader, &Key::LiveCellMap(out_point).to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
@@ -1139,8 +1119,9 @@ impl LiveCellDatabase {
                 log::debug!("Reach the end of this lock");
                 break;
             }
-            let out_point: CellOutPoint =
-                bincode::deserialize(&value_bytes_opt.unwrap().to_bytes().unwrap()).unwrap();
+            let value_bytes = value_bytes_opt.unwrap();
+            let out_point: CoreCellOutPoint =
+                bincode::deserialize(value_to_bytes(&value_bytes)).unwrap();
             let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
             result_total_capacity += live_cell_info.capacity;
             infos.push(live_cell_info);
