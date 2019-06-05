@@ -1,5 +1,4 @@
 use crate::{Address, LiveCellInfo, SECP_CODE_HASH};
-use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use ckb_core::{
     transaction::{
@@ -115,13 +114,10 @@ impl<'a> TransactionBuilder<'a> {
             .dep(secp_dep.clone())
             .build();
 
-        let pubkey = self.from_privkey.pubkey().unwrap().serialize();
-        let signature = self.from_privkey.sign_recoverable(&core_tx.hash()).unwrap();
+        let message = H256::from(blake2b_256(core_tx.hash()));
+        let signature = self.from_privkey.sign_recoverable(&message).unwrap();
         let signature_der = signature.serialize_der();
-        let mut signature_size = vec![];
-        signature_size
-            .write_u64::<LittleEndian>(signature_der.len() as u64)
-            .unwrap();
+        let pubkey = self.from_privkey.pubkey().unwrap().serialize();
 
         let witnesses = inputs
             .iter()
@@ -129,7 +125,6 @@ impl<'a> TransactionBuilder<'a> {
                 vec![
                     Bytes::from(pubkey.clone()),
                     Bytes::from(signature_der.clone()),
-                    Bytes::from(signature_size.clone()),
                 ]
             })
             .collect::<Vec<_>>();
