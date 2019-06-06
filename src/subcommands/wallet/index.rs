@@ -213,6 +213,9 @@ pub fn start_index_thread(
         let mut last_get_tip = Instant::now();
         let mut tip_header = rpc_client.get_tip_header().call().unwrap();
         db.update_tip(tip_header.clone());
+        state
+            .write()
+            .processing(db.last_header().clone(), tip_header.inner.number.0);
 
         loop {
             if last_get_tip.elapsed() > Duration::from_secs(2) {
