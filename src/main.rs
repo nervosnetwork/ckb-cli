@@ -11,9 +11,10 @@ use ckb_sdk::rpc::RpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
+#[cfg(unix)]
+use subcommands::TuiSubCommand;
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, TuiSubCommand,
-    WalletSubCommand,
+    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
 };
 use url::Url;
 use utils::config::GlobalConfig;
@@ -71,6 +72,7 @@ fn main() -> Result<(), io::Error> {
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {
+        #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(api_uri.to_string(), index_controller.clone()).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("wallet", Some(sub_matches)) => {
@@ -139,12 +141,11 @@ fn get_version() -> Version {
 }
 
 pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, 'a> {
-    App::new("ckb-cli")
+    let app = App::new("ckb-cli")
         .version(version_short)
         .long_version(version_long)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
-        .subcommand(SubCommand::with_name("tui").about("Entry TUI mode"))
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
         .arg(
@@ -164,7 +165,15 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .long("debug")
                 .global(true)
                 .help("Display request parameters"),
-        )
+        );
+    #[cfg(unix)]
+    {
+        app.subcommand(SubCommand::with_name("tui").about("Enter TUI mode"))
+    }
+    #[cfg(not(unix))]
+    {
+        app
+    }
 }
 
 pub fn build_interactive() -> App<'static, 'static> {

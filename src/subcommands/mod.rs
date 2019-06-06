@@ -1,7 +1,9 @@
 pub mod rpc;
+#[cfg(unix)]
 pub mod tui;
 pub mod wallet;
 
+#[cfg(unix)]
 pub use self::tui::TuiSubCommand;
 pub use rpc::RpcSubCommand;
 pub use wallet::{
