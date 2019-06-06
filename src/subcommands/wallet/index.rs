@@ -83,7 +83,7 @@ pub enum IndexThreadState {
     // Started init db
     StartInit,
     // Process after init db
-    Processing(SimpleBlockInfo),
+    Processing(SimpleBlockInfo, u64),
     // Thread exit
     Stopped,
 }
@@ -92,8 +92,8 @@ impl IndexThreadState {
     fn start_init(&mut self) {
         *self = IndexThreadState::StartInit;
     }
-    fn processing(&mut self, header: CoreHeader) {
-        *self = IndexThreadState::Processing(header.into());
+    fn processing(&mut self, header: CoreHeader, tip_number: u64) {
+        *self = IndexThreadState::Processing(header.into(), tip_number);
     }
     fn stop(&mut self) {
         *self = IndexThreadState::Stopped;
@@ -106,7 +106,7 @@ impl IndexThreadState {
     }
     pub fn is_processing(&self) -> bool {
         match self {
-            IndexThreadState::Processing(_) => true,
+            IndexThreadState::Processing(_, _) => true,
             _ => false,
         }
     }
@@ -117,8 +117,8 @@ impl fmt::Display for IndexThreadState {
         let output = match self {
             IndexThreadState::WaitToStart => "waiting for first query".to_owned(),
             IndexThreadState::StartInit => "initializating".to_owned(),
-            IndexThreadState::Processing(SimpleBlockInfo { number, .. }) => {
-                format!("processed block#{}", number)
+            IndexThreadState::Processing(SimpleBlockInfo { number, .. }, tip_number) => {
+                format!("processed block#{} (tip#{})", number, tip_number)
             }
             IndexThreadState::Stopped => "stopped".to_owned(),
         };
@@ -223,17 +223,15 @@ pub fn start_index_thread(
             }
 
             while tip_header.inner.number.0.saturating_sub(4) > db.last_number() {
-                if state.read().is_processing() {
-                    if try_recv(
-                        &receiver,
-                        &mut db,
-                        &index_dir,
-                        &mut tip_header,
-                        &mut rpc_client,
-                    ) {
-                        state.write().stop();
-                        break;
-                    }
+                if try_recv(
+                    &receiver,
+                    &mut db,
+                    &index_dir,
+                    &mut tip_header,
+                    &mut rpc_client,
+                ) {
+                    state.write().stop();
+                    break;
                 }
                 let next_block = rpc_client
                     .get_block_by_number(db.next_number())
@@ -242,6 +240,9 @@ pub fn start_index_thread(
                     .0
                     .unwrap();
                 db.apply_next_block(&next_block).expect("Add block failed");
+                state
+                    .write()
+                    .processing(db.last_header().clone(), tip_header.inner.number.0);
             }
 
             if first_request
@@ -257,7 +258,7 @@ pub fn start_index_thread(
                 })
                 .unwrap_or(false)
             {
-                break;
+                state.write().stop();
             }
             if try_recv(
                 &receiver,
@@ -266,12 +267,11 @@ pub fn start_index_thread(
                 &mut tip_header,
                 &mut rpc_client,
             ) {
-                break;
+                state.write().stop();
             }
+
             if state.read().is_stopped() {
                 break;
-            } else {
-                state.write().processing(db.last_header().clone());
             }
 
             thread::sleep(Duration::from_millis(100));
