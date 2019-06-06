@@ -16,6 +16,11 @@ use serde_derive::{Deserialize, Serialize};
 use ckb_sdk::rpc::HttpRpcClient;
 use ckb_sdk::{KeyMetrics, KeyType, LiveCellDatabase, LiveCellInfo};
 
+// 200MB extra disk space
+const LMDB_EXTRA_MAP_SIZE: u64 = 200 * 1024 * 1024;
+// Reopen database every 10000 blocks (for increase map size)
+const REOPEN_DB_BLOCKS: usize = 10000;
+
 pub enum IndexRequest {
     UpdateUrl(String),
     GetLiveCellInfos {
@@ -206,10 +211,15 @@ pub fn start_index_thread(
             .unwrap()
             .0
             .unwrap();
-        let mut db =
-            LiveCellDatabase::from_path(NetworkType::TestNet, &genesis_block, index_dir.clone())
-                .unwrap();
+        let mut db = LiveCellDatabase::from_path(
+            NetworkType::TestNet,
+            &genesis_block,
+            index_dir.clone(),
+            LMDB_EXTRA_MAP_SIZE,
+        )
+        .unwrap();
 
+        let mut processed_blocks = 0;
         let mut last_get_tip = Instant::now();
         let mut tip_header = rpc_client.get_tip_header().call().unwrap();
         db.update_tip(tip_header.clone());
@@ -242,10 +252,23 @@ pub fn start_index_thread(
                     .unwrap()
                     .0
                     .unwrap();
-                db.apply_next_block(&next_block).expect("Add block failed");
+                db.apply_next_block(next_block).expect("Add block failed");
+                processed_blocks += 1;
                 state
                     .write()
                     .processing(db.last_header().clone(), tip_header.inner.number.0);
+                if processed_blocks > REOPEN_DB_BLOCKS {
+                    log::info!("Reopen database");
+                    db = LiveCellDatabase::from_path(
+                        NetworkType::TestNet,
+                        &genesis_block,
+                        index_dir.clone(),
+                        LMDB_EXTRA_MAP_SIZE,
+                    )
+                    .unwrap();
+                    db.update_tip(tip_header.clone());
+                    processed_blocks = 0;
+                }
             }
 
             if first_request
@@ -334,6 +357,7 @@ fn process_request(
                 NetworkType::TestNet,
                 &genesis_block,
                 index_dir.clone(),
+                LMDB_EXTRA_MAP_SIZE,
             )
             .unwrap();
             *tip_header = rpc_client.get_tip_header().call().unwrap();

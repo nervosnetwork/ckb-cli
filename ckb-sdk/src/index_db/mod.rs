@@ -15,22 +15,23 @@ use ckb_core::{
 use jsonrpc_types::{BlockNumber, BlockView, HeaderView};
 use numext_fixed_hash::H256;
 
-// 32GB (more than disk space size will failed on windows)
-const LMDB_MAX_MAP_SIZE: usize = 32 * 1024 * 1024 * 1024;
 const LMDB_MAX_DBS: u32 = 6;
 
 pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
 use types::BlockDeltaInfo;
-use util::{put_pair, value_to_bytes};
+use util::{dir_size, put_pair, value_to_bytes};
 
+// NOTE: You should reopen to increase database size when processed enough blocks
+//  [reference]: https://stackoverflow.com/a/33571804
 pub struct LiveCellDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
     store: rkv::SingleStore,
     // network: NetworkType,
     last_header: CoreHeader,
     tip_header: HeaderView,
+    init_block_buf: Vec<BlockView>,
 }
 
 impl LiveCellDatabase {
@@ -38,19 +39,21 @@ impl LiveCellDatabase {
         network: NetworkType,
         genesis_block: &BlockView,
         mut directory: PathBuf,
+        extra_size: u64,
     ) -> Result<LiveCellDatabase, IndexError> {
         let genesis_header = &genesis_block.header;
         assert_eq!(genesis_header.inner.number.0, 0);
 
         directory.push(format!("{:#x}", genesis_header.hash));
         std::fs::create_dir_all(&directory)?;
+        let map_size = dir_size(&directory) + extra_size;
         let env_arc = rkv::Manager::singleton()
             .write()
             .unwrap()
             .get_or_create(directory.as_path(), |path| {
                 let mut env = rkv::Rkv::environment_builder();
                 env.set_max_dbs(LMDB_MAX_DBS);
-                env.set_map_size(LMDB_MAX_MAP_SIZE);
+                env.set_map_size(map_size as usize);
                 rkv::Rkv::from_env(path, env)
             })
             .unwrap();
@@ -111,10 +114,11 @@ impl LiveCellDatabase {
             // network,
             last_header,
             tip_header: genesis_header.clone(),
+            init_block_buf: Vec::new(),
         })
     }
 
-    pub fn apply_next_block(&mut self, block: &BlockView) -> Result<(), IndexError> {
+    pub fn apply_next_block(&mut self, block: BlockView) -> Result<(), IndexError> {
         if block.header.inner.number.0 != self.last_header().number() + 1 {
             return Err(IndexError::BlockTooEarly);
         }
@@ -240,34 +244,44 @@ impl LiveCellDatabase {
         pairs
     }
 
-    fn apply_block_unchecked(&mut self, block: &BlockView) {
+    fn apply_block_unchecked(&mut self, block: BlockView) {
         let header = &block.header;
         log::debug!("Block: {} => {:x}", header.inner.number.0, header.hash);
-        let number = header.inner.number.0;
 
         let env_read = self.env_arc.read().unwrap();
-        let block_delta_info = {
-            let reader = env_read.read().unwrap();
-            BlockDeltaInfo::from_view(block, &self.store, &reader)
-        };
-        let result = {
-            let mut writer = env_read.write().unwrap();
-            let result = block_delta_info.apply(&self.store, &mut writer);
-            writer.commit().unwrap();
-            self.last_header = block.header.clone().into();
-            result
+        // TODO: should forbid query when Init
+        self.last_header = block.header.clone().into();
+        let blocks = if self.last_number() < self.tip_header.inner.number.0 - 256 {
+            self.init_block_buf.push(block);
+            if self.init_block_buf.len() >= 200 {
+                self.init_block_buf.split_off(0)
+            } else {
+                Vec::new()
+            }
+        } else {
+            let mut blocks = self.init_block_buf.split_off(0);
+            blocks.push(block);
+            blocks
         };
 
-        log::info!(
-            "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
-            number,
-            header.hash,
-            result.chain_capacity,
-            result.capacity_delta,
-            result.txs,
-            result.cell_removed,
-            result.cell_added,
-        );
+        let mut writer = env_read.write().unwrap();
+        for block in blocks {
+            let block_delta_info = BlockDeltaInfo::from_view(&block, &self.store, &writer);
+            let number = block_delta_info.header.number();
+            let hash = block_delta_info.header.hash();
+            let result = block_delta_info.apply(&self.store, &mut writer);
+            log::info!(
+                "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
+                number,
+                hash,
+                result.chain_capacity,
+                result.capacity_delta,
+                result.txs,
+                result.cell_removed,
+                result.cell_added,
+            );
+        }
+        writer.commit().unwrap();
     }
 
     pub fn get_metrics(&self, key_type_opt: Option<KeyType>) -> BTreeMap<KeyType, KeyMetrics> {

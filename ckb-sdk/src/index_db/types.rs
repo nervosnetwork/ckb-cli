@@ -26,7 +26,7 @@ pub enum HashType {
 
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct BlockDeltaInfo {
-    header: CoreHeader,
+    pub(crate) header: CoreHeader,
     txs: Vec<RichTxInfo>,
     locks: Vec<CoreScript>,
 }
@@ -35,7 +35,7 @@ impl BlockDeltaInfo {
     pub(crate) fn from_view(
         block: &BlockView,
         store: &rkv::SingleStore,
-        reader: &rkv::Reader,
+        writer: &rkv::Writer,
     ) -> BlockDeltaInfo {
         let header: CoreHeader = block.header.clone().into();
         let number = block.header.inner.number.0;
@@ -53,7 +53,7 @@ impl BlockDeltaInfo {
                     if let Some(ref out_point) = input.previous_output.cell {
                         let live_cell_info: LiveCellInfo = store
                             .get(
-                                reader,
+                                writer,
                                 Key::LiveCellMap(out_point.clone().into()).to_bytes(),
                             )
                             .unwrap()
