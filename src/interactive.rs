@@ -96,6 +96,16 @@ pub fn start_rustyline(
     let env_regex = Regex::new(ENV_PATTERN).unwrap();
     let parser = crate::build_interactive();
     let colored_prompt = Blue.bold().paint("CKB> ").to_string();
+    let prompt = {
+        #[cfg(unix)]
+        {
+            &colored_prompt
+        }
+        #[cfg(not(unix))]
+        {
+            "CKB> "
+        }
+    };
     let mut rpc_client = HttpRpcClient::from_uri(config.get_url());
 
     let rl_mode = |rl: &mut Editor<CkbCompleter>, config: &GlobalConfig| {
@@ -128,7 +138,7 @@ pub fn start_rustyline(
 
     loop {
         rl_mode(&mut rl, &config);
-        match rl.readline(&colored_prompt) {
+        match rl.readline(prompt) {
             Ok(line) => {
                 match handle_command(
                     line.as_str(),
