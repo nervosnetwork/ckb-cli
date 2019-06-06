@@ -1,0 +1,20 @@
+language: rust
+rust:
+  - stable
+before_script:
+  - rustup component add rustfmt
+  - rustup component add clippy
+script:
+  - cargo build --all
+stages:
+  - Check
+jobs:
+  include:
+    - stage: Check
+      name: Format
+      script:
+        - cargo fmt --all -- --check
+    - stage: Test
+      name: Unitest
+      script:
+        - RUST_BACKTRACE=full cargo test --all
