@@ -190,7 +190,10 @@ impl GlobalConfig {
         };
         let edit_style = if self.edit_style { "Emacs" } else { "Vi" };
         let index_state = self.index_state.read().to_string();
+        let version = crate::get_version();
+        let version_long = version.long();
         let values = [
+            ("ckb-cli version", version_long.as_str()),
             ("url", self.get_url()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
