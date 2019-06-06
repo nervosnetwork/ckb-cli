@@ -5,8 +5,9 @@ use ckb_core::{
     transaction::CellOutPoint as CoreCellOutPoint,
 };
 use numext_fixed_hash::H256;
+use serde_derive::{Deserialize, Serialize};
 
-#[derive(Eq, PartialEq, Debug, Hash, Clone, Copy)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Debug, Hash, Clone, Copy, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum KeyType {
     // key => value: {type} => {block-hash}
@@ -393,5 +394,22 @@ impl Key {
             Key::BlockDelta(number).to_bytes(),
             bincode::serialize(value).unwrap(),
         )
+    }
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize, Default)]
+pub struct KeyMetrics {
+    count: usize,
+    key_size: usize,
+    value_size: usize,
+    total_size: usize,
+}
+
+impl KeyMetrics {
+    pub fn add_pair(&mut self, key: &[u8], value: &[u8]) {
+        self.count += 1;
+        self.key_size += key.len();
+        self.value_size += value.len();
+        self.total_size += key.len() + value.len();
     }
 }

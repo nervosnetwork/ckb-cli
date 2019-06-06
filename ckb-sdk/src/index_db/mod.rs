@@ -2,6 +2,7 @@ mod key;
 mod types;
 mod util;
 
+use std::collections::BTreeMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -18,7 +19,7 @@ use numext_fixed_hash::H256;
 const LMDB_MAX_MAP_SIZE: usize = 200 * 1024 * 1024 * 1024;
 const LMDB_MAX_DBS: u32 = 6;
 
-pub use key::{Key, KeyType};
+pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
 use types::BlockDeltaInfo;
@@ -267,6 +268,48 @@ impl LiveCellDatabase {
             result.cell_removed,
             result.cell_added,
         );
+    }
+
+    pub fn get_metrics(&self, key_type_opt: Option<KeyType>) -> BTreeMap<KeyType, KeyMetrics> {
+        let mut key_types = BTreeMap::default();
+        if let Some(key_type) = key_type_opt {
+            key_types.insert(key_type, KeyMetrics::default());
+        } else {
+            for key_type in vec![
+                KeyType::GenesisHash,
+                KeyType::Network,
+                KeyType::LastHeader,
+                KeyType::TotalCapacity,
+                KeyType::GlobalHash,
+                KeyType::TxMap,
+                KeyType::SecpAddrLock,
+                KeyType::LiveCellMap,
+                KeyType::LiveCellIndex,
+                KeyType::LockScript,
+                KeyType::LockTotalCapacity,
+                KeyType::LockTotalCapacityIndex,
+                KeyType::LockLiveCellIndex,
+                KeyType::LockTx,
+                KeyType::BlockDelta,
+            ] {
+                key_types.insert(key_type, KeyMetrics::default());
+            }
+        }
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        for (key_type, metrics) in &mut key_types {
+            let key_prefix = key_type.to_bytes();
+            for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
+                let (key_bytes, value_bytes_opt) = item.unwrap();
+                if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+                    log::debug!("Reach the end of this lock");
+                    break;
+                }
+                let value_bytes = value_bytes_opt.unwrap().to_bytes().unwrap();
+                metrics.add_pair(&key_bytes, &value_bytes);
+            }
+        }
+        key_types
     }
 }
 

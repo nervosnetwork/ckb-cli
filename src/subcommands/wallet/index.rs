@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{LiveCellDatabase, LiveCellInfo};
+use ckb_sdk::{KeyMetrics, KeyType, LiveCellDatabase, LiveCellInfo};
 
 pub enum IndexRequest {
     UpdateUrl(String),
@@ -24,23 +25,10 @@ pub enum IndexRequest {
     GetTopLocks(usize),
     GetCapacity(H256),
     GetBalance(Address),
+    GetMetrics,
     // GetLastHeader,
     // RebuildIndex,
     Shutdown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CapacityResult {
-    pub lock_hash: H256,
-    pub address: Option<String>,
-    pub capacity: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimpleBlockInfo {
-    epoch: u64,
-    number: u64,
-    hash: H256,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,7 +48,22 @@ pub enum IndexResponse {
         last_block: SimpleBlockInfo,
     },
     LastHeader(CoreHeader),
+    DatabaseMetrics(BTreeMap<KeyType, KeyMetrics>),
     Ok,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapacityResult {
+    pub lock_hash: H256,
+    pub address: Option<String>,
+    pub capacity: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleBlockInfo {
+    epoch: u64,
+    number: u64,
+    hash: H256,
 }
 
 impl From<CoreHeader> for SimpleBlockInfo {
@@ -386,6 +389,9 @@ fn process_request(
                 .is_err()
         }
 
+        IndexRequest::GetMetrics => responder
+            .send(IndexResponse::DatabaseMetrics(db.get_metrics(None)))
+            .is_err(),
         // IndexRequest::GetLastHeader => responder
         //     .send(IndexResponse::LastHeader(db.last_header().clone()))
         //     .is_err(),

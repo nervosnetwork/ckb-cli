@@ -158,6 +158,8 @@ impl<'a> WalletSubCommand<'a> {
                             .takes_value(true)
                             .help("Get top n capacity addresses (default: 10)"),
                     ),
+                SubCommand::with_name("db-metrics")
+                    .about("Show index database metrics"),
             ])
     }
 }
@@ -367,6 +369,10 @@ args = ["{:#x}"]
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
                 let resp = Request::call(&self.index_sender, IndexRequest::GetTopLocks(n)).unwrap();
+                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+            }
+            ("db-metrics", _) => {
+                let resp = Request::call(&self.index_sender, IndexRequest::GetMetrics).unwrap();
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             _ => Err(matches.usage().to_owned()),
