@@ -15,8 +15,8 @@ use ckb_core::{
 use jsonrpc_types::{BlockNumber, BlockView, HeaderView};
 use numext_fixed_hash::H256;
 
-// 200GB
-const LMDB_MAX_MAP_SIZE: usize = 200 * 1024 * 1024 * 1024;
+// 32GB (more than disk space size will failed on windows)
+const LMDB_MAX_MAP_SIZE: usize = 32 * 1024 * 1024 * 1024;
 const LMDB_MAX_DBS: u32 = 6;
 
 pub use key::{Key, KeyMetrics, KeyType};
