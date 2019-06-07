@@ -209,16 +209,25 @@ impl BlockDeltaInfo {
             } else if *delta < 0 {
                 lock_capacity -= delta.abs() as u64;
             }
-            put_pair(
-                store,
-                writer,
-                Key::pair_lock_total_capacity((*lock_hash).clone(), &lock_capacity),
-            );
-            put_pair(
-                store,
-                writer,
-                Key::pair_lock_total_capacity_index((lock_capacity, (*lock_hash).clone())),
-            );
+            if lock_capacity > 0 {
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_lock_total_capacity((*lock_hash).clone(), &lock_capacity),
+                );
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_lock_total_capacity_index((lock_capacity, (*lock_hash).clone())),
+                );
+            } else {
+                store
+                    .delete(
+                        writer,
+                        Key::LockTotalCapacity((*lock_hash).clone()).to_bytes(),
+                    )
+                    .unwrap();
+            }
         }
         // Update chain total capacity
         let mut chain_capacity: u128 = store
