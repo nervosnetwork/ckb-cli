@@ -107,15 +107,19 @@ impl LiveCellDatabase {
             };
             (store, last_header)
         };
-
-        Ok(LiveCellDatabase {
+        let mut db = LiveCellDatabase {
             env_arc,
             store,
             // network,
             last_header,
             tip_header: genesis_header.clone(),
             init_block_buf: Vec::new(),
-        })
+        };
+        if db.last_number() == 0 {
+            db.apply_block_unchecked(genesis_block.clone());
+        }
+
+        Ok(db)
     }
 
     pub fn apply_next_block(&mut self, block: BlockView) -> Result<(), IndexError> {
