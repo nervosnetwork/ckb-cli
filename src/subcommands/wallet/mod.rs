@@ -156,7 +156,7 @@ impl<'a> WalletSubCommand<'a> {
                             })
                             .default_value("10")
                             .takes_value(true)
-                            .help("Get top n capacity addresses (default: 10)"),
+                            .help("Get top n capacity addresses"),
                     ),
                 SubCommand::with_name("db-metrics")
                     .about("Show index database metrics"),
