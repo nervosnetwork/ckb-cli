@@ -120,12 +120,18 @@ impl IndexThreadState {
 impl fmt::Display for IndexThreadState {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let output = match self {
-            IndexThreadState::WaitToStart => "waiting for first query".to_owned(),
-            IndexThreadState::StartInit => "initializating".to_owned(),
+            IndexThreadState::WaitToStart => "Waiting for first query".to_owned(),
+            IndexThreadState::StartInit => "Initializing".to_owned(),
             IndexThreadState::Processing(SimpleBlockInfo { number, .. }, tip_number) => {
-                format!("processed block#{} (tip#{})", number, tip_number)
+                let synced = (tip_number - number) == 4;
+                format!(
+                    "Processed block#{} (tip#{}{})",
+                    number,
+                    tip_number,
+                    if synced { " synced" } else { "" }
+                )
             }
-            IndexThreadState::Stopped => "stopped".to_owned(),
+            IndexThreadState::Stopped => "Stopped".to_owned(),
         };
         write!(f, "{}", output)
     }
