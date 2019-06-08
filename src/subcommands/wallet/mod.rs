@@ -75,7 +75,7 @@ impl<'a> WalletSubCommand<'a> {
             .about("tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
-                    .about("Transfer capacity to a address (can have data)")
+                    .about("Transfer capacity to an address (can have data)")
                     .arg(arg_privkey.clone().required(true))
                     .arg(
                         Arg::with_name("to-address")
@@ -103,7 +103,7 @@ impl<'a> WalletSubCommand<'a> {
                             .takes_value(true)
                             .possible_values(&["CKB", "shannon"])
                             .default_value("CKB")
-                            .help("Capacity unit, 1CKB = 10^8 shanon"),
+                            .help("Capacity unit, 1CKB = 10^8 shannon"),
                     ),
                 SubCommand::with_name("generate-key")
                     .about("Generate a random secp256k1 privkey and save to file (print block_assembler config)")
@@ -120,7 +120,7 @@ impl<'a> WalletSubCommand<'a> {
                             .help("Output privkey file path (content = privkey + address)"),
                     ),
                 SubCommand::with_name("key-info")
-                    .about("Show public information of a secp256k1 private key (file)")
+                    .about("Show public information of a secp256k1 private key (from file) or public key")
                     .arg(arg_privkey.clone())
                     .arg(
                         Arg::with_name("pubkey")
