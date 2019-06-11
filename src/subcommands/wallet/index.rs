@@ -14,7 +14,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{KeyMetrics, KeyType, LiveCellDatabase, LiveCellInfo};
+use ckb_sdk::{IndexKeyMetrics, IndexKeyType, LiveCellDatabase, LiveCellInfo};
 
 // 200MB extra disk space
 const LMDB_EXTRA_MAP_SIZE: u64 = 200 * 1024 * 1024;
@@ -53,7 +53,7 @@ pub enum IndexResponse {
         last_block: SimpleBlockInfo,
     },
     LastHeader(CoreHeader),
-    DatabaseMetrics(BTreeMap<KeyType, KeyMetrics>),
+    DatabaseMetrics(BTreeMap<IndexKeyType, IndexKeyMetrics>),
     Ok,
 }
 
