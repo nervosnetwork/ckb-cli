@@ -1,33 +1,30 @@
-
-use std::io::{Read, Write};
-use std::str::FromStr;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
-use faster_hex::{hex_decode};
+use crypto::secp::{Generator, Privkey, Pubkey};
+use faster_hex::hex_decode;
+use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use secp256k1::key;
-use crypto::secp::{Pubkey, Privkey, Generator};
-use rocksdb::{DB, ColumnFamily, Options, IteratorMode};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{NetworkType, Address, AddressFormat, ROCKSDB_COL_KEY};
+use crate::{Address, AddressFormat, NetworkType, ROCKSDB_COL_KEY};
 
-pub const KEY_SECP256K1: &[u8] = b"secp256k1";
+const KEY_SECP256K1: &[u8] = b"secp256k1";
 const KEY_DELIMITER: u8 = b':';
 
 pub struct KeyManager<'a> {
     cf: ColumnFamily<'a>,
-    db: &'a DB
+    db: &'a DB,
 }
 
 impl<'a> KeyManager<'a> {
     pub fn new(db: &'a DB) -> KeyManager {
-        let cf =
-            db.cf_handle(ROCKSDB_COL_KEY)
-            .unwrap_or_else(||{
-                db.create_cf(ROCKSDB_COL_KEY, &Options::default())
-                    .expect(&format!("Create ColumnFamily {} failed", ROCKSDB_COL_KEY))
-            });
+        let cf = db.cf_handle(ROCKSDB_COL_KEY).unwrap_or_else(|| {
+            db.create_cf(ROCKSDB_COL_KEY, &Options::default())
+                .expect(&format!("Create ColumnFamily {} failed", ROCKSDB_COL_KEY))
+        });
         KeyManager { cf, db }
     }
 
@@ -39,7 +36,7 @@ impl<'a> KeyManager<'a> {
                 .put_cf(
                     self.cf,
                     db_key.to_bytes(),
-                    bincode::serialize(&db_value).unwrap()
+                    bincode::serialize(&db_value).unwrap(),
                 )
                 .map_err(Into::into)
         } else {
@@ -124,7 +121,6 @@ impl RocksdbKey {
         let pubkey = Pubkey::from_slice(&pubkey_bytes).map_err(|err| err.to_string())?;
         Ok(RocksdbKey { key_type, pubkey })
     }
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,9 +129,9 @@ struct RocksdbValue {
 }
 
 pub struct SecpKey {
-    privkey_path: Option<PathBuf>,
-    privkey: Option<Privkey>,
-    pubkey: Pubkey,
+    pub privkey_path: Option<PathBuf>,
+    pub privkey: Option<Privkey>,
+    pub pubkey: Pubkey,
 }
 
 impl SecpKey {
@@ -143,7 +139,11 @@ impl SecpKey {
         let (privkey, pubkey) = Generator::new()
             .random_keypair()
             .expect("generate random key error");
-        SecpKey { privkey_path: None, privkey: Some(privkey), pubkey }
+        SecpKey {
+            privkey_path: None,
+            privkey: Some(privkey),
+            pubkey,
+        }
     }
 
     pub fn path_exists(&self) -> bool {
@@ -156,11 +156,9 @@ impl SecpKey {
     pub fn corrupted(&self) -> bool {
         self.privkey_path
             .as_ref()
-            .map(|path| {
-                match SecpKey::from_privkey_path(path) {
-                    Ok(key) => key.pubkey != self.pubkey,
-                    Err(_) => false,
-                }
+            .map(|path| match SecpKey::from_privkey_path(path) {
+                Ok(key) => key.pubkey != self.pubkey,
+                Err(_) => false,
             })
             .unwrap_or(false)
     }
@@ -170,18 +168,26 @@ impl SecpKey {
             Ok(mut key) => {
                 key.pubkey = db_key.pubkey;
                 key
-            },
-            Err(_) => SecpKey::from_pubkey(db_key.pubkey)
+            }
+            Err(_) => SecpKey::from_pubkey(db_key.pubkey),
         }
     }
 
     pub fn from_privkey(privkey: Privkey) -> Result<SecpKey, String> {
         let pubkey = privkey.pubkey().map_err(|err| err.to_string())?;
-        Ok(SecpKey { privkey_path: None, privkey: Some(privkey), pubkey })
+        Ok(SecpKey {
+            privkey_path: None,
+            privkey: Some(privkey),
+            pubkey,
+        })
     }
 
     pub fn from_pubkey(pubkey: Pubkey) -> SecpKey {
-        SecpKey { privkey_path: None, privkey: None, pubkey }
+        SecpKey {
+            privkey_path: None,
+            privkey: None,
+            pubkey,
+        }
     }
 
     pub fn from_privkey_path<P: AsRef<Path>>(path: P) -> Result<SecpKey, String> {
@@ -202,7 +208,11 @@ impl SecpKey {
         };
         let privkey = Privkey::from_str(privkey_str.trim()).map_err(|err| err.to_string())?;
         let pubkey = privkey.pubkey().map_err(|err| err.to_string())?;
-        Ok(SecpKey { privkey_path: Some(path), privkey: Some(privkey), pubkey })
+        Ok(SecpKey {
+            privkey_path: Some(path),
+            privkey: Some(privkey),
+            pubkey,
+        })
     }
 
     pub fn from_pubkey_str(mut pubkey_hex: &str) -> Result<SecpKey, String> {
@@ -215,7 +225,11 @@ impl SecpKey {
         key::PublicKey::from_slice(&pubkey_bytes)
             .map_err(|err| err.to_string())
             .map(Into::into)
-            .map(|pubkey| SecpKey{ privkey_path: None, privkey: None, pubkey })
+            .map(|pubkey| SecpKey {
+                privkey_path: None,
+                privkey: None,
+                pubkey,
+            })
     }
 
     pub fn save_to_path<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {

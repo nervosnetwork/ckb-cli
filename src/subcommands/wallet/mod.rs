@@ -20,7 +20,7 @@ use serde_json::json;
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{GenesisInfo, TransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB};
+use ckb_sdk::{GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB};
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
@@ -233,7 +233,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 total_capacity,
                             ));
                         }
-                        let tx_args = TransactionBuilder {
+                        let tx_args = TransferTransactionBuilder {
                             from_privkey: &from_privkey,
                             from_address: &from_address,
                             from_capacity: total_capacity,

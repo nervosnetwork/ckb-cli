@@ -2,10 +2,7 @@ use crate::{Address, LiveCellInfo, SECP_CODE_HASH};
 use byteorder::{LittleEndian, WriteBytesExt};
 use bytes::Bytes;
 use ckb_core::{
-    transaction::{
-        CellOutput as CoreCellOutput, OutPoint as CoreOutPoint,
-        TransactionBuilder as CoreTransactionBuilder,
-    },
+    transaction::{CellOutput, OutPoint, TransactionBuilder},
     Capacity,
 };
 use crypto::secp::Privkey;
@@ -61,8 +58,8 @@ impl GenesisInfo {
         }
     }
 
-    pub fn secp_dep(&self) -> CoreOutPoint {
-        CoreOutPoint {
+    pub fn secp_dep(&self) -> OutPoint {
+        OutPoint {
             cell: Some(self.out_points[0][1].clone().into()),
             block_hash: None,
         }
@@ -70,7 +67,7 @@ impl GenesisInfo {
 }
 
 #[derive(Debug)]
-pub struct TransactionBuilder<'a> {
+pub struct TransferTransactionBuilder<'a> {
     pub from_privkey: &'a Privkey,
     pub from_address: &'a Address,
     pub from_capacity: u64,
@@ -79,8 +76,8 @@ pub struct TransactionBuilder<'a> {
     pub to_capacity: u64,
 }
 
-impl<'a> TransactionBuilder<'a> {
-    pub fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: CoreOutPoint) -> Transaction {
+impl<'a> TransferTransactionBuilder<'a> {
+    pub fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: OutPoint) -> Transaction {
         assert!(self.from_capacity >= self.to_capacity);
 
         let inputs = input_infos
@@ -91,7 +88,7 @@ impl<'a> TransactionBuilder<'a> {
         // TODO: calculate transaction fee
         // Send to user
         let mut from_capacity = self.from_capacity;
-        let mut outputs = vec![CoreCellOutput {
+        let mut outputs = vec![CellOutput {
             capacity: Capacity::shannons(self.to_capacity),
             data: self.to_data.clone(),
             lock: self.to_address.lock_script(),
@@ -101,7 +98,7 @@ impl<'a> TransactionBuilder<'a> {
 
         if from_capacity > MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
-            outputs.push(CoreCellOutput {
+            outputs.push(CellOutput {
                 capacity: Capacity::shannons(from_capacity),
                 data: Bytes::default(),
                 lock: self.from_address.lock_script(),
@@ -109,31 +106,15 @@ impl<'a> TransactionBuilder<'a> {
             });
         }
 
-        let core_tx = CoreTransactionBuilder::default()
+        let core_tx = TransactionBuilder::default()
             .inputs(inputs.clone())
             .outputs(outputs.clone())
             .dep(secp_dep.clone())
             .build();
 
-        let pubkey = self.from_privkey.pubkey().unwrap().serialize();
-        let signature = self.from_privkey.sign_recoverable(&core_tx.hash()).unwrap();
-        let signature_der = signature.serialize_der();
-        let mut signature_size = vec![];
-        signature_size
-            .write_u64::<LittleEndian>(signature_der.len() as u64)
-            .unwrap();
-
-        let witnesses = inputs
-            .iter()
-            .map(|_| {
-                vec![
-                    Bytes::from(pubkey.clone()),
-                    Bytes::from(signature_der.clone()),
-                    Bytes::from(signature_size.clone()),
-                ]
-            })
-            .collect::<Vec<_>>();
-        (&CoreTransactionBuilder::default()
+        let witness = build_witness(&self.from_privkey, core_tx.hash());
+        let witnesses = inputs.iter().map(|_| witness.clone()).collect::<Vec<_>>();
+        (&TransactionBuilder::default()
             .inputs(inputs)
             .outputs(outputs)
             .dep(secp_dep)
@@ -141,4 +122,19 @@ impl<'a> TransactionBuilder<'a> {
             .build())
             .into()
     }
+}
+
+pub fn build_witness(privkey: &Privkey, tx_hash: &H256) -> Vec<Bytes> {
+    let pubkey_bytes = privkey.pubkey().unwrap().serialize();
+    let signature = privkey.sign_recoverable(tx_hash).unwrap();
+    let signature_der = signature.serialize_der();
+    let mut signature_size = vec![];
+    signature_size
+        .write_u64::<LittleEndian>(signature_der.len() as u64)
+        .unwrap();
+    vec![
+        Bytes::from(pubkey_bytes),
+        Bytes::from(signature_der),
+        Bytes::from(signature_size),
+    ]
 }

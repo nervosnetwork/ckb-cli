@@ -19,8 +19,14 @@ jsonrpc-client-http = "0.5.0"
 rocksdb = { version = "0.12.2", default-features = false }
 secp256k1 = {version = "0.12.2" }
 faster-hex = "0.3"
+fnv = "1.0.3"
 
 jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
 ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-store = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-traits = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-db = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
+ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
 hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0" }
 crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.13.0", features = ["secp", "bech32"] }
