@@ -13,7 +13,8 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    CliSubCommand, IndexController, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
+    CliSubCommand, IndexController, IndexRequest, IndexResponse, LocalScriptSubCommand,
+    RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
@@ -262,6 +263,13 @@ fn handle_command(
             }
             ("wallet", Some(sub_matches)) => {
                 let value = WalletSubCommand::new(rpc_client, index_sender.clone())
+                    .process(&sub_matches)?;
+                printer.println(&value, config.color());
+                Ok(())
+            }
+            // TODO: move to local later
+            ("script", Some(sub_matches)) => {
+                let value = LocalScriptSubCommand::new(rpc_client, "resource".into())
                     .process(&sub_matches)?;
                 printer.println(&value, config.color());
                 Ok(())

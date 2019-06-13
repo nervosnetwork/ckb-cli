@@ -14,7 +14,8 @@ use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
+    start_index_thread, CliSubCommand, IndexThreadState, LocalScriptSubCommand, RpcSubCommand,
+    WalletSubCommand,
 };
 use url::Url;
 use utils::config::GlobalConfig;
@@ -231,4 +232,5 @@ pub fn build_interactive() -> App<'static, 'static> {
         )
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
+        .subcommand(LocalScriptSubCommand::subcommand())
 }

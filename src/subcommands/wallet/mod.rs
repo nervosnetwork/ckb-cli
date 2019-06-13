@@ -19,8 +19,9 @@ use serde_json::json;
 
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
-use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB};
+use ckb_sdk::{
+    GenesisInfo, HttpRpcClient, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+};
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
