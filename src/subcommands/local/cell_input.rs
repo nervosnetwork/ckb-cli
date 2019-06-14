@@ -1,20 +1,10 @@
-use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
 
 use super::super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
-use bytes::Bytes;
-use ckb_core::{
-    transaction::{CellInput, CellOutPoint, CellOutput, OutPoint},
-    Capacity,
-};
-use ckb_sdk::{
-    to_local_cell_out_point, with_rocksdb, CellInputManager, CellManager, HttpRpcClient,
-    ScriptManager, ONE_CKB,
-};
+use ckb_core::transaction::{CellInput, CellOutPoint, OutPoint};
+use ckb_sdk::{to_local_cell_out_point, with_rocksdb, CellInputManager, HttpRpcClient};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use faster_hex::hex_decode;
 use jsonrpc_types::{BlockNumber as RpcBlockNumber, CellInput as RpcCellInput};
 use numext_fixed_hash::H256;
 
@@ -128,8 +118,11 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     since,
                 };
                 with_rocksdb(&self.db_path, None, |db| {
-                    CellInputManager::new(db).add(&name, cell_input.clone()).map_err(Into::into)
-                }).map_err(|err| format!("{:?}", err))?;
+                    CellInputManager::new(db)
+                        .add(&name, cell_input.clone())
+                        .map_err(Into::into)
+                })
+                .map_err(|err| format!("{:?}", err))?;
                 Ok(Box::new(serde_json::to_string(&cell_input).unwrap()))
             }
             ("remove", Some(m)) => {

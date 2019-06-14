@@ -14,7 +14,7 @@ use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, LocalScriptSubCommand, RpcSubCommand,
+    start_index_thread, CliSubCommand, IndexThreadState, LocalSubCommand, RpcSubCommand,
     WalletSubCommand,
 };
 use url::Url;
@@ -43,6 +43,8 @@ fn main() -> Result<(), io::Error> {
 
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
     ckb_cli_dir.push(".ckb-cli");
+    let mut resource_dir = ckb_cli_dir.clone();
+    resource_dir.push("resource");
     let mut index_dir = ckb_cli_dir.clone();
     index_dir.push("index");
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
@@ -76,6 +78,9 @@ fn main() -> Result<(), io::Error> {
         #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(api_uri.to_string(), index_controller.clone()).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
+        ("local", Some(sub_matches)) => {
+            LocalSubCommand::new(&mut rpc_client, resource_dir.clone()).process(&sub_matches)
+        }
         ("wallet", Some(sub_matches)) => {
             WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())
                 .process(&sub_matches)
@@ -149,6 +154,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
+        .subcommand(LocalSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
                 .long("url")
@@ -232,5 +238,5 @@ pub fn build_interactive() -> App<'static, 'static> {
         )
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
-        .subcommand(LocalScriptSubCommand::subcommand())
+        .subcommand(LocalSubCommand::subcommand())
 }

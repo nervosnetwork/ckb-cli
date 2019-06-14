@@ -25,6 +25,7 @@ use fnv::FnvHashSet;
 use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
+use serde_derive::{Deserialize, Serialize};
 
 use super::{from_local_cell_out_point, CellManager};
 use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX, SECP_CODE_HASH};
@@ -84,7 +85,6 @@ impl<'a> TransactionManager<'a> {
         Ok(tx_new)
     }
 
-    // TODO: set witnesses by given secp256k1 private keys
     pub fn set_witnesses_by_keys(
         &self,
         hash: &H256,
@@ -195,6 +195,7 @@ impl<'a> TransactionManager<'a> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct VerifyResult {
     pub cycle: Cycle,
     // debug_logs: Vec<String>,

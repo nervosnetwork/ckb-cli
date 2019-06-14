@@ -18,6 +18,7 @@ where
     let start = Instant::now();
     let timeout = timeout.unwrap_or(Duration::from_secs(6));
     let mut options = Options::default();
+    options.create_if_missing(true);
     options.create_missing_column_families(true);
     let columns = vec![
         ROCKSDB_COL_KEY,

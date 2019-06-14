@@ -6,9 +6,8 @@ use super::super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use bytes::Bytes;
 use ckb_core::{transaction::CellOutput, Capacity};
-use ckb_sdk::{with_rocksdb, CellManager, HttpRpcClient, ScriptManager, ONE_CKB};
+use ckb_sdk::{with_rocksdb, CellManager, HttpRpcClient, ScriptManager};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use faster_hex::hex_decode;
 use jsonrpc_types::CellOutput as RpcCellOutput;
 use numext_fixed_hash::H256;
 
@@ -161,8 +160,8 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     .collect();
                 Ok(Box::new(serde_json::to_string(&rpc_cells).unwrap()))
             }
-            ("dump", Some(m)) => Ok(Box::new("null".to_string())),
-            ("load", Some(m)) => Ok(Box::new("null".to_string())),
+            ("dump", Some(_m)) => Ok(Box::new("null".to_string())),
+            ("load", Some(_m)) => Ok(Box::new("null".to_string())),
             _ => Err(matches.usage().to_owned()),
         }
     }

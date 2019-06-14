@@ -112,7 +112,7 @@ impl RocksdbKey {
             .collect::<Vec<u8>>();
         let pubkey_bytes = bytes
             .iter()
-            .skip_while(|byte| **byte != KEY_DELIMITER)
+            .skip(key_type.len() + 1)
             .cloned()
             .collect::<Vec<u8>>();
         let pubkey = Pubkey::from_slice(&pubkey_bytes).map_err(|err| err.to_string())?;
