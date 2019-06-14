@@ -128,8 +128,5 @@ pub fn build_witness(privkey: &Privkey, tx_hash: &H256) -> Vec<Bytes> {
     let pubkey_bytes = privkey.pubkey().unwrap().serialize();
     let signature = privkey.sign_recoverable(&message).unwrap();
     let signature_der = signature.serialize_der();
-    vec![
-        Bytes::from(pubkey_bytes),
-        Bytes::from(signature_der),
-    ]
+    vec![Bytes::from(pubkey_bytes), Bytes::from(signature_der)]
 }

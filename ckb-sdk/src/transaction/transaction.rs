@@ -14,6 +14,7 @@ use ckb_core::{
         CellOutPoint, CellOutput, OutPoint, ProposalShortId, Transaction, TransactionBuilder,
         Witness,
     },
+    transaction_meta::TransactionMeta,
     uncle::UncleBlock,
     BlockNumber, Cycle, EpochNumber,
 };
@@ -351,6 +352,17 @@ impl StoreBatch for DummyStoreBatch {
         unimplemented!();
     }
 
+    fn update_cell_set(
+        &mut self,
+        _tx_hash: &H256,
+        _meta: &TransactionMeta,
+    ) -> Result<(), CkbDbError> {
+        unimplemented!();
+    }
+    fn delete_cell_set(&mut self, _tx_hash: &H256) -> Result<(), CkbDbError> {
+        unimplemented!();
+    }
+
     fn commit(self) -> Result<(), CkbDbError> {
         unimplemented!();
     }
@@ -441,6 +453,15 @@ impl ChainStore for Resource {
     }
     // Get epoch index by block hash
     fn get_block_epoch_index(&self, _h256: &H256) -> Option<H256> {
+        unimplemented!();
+    }
+    fn traverse_cell_set<F>(&self, _callback: F) -> Result<(), CkbDbError>
+    where
+        F: FnMut(H256, TransactionMeta) -> Result<(), CkbDbError>,
+    {
+        unimplemented!();
+    }
+    fn is_uncle(&self, _hash: &H256) -> bool {
         unimplemented!();
     }
 }
