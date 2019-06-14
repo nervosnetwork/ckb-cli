@@ -120,7 +120,17 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     }
                     None => None,
                 };
-                Ok(Box::new("null".to_string()))
+                let cell_input = CellInput {
+                    previous_output: OutPoint {
+                        cell: Some(cell_out_point),
+                        block_hash: output_block_hash,
+                    },
+                    since,
+                };
+                with_rocksdb(&self.db_path, None, |db| {
+                    CellInputManager::new(db).add(&name, cell_input.clone()).map_err(Into::into)
+                }).map_err(|err| format!("{:?}", err))?;
+                Ok(Box::new(serde_json::to_string(&cell_input).unwrap()))
             }
             ("remove", Some(m)) => {
                 let name: String = from_matches(m, "name");
