@@ -27,13 +27,10 @@ impl<'a> CellInputManager<'a> {
         Ok(())
     }
 
-    pub fn remove(&self, name: &str) -> Result<(), String> {
-        if self.db.get_cf(self.cf, name.as_bytes())?.is_some() {
-            self.db.delete_cf(self.cf, name.as_bytes())?;
-            Ok(())
-        } else {
-            Err("key not exists".to_owned())
-        }
+    pub fn remove(&self, name: &str) -> Result<CellInput, String> {
+        let cell_input = self.get(name)?;
+        self.db.delete_cf(self.cf, name.as_bytes())?;
+        Ok(cell_input)
     }
 
     pub fn get(&self, name: &str) -> Result<CellInput, String> {

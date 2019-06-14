@@ -37,6 +37,8 @@ pub fn start(
     let history_file = history_file.to_str().unwrap();
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
+    let mut resource_dir = ckb_cli_dir.clone();
+    resource_dir.push("resource");
 
     let mut env_file = ckb_cli_dir.clone();
     env_file.push("env_vars");
@@ -82,6 +84,7 @@ pub fn start(
         &mut config,
         &mut printer,
         &config_file,
+        &resource_dir,
         history_file,
         index_controller.sender().clone(),
     )
@@ -91,6 +94,7 @@ pub fn start_rustyline(
     config: &mut GlobalConfig,
     printer: &mut Printer,
     config_file: &PathBuf,
+    resource_dir: &PathBuf,
     history_file: &str,
     index_sender: Sender<Request<IndexRequest, IndexResponse>>,
 ) -> io::Result<()> {
@@ -148,6 +152,7 @@ pub fn start_rustyline(
                     &parser,
                     &env_regex,
                     config_file,
+                    resource_dir,
                     &mut rpc_client,
                     &index_sender,
                 ) {
@@ -187,6 +192,7 @@ fn handle_command(
     parser: &clap::App<'static, 'static>,
     env_regex: &Regex,
     config_file: &PathBuf,
+    resource_dir: &PathBuf,
     rpc_client: &mut HttpRpcClient,
     index_sender: &Sender<Request<IndexRequest, IndexResponse>>,
 ) -> Result<bool, String> {
@@ -269,7 +275,7 @@ fn handle_command(
             }
             // TODO: move to local later
             ("script", Some(sub_matches)) => {
-                let value = LocalScriptSubCommand::new(rpc_client, "resource".into())
+                let value = LocalScriptSubCommand::new(rpc_client, resource_dir.clone())
                     .process(&sub_matches)?;
                 printer.println(&value, config.color());
                 Ok(())

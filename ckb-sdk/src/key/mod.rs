@@ -44,18 +44,15 @@ impl<'a> KeyManager<'a> {
         }
     }
 
-    pub fn remove(&self, key: SecpKey) -> Result<(), String> {
-        let key_bytes = RocksdbKey::new(key.pubkey).to_bytes();
-        if self.db.get_cf(self.cf, &key_bytes)?.is_some() {
-            self.db.delete_cf(self.cf, &key_bytes)?;
-            Ok(())
-        } else {
-            Err("key not exists".to_owned())
-        }
+    pub fn remove(&self, key: &SecpKey) -> Result<SecpKey, String> {
+        let key = self.get(key)?;
+        let key_bytes = RocksdbKey::new(key.pubkey.clone().into()).to_bytes();
+        self.db.delete_cf(self.cf, &key_bytes)?;
+        Ok(key)
     }
 
-    pub fn get(&self, key: SecpKey) -> Result<SecpKey, String> {
-        let db_key = RocksdbKey::new(key.pubkey);
+    pub fn get(&self, key: &SecpKey) -> Result<SecpKey, String> {
+        let db_key = RocksdbKey::new(key.pubkey.clone().into());
         let key_bytes = db_key.to_bytes();
         match self.db.get_cf(self.cf, key_bytes)? {
             Some(db_vec) => {

@@ -28,13 +28,10 @@ impl<'a> ScriptManager<'a> {
         Ok(())
     }
 
-    pub fn remove(&self, hash: &H256) -> Result<(), String> {
-        if self.db.get_cf(self.cf, hash.as_bytes())?.is_some() {
-            self.db.delete_cf(self.cf, hash.as_bytes())?;
-            Ok(())
-        } else {
-            Err("key not exists".to_owned())
-        }
+    pub fn remove(&self, hash: &H256) -> Result<Script, String> {
+        let script = self.get(hash)?;
+        self.db.delete_cf(self.cf, hash.as_bytes())?;
+        Ok(script)
     }
 
     pub fn get(&self, hash: &H256) -> Result<Script, String> {
