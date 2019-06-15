@@ -102,6 +102,12 @@ impl BlockDeltaInfo {
     }
 
     pub(crate) fn apply(&self, store: &rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
+        log::debug!(
+            "apply block: number={}, txs={}, locks={}",
+            self.header.number(),
+            self.txs.len(),
+            self.locks.len(),
+        );
         let mut result = ApplyResult {
             chain_capacity: 0,
             capacity_delta: 0,

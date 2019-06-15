@@ -255,7 +255,7 @@ impl LiveCellDatabase {
         let env_read = self.env_arc.read().unwrap();
         // TODO: should forbid query when Init
         self.last_header = block.header.clone().into();
-        let blocks = if self.last_number() < self.tip_header.inner.number.0 - 256 {
+        let blocks = if self.last_number() < self.tip_header.inner.number.0.saturating_sub(256) {
             self.init_block_buf.push(block);
             if self.init_block_buf.len() >= 200 {
                 self.init_block_buf.split_off(0)
