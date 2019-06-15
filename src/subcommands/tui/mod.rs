@@ -405,7 +405,7 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
     let max_width = state
         .peers
         .iter()
-        .map(|node| node.addresses[0].address.len())
+        .filter_map(|node| node.addresses.get(0).map(|addr| addr.address.len()))
         .max()
         .unwrap_or(10);
     let peers = state.peers.iter().flat_map(|node| {
@@ -423,7 +423,10 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
             .unwrap_or("unknown");
         vec![Text::raw(format!(
             "{:<width$} {:8} version({})",
-            node.addresses[0].address,
+            node.addresses
+                .get(0)
+                .map(|addr| addr.address.to_string())
+                .unwrap_or("unknown".to_string()),
             direction,
             node.version,
             width = max_width,
