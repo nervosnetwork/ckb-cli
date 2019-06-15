@@ -13,9 +13,12 @@ use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
+
+#[cfg(feature = "local")]
+use subcommands::LocalSubCommand;
+
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, LocalSubCommand, RpcSubCommand,
-    WalletSubCommand,
+    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
 };
 use url::Url;
 use utils::config::GlobalConfig;
@@ -78,9 +81,12 @@ fn main() -> Result<(), io::Error> {
         #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(api_uri.to_string(), index_controller.clone()).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
+
+        #[cfg(feature = "local")]
         ("local", Some(sub_matches)) => {
             LocalSubCommand::new(&mut rpc_client, resource_dir.clone()).process(&sub_matches)
         }
+
         ("wallet", Some(sub_matches)) => {
             WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())
                 .process(&sub_matches)
@@ -154,7 +160,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand())
-        .subcommand(LocalSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
                 .long("url")
@@ -173,18 +178,18 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .global(true)
                 .help("Display request parameters"),
         );
+
+    #[cfg(feature = "local")]
+    let app = app.subcommand(LocalSubCommand::subcommand());
+
     #[cfg(unix)]
-    {
-        app.subcommand(SubCommand::with_name("tui").about("Enter TUI mode"))
-    }
-    #[cfg(not(unix))]
-    {
-        app
-    }
+    let app = app.subcommand(SubCommand::with_name("tui").about("Enter TUI mode"));
+
+    app
 }
 
 pub fn build_interactive() -> App<'static, 'static> {
-    App::new("interactive")
+    let app = App::new("interactive")
         .version(crate_version!())
         .global_setting(AppSettings::NoBinaryName)
         .global_setting(AppSettings::ColoredHelp)
@@ -237,6 +242,10 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .about("Exit the interactive interface"),
         )
         .subcommand(RpcSubCommand::subcommand())
-        .subcommand(WalletSubCommand::subcommand())
-        .subcommand(LocalSubCommand::subcommand())
+        .subcommand(WalletSubCommand::subcommand());
+
+    #[cfg(feature = "local")]
+    let app = app.subcommand(LocalSubCommand::subcommand());
+
+    app
 }

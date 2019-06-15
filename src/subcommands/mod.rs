@@ -1,15 +1,20 @@
-pub mod local;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
 pub mod wallet;
 
+#[cfg(feature = "local")]
+pub mod local;
+
 #[cfg(unix)]
 pub use self::tui::TuiSubCommand;
+
+#[cfg(feature = "local")]
 pub use local::{
     LocalCellInputSubCommand, LocalCellSubCommand, LocalKeySubCommand, LocalScriptSubCommand,
     LocalSubCommand, LocalTxSubCommand,
 };
+
 pub use rpc::RpcSubCommand;
 pub use wallet::{
     start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,

@@ -2,8 +2,11 @@ mod basic;
 mod chain;
 mod error;
 mod index_db;
+#[cfg(feature = "local")]
 mod key;
+#[cfg(feature = "local")]
 mod transaction;
+#[cfg(feature = "local")]
 mod util;
 
 pub mod rpc;
@@ -17,12 +20,16 @@ pub use index_db::{
     CellIndex, HashType, IndexError, Key as IndexKey, KeyMetrics as IndexKeyMetrics,
     KeyType as IndexKeyType, LiveCellDatabase, LiveCellInfo, TxInfo,
 };
-pub use key::{KeyManager, SecpKey};
 pub use rpc::HttpRpcClient;
+
+#[cfg(feature = "local")]
+pub use key::{KeyManager, SecpKey};
+#[cfg(feature = "local")]
 pub use transaction::{
     from_local_cell_out_point, to_local_cell_out_point, CellInputManager, CellManager,
     ScriptManager, TransactionManager, VerifyResult,
 };
+#[cfg(feature = "local")]
 pub use util::with_rocksdb;
 
 const ROCKSDB_COL_KEY: &str = "key";

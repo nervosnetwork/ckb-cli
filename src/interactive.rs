@@ -12,9 +12,11 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
+#[cfg(feature = "local")]
+use crate::subcommands::LocalSubCommand;
+
 use crate::subcommands::{
-    CliSubCommand, IndexController, IndexRequest, IndexResponse, LocalSubCommand, RpcSubCommand,
-    WalletSubCommand,
+    CliSubCommand, IndexController, IndexRequest, IndexResponse, RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
@@ -273,12 +275,15 @@ fn handle_command(
                 printer.println(&value, config.color());
                 Ok(())
             }
+
+            #[cfg(feature = "local")]
             ("local", Some(sub_matches)) => {
                 let value =
                     LocalSubCommand::new(rpc_client, resource_dir.clone()).process(&sub_matches)?;
                 printer.println(&value, config.color());
                 Ok(())
             }
+
             ("exit", _) => {
                 return Ok(true);
             }
