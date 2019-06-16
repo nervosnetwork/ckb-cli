@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
 use ckb_core::{
-    header::Header as CoreHeader,
-    script::Script as CoreScript,
-    transaction::{
-        CellInput as CoreCellInput, CellOutPoint as CoreCellOutPoint, OutPoint as CoreOutPoint,
-    },
+    block::Block,
+    header::Header,
+    script::Script,
+    transaction::{CellInput, CellOutPoint, OutPoint},
 };
-use jsonrpc_types::BlockView;
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
@@ -26,30 +24,30 @@ pub enum HashType {
 
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct BlockDeltaInfo {
-    pub(crate) header: CoreHeader,
+    pub(crate) header: Header,
     txs: Vec<RichTxInfo>,
-    locks: Vec<CoreScript>,
+    locks: Vec<Script>,
 }
 
 impl BlockDeltaInfo {
     pub(crate) fn from_view(
-        block: &BlockView,
+        block: &Block,
         store: &rkv::SingleStore,
         writer: &rkv::Writer,
     ) -> BlockDeltaInfo {
-        let header: CoreHeader = block.header.clone().into();
-        let number = block.header.inner.number.0;
-        let timestamp = block.header.inner.timestamp.0;
+        let header: Header = block.header().clone();
+        let number = header.number();
+        let timestamp = header.timestamp();
         let mut locks = Vec::new();
         let txs = block
-            .transactions
+            .transactions()
             .iter()
             .enumerate()
             .map(|(tx_index, tx)| {
                 let mut inputs = Vec::new();
                 let mut outputs = Vec::new();
 
-                for input in &tx.inner.inputs {
+                for input in tx.inputs().iter() {
                     if let Some(ref out_point) = input.previous_output.cell {
                         let live_cell_info: LiveCellInfo = store
                             .get(
@@ -65,12 +63,12 @@ impl BlockDeltaInfo {
                     }
                 }
 
-                for (output_index, output) in tx.inner.outputs.iter().enumerate() {
-                    let lock: CoreScript = output.lock.clone().into();
+                for (output_index, output) in tx.outputs().iter().enumerate() {
+                    let lock: Script = output.lock.clone().into();
                     let lock_hash = lock.hash();
-                    let capacity = output.capacity.0.as_u64();
-                    let out_point = CoreCellOutPoint {
-                        tx_hash: tx.hash.clone(),
+                    let capacity = output.capacity.as_u64();
+                    let out_point = CellOutPoint {
+                        tx_hash: tx.hash().clone(),
                         index: output_index as u32,
                     };
                     let cell_index = CellIndex::new(tx_index as u32, output_index as u32);
@@ -88,7 +86,7 @@ impl BlockDeltaInfo {
                 }
 
                 RichTxInfo {
-                    tx_hash: tx.hash.clone(),
+                    tx_hash: tx.hash().clone(),
                     tx_index: tx_index as u32,
                     block_number: number,
                     block_timestamp: timestamp,
@@ -299,7 +297,7 @@ pub(crate) struct ApplyResult {
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct LiveCellInfo {
-    pub out_point: CoreCellOutPoint,
+    pub out_point: CellOutPoint,
     pub lock_hash: H256,
     // Secp256k1 address
     pub capacity: u64,
@@ -310,9 +308,9 @@ pub struct LiveCellInfo {
 }
 
 impl LiveCellInfo {
-    pub fn core_input(&self) -> CoreCellInput {
-        CoreCellInput {
-            previous_output: CoreOutPoint {
+    pub fn core_input(&self) -> CellInput {
+        CellInput {
+            previous_output: OutPoint {
                 cell: Some(self.out_point.clone()),
                 block_hash: None,
             },
@@ -397,6 +395,6 @@ pub struct TxInfo {
     pub tx_index: u32,
     pub block_number: u64,
     pub block_timestamp: u64,
-    pub inputs: Vec<CoreCellOutPoint>,
-    pub outputs: Vec<CoreCellOutPoint>,
+    pub inputs: Vec<CellOutPoint>,
+    pub outputs: Vec<CellOutPoint>,
 }

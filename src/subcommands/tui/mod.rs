@@ -3,8 +3,8 @@ mod util;
 mod widgets;
 
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
-// use std::collections::BTreeMap;
 
 use ckb_util::RwLock;
 use termion::event::Key;
@@ -19,9 +19,11 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
-use ckb_core::service::Request;
+use ckb_core::{header::Header, service::Request};
+use ckb_sdk::{HttpRpcClient, LiveCellDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE};
+use jsonrpc_types::BlockNumber;
 
-use super::wallet::{IndexController, IndexRequest, IndexResponse};
+use super::wallet::{IndexController, IndexRequest};
 use crate::utils::printer::Printable;
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{human_capacity, ts_now, App, Event, Events, TabsState};
@@ -29,13 +31,19 @@ use widgets::List;
 
 pub struct TuiSubCommand {
     url: String,
+    index_dir: PathBuf,
     index_controller: IndexController,
 }
 
 impl TuiSubCommand {
-    pub fn new(url: String, index_controller: IndexController) -> TuiSubCommand {
+    pub fn new(
+        url: String,
+        index_dir: PathBuf,
+        index_controller: IndexController,
+    ) -> TuiSubCommand {
         TuiSubCommand {
             url,
+            index_dir,
             index_controller,
         }
     }
@@ -52,6 +60,16 @@ impl TuiSubCommand {
 
         let events = Events::new();
         let state = Arc::new(RwLock::new(State::default()));
+        let genesis_header = {
+            let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            genesis_block.header().clone()
+        };
         Request::call(
             self.index_controller.sender(),
             IndexRequest::UpdateUrl(self.url.clone()),
@@ -109,7 +127,12 @@ impl TuiSubCommand {
                         0 => render_summary(&state.read(), content_context),
                         1 => render_blocks(&state.read(), content_context),
                         2 => render_peers(&state.read(), content_context),
-                        3 => render_top_capacity(&self.index_controller, content_context),
+                        3 => render_top_capacity(
+                            &self.index_controller,
+                            self.index_dir.clone(),
+                            &genesis_header,
+                            content_context,
+                        ),
                         _ => {}
                     }
                 })
@@ -442,42 +465,53 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
     List::new(peers).render(ctx.frame, peers_chunks[0]);
 }
 
-fn render_top_capacity<B: Backend>(index: &IndexController, ctx: RenderContext<B>) {
+fn render_top_capacity<B: Backend>(
+    index: &IndexController,
+    index_dir: PathBuf,
+    genesis_header: &Header,
+    ctx: RenderContext<B>,
+) {
     ctx.block.clone().render(ctx.frame, ctx.rect);
     let top_capacity_chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
-    if index.state().read().is_processing() {
-        if let IndexResponse::TopLocks { capacity_list, .. } =
-            Request::call(index.sender(), IndexRequest::GetTopLocks(50)).unwrap()
-        {
-            let lines = capacity_list.iter().flat_map(|result| {
-                vec![
-                    Text::styled(
-                        format!("{:x}", result.lock_hash),
-                        Style::default().modifier(Modifier::BOLD),
-                    ),
-                    Text::raw(format!(
-                        "  [address ]: {}",
-                        result
-                            .address
-                            .as_ref()
-                            .map(|s| s.as_str())
-                            .unwrap_or("null")
-                    )),
-                    Text::raw(format!(
-                        "  [capacity]: {} ({})",
-                        result.capacity,
-                        human_capacity(result.capacity)
-                    )),
-                ]
-            });
-            List::new(lines).render(ctx.frame, top_capacity_chunks[0]);
+    let lines = if index.state().read().is_processing() {
+        match LiveCellDatabase::from_path(
+            NetworkType::TestNet,
+            genesis_header,
+            index_dir,
+            LMDB_EXTRA_MAP_SIZE,
+        ) {
+            Ok(db) => db
+                .get_top_n(50)
+                .iter()
+                .flat_map(|(lock_hash, address, capacity)| {
+                    vec![
+                        Text::styled(
+                            format!("{:x}", lock_hash),
+                            Style::default().modifier(Modifier::BOLD),
+                        ),
+                        Text::raw(format!(
+                            "  [address ]: {}",
+                            address
+                                .as_ref()
+                                .map(|s| s.to_string(NetworkType::TestNet))
+                                .unwrap_or("null".to_owned())
+                        )),
+                        Text::raw(format!(
+                            "  [capacity]: {} ({})",
+                            capacity,
+                            human_capacity(*capacity)
+                        )),
+                    ]
+                })
+                .collect::<Vec<_>>(),
+            Err(err) => vec![Text::raw(format!("Open db error: {}", err.to_string()))],
         }
     } else {
-        let lines = vec![Text::raw(format!("{}", index.state().read().to_string()))];
-        List::new(lines.into_iter()).render(ctx.frame, top_capacity_chunks[0]);
-    }
+        vec![Text::raw(format!("{}", index.state().read().to_string()))]
+    };
+    List::new(lines.into_iter()).render(ctx.frame, top_capacity_chunks[0]);
 }

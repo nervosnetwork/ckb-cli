@@ -1,38 +1,48 @@
 use crate::{Address, LiveCellInfo, SECP_CODE_HASH};
 use bytes::Bytes;
 use ckb_core::{
-    transaction::{CellOutput, OutPoint, TransactionBuilder},
+    block::Block,
+    header::Header,
+    transaction::{CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
     Capacity,
 };
 use crypto::secp::Privkey;
 use hash::blake2b_256;
-use jsonrpc_types::{BlockView, CellOutPoint, Transaction, Unsigned};
+use jsonrpc_types::Transaction as RpcTransaction;
 use numext_fixed_hash::H256;
 
 pub const ONE_CKB: u64 = 10000_0000;
 // H256(secp code hash) + H160 (secp pubkey hash) + u64(capacity) = 32 + 20 + 8 = 60
 pub const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
 
+#[derive(Debug, Clone)]
 pub struct GenesisInfo {
-    // header: HeaderView,
+    header: Header,
     out_points: Vec<Vec<CellOutPoint>>,
 }
 
 impl GenesisInfo {
-    pub fn from_block(genesis_block: BlockView) -> Result<GenesisInfo, String> {
+    pub fn from_block(genesis_block: &Block) -> Result<GenesisInfo, String> {
+        let header = genesis_block.header().clone();
+        if header.number() != 0 {
+            return Err(format!(
+                "Convert to GenesisInfo failed, block number {} > 0",
+                header.number()
+            ));
+        }
+
         let mut error = None;
         let out_points = genesis_block
-            .transactions
+            .transactions()
             .iter()
             .enumerate()
             .map(|(tx_index, tx)| {
-                tx.inner
-                    .outputs
+                tx.outputs()
                     .iter()
                     .enumerate()
                     .map(|(index, output)| {
                         if tx_index == 0 && index == 1 {
-                            let code_hash = H256::from_slice(&blake2b_256(output.data.as_bytes()))
+                            let code_hash = H256::from_slice(&blake2b_256(&output.data))
                                 .expect("Convert to H256 error");
                             if code_hash != SECP_CODE_HASH {
                                 error = Some(format!(
@@ -42,8 +52,8 @@ impl GenesisInfo {
                             }
                         }
                         CellOutPoint {
-                            tx_hash: tx.hash.clone(),
-                            index: Unsigned(index as u64),
+                            tx_hash: tx.hash().clone(),
+                            index: index as u32,
                         }
                     })
                     .collect::<Vec<_>>()
@@ -53,8 +63,11 @@ impl GenesisInfo {
         if let Some(err) = error {
             Err(err)
         } else {
-            Ok(GenesisInfo { out_points })
+            Ok(GenesisInfo { header, out_points })
         }
+    }
+    pub fn header(&self) -> &Header {
+        &self.header
     }
 
     pub fn secp_dep(&self) -> OutPoint {
@@ -76,7 +89,7 @@ pub struct TransferTransactionBuilder<'a> {
 }
 
 impl<'a> TransferTransactionBuilder<'a> {
-    pub fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: OutPoint) -> Transaction {
+    pub fn build(&self, input_infos: Vec<LiveCellInfo>, secp_dep: OutPoint) -> RpcTransaction {
         assert!(self.from_capacity >= self.to_capacity);
 
         let inputs = input_infos

@@ -1,59 +1,32 @@
-use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ckb_core::{header::Header as CoreHeader, service::Request};
-use ckb_sdk::{Address, NetworkType};
+use ckb_core::{block::Block, header::Header, service::Request};
+use ckb_sdk::NetworkType;
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
-use jsonrpc_types::{BlockNumber, HeaderView};
+use jsonrpc_client_core::Error as RpcError;
+use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{IndexKeyMetrics, IndexKeyType, LiveCellDatabase, LiveCellInfo};
+use ckb_sdk::{LiveCellDatabase, LMDB_EXTRA_MAP_SIZE};
 
-// 200MB extra disk space
-const LMDB_EXTRA_MAP_SIZE: u64 = 200 * 1024 * 1024;
 // Reopen database every 10000 blocks (for increase map size)
 const REOPEN_DB_BLOCKS: usize = 10000;
 
 pub enum IndexRequest {
     UpdateUrl(String),
-    GetLiveCellInfos {
-        address: Address,
-        total_capacity: u64,
-    },
-    GetTopLocks(usize),
-    GetCapacity(H256),
-    GetBalance(Address),
-    GetMetrics,
-    // GetLastHeader,
-    // RebuildIndex,
-    Shutdown,
+    Kick,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IndexResponse {
-    LiveCellInfos {
-        infos: Vec<LiveCellInfo>,
-        total_capacity: u64,
-        last_block: SimpleBlockInfo,
-    },
-    TopLocks {
-        capacity_list: Vec<CapacityResult>,
-        last_block: SimpleBlockInfo,
-    },
-    Capacity {
-        capacity: Option<u64>,
-        // live_cell_count: Option<usize>,
-        last_block: SimpleBlockInfo,
-    },
-    LastHeader(CoreHeader),
-    DatabaseMetrics(BTreeMap<IndexKeyType, IndexKeyMetrics>),
     Ok,
 }
 
@@ -71,8 +44,8 @@ pub struct SimpleBlockInfo {
     hash: H256,
 }
 
-impl From<CoreHeader> for SimpleBlockInfo {
-    fn from(header: CoreHeader) -> SimpleBlockInfo {
+impl From<Header> for SimpleBlockInfo {
+    fn from(header: Header) -> SimpleBlockInfo {
         SimpleBlockInfo {
             number: header.number(),
             epoch: header.epoch(),
@@ -88,7 +61,8 @@ pub enum IndexThreadState {
     // Started init db
     StartInit,
     // Process after init db
-    Processing(SimpleBlockInfo, u64),
+    Processing(Option<SimpleBlockInfo>, u64),
+    Error(String),
     // Thread exit
     Stopped,
 }
@@ -97,11 +71,21 @@ impl IndexThreadState {
     fn start_init(&mut self) {
         *self = IndexThreadState::StartInit;
     }
-    fn processing(&mut self, header: CoreHeader, tip_number: u64) {
-        *self = IndexThreadState::Processing(header.into(), tip_number);
+    fn processing(&mut self, header: Option<Header>, tip_number: u64) {
+        let block_info = header.map(Into::into);
+        *self = IndexThreadState::Processing(block_info, tip_number);
+    }
+    fn error(&mut self, err: String) {
+        *self = IndexThreadState::Error(err);
     }
     fn stop(&mut self) {
         *self = IndexThreadState::Stopped;
+    }
+    pub fn is_started(&self) -> bool {
+        match self {
+            IndexThreadState::WaitToStart => false,
+            _ => true,
+        }
     }
     pub fn is_stopped(&self) -> bool {
         match self {
@@ -109,9 +93,23 @@ impl IndexThreadState {
             _ => false,
         }
     }
+    pub fn is_error(&self) -> bool {
+        match self {
+            IndexThreadState::Error(_) => true,
+            _ => false,
+        }
+    }
+    pub fn is_synced(&self) -> bool {
+        match self {
+            IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
+                (tip_number - number) == 4
+            }
+            _ => false,
+        }
+    }
     pub fn is_processing(&self) -> bool {
         match self {
-            IndexThreadState::Processing(_, _) => true,
+            IndexThreadState::Processing(Some(_), _) => true,
             _ => false,
         }
     }
@@ -122,7 +120,8 @@ impl fmt::Display for IndexThreadState {
         let output = match self {
             IndexThreadState::WaitToStart => "Waiting for first query".to_owned(),
             IndexThreadState::StartInit => "Initializing".to_owned(),
-            IndexThreadState::Processing(SimpleBlockInfo { number, .. }, tip_number) => {
+            IndexThreadState::Error(err) => format!("Error: {}", err),
+            IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
                 let synced = (tip_number - number) == 4;
                 format!(
                     "Processed block#{} (tip#{}{})",
@@ -130,6 +129,9 @@ impl fmt::Display for IndexThreadState {
                     tip_number,
                     if synced { " synced" } else { "" }
                 )
+            }
+            IndexThreadState::Processing(None, tip_number) => {
+                format!("Initializing (tip#{})", tip_number)
             }
             IndexThreadState::Stopped => "Stopped".to_owned(),
         };
@@ -146,12 +148,14 @@ impl Default for IndexThreadState {
 pub struct IndexController {
     state: Arc<RwLock<IndexThreadState>>,
     sender: Sender<Request<IndexRequest, IndexResponse>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl Clone for IndexController {
     fn clone(&self) -> IndexController {
         IndexController {
             state: Arc::clone(&self.state),
+            shutdown: Arc::clone(&self.shutdown),
             sender: self.sender.clone(),
         }
     }
@@ -166,12 +170,18 @@ impl IndexController {
     }
     pub fn shutdown(&self) {
         let start_time = Instant::now();
-        let _ = Request::call(&self.sender, IndexRequest::Shutdown);
-        while !self.state().read().is_stopped() {
+        self.shutdown.store(true, Ordering::Relaxed);
+        while self.state().read().is_started() && !self.state().read().is_stopped() {
+            if self.state().read().is_error() {
+                return;
+            }
             if start_time.elapsed() < Duration::from_secs(10) {
                 thread::sleep(Duration::from_millis(50));
             } else {
-                eprintln!("Stop index thread timeout, give up");
+                eprintln!(
+                    "Stop index thread timeout(state: {}), give up",
+                    self.state().read().to_string()
+                );
                 return;
             }
         }
@@ -185,89 +195,118 @@ pub fn start_index_thread(
 ) -> IndexController {
     let mut rpc_url = url.to_owned();
     let (sender, receiver) = crossbeam_channel::bounded::<Request<IndexRequest, IndexResponse>>(1);
+    let shutdown = Arc::new(AtomicBool::new(false));
     let state_clone = Arc::clone(&state);
+    let shutdown_clone = Arc::clone(&shutdown);
 
     thread::spawn(move || {
-        let mut first_request = match receiver.recv() {
-            Ok(request) => match request.arguments {
-                IndexRequest::UpdateUrl(ref url) => {
-                    rpc_url = url.clone();
-                    if let Err(err) = request.responder.send(IndexResponse::Ok) {
-                        log::debug!("response first change url failed {:?}", err);
-                        return;
-                    };
-                    None
-                }
-                IndexRequest::Shutdown => {
+        loop {
+            // Wait first request
+            match try_recv(&receiver, &mut rpc_url) {
+                Some(true) => {
                     state.write().stop();
+                    log::info!("Index database thread stopped");
                     return;
                 }
-                _ => Some(request),
-            },
-            Err(err) => {
-                log::debug!("index db receiver error: {:?}", err);
-                None
+                Some(false) => break,
+                None => thread::sleep(Duration::from_millis(100)),
             }
-        };
-        state.write().start_init();
-        let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
-        let genesis_block = rpc_client
-            .get_block_by_number(BlockNumber(0))
-            .call()
-            .unwrap()
-            .0
-            .unwrap();
-        let mut db = LiveCellDatabase::from_path(
-            NetworkType::TestNet,
-            &genesis_block,
-            index_dir.clone(),
-            LMDB_EXTRA_MAP_SIZE,
-        )
-        .unwrap();
-
-        let mut processed_blocks = 0;
-        let mut last_get_tip = Instant::now();
-        let mut tip_header = rpc_client.get_tip_header().call().unwrap();
-        db.update_tip(tip_header.clone());
-        state
-            .write()
-            .processing(db.last_header().clone(), tip_header.inner.number.0);
+        }
 
         loop {
-            if last_get_tip.elapsed() > Duration::from_secs(2) {
-                last_get_tip = Instant::now();
-                tip_header = rpc_client.get_tip_header().call().unwrap();
-                db.update_tip(tip_header.clone());
-                log::debug!("Update to tip {}", tip_header.inner.number.0);
-            }
-
-            while tip_header.inner.number.0.saturating_sub(4) > db.last_number() {
-                if try_recv(
-                    &receiver,
-                    &mut db,
-                    &index_dir,
-                    &mut tip_header,
-                    &mut rpc_client,
-                ) {
+            match process(&receiver, &mut rpc_url, &index_dir, &state, &shutdown_clone) {
+                Ok(true) => {
                     state.write().stop();
+                    log::info!("Index database thread stopped");
                     break;
                 }
-                let next_block = rpc_client
-                    .get_block_by_number(db.next_number())
-                    .call()
-                    .unwrap()
-                    .0
-                    .unwrap();
-                db.apply_next_block(next_block).expect("Add block failed");
+                Ok(false) => {}
+                Err(err) => {
+                    state.write().error(err.description().to_owned());
+                    log::info!("rpc call error: {:?}", err);
+                    if shutdown_clone.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_secs(2));
+                }
+            }
+        }
+    });
+
+    IndexController {
+        state: state_clone,
+        sender,
+        shutdown,
+    }
+}
+
+fn process(
+    receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
+    rpc_url: &mut String,
+    index_dir: &PathBuf,
+    state: &Arc<RwLock<IndexThreadState>>,
+    shutdown: &Arc<AtomicBool>,
+) -> Result<bool, RpcError> {
+    if let Some(exit) = try_recv(&receiver, rpc_url) {
+        return Ok(exit);
+    }
+
+    state.write().start_init();
+    let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+    let genesis_block: Block = rpc_client
+        .get_block_by_number(BlockNumber(0))
+        .call()?
+        .0
+        .expect("Can not get genesis block?")
+        .into();
+    let mut db = LiveCellDatabase::from_path(
+        NetworkType::TestNet,
+        genesis_block.header(),
+        index_dir.clone(),
+        LMDB_EXTRA_MAP_SIZE,
+    )
+    .unwrap();
+
+    let mut processed_blocks = 0;
+    let mut last_get_tip = Instant::now();
+    let mut tip_header: Header = rpc_client.get_tip_header().call()?.into();
+    if db.last_number().is_none() {
+        db.apply_next_block(genesis_block.clone())
+            .expect("Apply genesis block failed");
+    }
+    db.update_tip(tip_header.clone());
+    state
+        .write()
+        .processing(db.last_header().cloned(), tip_header.number());
+
+    loop {
+        if last_get_tip.elapsed() > Duration::from_secs(2) {
+            last_get_tip = Instant::now();
+            tip_header = rpc_client.get_tip_header().call()?.into();
+            db.update_tip(tip_header.clone());
+            log::debug!("Update to tip {}", tip_header.number());
+        }
+
+        while tip_header.number().saturating_sub(4) > db.last_number().unwrap() {
+            if shutdown.load(Ordering::Relaxed) {
+                return Ok(true);
+            }
+            if let Some(exit) = try_recv(&receiver, rpc_url) {
+                return Ok(exit);
+            }
+            let next_block_number = BlockNumber(db.next_number().unwrap());
+            if let Some(next_block) = rpc_client.get_block_by_number(next_block_number).call()?.0 {
+                db.apply_next_block(next_block.into())
+                    .expect("Add block failed");
                 processed_blocks += 1;
                 state
                     .write()
-                    .processing(db.last_header().clone(), tip_header.inner.number.0);
+                    .processing(db.last_header().cloned(), tip_header.number());
                 if processed_blocks > REOPEN_DB_BLOCKS {
                     log::info!("Reopen database");
                     db = LiveCellDatabase::from_path(
                         NetworkType::TestNet,
-                        &genesis_block,
+                        genesis_block.header(),
                         index_dir.clone(),
                         LMDB_EXTRA_MAP_SIZE,
                     )
@@ -275,164 +314,49 @@ pub fn start_index_thread(
                     db.update_tip(tip_header.clone());
                     processed_blocks = 0;
                 }
+            } else {
+                log::warn!("fork happening, wait a second");
+                thread::sleep(Duration::from_secs(1));
             }
-
-            if first_request
-                .take()
-                .map(|request| {
-                    process_request(
-                        request,
-                        &mut db,
-                        &index_dir,
-                        &mut tip_header,
-                        &mut rpc_client,
-                    )
-                })
-                .unwrap_or(false)
-            {
-                state.write().stop();
-            }
-            if try_recv(
-                &receiver,
-                &mut db,
-                &index_dir,
-                &mut tip_header,
-                &mut rpc_client,
-            ) {
-                state.write().stop();
-            }
-
-            if state.read().is_stopped() {
-                break;
-            }
-
-            thread::sleep(Duration::from_millis(100));
         }
 
-        state.write().stop();
-        log::info!("Index database thread stopped");
-    });
-
-    IndexController {
-        state: state_clone,
-        sender,
+        if shutdown.load(Ordering::Relaxed) {
+            return Ok(true);
+        }
+        if let Some(exit) = try_recv(&receiver, rpc_url) {
+            return Ok(exit);
+        }
+        thread::sleep(Duration::from_millis(100));
     }
 }
 
 fn try_recv(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
-    db: &mut LiveCellDatabase,
-    index_dir: &PathBuf,
-    tip_header: &mut HeaderView,
-    rpc_client: &mut HttpRpcClient,
-) -> bool {
+    rpc_url: &mut String,
+) -> Option<bool> {
     match receiver.try_recv() {
-        Ok(request) => process_request(request, db, index_dir, tip_header, rpc_client),
+        Ok(request) => Some(process_request(request, rpc_url)),
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
-                true
+                Some(true)
             } else {
-                false
+                None
             }
         }
     }
 }
 
-fn process_request(
-    request: Request<IndexRequest, IndexResponse>,
-    db: &mut LiveCellDatabase,
-    index_dir: &PathBuf,
-    tip_header: &mut HeaderView,
-    rpc_client: &mut HttpRpcClient,
-) -> bool {
+fn process_request(request: Request<IndexRequest, IndexResponse>, rpc_url: &mut String) -> bool {
     let Request {
         responder,
         arguments,
     } = request;
     match arguments {
         IndexRequest::UpdateUrl(url) => {
-            *rpc_client = HttpRpcClient::from_uri(url.as_str());
-            let genesis_block = rpc_client
-                .get_block_by_number(BlockNumber(0))
-                .call()
-                .unwrap()
-                .0
-                .unwrap();
-            *db = LiveCellDatabase::from_path(
-                NetworkType::TestNet,
-                &genesis_block,
-                index_dir.clone(),
-                LMDB_EXTRA_MAP_SIZE,
-            )
-            .unwrap();
-            *tip_header = rpc_client.get_tip_header().call().unwrap();
-            db.update_tip(tip_header.clone());
+            *rpc_url = url;
             responder.send(IndexResponse::Ok).is_err()
         }
-        IndexRequest::GetLiveCellInfos {
-            address,
-            total_capacity,
-        } => {
-            let lock_hash = address.lock_script().hash();
-            let (infos, total_capacity) = db.get_live_cell_infos(lock_hash, total_capacity);
-            responder
-                .send(IndexResponse::LiveCellInfos {
-                    infos,
-                    total_capacity,
-                    last_block: db.last_header().clone().into(),
-                })
-                .is_err()
-        }
-        IndexRequest::GetTopLocks(n) => responder
-            .send(IndexResponse::TopLocks {
-                capacity_list: db
-                    .get_top_n(n)
-                    .into_iter()
-                    .map(|(lock_hash, address, capacity)| {
-                        let address = address.map(|addr| addr.to_string(NetworkType::TestNet));
-                        CapacityResult {
-                            lock_hash,
-                            address,
-                            capacity,
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-                last_block: db.last_header().clone().into(),
-            })
-            .is_err(),
-
-        IndexRequest::GetCapacity(lock_hash) => {
-            responder
-                .send(IndexResponse::Capacity {
-                    capacity: db.get_capacity(lock_hash),
-                    // live_cell_count: result.map(|value| value.1),
-                    last_block: db.last_header().clone().into(),
-                })
-                .is_err()
-        }
-        IndexRequest::GetBalance(address) => {
-            let lock_hash = address.lock_script().hash();
-            responder
-                .send(IndexResponse::Capacity {
-                    capacity: db.get_capacity(lock_hash),
-                    // live_cell_count: result.map(|value| value.1),
-                    last_block: db.last_header().clone().into(),
-                })
-                .is_err()
-        }
-
-        IndexRequest::GetMetrics => responder
-            .send(IndexResponse::DatabaseMetrics(db.get_metrics(None)))
-            .is_err(),
-        // IndexRequest::GetLastHeader => responder
-        //     .send(IndexResponse::LastHeader(db.last_header().clone()))
-        //     .is_err(),
-        // IndexRequest::RebuildIndex => responder.send(IndexResponse::Ok).is_err(),
-        IndexRequest::Shutdown => {
-            let _ = responder.send(IndexResponse::Ok);
-            log::info!("Received shutdown message");
-            true
-        }
+        IndexRequest::Kick => responder.send(IndexResponse::Ok).is_err(),
     }
 }

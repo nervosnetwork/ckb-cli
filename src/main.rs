@@ -17,6 +17,7 @@ use subcommands::TuiSubCommand;
 #[cfg(feature = "local")]
 use subcommands::LocalSubCommand;
 
+use interactive::InteractiveEnv;
 use subcommands::{
     start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
 };
@@ -74,12 +75,17 @@ fn main() -> Result<(), io::Error> {
     }
 
     let api_uri = config.get_url().to_string();
-    let index_controller = start_index_thread(api_uri.as_str(), index_dir, index_state);
+    let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let result = match matches.subcommand() {
         #[cfg(unix)]
-        ("tui", _) => TuiSubCommand::new(api_uri.to_string(), index_controller.clone()).start(),
+        ("tui", _) => TuiSubCommand::new(
+            api_uri.to_string(),
+            index_dir.clone(),
+            index_controller.clone(),
+        )
+        .start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
 
         #[cfg(feature = "local")]
@@ -87,12 +93,19 @@ fn main() -> Result<(), io::Error> {
             LocalSubCommand::new(&mut rpc_client, resource_dir.clone()).process(&sub_matches)
         }
 
-        ("wallet", Some(sub_matches)) => {
-            WalletSubCommand::new(&mut rpc_client, index_controller.sender().clone())
-                .process(&sub_matches)
-        }
+        ("wallet", Some(sub_matches)) => WalletSubCommand::new(
+            &mut rpc_client,
+            None,
+            index_dir.clone(),
+            index_controller.clone(),
+            false,
+        )
+        .process(&sub_matches),
         _ => {
-            if let Err(err) = interactive::start(ckb_cli_dir, config, index_controller.clone()) {
+            if let Err(err) =
+                InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
+                    .and_then(|mut env| env.start())
+            {
                 eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
                 index_controller.shutdown();
                 process::exit(1);

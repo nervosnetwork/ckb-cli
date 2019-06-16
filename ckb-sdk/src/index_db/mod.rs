@@ -3,16 +3,13 @@ mod types;
 mod util;
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use crate::{Address, NetworkType};
-use ckb_core::{
-    header::Header as CoreHeader, script::Script as CoreScript,
-    transaction::CellOutPoint as CoreCellOutPoint,
-};
-use jsonrpc_types::{BlockNumber, BlockView, HeaderView};
+use ckb_core::{block::Block, header::Header, script::Script, transaction::CellOutPoint};
 use numext_fixed_hash::H256;
 
 const LMDB_MAX_DBS: u32 = 6;
@@ -29,22 +26,22 @@ pub struct LiveCellDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
     store: rkv::SingleStore,
     // network: NetworkType,
-    last_header: CoreHeader,
-    tip_header: HeaderView,
-    init_block_buf: Vec<BlockView>,
+    genesis: Header,
+    last_header: Option<Header>,
+    tip_header: Header,
+    init_block_buf: Vec<Block>,
 }
 
 impl LiveCellDatabase {
     pub fn from_path(
         network: NetworkType,
-        genesis_block: &BlockView,
+        genesis_header: &Header,
         mut directory: PathBuf,
         extra_size: u64,
     ) -> Result<LiveCellDatabase, IndexError> {
-        let genesis_header = &genesis_block.header;
-        assert_eq!(genesis_header.inner.number.0, 0);
+        assert_eq!(genesis_header.number(), 0);
 
-        directory.push(format!("{:#x}", genesis_header.hash));
+        directory.push(format!("{:#x}", genesis_header.hash()));
         std::fs::create_dir_all(&directory)?;
         let map_size = dir_size(&directory) + extra_size;
         let env_arc = rkv::Manager::singleton()
@@ -82,8 +79,12 @@ impl LiveCellDatabase {
                         network, network_opt
                     )));
                 }
-                if genesis_hash != genesis_header.hash {
-                    return Err(IndexError::InvalidGenesis(format!("{:#x}", genesis_hash)));
+                if &genesis_hash != genesis_header.hash() {
+                    return Err(IndexError::InvalidGenesis(format!(
+                        "{:#x}, expected: {:#x}",
+                        genesis_hash,
+                        genesis_header.hash(),
+                    )));
                 }
             } else {
                 log::info!("genesis not found, init db");
@@ -92,7 +93,7 @@ impl LiveCellDatabase {
                 put_pair(
                     &store,
                     &mut writer,
-                    Key::pair_genesis_hash(&genesis_header.hash),
+                    Key::pair_genesis_hash(genesis_header.hash()),
                 );
                 writer.commit().unwrap();
             }
@@ -103,53 +104,67 @@ impl LiveCellDatabase {
                     .get(&reader, Key::LastHeader.to_bytes())
                     .unwrap()
                     .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap())
-                    .unwrap_or(genesis_header.clone().into())
             };
             (store, last_header)
         };
-        let mut db = LiveCellDatabase {
+        Ok(LiveCellDatabase {
             env_arc,
             store,
             // network,
             last_header,
+            genesis: genesis_header.clone(),
             tip_header: genesis_header.clone(),
             init_block_buf: Vec::new(),
-        };
-        if db.last_number() == 0 {
-            db.apply_block_unchecked(genesis_block.clone());
-        }
-
-        Ok(db)
+        })
     }
 
-    pub fn apply_next_block(&mut self, block: BlockView) -> Result<(), IndexError> {
-        if block.header.inner.number.0 != self.last_header().number() + 1 {
-            return Err(IndexError::BlockTooEarly);
+    pub fn apply_next_block(&mut self, block: Block) -> Result<(), IndexError> {
+        let number = block.header().number();
+        if let Some(ref last_header) = self.last_header {
+            if number != last_header.number() + 1 {
+                return Err(IndexError::BlockTooEarly(number));
+            }
+            if block.header().parent_hash() != last_header.hash() {
+                return Err(IndexError::BlockInvalid(format!(
+                    "hash={:#x}",
+                    block.header().hash()
+                )));
+            }
+            if number + 3 >= self.tip_header.number() {
+                return Err(IndexError::BlockImmature(number));
+            }
+            self.apply_block_unchecked(block);
+            Ok(())
+        } else if number == 0 {
+            if block.header().hash() != self.genesis.hash() {
+                Err(IndexError::InvalidGenesis(format!(
+                    "{:#x}, expected: {:#x}",
+                    block.header().hash(),
+                    self.genesis.hash(),
+                )))
+            } else {
+                self.apply_block_unchecked(block);
+                Ok(())
+            }
+        } else {
+            Err(IndexError::NotInit)
         }
-        if &block.header.inner.parent_hash != self.last_header().hash() {
-            return Err(IndexError::BlockInvalid);
-        }
-        if block.header.inner.number.0 + 3 >= self.tip_header.inner.number.0 {
-            return Err(IndexError::BlockImmature);
-        }
-        self.apply_block_unchecked(block);
-        Ok(())
     }
 
-    pub fn update_tip(&mut self, header: HeaderView) {
+    pub fn update_tip(&mut self, header: Header) {
         self.tip_header = header
     }
 
-    pub fn last_header(&self) -> &CoreHeader {
-        &self.last_header
+    pub fn last_header(&self) -> Option<&Header> {
+        self.last_header.as_ref()
     }
 
-    pub fn last_number(&self) -> u64 {
-        self.last_header.number()
+    pub fn last_number(&self) -> Option<u64> {
+        self.last_header.as_ref().map(|header| header.number())
     }
 
-    pub fn next_number(&self) -> BlockNumber {
-        BlockNumber(self.last_header.number() + 1)
+    pub fn next_number(&self) -> Option<u64> {
+        self.last_number().map(|number| number + 1)
     }
 
     fn get(&self, reader: &rkv::Reader, key: &[u8]) -> Option<Vec<u8>> {
@@ -162,7 +177,7 @@ impl LiveCellDatabase {
     fn get_address_inner(&self, reader: &rkv::Reader, lock_hash: H256) -> Option<Address> {
         self.get(reader, &Key::LockScript(lock_hash).to_bytes())
             .and_then(|bytes| {
-                let script: CoreScript = bincode::deserialize(&bytes).unwrap();
+                let script: Script = bincode::deserialize(&bytes).unwrap();
                 script
                     .args
                     .get(0)
@@ -173,7 +188,7 @@ impl LiveCellDatabase {
     fn get_live_cell_info(
         &self,
         reader: &rkv::Reader,
-        out_point: CoreCellOutPoint,
+        out_point: CellOutPoint,
     ) -> Option<LiveCellInfo> {
         self.get(reader, &Key::LiveCellMap(out_point).to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
@@ -210,7 +225,7 @@ impl LiveCellDatabase {
                 break;
             }
             let value_bytes = value_bytes_opt.unwrap();
-            let out_point: CoreCellOutPoint =
+            let out_point: CellOutPoint =
                 bincode::deserialize(value_to_bytes(&value_bytes)).unwrap();
             let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
             result_total_capacity += live_cell_info.capacity;
@@ -248,14 +263,14 @@ impl LiveCellDatabase {
         pairs
     }
 
-    fn apply_block_unchecked(&mut self, block: BlockView) {
-        let header = &block.header;
-        log::debug!("Block: {} => {:x}", header.inner.number.0, header.hash);
+    fn apply_block_unchecked(&mut self, block: Block) {
+        let header = block.header();
+        log::debug!("Block: {} => {:x}", header.number(), header.hash());
 
         let env_read = self.env_arc.read().unwrap();
         // TODO: should forbid query when Init
-        self.last_header = block.header.clone().into();
-        let blocks = if self.last_number() < self.tip_header.inner.number.0.saturating_sub(256) {
+        self.last_header = Some(header.clone());
+        let blocks = if self.last_number().unwrap() < self.tip_header.number().saturating_sub(256) {
             self.init_block_buf.push(block);
             if self.init_block_buf.len() >= 200 {
                 self.init_block_buf.split_off(0)
@@ -333,9 +348,10 @@ impl LiveCellDatabase {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IndexError {
-    BlockImmature,
-    BlockTooEarly,
-    BlockInvalid,
+    BlockImmature(u64),
+    BlockTooEarly(u64),
+    BlockInvalid(String),
+    NotInit,
     IoError(String),
     InvalidGenesis(String),
     InvalidNetworkType(String),
@@ -344,5 +360,11 @@ pub enum IndexError {
 impl From<io::Error> for IndexError {
     fn from(err: io::Error) -> IndexError {
         IndexError::IoError(err.to_string())
+    }
+}
+
+impl fmt::Display for IndexError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{:?}", self)
     }
 }

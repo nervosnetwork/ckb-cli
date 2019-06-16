@@ -198,7 +198,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .rpc_client
                     .local_node_info()
                     .call()
-                    .map_err(|err| err.to_string())?;
+                    .map_err(|err| err.description().to_string())?;
                 Ok(Box::new(resp))
             }
             ("tx_pool_info", _) => {

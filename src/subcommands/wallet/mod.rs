@@ -3,13 +3,14 @@ mod util;
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use bytes::Bytes;
-use ckb_core::service::Request;
+use ckb_core::{block::Block, service::Request};
 use ckb_sdk::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use crossbeam_channel::Sender;
 use crypto::secp::Generator;
 use faster_hex::{hex_decode, hex_string};
 use jsonrpc_types::BlockNumber;
@@ -20,7 +21,8 @@ use serde_json::json;
 use super::{from_matches, CliSubCommand};
 use crate::utils::printer::Printable;
 use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    GenesisInfo, HttpRpcClient, LiveCellDatabase, TransferTransactionBuilder, LMDB_EXTRA_MAP_SIZE,
+    MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -31,35 +33,69 @@ use util::privkey_from_file;
 pub struct WalletSubCommand<'a> {
     #[allow(dead_code)]
     rpc_client: &'a mut HttpRpcClient,
-    index_sender: Sender<Request<IndexRequest, IndexResponse>>,
     genesis_info: Option<GenesisInfo>,
+    index_dir: PathBuf,
+    index_controller: IndexController,
+    interactive: bool,
 }
 
 impl<'a> WalletSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        index_sender: Sender<Request<IndexRequest, IndexResponse>>,
+        genesis_info: Option<GenesisInfo>,
+        index_dir: PathBuf,
+        index_controller: IndexController,
+        interactive: bool,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
-            index_sender,
-            genesis_info: None,
+            genesis_info,
+            index_dir,
+            index_controller,
+            interactive,
         }
     }
 
-    pub fn genesis_info(&mut self) -> &GenesisInfo {
+    fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
         if self.genesis_info.is_none() {
-            let genesis_block = self
+            let genesis_block: Block = self
                 .rpc_client
                 .get_block_by_number(BlockNumber(0))
                 .call()
-                .unwrap()
+                .map_err(|err| err.to_string())?
                 .0
-                .unwrap();
-            self.genesis_info =
-                Some(GenesisInfo::from_block(genesis_block).expect("Build genesis info failed"));
+                .expect("Can not get genesis block?")
+                .into();
+            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
         }
-        self.genesis_info.as_ref().unwrap()
+        Ok(self.genesis_info.clone().unwrap())
+    }
+
+    fn get_db(&mut self) -> Result<LiveCellDatabase, String> {
+        if !self.interactive {
+            Request::call(self.index_controller.sender(), IndexRequest::Kick);
+            for _ in 0..600 {
+                let state = self.index_controller.state().read();
+                if state.is_error() || state.is_stopped() {
+                    break;
+                } else if !state.is_synced() {
+                    thread::sleep(Duration::from_millis(100));
+                }
+            }
+            if !self.index_controller.state().read().is_synced() {
+                return Err(format!(
+                    "Index database not synced({}), please try again",
+                    self.index_controller.state().read().to_string(),
+                ));
+            }
+        }
+        LiveCellDatabase::from_path(
+            NetworkType::TestNet,
+            self.genesis_info()?.header(),
+            self.index_dir.clone(),
+            LMDB_EXTRA_MAP_SIZE,
+        )
+        .map_err(|err| err.to_string())
     }
 
     pub fn subcommand() -> App<'static, 'static> {
@@ -217,48 +253,36 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_pubkey = from_privkey.pubkey().unwrap();
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
-                let request = IndexRequest::GetLiveCellInfos {
-                    address: from_address.clone(),
-                    total_capacity: capacity,
-                };
-                match Request::call(&self.index_sender, request).unwrap() {
-                    IndexResponse::LiveCellInfos {
-                        infos,
+                let (infos, total_capacity) = self
+                    .get_db()?
+                    .get_live_cell_infos(from_address.lock_script().hash().clone(), capacity);
+                if total_capacity < capacity {
+                    return Err(format!(
+                        "Capacity not enough: {} => {}",
+                        from_address.to_string(NetworkType::TestNet),
                         total_capacity,
-                        ..
-                    } => {
-                        if total_capacity < capacity {
-                            return Err(format!(
-                                "Capacity not enough: {} => {}",
-                                from_address.to_string(NetworkType::TestNet),
-                                total_capacity,
-                            ));
-                        }
-                        let tx_args = TransferTransactionBuilder {
-                            from_privkey: &from_privkey,
-                            from_address: &from_address,
-                            from_capacity: total_capacity,
-                            to_data: &to_data,
-                            to_address: &to_address,
-                            to_capacity: capacity,
-                        };
-                        let tx = tx_args.build(infos, self.genesis_info().secp_dep());
-                        // TODO: print when debug
-                        // println!(
-                        //     "[Send Transaction]:\n{}",
-                        //     serde_json::to_string_pretty(&tx).unwrap()
-                        // );
-                        let resp = self
-                            .rpc_client
-                            .send_transaction(tx)
-                            .call()
-                            .map_err(|err| format!("Send transaction error: {:?}", err))?;
-                        Ok(Box::new(serde_json::to_string(&resp).unwrap()))
-                    }
-                    resp => {
-                        panic!("Invalid response from index db: {:?}", resp);
-                    }
+                    ));
                 }
+                let tx_args = TransferTransactionBuilder {
+                    from_privkey: &from_privkey,
+                    from_address: &from_address,
+                    from_capacity: total_capacity,
+                    to_data: &to_data,
+                    to_address: &to_address,
+                    to_capacity: capacity,
+                };
+                let tx = tx_args.build(infos, self.genesis_info()?.secp_dep());
+                // TODO: print when debug
+                // println!(
+                //     "[Send Transaction]:\n{}",
+                //     serde_json::to_string_pretty(&tx).unwrap()
+                // );
+                let resp = self
+                    .rpc_client
+                    .send_transaction(tx)
+                    .call()
+                    .map_err(|err| format!("Send transaction error: {:?}", err))?;
+                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("generate-key", Some(m)) => {
                 let (privkey, pubkey) = Generator::new()
@@ -353,15 +377,18 @@ args = ["{:#x}"]
             }
             ("get-capacity", Some(m)) => {
                 let lock_hash: H256 = from_matches(m, "lock-hash");
-                let resp = Request::call(&self.index_sender, IndexRequest::GetCapacity(lock_hash))
-                    .unwrap();
+                let resp = serde_json::json!({
+                    "capacity": self.get_db()?.get_capacity(lock_hash)
+                });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("get-balance", Some(m)) => {
                 let address_string: String = from_matches(m, "address");
                 let address = Address::from_input(NetworkType::TestNet, address_string.as_str())?;
-                let resp =
-                    Request::call(&self.index_sender, IndexRequest::GetBalance(address)).unwrap();
+                let lock_hash = address.lock_script().hash().clone();
+                let resp = serde_json::json!({
+                    "capacity": self.get_db()?.get_capacity(lock_hash)
+                });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("top", Some(m)) => {
@@ -369,11 +396,13 @@ args = ["{:#x}"]
                     .value_of("number")
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
-                let resp = Request::call(&self.index_sender, IndexRequest::GetTopLocks(n)).unwrap();
+                let resp = serde_json::to_value(self.get_db()?.get_top_n(n))
+                    .map_err(|err| err.to_string())?;
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("db-metrics", _) => {
-                let resp = Request::call(&self.index_sender, IndexRequest::GetMetrics).unwrap();
+                let resp = serde_json::to_value(self.get_db()?.get_metrics(None))
+                    .map_err(|err| err.to_string())?;
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             _ => Err(matches.usage().to_owned()),
