@@ -2,6 +2,7 @@ mod basic;
 mod chain;
 mod error;
 mod index_db;
+
 #[cfg(feature = "local")]
 mod key;
 #[cfg(feature = "local")]
@@ -11,7 +12,7 @@ mod util;
 
 pub mod rpc;
 
-pub use basic::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
+pub use basic::{Address, AddressFormat, NetworkType, SecpKey, SECP_CODE_HASH};
 pub use chain::{
     build_witness, GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };

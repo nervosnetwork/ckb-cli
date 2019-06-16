@@ -4,8 +4,10 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonrpc_types::{CellOutPoint, OutPoint};
 
 use super::{from_matches, from_matches_opt, CliSubCommand};
+use crate::utils::arg_parser::{ArgParser, FromStrParser};
 use crate::utils::printer::Printable;
 use ckb_sdk::rpc::HttpRpcClient;
+use jsonrpc_types::BlockNumber;
 
 pub struct RpcSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -25,6 +27,7 @@ impl<'a> RpcSubCommand<'a> {
             .long("number")
             .takes_value(true)
             .required(true)
+            .validator(|input| FromStrParser::<u64>::default().validate(input))
             .help("Block number");
 
         SubCommand::with_name("rpc")
@@ -111,11 +114,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Box::new(resp))
             }
             ("get_block_hash", Some(m)) => {
-                let number = from_matches(m, "number");
-
+                let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
                 let resp = self
                     .rpc_client
-                    .get_block_hash(number)
+                    .get_block_hash(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))

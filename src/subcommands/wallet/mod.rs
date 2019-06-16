@@ -1,5 +1,4 @@
 mod index;
-mod util;
 
 use std::fs;
 use std::io::Write;
@@ -12,26 +11,27 @@ use ckb_core::{block::Block, service::Request};
 use ckb_sdk::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crypto::secp::Generator;
-use faster_hex::{hex_decode, hex_string};
+use faster_hex::hex_string;
 use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
-use secp256k1::key;
 use serde_json::json;
 
-use super::{from_matches, CliSubCommand};
+use super::CliSubCommand;
+use crate::utils::arg_parser::{
+    AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+    HexParser, PrivkeyPathParser, PubkeyHexParser,
+};
 use crate::utils::printer::Printable;
 use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, LiveCellDatabase, TransferTransactionBuilder, LMDB_EXTRA_MAP_SIZE,
-    MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    GenesisInfo, HttpRpcClient, LiveCellDatabase, SecpKey, TransferTransactionBuilder,
+    LMDB_EXTRA_MAP_SIZE, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
 };
-use util::privkey_from_file;
 
 pub struct WalletSubCommand<'a> {
-    #[allow(dead_code)]
     rpc_client: &'a mut HttpRpcClient,
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
@@ -102,10 +102,12 @@ impl<'a> WalletSubCommand<'a> {
         let arg_privkey = Arg::with_name("privkey-path")
             .long("privkey-path")
             .takes_value(true)
+            .validator(|input| PrivkeyPathParser.validate(input))
             .help("Private key file path (only read first line)");
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
+            .validator(|input| AddressParser.validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)");
         SubCommand::with_name("wallet")
@@ -118,6 +120,7 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("to-address")
                             .long("to-address")
                             .takes_value(true)
+                            .validator(|input| AddressParser.validate(input))
                             .required(true)
                             .help("Target address"),
                     )
@@ -125,22 +128,16 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("to-data")
                             .long("to-data")
                             .takes_value(true)
+                            .validator(|input| HexParser.validate(input))
                             .help("Hex data store in target cell (optional)"),
                     )
                     .arg(
                         Arg::with_name("capacity")
                             .long("capacity")
                             .takes_value(true)
+                            .validator(|input| CapacityParser.validate(input))
                             .required(true)
-                            .help("The capacity (default unit: CKB)"),
-                    )
-                    .arg(
-                        Arg::with_name("unit")
-                            .long("unit")
-                            .takes_value(true)
-                            .possible_values(&["CKB", "shannon"])
-                            .default_value("CKB")
-                            .help("Capacity unit, 1CKB = 10^8 shannon"),
+                            .help("The capacity (unit: CKB, format: 123.335)"),
                     ),
                 SubCommand::with_name("generate-key")
                     .about("Generate a random secp256k1 privkey and save to file (print block_assembler config)")
@@ -153,6 +150,7 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("privkey-path")
                             .long("privkey-path")
                             .takes_value(true)
+                            .validator(|input| FilePathParser::new(false).validate(input))
                             .required(true)
                             .help("Output privkey file path (content = privkey + address)"),
                     ),
@@ -163,6 +161,7 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("pubkey")
                             .long("pubkey")
                             .takes_value(true)
+                            .validator(|input| PubkeyHexParser.validate(input))
                             .required_if("privkey-path", "")
                             .help("Public key (hex string, compressed format)"),
                     ),
@@ -172,6 +171,7 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("lock-hash")
                             .long("lock-hash")
                             .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
                             .help("Lock hash"),
                     ),
@@ -184,13 +184,7 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("number")
                             .short("n")
                             .long("number")
-                            .validator(|s| {
-                                let n = s.parse::<usize>().map_err(|err| err.to_string())?;
-                                if n < 1 {
-                                    return Err("number should large than 0".to_owned());
-                                }
-                                Ok(())
-                            })
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .default_value("10")
                             .takes_value(true)
                             .help("Get top n capacity addresses"),
@@ -205,52 +199,28 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
-                let privkey_path: String = from_matches(m, "privkey-path");
-                let to_address: String = from_matches(m, "to-address");
-                let to_data = m.value_of("to-data");
-                let mut capacity: u64 = m.value_of("capacity").unwrap().parse().unwrap();
-                let unit: String = from_matches(m, "unit");
+                let from_key: SecpKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
+                let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+                let to_data: Bytes = HexParser
+                    .from_matches_opt(m, "to-data", false)?
+                    .unwrap_or_else(Bytes::new);
+                let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
 
-                let to_address = Address::from_input(NetworkType::TestNet, to_address.as_str())?;
-                let to_data = to_data
-                    .map(|data| {
-                        let data_hex = if data.starts_with("0x") || data.starts_with("0X") {
-                            &data[2..]
-                        } else {
-                            data
-                        };
-                        let mut data_bytes = vec![0; data_hex.len() / 2];
-                        hex_decode(data_hex.as_bytes(), &mut data_bytes)
-                            .map_err(|err| format!("parse to-data failed: {:?}", err))?;
-                        if data_bytes.len() as u64 > capacity {
-                            return Err(format!(
-                                "data size exceed capacity: {} > {}",
-                                data_bytes.len(),
-                                capacity,
-                            ));
-                        }
-                        Ok(Bytes::from(data_bytes))
-                    })
-                    .unwrap_or_else(|| Ok(Bytes::default()))?;
-
-                if unit == "CKB" {
-                    capacity *= ONE_CKB;
-                }
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
                         "Capacity can not less than {} shannons",
                         MIN_SECP_CELL_CAPACITY
                     ));
                 }
-                if capacity < MIN_SECP_CELL_CAPACITY + to_data.len() as u64 {
+                if capacity < MIN_SECP_CELL_CAPACITY + (to_data.len() as u64 * ONE_CKB) {
                     return Err(format!(
                         "Capacity can not hold {} bytes of data",
                         to_data.len()
                     ));
                 }
 
-                let from_privkey = privkey_from_file(privkey_path.as_str())?;
-                let from_pubkey = from_privkey.pubkey().unwrap();
+                let from_privkey = from_key.privkey.unwrap();
+                let from_pubkey = from_key.pubkey;
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
                 let (infos, total_capacity) = self
@@ -330,28 +300,13 @@ args = ["{:#x}"]
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("key-info", Some(m)) => {
-                let pubkey = m
-                    .value_of("privkey-path")
-                    .map(|path| {
-                        privkey_from_file(path).and_then(|privkey| {
-                            privkey
-                                .pubkey()
-                                .map_err(|err| format!("get pubkey from privkey failed, {:?}", err))
-                        })
-                    })
+                let secp_key_opt: Option<SecpKey> =
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                let pubkey = secp_key_opt
+                    .map(|key| Result::<_, String>::Ok(key.pubkey))
                     .unwrap_or_else(|| {
-                        let mut pubkey_hex = m
-                            .value_of("pubkey")
-                            .ok_or_else(|| "privkey-path or pubkey not given".to_string())?;
-                        if pubkey_hex.starts_with("0x") || pubkey_hex.starts_with("0X") {
-                            pubkey_hex = &pubkey_hex[2..];
-                        }
-                        let mut pubkey_bytes = [0u8; 33];
-                        hex_decode(pubkey_hex.as_bytes(), &mut pubkey_bytes)
-                            .map_err(|err| format!("parse pubkey failed: {:?}", err))?;
-                        key::PublicKey::from_slice(&pubkey_bytes)
-                            .map(Into::into)
-                            .map_err(|err| err.to_string())
+                        let key: SecpKey = PubkeyHexParser.from_matches(m, "pubkey")?;
+                        Ok(key.pubkey)
                     })?;
                 let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
                 let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
@@ -376,15 +331,15 @@ args = ["{:#x}"]
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("get-capacity", Some(m)) => {
-                let lock_hash: H256 = from_matches(m, "lock-hash");
+                let lock_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
                 let resp = serde_json::json!({
                     "capacity": self.get_db()?.get_capacity(lock_hash)
                 });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("get-balance", Some(m)) => {
-                let address_string: String = from_matches(m, "address");
-                let address = Address::from_input(NetworkType::TestNet, address_string.as_str())?;
+                let address: Address = AddressParser.from_matches(m, "address")?;
                 let lock_hash = address.lock_script().hash().clone();
                 let resp = serde_json::json!({
                     "capacity": self.get_db()?.get_capacity(lock_hash)
@@ -396,8 +351,20 @@ args = ["{:#x}"]
                     .value_of("number")
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
-                let resp = serde_json::to_value(self.get_db()?.get_top_n(n))
-                    .map_err(|err| err.to_string())?;
+                let resp = serde_json::to_value({
+                    self.get_db()?
+                        .get_top_n(n)
+                        .into_iter()
+                        .map(|(lock_hash, address, capacity)| {
+                            serde_json::json!({
+                                "lock_hash": format!("{:#x}", lock_hash),
+                                "address": address.map(|addr| addr.to_string(NetworkType::TestNet)),
+                                "capacity": capacity,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .map_err(|err| err.to_string())?;
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
             ("db-metrics", _) => {

@@ -21,7 +21,7 @@ use interactive::InteractiveEnv;
 use subcommands::{
     start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
 };
-use url::Url;
+use utils::arg_parser::{ArgParser, UrlParser};
 use utils::config::GlobalConfig;
 use utils::printer::Printer;
 
@@ -177,6 +177,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
             Arg::with_name("url")
                 .long("url")
                 .takes_value(true)
+                .validator(|input| UrlParser.validate(input))
                 .help("RPC API server url"),
         )
         .arg(
@@ -214,11 +215,7 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .arg(
                     Arg::with_name("url")
                         .long("url")
-                        .validator(|url| {
-                            Url::parse(url.as_ref())
-                                .map(|_| ())
-                                .map_err(|err| err.to_string())
-                        })
+                        .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
                         .help("Config RPC API url"),
                 )

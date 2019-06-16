@@ -1,14 +1,18 @@
 use std::fmt;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use bech32::{convert_bits, Bech32, ToBase32};
 use bytes::Bytes;
-use numext_fixed_hash::{h256, H160, H256};
-use serde_derive::{Deserialize, Serialize};
-
 use ckb_core::script::Script as CoreScript;
-use crypto::secp::Pubkey;
+use crypto::secp::{Generator, Privkey, Pubkey};
+use faster_hex::hex_decode;
 use hash::blake2b_256;
+use numext_fixed_hash::{h256, H160, H256};
+use secp256k1::key;
+use serde_derive::{Deserialize, Serialize};
 
 const PREFIX_MAINNET: &str = "ckb";
 const PREFIX_TESTNET: &str = "ckt";
@@ -158,5 +162,128 @@ impl Address {
         let value = Bech32::new(hrp.to_string(), data.to_base32())
             .expect(&format!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
+    }
+}
+
+pub struct SecpKey {
+    pub privkey_path: Option<PathBuf>,
+    pub privkey: Option<Privkey>,
+    pub pubkey: Pubkey,
+}
+
+impl SecpKey {
+    pub fn generate() -> SecpKey {
+        let (privkey, pubkey) = Generator::new()
+            .random_keypair()
+            .expect("generate random key error");
+        SecpKey {
+            privkey_path: None,
+            privkey: Some(privkey),
+            pubkey,
+        }
+    }
+
+    pub fn path_exists(&self) -> bool {
+        self.privkey_path
+            .as_ref()
+            .map(|path| Path::new(path).exists())
+            .unwrap_or(false)
+    }
+
+    pub fn corrupted(&self) -> bool {
+        self.privkey_path
+            .as_ref()
+            .map(|path| match SecpKey::from_privkey_path(path) {
+                Ok(key) => key.pubkey != self.pubkey,
+                Err(_) => false,
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn from_privkey(privkey: Privkey) -> Result<SecpKey, String> {
+        let pubkey = privkey.pubkey().map_err(|err| err.to_string())?;
+        Ok(SecpKey {
+            privkey_path: None,
+            privkey: Some(privkey),
+            pubkey,
+        })
+    }
+
+    pub fn from_pubkey(pubkey: Pubkey) -> SecpKey {
+        SecpKey {
+            privkey_path: None,
+            privkey: None,
+            pubkey,
+        }
+    }
+
+    pub fn from_privkey_path<P: AsRef<Path>>(path: P) -> Result<SecpKey, String> {
+        let path: PathBuf = path.as_ref().to_path_buf();
+        let mut content = String::new();
+        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|err| err.to_string())?;
+        let privkey_string: String = content
+            .split_whitespace()
+            .next()
+            .map(|s| s.to_owned())
+            .ok_or_else(|| "File is empty".to_string())?;
+        let privkey_str = if privkey_string.starts_with("0x") || privkey_string.starts_with("0X") {
+            &privkey_string[2..]
+        } else {
+            privkey_string.as_str()
+        };
+        let privkey = Privkey::from_str(privkey_str.trim()).map_err(|err| err.to_string())?;
+        let pubkey = privkey.pubkey().map_err(|err| err.to_string())?;
+        Ok(SecpKey {
+            privkey_path: Some(path),
+            privkey: Some(privkey),
+            pubkey,
+        })
+    }
+
+    pub fn from_pubkey_str(mut pubkey_hex: &str) -> Result<SecpKey, String> {
+        if pubkey_hex.starts_with("0x") || pubkey_hex.starts_with("0X") {
+            pubkey_hex = &pubkey_hex[2..];
+        }
+        let mut pubkey_bytes = [0u8; 33];
+        hex_decode(pubkey_hex.as_bytes(), &mut pubkey_bytes)
+            .map_err(|err| format!("parse pubkey failed: {:?}", err))?;
+        key::PublicKey::from_slice(&pubkey_bytes)
+            .map_err(|err| err.to_string())
+            .map(Into::into)
+            .map(|pubkey| SecpKey {
+                privkey_path: None,
+                privkey: None,
+                pubkey,
+            })
+    }
+
+    pub fn save_to_path<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        if let Some(ref privkey) = self.privkey {
+            let path = path.as_ref();
+            if Path::new(path).exists() {
+                return Err(format!(
+                    "ERROR: output path ( {} ) already exists",
+                    path.to_string_lossy()
+                ));
+            }
+            let address = self.address()?;
+            // TODO: support different network: testnet/mainnet
+            let address_string = address.to_string(NetworkType::TestNet);
+            let mut file = fs::File::create(path).map_err(|err| err.to_string())?;
+            file.write(format!("{}\n", privkey.to_string()).as_bytes())
+                .map_err(|err| err.to_string())?;
+            file.write(format!("{}\n", address_string).as_bytes())
+                .map_err(|err| err.to_string())?;
+            Ok(())
+        } else {
+            Err(format!("Privkey is empty"))
+        }
+    }
+
+    pub fn address(&self) -> Result<Address, String> {
+        // TODO: support other address format
+        Address::from_pubkey(AddressFormat::default(), &self.pubkey)
     }
 }
