@@ -57,6 +57,12 @@ pub struct FromStrParser<T: FromStr> {
     _t: PhantomData<T>,
 }
 
+impl<T: FromStr> FromStrParser<T> {
+    pub fn new() -> FromStrParser<T> {
+        FromStrParser {_t: PhantomData}
+    }
+}
+
 impl<T> ArgParser<T> for FromStrParser<T>
 where
     T: FromStr,
@@ -219,3 +225,68 @@ impl ArgParser<u64> for CapacityParser {
         Ok(capacity)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::IpAddr;
+    use numext_fixed_hash::{h256};
+
+    use super::*;
+
+    #[test]
+    fn test_from_str() {
+        assert_eq!(FromStrParser::<u64>::default().parse("456"), Ok(456));
+        assert_eq!(FromStrParser::<i64>::default().parse("-34"), Ok(-34));
+        assert_eq!(FromStrParser::<IpAddr>::new().parse("192.168.1.1"), Ok("192.168.1.1".parse().unwrap()));
+        assert!(FromStrParser::<u64>::default().parse("-34").is_err());
+        assert!(FromStrParser::<u64>::default().parse("xxy").is_err());
+        assert!(FromStrParser::<u64>::default().parse("3x").is_err());
+    }
+
+    #[test]
+    fn test_hex() {
+        assert_eq!(HexParser.parse("0x3a"), Ok(vec![0x3a]));
+        assert_eq!(HexParser.parse("0Xaa"), Ok(vec![0xaa]));
+        assert_eq!(HexParser.parse("3a6665"), Ok(vec![0x3a, 0x66, 0x65]));
+        assert!(HexParser.parse("0x3a665").is_err());
+        assert!(HexParser.parse("abcdefghi").is_err());
+    }
+
+    #[test]
+    fn test_fixed_hash() {
+        assert_eq!(
+            FixedHashParser::<H256>::default().parse("0xac71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016c"),
+            Ok(h256!("0xac71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016c")),
+        );
+        assert_eq!(
+            FixedHashParser::<H256>::default().parse("ac71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016c"),
+            Ok(h256!("0xac71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016c")),
+        );
+        assert!(FixedHashParser::<H256>::default().parse("71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016c").is_err());
+        assert!(FixedHashParser::<H256>::default().parse("71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016ccccc").is_err());
+    }
+
+    #[test]
+    fn test_address() {
+        assert_eq!(
+            AddressParser.parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc"),
+            Address::from_input(NetworkType::TestNet, "ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc"),
+        );
+        assert!(AddressParser.parse("kt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc").is_err());
+        assert!(AddressParser.parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy").is_err());
+    }
+
+    #[test]
+    fn test_capacity() {
+        assert_eq!(CapacityParser.parse("12345"), Ok(12345 * ONE_CKB));
+        assert_eq!(CapacityParser.parse("12345.234"), Ok(12345 * ONE_CKB + 234));
+        assert_eq!(CapacityParser.parse("12345.23442222"), Ok(12345 * ONE_CKB + 23442222));
+        assert!(CapacityParser.parse("12345.234422224").is_err());
+        assert!(CapacityParser.parse("abc.234422224").is_err());
+        assert!(CapacityParser.parse("abc.abc").is_err());
+        assert!(CapacityParser.parse("abc").is_err());
+        assert!(CapacityParser.parse("-234").is_err());
+        assert!(CapacityParser.parse("-234.3").is_err());
+    }
+}
+
