@@ -20,7 +20,7 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_core::{header::Header, service::Request};
-use ckb_sdk::{HttpRpcClient, LiveCellDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE};
+use ckb_sdk::{HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE};
 use jsonrpc_types::BlockNumber;
 
 use super::wallet::{IndexController, IndexRequest};
@@ -485,7 +485,7 @@ fn render_top_capacity<B: Backend>(
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
     let lines = if index.state().read().is_processing() {
-        match LiveCellDatabase::from_path(
+        match IndexDatabase::from_path(
             NetworkType::TestNet,
             genesis_header,
             index_dir,

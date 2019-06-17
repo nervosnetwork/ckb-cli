@@ -22,7 +22,7 @@ use util::{dir_size, put_pair, value_to_bytes};
 
 // NOTE: You should reopen to increase database size when processed enough blocks
 //  [reference]: https://stackoverflow.com/a/33571804
-pub struct LiveCellDatabase {
+pub struct IndexDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
     store: rkv::SingleStore,
     // network: NetworkType,
@@ -32,13 +32,13 @@ pub struct LiveCellDatabase {
     init_block_buf: Vec<Block>,
 }
 
-impl LiveCellDatabase {
+impl IndexDatabase {
     pub fn from_path(
         network: NetworkType,
         genesis_header: &Header,
         mut directory: PathBuf,
         extra_size: u64,
-    ) -> Result<LiveCellDatabase, IndexError> {
+    ) -> Result<IndexDatabase, IndexError> {
         assert_eq!(genesis_header.number(), 0);
 
         directory.push(format!("{:#x}", genesis_header.hash()));
@@ -107,7 +107,7 @@ impl LiveCellDatabase {
             };
             (store, last_header)
         };
-        Ok(LiveCellDatabase {
+        Ok(IndexDatabase {
             env_arc,
             store,
             // network,

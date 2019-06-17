@@ -23,7 +23,7 @@ use crate::utils::arg_parser::{
 };
 use crate::utils::printer::Printable;
 use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, LiveCellDatabase, SecpKey, TransferTransactionBuilder,
+    GenesisInfo, HttpRpcClient, IndexDatabase, SecpKey, TransferTransactionBuilder,
     LMDB_EXTRA_MAP_SIZE, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
@@ -71,7 +71,7 @@ impl<'a> WalletSubCommand<'a> {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    fn get_db(&mut self) -> Result<LiveCellDatabase, String> {
+    fn get_db(&mut self) -> Result<IndexDatabase, String> {
         if !self.interactive {
             Request::call(self.index_controller.sender(), IndexRequest::Kick);
             for _ in 0..600 {
@@ -89,7 +89,7 @@ impl<'a> WalletSubCommand<'a> {
                 ));
             }
         }
-        LiveCellDatabase::from_path(
+        IndexDatabase::from_path(
             NetworkType::TestNet,
             self.genesis_info()?.header(),
             self.index_dir.clone(),

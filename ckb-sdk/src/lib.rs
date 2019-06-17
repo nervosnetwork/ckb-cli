@@ -1,7 +1,7 @@
 mod basic;
 mod chain;
 mod error;
-mod index_db;
+mod index;
 
 #[cfg(feature = "local")]
 mod key;
@@ -17,9 +17,9 @@ pub use chain::{
     build_witness, GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use error::Error;
-pub use index_db::{
-    CellIndex, HashType, IndexError, Key as IndexKey, KeyMetrics as IndexKeyMetrics,
-    KeyType as IndexKeyType, LiveCellDatabase, LiveCellInfo, TxInfo,
+pub use index::{
+    CellIndex, HashType, IndexDatabase, IndexError, Key as IndexKey, KeyMetrics as IndexKeyMetrics,
+    KeyType as IndexKeyType, LiveCellInfo, TxInfo,
 };
 pub use rpc::HttpRpcClient;
 

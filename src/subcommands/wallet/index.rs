@@ -15,7 +15,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{LiveCellDatabase, LMDB_EXTRA_MAP_SIZE};
+use ckb_sdk::{IndexDatabase, LMDB_EXTRA_MAP_SIZE};
 
 // Reopen database every 10000 blocks (for increase map size)
 const REOPEN_DB_BLOCKS: usize = 10000;
@@ -259,7 +259,7 @@ fn process(
         .0
         .expect("Can not get genesis block?")
         .into();
-    let mut db = LiveCellDatabase::from_path(
+    let mut db = IndexDatabase::from_path(
         NetworkType::TestNet,
         genesis_block.header(),
         index_dir.clone(),
@@ -304,7 +304,7 @@ fn process(
                     .processing(db.last_header().cloned(), tip_header.number());
                 if processed_blocks > REOPEN_DB_BLOCKS {
                     log::info!("Reopen database");
-                    db = LiveCellDatabase::from_path(
+                    db = IndexDatabase::from_path(
                         NetworkType::TestNet,
                         genesis_block.header(),
                         index_dir.clone(),
