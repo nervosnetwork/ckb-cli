@@ -24,7 +24,7 @@ pub enum KeyType {
     // key => value: {type}:{Address} => {lock-hash}
     SecpAddrLock = 102,
     // >> Save recent headers for rollback a fork and for statistics
-    // key => value: {type}:{block-number} => {Header, Info}
+    // key => value: {type}:{block-number} => {HeaderInfo}
     RecentHeader = 103,
 
     // key => value: {type}:{CellOutPoint} => {LiveCellInfo}
