@@ -49,6 +49,23 @@ impl TuiSubCommand {
     }
 
     pub fn start(self) -> Result<Box<dyn Printable>, String> {
+        let genesis_header = {
+            let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| {
+                    format!(
+                        "Get genesis block from {} failed: {}\n[Hint]: you can use `ckb-cli --url <URL> tui` to override API url",
+                        self.url,
+                        err.to_string()
+                    )
+                })?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            genesis_block.header().clone()
+        };
+
         let stdout = io::stdout()
             .into_raw_mode()
             .map_err(|err| err.to_string())?;
@@ -60,16 +77,6 @@ impl TuiSubCommand {
 
         let events = Events::new();
         let state = Arc::new(RwLock::new(State::default()));
-        let genesis_header = {
-            let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
-                .get_block_by_number(BlockNumber(0))
-                .call()
-                .map_err(|err| err.to_string())?
-                .0
-                .expect("Can not get genesis block?")
-                .into();
-            genesis_block.header().clone()
-        };
         Request::call(
             self.index_controller.sender(),
             IndexRequest::UpdateUrl(self.url.clone()),

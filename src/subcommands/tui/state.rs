@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use ckb_core::{header::Header, script::Script};
 use ckb_util::RwLock;
+use jsonrpc_client_core::Error as RpcError;
 use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
@@ -14,12 +15,24 @@ const MAX_SAVE_BLOCKS: usize = 100;
 
 pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
     let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
-    thread::spawn(move || loop {
+    thread::spawn(move || {
+        while let Err(err) = process(&state, &mut rpc_client) {
+            log::info!(
+                "Load state error: {}, retry 2 seconds later",
+                err.to_string()
+            );
+            thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
+
+fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result<(), RpcError> {
+    loop {
         let chain_info_opt = rpc_client.get_blockchain_info().call().ok();
-        let local_node_info = rpc_client.local_node_info().call().unwrap();
-        let tx_pool_info = rpc_client.tx_pool_info().call().unwrap();
-        let peers = rpc_client.get_peers().call().unwrap();
-        let tip_header: Header = rpc_client.get_tip_header().call().unwrap().into();
+        let local_node_info = rpc_client.local_node_info().call()?;
+        let tx_pool_info = rpc_client.tx_pool_info().call()?;
+        let peers = rpc_client.get_peers().call()?;
+        let tip_header: Header = rpc_client.get_tip_header().call()?.into();
         let new_block = {
             if state
                 .read()
@@ -73,8 +86,7 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
                     }
                     if let Some(block) = rpc_client
                         .get_block_by_number(BlockNumber(first_number - 1))
-                        .call()
-                        .unwrap()
+                        .call()?
                         .0
                     {
                         state_mut.blocks.insert(first_number - 1, block.into());
@@ -90,7 +102,7 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
             }
         }
         thread::sleep(Duration::from_secs(1));
-    });
+    }
 }
 
 #[derive(Default)]

@@ -122,7 +122,6 @@ fn main() -> Result<(), io::Error> {
             index_controller.shutdown();
         }
         Err(err) => {
-            printer.eprintln(&format!("API_URL: {}", api_uri), false);
             printer.eprintln(&err, color);
             index_controller.shutdown();
             process::exit(1);

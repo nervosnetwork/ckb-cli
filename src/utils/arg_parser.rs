@@ -57,12 +57,6 @@ pub struct FromStrParser<T: FromStr> {
     _t: PhantomData<T>,
 }
 
-impl<T: FromStr> FromStrParser<T> {
-    pub fn new() -> FromStrParser<T> {
-        FromStrParser { _t: PhantomData }
-    }
-}
-
 impl<T> ArgParser<T> for FromStrParser<T>
 where
     T: FromStr,
@@ -232,6 +226,12 @@ mod tests {
     use std::net::IpAddr;
 
     use super::*;
+
+    impl<T: FromStr> FromStrParser<T> {
+        pub fn new() -> FromStrParser<T> {
+            FromStrParser { _t: PhantomData }
+        }
+    }
 
     #[test]
     fn test_from_str() {
