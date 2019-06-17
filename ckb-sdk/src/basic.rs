@@ -45,16 +45,16 @@ impl NetworkType {
 
     pub fn from_str(value: &str) -> Option<NetworkType> {
         match value {
-            "mainnet" => Some(NetworkType::MainNet),
-            "testnet" => Some(NetworkType::TestNet),
+            "ckb_mainnet" => Some(NetworkType::MainNet),
+            "ckb_testnet" => Some(NetworkType::TestNet),
             _ => None,
         }
     }
 
     pub fn to_str(&self) -> &'static str {
         match self {
-            NetworkType::MainNet => "mainnet",
-            NetworkType::TestNet => "testnet",
+            NetworkType::MainNet => "ckb_mainnet",
+            NetworkType::TestNet => "ckb_testnet",
         }
     }
 }
