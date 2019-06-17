@@ -8,13 +8,19 @@ script:
   - cargo build --all
 stages:
   - Check
+  - Clippy
+  - Test
 jobs:
   include:
     - stage: Check
       name: Format
       script:
-        - cargo fmt --all -- --check
+        - make fmt
+    - stage: Clippy 
+      name: Clippy
+      script:
+        - make clippy
     - stage: Test
       name: Unitest
       script:
-        - RUST_BACKTRACE=full cargo test --all
+        - make test
