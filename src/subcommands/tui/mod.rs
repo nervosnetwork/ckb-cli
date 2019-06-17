@@ -20,7 +20,7 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_core::{header::Header, service::Request};
-use ckb_sdk::{HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE};
+use ckb_sdk::{HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE, ONE_CKB};
 use jsonrpc_types::BlockNumber;
 
 use super::wallet::{IndexController, IndexRequest};
@@ -518,8 +518,9 @@ fn render_top_capacity<B: Backend>(
                                 .unwrap_or("null".to_owned())
                         )),
                         Text::raw(format!(
-                            "  [capacity]: {} ({})",
-                            capacity,
+                            "  [capacity]: {}.{} ({})",
+                            capacity / ONE_CKB,
+                            capacity % ONE_CKB,
                             human_capacity(*capacity)
                         )),
                     ]

@@ -16,11 +16,11 @@ pub fn ts_now() -> u64 {
 pub fn human_capacity(value: u64) -> String {
     let value_f64 = value as f64 / 10000.0 / 10000.0;
     if value_f64 >= (1024.0 * 1024.0) {
-        format!("{:.2}MCKB", value_f64 / 1024.0 / 1024.0)
+        format!("{:.2} MCKB", value_f64 / 1024.0 / 1024.0)
     } else if value_f64 >= 1024.0 {
-        format!("{:.2}KCKB", value_f64 / 1024.0)
+        format!("{:.2} KCKB", value_f64 / 1024.0)
     } else {
-        format!("{:.1}CKB", value_f64)
+        format!("{:.1} CKB", value_f64)
     }
 }
 
