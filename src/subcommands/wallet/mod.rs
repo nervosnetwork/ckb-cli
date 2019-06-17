@@ -191,7 +191,7 @@ impl<'a> WalletSubCommand<'a> {
                 SubCommand::with_name("get-balance")
                     .about("Get balance by address (balance is capacity)")
                     .arg(arg_address.clone()),
-                SubCommand::with_name("top")
+                SubCommand::with_name("top-capacity")
                     .about("Show top n capacity owned by lock script hash")
                     .arg(
                         Arg::with_name("number")
@@ -397,7 +397,7 @@ args = ["{:#x}"]
                 });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
             }
-            ("top", Some(m)) => {
+            ("top-capacity", Some(m)) => {
                 let n: usize = m
                     .value_of("number")
                     .map(|n_str| n_str.parse().unwrap())
