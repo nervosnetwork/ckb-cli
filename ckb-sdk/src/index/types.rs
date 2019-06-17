@@ -25,74 +25,23 @@ pub enum HashType {
 }
 
 #[derive(Debug, Clone)]
-pub struct LockInfo {
-    script_opt: Option<Script>,
-    address_opt: Option<Address>,
-    old_total_capacity: u64,
-    new_total_capacity: u64,
-    inputs_capacity: u64,
-    outputs_capacity: u64,
-}
-
-impl LockInfo {
-    fn new(old_total_capacity: u64) -> LockInfo {
-        LockInfo {
-            script_opt: None,
-            address_opt: None,
-            old_total_capacity,
-            new_total_capacity: old_total_capacity,
-            inputs_capacity: 0,
-            outputs_capacity: 0,
-        }
-    }
-
-    fn set_script(&mut self, script: Script) {
-        let address_opt = if script.code_hash == SECP_CODE_HASH {
-            if script.args.len() == 1 {
-                let lock_arg = &script.args[0];
-                match Address::from_lock_arg(&lock_arg) {
-                    Ok(address) => Some(address),
-                    Err(err) => {
-                        log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
-                        None
-                    }
-                }
-            } else {
-                log::info!("lock arg should given exact 1");
-                None
-            }
-        } else {
-            None
-        };
-        self.script_opt = Some(script);
-        self.address_opt = address_opt;
-    }
-
-    fn add_input(&mut self, input_capacity: u64) {
-        self.inputs_capacity += input_capacity;
-        assert!(self.new_total_capacity >= input_capacity);
-        self.new_total_capacity -= input_capacity;
-    }
-
-    fn add_output(&mut self, output_capacity: u64) {
-        self.outputs_capacity += output_capacity;
-        self.new_total_capacity += output_capacity;
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct BlockDeltaInfo {
-    pub(crate) header: Header,
+    pub(crate) header_info: HeaderInfo,
     txs: Vec<RichTxInfo>,
     locks: HashMap<H256, LockInfo>,
     old_headers: Vec<u64>,
     old_chain_capacity: u128,
     new_chain_capacity: u128,
-    uncles_size: usize,
-    proposals_size: usize,
 }
 
 impl BlockDeltaInfo {
+    pub(crate) fn hash(&self) -> &H256 {
+        self.header_info.header.hash()
+    }
+    pub(crate) fn number(&self) -> u64 {
+        self.header_info.header.number()
+    }
+
     pub(crate) fn from_block(
         block: &Block,
         store: rkv::SingleStore,
@@ -101,8 +50,6 @@ impl BlockDeltaInfo {
         let header: Header = block.header().clone();
         let number = header.number();
         let timestamp = header.timestamp();
-        let uncles_size = block.uncles().len();
-        let proposals_size = block.proposals().len();
 
         // Collect old headers to be deleted
         let mut old_headers = Vec::new();
@@ -122,6 +69,8 @@ impl BlockDeltaInfo {
             }
         }
 
+        let mut cell_removed = 0;
+        let mut cell_added = 0;
         let mut locks = HashMap::default();
         let txs = block
             .transactions()
@@ -191,6 +140,8 @@ impl BlockDeltaInfo {
                     lock_info.add_output(capacity);
                 }
 
+                cell_removed += inputs.len();
+                cell_added += outputs.len();
                 RichTxInfo {
                     tx_hash: tx.hash().clone(),
                     tx_index: tx_index as u32,
@@ -211,34 +162,35 @@ impl BlockDeltaInfo {
             .unwrap_or(0);
         let new_chain_capacity: u128 =
             old_chain_capacity - u128::from(locks_old_total) + u128::from(locks_new_total);
+
+        let capacity_delta = (new_chain_capacity as i128 - old_chain_capacity as i128) as i64;
+        let header_info = HeaderInfo {
+            header: header.clone(),
+            txs_size: block.transactions().len() as u32,
+            uncles_size: block.uncles().len() as u32,
+            proposals_size: block.proposals().len() as u32,
+            new_chain_capacity,
+            capacity_delta,
+            cell_removed: cell_removed as u32,
+            cell_added: cell_added as u32,
+        };
         BlockDeltaInfo {
-            header,
+            header_info,
             txs,
             locks,
             old_headers,
             old_chain_capacity,
             new_chain_capacity,
-            uncles_size,
-            proposals_size,
         }
     }
 
     pub(crate) fn apply(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
-            self.header.number(),
+            self.header_info.header.number(),
             self.txs.len(),
             self.locks.len(),
         );
-        let capacity_delta =
-            (self.new_chain_capacity as i128 - self.old_chain_capacity as i128) as i64;
-        let mut result = ApplyResult {
-            chain_capacity: self.new_chain_capacity,
-            capacity_delta,
-            txs: self.txs.len(),
-            cell_added: 0,
-            cell_removed: 0,
-        };
 
         // Update cells and transactions
         for tx in &self.txs {
@@ -304,8 +256,6 @@ impl BlockDeltaInfo {
                     Key::pair_lock_live_cell_index((lock_hash.clone(), *number, *index), out_point),
                 );
             }
-            result.cell_removed += tx.inputs.len();
-            result.cell_added += tx.outputs.len();
         }
 
         for (lock_hash, info) in &self.locks {
@@ -379,17 +329,7 @@ impl BlockDeltaInfo {
         );
 
         // Add recent header
-        let header_info = HeaderInfo {
-            header: self.header.clone(),
-            txs_size: result.txs as u32,
-            uncles_size: self.uncles_size as u32,
-            proposals_size: self.proposals_size as u32,
-            chain_capacity: result.chain_capacity,
-            capacity_delta: result.capacity_delta,
-            cell_removed: result.cell_removed as u32,
-            cell_added: result.cell_added as u32,
-        };
-        put_pair(store, writer, Key::pair_recent_header(&header_info));
+        put_pair(store, writer, Key::pair_recent_header(&self.header_info));
         // Clean old header infos
         for old_number in &self.old_headers {
             store
@@ -397,9 +337,13 @@ impl BlockDeltaInfo {
                 .unwrap();
         }
         // Update last header
-        put_pair(store, writer, Key::pair_last_header(&self.header));
+        put_pair(
+            store,
+            writer,
+            Key::pair_last_header(&self.header_info.header),
+        );
 
-        result
+        self.header_info.clone().into()
     }
 
     pub(crate) fn _rollback(&self, _store: rkv::SingleStore, _writer: &mut rkv::Writer) {
@@ -408,12 +352,68 @@ impl BlockDeltaInfo {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LockInfo {
+    script_opt: Option<Script>,
+    address_opt: Option<Address>,
+    old_total_capacity: u64,
+    new_total_capacity: u64,
+    inputs_capacity: u64,
+    outputs_capacity: u64,
+}
+
+impl LockInfo {
+    fn new(old_total_capacity: u64) -> LockInfo {
+        LockInfo {
+            script_opt: None,
+            address_opt: None,
+            old_total_capacity,
+            new_total_capacity: old_total_capacity,
+            inputs_capacity: 0,
+            outputs_capacity: 0,
+        }
+    }
+
+    fn set_script(&mut self, script: Script) {
+        let address_opt = if script.code_hash == SECP_CODE_HASH {
+            if script.args.len() == 1 {
+                let lock_arg = &script.args[0];
+                match Address::from_lock_arg(&lock_arg) {
+                    Ok(address) => Some(address),
+                    Err(err) => {
+                        log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
+                        None
+                    }
+                }
+            } else {
+                log::info!("lock arg should given exact 1");
+                None
+            }
+        } else {
+            None
+        };
+        self.script_opt = Some(script);
+        self.address_opt = address_opt;
+    }
+
+    fn add_input(&mut self, input_capacity: u64) {
+        self.inputs_capacity += input_capacity;
+        assert!(self.new_total_capacity >= input_capacity);
+        self.new_total_capacity -= input_capacity;
+    }
+
+    fn add_output(&mut self, output_capacity: u64) {
+        self.outputs_capacity += output_capacity;
+        self.new_total_capacity += output_capacity;
+    }
+}
+
 pub(crate) struct ApplyResult {
     pub chain_capacity: u128,
     pub capacity_delta: i64,
-    pub cell_removed: usize,
-    pub cell_added: usize,
-    pub txs: usize,
+    pub cell_removed: u32,
+    pub cell_added: u32,
+    pub txs: u32,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -483,10 +483,22 @@ pub struct HeaderInfo {
     pub txs_size: u32,
     pub uncles_size: u32,
     pub proposals_size: u32,
-    pub chain_capacity: u128,
+    pub new_chain_capacity: u128,
     pub capacity_delta: i64,
     pub cell_removed: u32,
     pub cell_added: u32,
+}
+
+impl From<HeaderInfo> for ApplyResult {
+    fn from(info: HeaderInfo) -> ApplyResult {
+        ApplyResult {
+            chain_capacity: info.new_chain_capacity,
+            capacity_delta: info.capacity_delta,
+            txs: info.txs_size,
+            cell_removed: info.cell_removed,
+            cell_added: info.cell_added,
+        }
+    }
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]
