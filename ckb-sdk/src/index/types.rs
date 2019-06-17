@@ -9,9 +9,11 @@ use ckb_core::{
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
-use super::key::Key;
+use super::key::{Key, KeyType};
 use super::util::{put_pair, value_to_bytes};
 use crate::{Address, SECP_CODE_HASH};
+
+const KEEP_RECENT_HEADERS: u64 = 10_000;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
@@ -27,10 +29,12 @@ pub struct BlockDeltaInfo {
     pub(crate) header: Header,
     txs: Vec<RichTxInfo>,
     locks: Vec<Script>,
+    uncles_size: usize,
+    proposals_size: usize,
 }
 
 impl BlockDeltaInfo {
-    pub(crate) fn from_view(
+    pub(crate) fn from_block(
         block: &Block,
         store: rkv::SingleStore,
         writer: &rkv::Writer,
@@ -38,6 +42,8 @@ impl BlockDeltaInfo {
         let header: Header = block.header().clone();
         let number = header.number();
         let timestamp = header.timestamp();
+        let uncles_size = block.uncles().len();
+        let proposals_size = block.proposals().len();
         let mut locks = Vec::new();
         let txs = block
             .transactions()
@@ -93,7 +99,13 @@ impl BlockDeltaInfo {
             })
             .collect::<Vec<_>>();
 
-        BlockDeltaInfo { header, txs, locks }
+        BlockDeltaInfo {
+            header,
+            txs,
+            locks,
+            uncles_size,
+            proposals_size,
+        }
     }
 
     pub(crate) fn apply(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
@@ -105,13 +117,13 @@ impl BlockDeltaInfo {
         );
         let mut result = ApplyResult {
             chain_capacity: 0,
-            capacity_delta: 0,
             txs: self.txs.len(),
+            capacity_delta: 0,
             cell_added: 0,
             cell_removed: 0,
         };
+
         // Update cells and transactions
-        put_pair(store, writer, Key::pair_last_header(&self.header));
         let mut capacity_deltas: HashMap<&H256, i64> = HashMap::default();
         for tx in &self.txs {
             put_pair(
@@ -275,6 +287,42 @@ impl BlockDeltaInfo {
                 }
             }
         }
+
+        // Add recent header
+        let header_info = HeaderInfo {
+            header: self.header.clone(),
+            txs_size: result.txs as u32,
+            uncles_size: self.uncles_size as u32,
+            proposals_size: self.proposals_size as u32,
+            chain_capacity: result.chain_capacity,
+            capacity_delta: result.capacity_delta,
+            cell_removed: result.cell_removed as u32,
+            cell_added: result.cell_added as u32,
+        };
+        put_pair(store, writer, Key::pair_recent_header(&header_info));
+        // Clean old header infos
+        let mut old_keys = Vec::new();
+        for item in store
+            .iter_from(writer, &KeyType::RecentHeader.to_bytes())
+            .unwrap()
+        {
+            let (key_bytes, _) = item.unwrap();
+            if let Key::RecentHeader(number) = Key::from_bytes(key_bytes) {
+                if number + KEEP_RECENT_HEADERS <= self.header.number() {
+                    old_keys.push(key_bytes.to_vec());
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        for old_key in old_keys {
+            store.delete(writer, old_key).unwrap();
+        }
+        // Update last header
+        put_pair(store, writer, Key::pair_last_header(&self.header));
+
         result
     }
 
@@ -287,9 +335,9 @@ impl BlockDeltaInfo {
 pub(crate) struct ApplyResult {
     pub chain_capacity: u64,
     pub capacity_delta: i64,
-    pub txs: usize,
     pub cell_removed: usize,
     pub cell_added: usize,
+    pub txs: usize,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -351,6 +399,18 @@ impl CellIndex {
             output_index,
         }
     }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
+pub struct HeaderInfo {
+    pub header: Header,
+    pub txs_size: u32,
+    pub uncles_size: u32,
+    pub proposals_size: u32,
+    pub chain_capacity: u64,
+    pub capacity_delta: i64,
+    pub cell_removed: u32,
+    pub cell_added: u32,
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Serialize, Deserialize)]

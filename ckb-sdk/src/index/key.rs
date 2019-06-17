@@ -1,9 +1,6 @@
-use super::types::{CellIndex, HashType, LiveCellInfo, TxInfo};
+use super::types::{CellIndex, HashType, HeaderInfo, LiveCellInfo, TxInfo};
 use crate::{Address, NetworkType};
-use ckb_core::{
-    header::Header as CoreHeader, script::Script as CoreScript,
-    transaction::CellOutPoint as CoreCellOutPoint,
-};
+use ckb_core::{header::Header, script::Script, transaction::CellOutPoint};
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
@@ -26,21 +23,24 @@ pub enum KeyType {
     TxMap = 101,
     // key => value: {type}:{Address} => {lock-hash}
     SecpAddrLock = 102,
+    // >> Save recent headers for rollback a fork and for statistics
+    // key => value: {type}:{block-number} => {Header, Info}
+    RecentHeader = 103,
 
-    // key => value: {type}:{CoreCellOutPoint} => {LiveCellInfo}
+    // key => value: {type}:{CellOutPoint} => {LiveCellInfo}
     LiveCellMap = 200,
-    // key => value: {type}:{block-number}:{CellIndex} => {CoreCellOutPoint}
+    // key => value: {type}:{block-number}:{CellIndex} => {CellOutPoint}
     LiveCellIndex = 201,
 
     // >> Store live cell owned by certain lock
-    // key => value: {type}:{lock-hash} => CoreScript
+    // key => value: {type}:{lock-hash} => Script
     LockScript = 300,
     // key => value: {type}:{lock-hash} => u64
     LockTotalCapacity = 301,
     // >> NOTE: Remove when capacity changed
     // key => value: {type}:{capacity(u64::MAX - u64)}:{lock-hash} => ()
     LockTotalCapacityIndex = 302,
-    // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {CoreCellOutPoint}
+    // key => value: {type}:{lock-hash}:{block-number}:{CellIndex} => {CellOutPoint}
     LockLiveCellIndex = 303,
     // key => value: {type}:{lock-hash}:{block-number}:{tx-index(u32)} => {tx-hash}
     LockTx = 304,
@@ -64,6 +64,7 @@ impl KeyType {
             100 => KeyType::GlobalHash,
             101 => KeyType::TxMap,
             102 => KeyType::SecpAddrLock,
+            103 => KeyType::RecentHeader,
 
             200 => KeyType::LiveCellMap,
             201 => KeyType::LiveCellIndex,
@@ -90,8 +91,9 @@ pub enum Key {
     GlobalHash(H256),
     TxMap(H256),
     SecpAddrLock(Address),
+    RecentHeader(u64),
 
-    LiveCellMap(CoreCellOutPoint),
+    LiveCellMap(CellOutPoint),
     LiveCellIndex(u64, CellIndex),
 
     LockScript(H256),
@@ -123,6 +125,11 @@ impl Key {
             Key::SecpAddrLock(address) => {
                 let mut bytes = KeyType::SecpAddrLock.to_bytes();
                 bytes.extend(bincode::serialize(address).unwrap());
+                bytes
+            }
+            Key::RecentHeader(number) => {
+                let mut bytes = KeyType::RecentHeader.to_bytes();
+                bytes.extend(number.to_be_bytes().to_vec());
                 bytes
             }
             Key::LiveCellMap(out_point) => {
@@ -204,6 +211,13 @@ impl Key {
                 let address = bincode::deserialize(args_bytes).unwrap();
                 Key::SecpAddrLock(address)
             }
+            KeyType::RecentHeader => {
+                assert_eq!(args_bytes.len(), 8);
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(&args_bytes[..8]);
+                let number = u64::from_be_bytes(number_bytes);
+                Key::RecentHeader(number)
+            }
             KeyType::LiveCellMap => {
                 let out_point = bincode::deserialize(args_bytes).unwrap();
                 Key::LiveCellMap(out_point)
@@ -273,6 +287,7 @@ impl Key {
             Key::GlobalHash(..) => KeyType::GlobalHash,
             Key::TxMap(..) => KeyType::TxMap,
             Key::SecpAddrLock(..) => KeyType::SecpAddrLock,
+            Key::RecentHeader(..) => KeyType::RecentHeader,
             Key::LiveCellMap(..) => KeyType::LiveCellMap,
             Key::LiveCellIndex(..) => KeyType::LiveCellIndex,
             Key::LockScript(..) => KeyType::LockScript,
@@ -295,7 +310,7 @@ impl Key {
     pub(crate) fn pair_network(value: NetworkType) -> (Vec<u8>, Vec<u8>) {
         (Key::Network.to_bytes(), bincode::serialize(&value).unwrap())
     }
-    pub(crate) fn pair_last_header(value: &CoreHeader) -> (Vec<u8>, Vec<u8>) {
+    pub(crate) fn pair_last_header(value: &Header) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LastHeader.to_bytes(),
             bincode::serialize(value).unwrap(),
@@ -326,9 +341,15 @@ impl Key {
             bincode::serialize(value).unwrap(),
         )
     }
+    pub(crate) fn pair_recent_header(value: &HeaderInfo) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::RecentHeader(value.header.number()).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
 
     pub(crate) fn pair_live_cell_map(
-        out_point: CoreCellOutPoint,
+        out_point: CellOutPoint,
         value: &LiveCellInfo,
     ) -> (Vec<u8>, Vec<u8>) {
         (
@@ -338,7 +359,7 @@ impl Key {
     }
     pub(crate) fn pair_live_cell_index(
         (number, cell_index): (u64, CellIndex),
-        value: &CoreCellOutPoint,
+        value: &CellOutPoint,
     ) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LiveCellIndex(number, cell_index).to_bytes(),
@@ -346,7 +367,7 @@ impl Key {
         )
     }
 
-    pub(crate) fn pair_lock_script(lock_hash: H256, value: &CoreScript) -> (Vec<u8>, Vec<u8>) {
+    pub(crate) fn pair_lock_script(lock_hash: H256, value: &Script) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockScript(lock_hash).to_bytes(),
             bincode::serialize(value).unwrap(),
@@ -368,7 +389,7 @@ impl Key {
     }
     pub(crate) fn pair_lock_live_cell_index(
         (lock_hash, number, cell_index): (H256, u64, CellIndex),
-        value: &CoreCellOutPoint,
+        value: &CellOutPoint,
     ) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockLiveCellIndex(lock_hash, number, cell_index).to_bytes(),

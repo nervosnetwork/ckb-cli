@@ -311,7 +311,7 @@ impl IndexDatabase {
 
         let mut writer = env_read.write().unwrap();
         for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_view(&block, self.store, &writer);
+            let block_delta_info = BlockDeltaInfo::from_block(&block, self.store, &writer);
             let number = block_delta_info.header.number();
             let hash = block_delta_info.header.hash();
             let result = block_delta_info.apply(self.store, &mut writer);
@@ -342,6 +342,7 @@ impl IndexDatabase {
                 KeyType::GlobalHash,
                 KeyType::TxMap,
                 KeyType::SecpAddrLock,
+                KeyType::RecentHeader,
                 KeyType::LiveCellMap,
                 KeyType::LiveCellIndex,
                 KeyType::LockScript,
