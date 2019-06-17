@@ -125,21 +125,30 @@ impl TuiSubCommand {
                             .border_style(Style::default().fg(Color::Green))
                             .title_style(Style::default().modifier(Modifier::BOLD));
                     }
-                    let content_context = RenderContext {
+                    let mut content_context = RenderContext {
                         block: content_block,
                         frame: &mut f,
                         rect: body_chunks[1],
                     };
                     match app.tabs.index {
-                        0 => render_summary(&state.read(), content_context),
+                        0 => render_summary(&state.read(), self.url.as_str(), content_context),
                         1 => render_blocks(&state.read(), content_context),
                         2 => render_peers(&state.read(), content_context),
-                        3 => render_top_capacity(
-                            &self.index_controller,
-                            self.index_dir.clone(),
-                            &genesis_header,
-                            content_context,
-                        ),
+                        3 => {
+                            let title = format!(
+                                "{} ({})",
+                                app.tabs.titles[app.tabs.index].trim(),
+                                self.index_controller.state().read().to_string(),
+                            );
+                            content_context.block =
+                                Block::default().title(&title).borders(Borders::ALL);
+                            render_top_capacity(
+                                &self.index_controller,
+                                self.index_dir.clone(),
+                                &genesis_header,
+                                content_context,
+                            )
+                        }
                         _ => {}
                     }
                 })
@@ -247,7 +256,7 @@ fn render_menu<B: Backend>(app: &App, ctx: RenderContext<B>) {
         .render(ctx.frame, menu_chunks[1]);
 }
 
-fn render_summary<B: Backend>(state: &State, ctx: RenderContext<B>) {
+fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     let SummaryInfo {
         chain,
         tip,
@@ -305,6 +314,7 @@ fn render_summary<B: Backend>(state: &State, ctx: RenderContext<B>) {
         }
     });
     let warn_style = Style::default().fg(Color::Yellow).modifier(Modifier::BOLD);
+    push_pair(" API URL   ", Some(url.to_owned()), None);
     push_pair(" Chain     ", chain_name, None);
     push_pair(" Epoch     ", epoch, None);
     push_pair(" Difficulty", difficulty, None);
