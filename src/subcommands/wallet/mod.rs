@@ -110,6 +110,12 @@ impl<'a> WalletSubCommand<'a> {
             .validator(|input| AddressParser.validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)");
+        let arg_lock_hash = Arg::with_name("lock-hash")
+            .long("lock-hash")
+            .takes_value(true)
+            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+            .required(true)
+            .help("Lock hash");
         SubCommand::with_name("wallet")
             .about("tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
@@ -167,14 +173,21 @@ impl<'a> WalletSubCommand<'a> {
                     ),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash")
+                    .arg(arg_lock_hash.clone()),
+                SubCommand::with_name("get-live-cells")
+                    .about("Get live cells by lock script hash")
+                    .arg(arg_lock_hash.clone())
                     .arg(
-                        Arg::with_name("lock-hash")
-                            .long("lock-hash")
+                        Arg::with_name("limit")
+                            .long("limit")
                             .takes_value(true)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .help("Lock hash"),
+                            .validator(|input| FromStrParser::<usize>::default().validate(input))
+                            .default_value("15")
+                            .help("Get live cells <= limit")
                     ),
+                SubCommand::with_name("get-lock-by-address")
+                    .about("Get lock script (include hash) by address")
+                    .arg(arg_address.clone()),
                 SubCommand::with_name("get-balance")
                     .about("Get balance by address (balance is capacity)")
                     .arg(arg_address.clone()),
@@ -223,9 +236,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_pubkey = from_key.pubkey;
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
-                let (infos, total_capacity) = self
-                    .get_db()?
-                    .get_live_cell_infos(from_address.lock_script().hash().clone(), capacity);
+                let (infos, total_capacity) = self.get_db()?.get_live_cell_infos(
+                    from_address.lock_script().hash().clone(),
+                    |_, _, result_total| result_total >= capacity,
+                );
                 if total_capacity < capacity {
                     return Err(format!(
                         "Capacity not enough: {} => {}",
@@ -337,6 +351,43 @@ args = ["{:#x}"]
                     "capacity": self.get_db()?.get_capacity(lock_hash)
                 });
                 Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+            }
+            ("get-live-cells", Some(m)) => {
+                let lock_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
+                let (infos, total_capacity) = self
+                    .get_db()?
+                    .get_live_cell_infos(lock_hash.clone(), |idx, _, _| idx >= limit);
+                let resp = serde_json::json!({
+                    "live_cells": infos.into_iter().map(|info| {
+                        serde_json::to_value(&info).unwrap()
+                    }).collect::<Vec<_>>(),
+                    "total_capacity": total_capacity,
+                });
+                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+            }
+            ("get-lock-by-address", Some(m)) => {
+                let address: Address = AddressParser.from_matches(m, "address")?;
+                let db = self.get_db()?;
+                let lock_script = db
+                    .get_lock_hash_by_address(address)
+                    .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
+                    .map(|lock_script| {
+                        let args = lock_script
+                            .args
+                            .iter()
+                            .map(|arg| hex_string(arg).unwrap())
+                            .collect::<Vec<_>>();
+                        serde_json::json!({
+                            "hash": lock_script.hash(),
+                            "script": {
+                                "code_hash": lock_script.code_hash,
+                                "args": args,
+                            }
+                        })
+                    });
+                Ok(Box::new(serde_json::to_string(&lock_script).unwrap()))
             }
             ("get-balance", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;

@@ -201,16 +201,30 @@ impl IndexDatabase {
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
+    pub fn get_lock_hash_by_address(&self, address: Address) -> Option<H256> {
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        self.get(&reader, &Key::SecpAddrLock(address).to_bytes())
+            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+    }
+
+    pub fn get_lock_script_by_hash(&self, lock_hash: H256) -> Option<Script> {
+        let env_read = self.env_arc.read().unwrap();
+        let reader = env_read.read().unwrap();
+        self.get(&reader, &Key::LockScript(lock_hash).to_bytes())
+            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+    }
+
     // pub fn get_address(&self, lock_hash: H256) -> Option<Address> {
     //     let env_read = self.env_arc.read().unwrap();
     //     let reader = env_read.read().unwrap();
     //     self.get_address_inner(&reader, lock_hash)
     // }
 
-    pub fn get_live_cell_infos(
+    pub fn get_live_cell_infos<F: Fn(usize, Option<&LiveCellInfo>, u64) -> bool>(
         &self,
         lock_hash: H256,
-        total_capacity: u64,
+        terminator: F,
     ) -> (Vec<LiveCellInfo>, u64) {
         let env_read = self.env_arc.read().unwrap();
         let reader = env_read.read().unwrap();
@@ -218,7 +232,18 @@ impl IndexDatabase {
 
         let mut infos = Vec::new();
         let mut result_total_capacity = 0;
-        for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
+        for (idx, item) in self
+            .store
+            .iter_from(&reader, &key_prefix)
+            .unwrap()
+            .enumerate()
+        {
+            let stop = terminator(idx, None, result_total_capacity);
+            if stop {
+                log::trace!("Stop search");
+                break;
+            }
+
             let (key_bytes, value_bytes_opt) = item.unwrap();
             if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
                 log::debug!("Reach the end of this lock");
@@ -229,9 +254,10 @@ impl IndexDatabase {
                 bincode::deserialize(value_to_bytes(&value_bytes)).unwrap();
             let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
             result_total_capacity += live_cell_info.capacity;
+            let stop = terminator(idx, Some(&live_cell_info), result_total_capacity);
             infos.push(live_cell_info);
-            if result_total_capacity >= total_capacity {
-                log::trace!("Got enough capacity");
+            if stop {
+                log::trace!("Stop search");
                 break;
             }
         }
