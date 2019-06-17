@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
+use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, NetworkType, SecpKey};
+use clap::{App, Arg, ArgMatches, SubCommand};
+
 use super::super::CliSubCommand;
 use crate::utils::printer::Printable;
-use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, SecpKey};
-use clap::{App, Arg, ArgMatches, SubCommand};
 
 pub struct LocalKeySubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -47,7 +48,8 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 let key = SecpKey::from_privkey_path(privkey_path)?;
                 let result = serde_json::json!({
                     "privkey-path": key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                    "pubkey": key.pubkey.to_string(),
+                    "pubkey": key.pubkey_string(),
+                    "address": key.address().unwrap().to_string(NetworkType::TestNet),
                 });
                 with_rocksdb(&self.db_path, None, |db| {
                     KeyManager::new(db).add(key).map_err(Into::into)
@@ -64,7 +66,8 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 let result = serde_json::json!({
                     "privkey-path": removed_key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                    "pubkey": format!("{}", removed_key.pubkey),
+                    "pubkey": removed_key.pubkey_string(),
+                    "address": removed_key.address().unwrap().to_string(NetworkType::TestNet),
                 });
                 Ok(Box::new(serde_json::to_string(&result).unwrap()))
             }
@@ -78,7 +81,8 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     .map(|key| {
                         serde_json::json!({
                             "privkey-path": key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                            "pubkey": format!("{}", key.pubkey),
+                            "pubkey": key.pubkey_string(),
+                            "address": key.address().unwrap().to_string(NetworkType::TestNet),
                         })
                     })
                     .collect::<Vec<_>>();

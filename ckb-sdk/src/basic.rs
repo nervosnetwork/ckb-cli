@@ -8,7 +8,7 @@ use bech32::{convert_bits, Bech32, ToBase32};
 use bytes::Bytes;
 use ckb_core::script::Script as CoreScript;
 use crypto::secp::{Generator, Privkey, Pubkey};
-use faster_hex::hex_decode;
+use faster_hex::{hex_decode, hex_string};
 use hash::blake2b_256;
 use numext_fixed_hash::{h256, H160, H256};
 use secp256k1::key;
@@ -285,5 +285,9 @@ impl SecpKey {
     pub fn address(&self) -> Result<Address, String> {
         // TODO: support other address format
         Address::from_pubkey(AddressFormat::default(), &self.pubkey)
+    }
+
+    pub fn pubkey_string(&self) -> String {
+        hex_string(&self.pubkey.serialize()).expect("encode pubkey failed")
     }
 }
