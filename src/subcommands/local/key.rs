@@ -42,15 +42,21 @@ impl<'a> LocalKeySubCommand<'a> {
 
 impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+        let key_info = |key: &SecpKey| {
+            let address = key.address().unwrap();
+            serde_json::json!({
+                "privkey-path": key.privkey_path.as_ref().unwrap().to_string_lossy(),
+                "pubkey": key.pubkey_string(),
+                "address_string": address.to_string(NetworkType::TestNet),
+                "address": address,
+                "lock-hash": address.lock_script().hash(),
+            })
+        };
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let privkey_path = m.value_of("privkey-path").unwrap();
                 let key = SecpKey::from_privkey_path(privkey_path)?;
-                let result = serde_json::json!({
-                    "privkey-path": key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                    "pubkey": key.pubkey_string(),
-                    "address": key.address().unwrap().to_string(NetworkType::TestNet),
-                });
+                let result = key_info(&key);
                 with_rocksdb(&self.db_path, None, |db| {
                     KeyManager::new(db).add(key).map_err(Into::into)
                 })
@@ -64,11 +70,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     KeyManager::new(db).remove(&key).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                let result = serde_json::json!({
-                    "privkey-path": removed_key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                    "pubkey": removed_key.pubkey_string(),
-                    "address": removed_key.address().unwrap().to_string(NetworkType::TestNet),
-                });
+                let result = key_info(&removed_key);
                 Ok(Box::new(serde_json::to_string(&result).unwrap()))
             }
             ("list", _) => {
@@ -78,13 +80,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 let results = keys
                     .into_iter()
-                    .map(|key| {
-                        serde_json::json!({
-                            "privkey-path": key.privkey_path.as_ref().unwrap().to_string_lossy(),
-                            "pubkey": key.pubkey_string(),
-                            "address": key.address().unwrap().to_string(NetworkType::TestNet),
-                        })
-                    })
+                    .map(|key| key_info(&key))
                     .collect::<Vec<_>>();
                 Ok(Box::new(serde_json::to_string(&results).unwrap()))
             }
