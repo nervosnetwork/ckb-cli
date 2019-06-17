@@ -14,7 +14,6 @@ use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 
-#[cfg(feature = "local")]
 use subcommands::LocalSubCommand;
 
 use interactive::InteractiveEnv;
@@ -87,12 +86,9 @@ fn main() -> Result<(), io::Error> {
         )
         .start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
-
-        #[cfg(feature = "local")]
         ("local", Some(sub_matches)) => {
             LocalSubCommand::new(&mut rpc_client, resource_dir.clone()).process(&sub_matches)
         }
-
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             None,
@@ -192,7 +188,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .help("Display request parameters"),
         );
 
-    #[cfg(feature = "local")]
     let app = app.subcommand(LocalSubCommand::subcommand());
 
     #[cfg(unix)]
@@ -253,7 +248,6 @@ pub fn build_interactive() -> App<'static, 'static> {
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(WalletSubCommand::subcommand());
 
-    #[cfg(feature = "local")]
     let app = app.subcommand(LocalSubCommand::subcommand());
 
     app

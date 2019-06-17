@@ -3,13 +3,11 @@ pub mod rpc;
 pub mod tui;
 pub mod wallet;
 
-#[cfg(feature = "local")]
 pub mod local;
 
 #[cfg(unix)]
 pub use self::tui::TuiSubCommand;
 
-#[cfg(feature = "local")]
 pub use local::{
     LocalCellInputSubCommand, LocalCellSubCommand, LocalKeySubCommand, LocalScriptSubCommand,
     LocalSubCommand, LocalTxSubCommand,

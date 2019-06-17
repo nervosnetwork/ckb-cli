@@ -12,7 +12,6 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
-#[cfg(feature = "local")]
 use crate::subcommands::LocalSubCommand;
 
 use crate::subcommands::{
@@ -30,7 +29,7 @@ pub struct InteractiveEnv {
     config: GlobalConfig,
     printer: Printer,
     config_file: PathBuf,
-    _resource_dir: PathBuf,
+    resource_dir: PathBuf,
     history_file: PathBuf,
     index_dir: PathBuf,
     parser: clap::App<'static, 'static>,
@@ -79,7 +78,7 @@ impl InteractiveEnv {
             config,
             printer,
             config_file,
-            _resource_dir: resource_dir,
+            resource_dir,
             index_dir,
             history_file,
             parser,
@@ -301,15 +300,13 @@ impl InteractiveEnv {
                     self.printer.println(&value, self.config.color());
                     Ok(())
                 }
-
-                #[cfg(feature = "local")]
                 ("local", Some(sub_matches)) => {
-                    let value = LocalSubCommand::new(&mut self.rpc_client, resource_dir.clone())
-                        .process(&sub_matches)?;
+                    let value =
+                        LocalSubCommand::new(&mut self.rpc_client, self.resource_dir.clone())
+                            .process(&sub_matches)?;
                     self.printer.println(&value, self.config.color());
                     Ok(())
                 }
-
                 ("exit", _) => {
                     return Ok(true);
                 }

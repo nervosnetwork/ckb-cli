@@ -1,15 +1,10 @@
-use std::fs;
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::path::PathBuf;
 
-use crypto::secp::{Generator, Privkey, Pubkey};
-use faster_hex::hex_decode;
+use crypto::secp::Pubkey;
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
-use secp256k1::key;
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{Address, AddressFormat, NetworkType, ROCKSDB_COL_KEY};
+use crate::{SecpKey, ROCKSDB_COL_KEY};
 
 const KEY_SECP256K1: &[u8] = b"secp256k1";
 const KEY_DELIMITER: u8 = b':';
@@ -106,6 +101,7 @@ impl RocksdbKey {
 
     fn from_bytes(bytes: &[u8]) -> Result<RocksdbKey, String> {
         let key_type = bytes
+            .iter()
             .take_while(|byte| **byte != KEY_DELIMITER)
             .cloned()
             .collect::<Vec<u8>>();

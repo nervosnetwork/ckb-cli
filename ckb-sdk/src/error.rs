@@ -4,9 +4,7 @@ use crate::IndexError;
 
 #[derive(Debug)]
 pub enum Error {
-    #[cfg(feature = "local")]
     Rocksdb(rocksdb::Error),
-
     Io(io::Error),
     Index(IndexError),
     Other(String),
@@ -18,7 +16,6 @@ impl From<io::Error> for Error {
     }
 }
 
-#[cfg(feature = "local")]
 impl From<rocksdb::Error> for Error {
     fn from(err: rocksdb::Error) -> Error {
         Error::Rocksdb(err)
