@@ -39,7 +39,7 @@ impl<'a> TransactionManager<'a> {
     pub fn new(db: &'a DB) -> TransactionManager {
         let cf = db.cf_handle(ROCKSDB_COL_TX).unwrap_or_else(|| {
             db.create_cf(ROCKSDB_COL_TX, &Options::default())
-                .expect(&format!("Create ColumnFamily {} failed", ROCKSDB_COL_TX))
+                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_TX))
         });
         TransactionManager { cf, db }
     }
@@ -69,7 +69,7 @@ impl<'a> TransactionManager<'a> {
     ) -> Result<Transaction, String> {
         let tx = self.get(hash)?;
         if input_index >= tx.inputs().len() {
-            return Err(format!("input index out of bound"));
+            return Err("input index out of bound".to_owned());
         }
         let mut witnesses = tx.witnesses().to_vec();
         witnesses[input_index] = witness;
@@ -120,7 +120,7 @@ impl<'a> TransactionManager<'a> {
                         .unwrap()
                         .cell
                         .map(Into::into)
-                        .ok_or_else(|| format!("Input not found or dead"))
+                        .ok_or_else(|| "Input not found or dead".to_owned())
                 })?;
 
             let lock = cell_output.lock;
@@ -315,7 +315,7 @@ impl CellProvider for Resource {
         self.required_cells
             .get(out_point.cell.as_ref().unwrap())
             .cloned()
-            .map(|cell_meta| CellStatus::live_cell(cell_meta))
+            .map(CellStatus::live_cell)
             .unwrap_or(CellStatus::Unknown)
     }
 }

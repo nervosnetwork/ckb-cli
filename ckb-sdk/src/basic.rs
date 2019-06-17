@@ -36,14 +36,14 @@ impl NetworkType {
         }
     }
 
-    pub fn to_prefix(&self) -> &'static str {
+    pub fn to_prefix(self) -> &'static str {
         match self {
             NetworkType::MainNet => PREFIX_MAINNET,
             NetworkType::TestNet => PREFIX_TESTNET,
         }
     }
 
-    pub fn from_str(value: &str) -> Option<NetworkType> {
+    pub fn from_raw_str(value: &str) -> Option<NetworkType> {
         match value {
             "ckb_mainnet" => Some(NetworkType::MainNet),
             "ckb_testnet" => Some(NetworkType::TestNet),
@@ -51,7 +51,7 @@ impl NetworkType {
         }
     }
 
-    pub fn to_str(&self) -> &'static str {
+    pub fn to_str(self) -> &'static str {
         match self {
             NetworkType::MainNet => "ckb_mainnet",
             NetworkType::TestNet => "ckb_testnet",
@@ -94,7 +94,7 @@ impl AddressFormat {
         }
     }
 
-    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+    pub fn to_bytes(self) -> Result<Vec<u8>, String> {
         match self {
             AddressFormat::P2PH => Ok(P2PH_MARK.to_vec()),
             _ => Err(format!("Unsupported address format: {:?}", self)),
@@ -160,7 +160,7 @@ impl Address {
         data[0..5].copy_from_slice(&format_data[0..5]);
         data[5..25].copy_from_slice(self.hash.as_fixed_bytes());
         let value = Bech32::new(hrp.to_string(), data.to_base32())
-            .expect(&format!("Encode address failed: hash={:?}", self.hash));
+            .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
     }
 }
@@ -226,7 +226,7 @@ impl SecpKey {
         let privkey_string: String = content
             .split_whitespace()
             .next()
-            .map(|s| s.to_owned())
+            .map(ToOwned::to_owned)
             .ok_or_else(|| "File is empty".to_string())?;
         let privkey_str = if privkey_string.starts_with("0x") || privkey_string.starts_with("0X") {
             &privkey_string[2..]
@@ -278,7 +278,7 @@ impl SecpKey {
                 .map_err(|err| err.to_string())?;
             Ok(())
         } else {
-            Err(format!("Privkey is empty"))
+            Err("Privkey is empty".to_owned())
         }
     }
 

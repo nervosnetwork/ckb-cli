@@ -254,7 +254,7 @@ impl InteractiveEnv {
                     let mut file = fs::File::create(self.config_file.as_path())
                         .map_err(|err| format!("open config error: {:?}", err))?;
                     let content = serde_json::to_string_pretty(&json!({
-                        "url": self.config.get_url().clone(),
+                        "url": self.config.get_url().to_string(),
                         "color": self.config.color(),
                         "debug": self.config.debug(),
                         "json_format": self.config.json_format(),

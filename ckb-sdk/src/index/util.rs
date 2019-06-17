@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 pub(crate) fn put_pair(
-    store: &rkv::SingleStore,
+    store: rkv::SingleStore,
     writer: &mut rkv::Writer,
     (key, value): (Vec<u8>, Vec<u8>),
 ) {

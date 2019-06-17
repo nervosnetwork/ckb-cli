@@ -12,10 +12,7 @@ impl<'a> CellInputManager<'a> {
     pub fn new(db: &'a DB) -> CellInputManager {
         let cf = db.cf_handle(ROCKSDB_COL_CELL_INPUT).unwrap_or_else(|| {
             db.create_cf(ROCKSDB_COL_CELL_INPUT, &Options::default())
-                .expect(&format!(
-                    "Create ColumnFamily {} failed",
-                    ROCKSDB_COL_CELL_INPUT
-                ))
+                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_CELL_INPUT))
         });
         CellInputManager { cf, db }
     }

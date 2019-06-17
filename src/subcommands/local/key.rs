@@ -7,14 +7,14 @@ use super::super::CliSubCommand;
 use crate::utils::printer::Printable;
 
 pub struct LocalKeySubCommand<'a> {
-    rpc_client: &'a mut HttpRpcClient,
+    _rpc_client: &'a mut HttpRpcClient,
     db_path: PathBuf,
 }
 
 impl<'a> LocalKeySubCommand<'a> {
     pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalKeySubCommand<'a> {
         LocalKeySubCommand {
-            rpc_client,
+            _rpc_client: rpc_client,
             db_path,
         }
     }

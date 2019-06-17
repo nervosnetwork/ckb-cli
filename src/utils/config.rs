@@ -114,7 +114,7 @@ impl GlobalConfig {
         &self
             .url
             .as_ref()
-            .map(|s| s.as_str())
+            .map(String::as_str)
             .unwrap_or(DEFAULT_JSONRPC_URL)
     }
 

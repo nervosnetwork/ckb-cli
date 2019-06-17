@@ -13,7 +13,7 @@ impl<'a> CellManager<'a> {
     pub fn new(db: &'a DB) -> CellManager {
         let cf = db.cf_handle(ROCKSDB_COL_CELL).unwrap_or_else(|| {
             db.create_cf(ROCKSDB_COL_CELL, &Options::default())
-                .expect(&format!("Create ColumnFamily {} failed", ROCKSDB_COL_CELL))
+                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_CELL))
         });
         CellManager { cf, db }
     }
@@ -74,8 +74,6 @@ pub fn from_local_cell_out_point(cell_out_point: &CellOutPoint) -> Result<String
         }
         String::from_utf8(name_bytes).map_err(|err| err.to_string())
     } else {
-        Err(format!(
-            "Local cell's CellOutPoint.index must be std::u32::MAX"
-        ))
+        Err("Local cell's CellOutPoint.index must be std::u32::MAX".to_owned())
     }
 }

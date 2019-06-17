@@ -195,12 +195,12 @@ fn render_bannar<B: Backend>(state: &State, ctx: RenderContext<B>) {
         .chain
         .as_ref()
         .map(|info| info.chain.to_string())
-        .unwrap_or("<unknown>".to_string());
+        .unwrap_or_else(|| "<unknown>".to_string());
     let version = state
         .local_node
         .as_ref()
         .map(|info| info.version.to_string())
-        .unwrap_or("<unknown>".to_string());
+        .unwrap_or_else(|| "<unknown>".to_string());
     let texts = [
         Text::raw(" <"),
         Text::styled(chain_name, Style::default().fg(Color::Green)),
@@ -272,7 +272,7 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
             Style::default().modifier(Modifier::BOLD),
         ));
 
-        let content = content_opt.unwrap_or("<unknown>".to_string());
+        let content = content_opt.unwrap_or_else(|| "<unknown>".to_string());
         if let Some(style) = style_opt {
             lines.push(Text::raw(": "));
             lines.push(Text::styled(content, style));
@@ -466,7 +466,7 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
             node.addresses
                 .get(0)
                 .map(|addr| addr.address.to_string())
-                .unwrap_or("unknown".to_string()),
+                .unwrap_or_else(|| "unknown".to_string()),
             direction,
             node.version,
             width = max_width,
@@ -515,7 +515,7 @@ fn render_top_capacity<B: Backend>(
                             address
                                 .as_ref()
                                 .map(|s| s.to_string(NetworkType::TestNet))
-                                .unwrap_or("null".to_owned())
+                                .unwrap_or_else(|| "null".to_owned())
                         )),
                         Text::raw(format!(
                             "  [capacity]: {}.{} ({})",
@@ -529,7 +529,7 @@ fn render_top_capacity<B: Backend>(
             Err(err) => vec![Text::raw(format!("Open db error: {}", err.to_string()))],
         }
     } else {
-        vec![Text::raw(format!("{}", index.state().read().to_string()))]
+        vec![Text::raw(index.state().read().to_string())]
     };
     List::new(lines.into_iter()).render(ctx.frame, top_capacity_chunks[0]);
 }

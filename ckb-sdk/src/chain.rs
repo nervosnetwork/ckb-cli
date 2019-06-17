@@ -11,7 +11,7 @@ use hash::blake2b_256;
 use jsonrpc_types::Transaction as RpcTransaction;
 use numext_fixed_hash::H256;
 
-pub const ONE_CKB: u64 = 10000_0000;
+pub const ONE_CKB: u64 = 100_000_000;
 // H256(secp code hash) + H160 (secp pubkey hash) + u64(capacity) = 32 + 20 + 8 = 60
 pub const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
 
@@ -72,7 +72,7 @@ impl GenesisInfo {
 
     pub fn secp_dep(&self) -> OutPoint {
         OutPoint {
-            cell: Some(self.out_points[0][1].clone().into()),
+            cell: Some(self.out_points[0][1].clone()),
             block_hash: None,
         }
     }
@@ -94,7 +94,7 @@ impl<'a> TransferTransactionBuilder<'a> {
 
         let inputs = input_infos
             .iter()
-            .map(|info| info.core_input())
+            .map(LiveCellInfo::core_input)
             .collect::<Vec<_>>();
 
         // TODO: calculate transaction fee

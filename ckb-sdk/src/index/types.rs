@@ -32,7 +32,7 @@ pub struct BlockDeltaInfo {
 impl BlockDeltaInfo {
     pub(crate) fn from_view(
         block: &Block,
-        store: &rkv::SingleStore,
+        store: rkv::SingleStore,
         writer: &rkv::Writer,
     ) -> BlockDeltaInfo {
         let header: Header = block.header().clone();
@@ -50,10 +50,7 @@ impl BlockDeltaInfo {
                 for input in tx.inputs().iter() {
                     if let Some(ref out_point) = input.previous_output.cell {
                         let live_cell_info: LiveCellInfo = store
-                            .get(
-                                writer,
-                                Key::LiveCellMap(out_point.clone().into()).to_bytes(),
-                            )
+                            .get(writer, Key::LiveCellMap(out_point.clone()).to_bytes())
                             .unwrap()
                             .as_ref()
                             .map(|value| value_to_bytes(value))
@@ -64,7 +61,7 @@ impl BlockDeltaInfo {
                 }
 
                 for (output_index, output) in tx.outputs().iter().enumerate() {
-                    let lock: Script = output.lock.clone().into();
+                    let lock: Script = output.lock.clone();
                     let lock_hash = lock.hash();
                     let capacity = output.capacity.as_u64();
                     let out_point = CellOutPoint {
@@ -73,12 +70,12 @@ impl BlockDeltaInfo {
                     };
                     let cell_index = CellIndex::new(tx_index as u32, output_index as u32);
 
-                    locks.push(output.lock.clone().into());
+                    locks.push(output.lock.clone());
 
                     let live_cell_info = LiveCellInfo {
                         out_point,
                         index: cell_index,
-                        lock_hash: lock_hash,
+                        lock_hash,
                         capacity,
                         number,
                     };
@@ -99,7 +96,7 @@ impl BlockDeltaInfo {
         BlockDeltaInfo { header, txs, locks }
     }
 
-    pub(crate) fn apply(&self, store: &rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
+    pub(crate) fn apply(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             self.header.number(),
@@ -217,7 +214,7 @@ impl BlockDeltaInfo {
                 put_pair(
                     store,
                     writer,
-                    Key::pair_lock_total_capacity((*lock_hash).clone(), &lock_capacity),
+                    Key::pair_lock_total_capacity((*lock_hash).clone(), lock_capacity),
                 );
                 put_pair(
                     store,
@@ -255,7 +252,7 @@ impl BlockDeltaInfo {
             put_pair(
                 store,
                 writer,
-                Key::pair_global_hash(lock_hash.clone(), &HashType::Lock),
+                Key::pair_global_hash(lock_hash.clone(), HashType::Lock),
             );
             put_pair(
                 store,
@@ -281,7 +278,7 @@ impl BlockDeltaInfo {
         result
     }
 
-    pub(crate) fn rollback(&self, _store: &rkv::SingleStore, _writer: &mut rkv::Writer) {
+    pub(crate) fn _rollback(&self, _store: rkv::SingleStore, _writer: &mut rkv::Writer) {
         // TODO: rollback when fork happened
         unimplemented!();
     }
@@ -329,7 +326,7 @@ pub struct CellIndex {
 }
 
 impl CellIndex {
-    pub(crate) fn to_bytes(&self) -> Vec<u8> {
+    pub(crate) fn to_bytes(self) -> Vec<u8> {
         let mut bytes = self.tx_index.to_be_bytes().to_vec();
         bytes.extend(self.output_index.to_be_bytes().to_vec());
         bytes

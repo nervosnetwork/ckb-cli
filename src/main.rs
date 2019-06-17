@@ -39,7 +39,7 @@ fn main() -> Result<(), io::Error> {
     let mut env_map: HashMap<String, String> = HashMap::from_iter(env::vars());
     let api_uri_opt = matches
         .value_of("url")
-        .map(|value| value.to_owned())
+        .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("API_URL"));
 
     let printer = Printer::default();
@@ -197,7 +197,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
 }
 
 pub fn build_interactive() -> App<'static, 'static> {
-    let app = App::new("interactive")
+    App::new("interactive")
         .version(crate_version!())
         .global_setting(AppSettings::NoBinaryName)
         .global_setting(AppSettings::ColoredHelp)
@@ -246,9 +246,6 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .about("Exit the interactive interface"),
         )
         .subcommand(RpcSubCommand::subcommand())
-        .subcommand(WalletSubCommand::subcommand());
-
-    let app = app.subcommand(LocalSubCommand::subcommand());
-
-    app
+        .subcommand(WalletSubCommand::subcommand())
+        .subcommand(LocalSubCommand::subcommand())
 }

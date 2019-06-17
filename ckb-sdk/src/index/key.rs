@@ -1,4 +1,4 @@
-use super::types::{BlockDeltaInfo, CellIndex, HashType, LiveCellInfo, TxInfo};
+use super::types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 use crate::{Address, NetworkType};
 use ckb_core::{
     header::Header as CoreHeader, script::Script as CoreScript,
@@ -44,15 +44,14 @@ pub enum KeyType {
     LockLiveCellIndex = 303,
     // key => value: {type}:{lock-hash}:{block-number}:{tx-index(u32)} => {tx-hash}
     LockTx = 304,
-
     // >> for rollback block when fork happen (keep 1000 blocks?)
     // key = value: {type}:{block-number} => {BlockDeltaInfo}
-    BlockDelta = 400,
+    // BlockDelta = 400,
 }
 
 impl KeyType {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        (*self as u16).to_be_bytes().to_vec()
+    pub fn to_bytes(self) -> Vec<u8> {
+        (self as u16).to_be_bytes().to_vec()
     }
 
     pub fn from_bytes(bytes: [u8; 2]) -> KeyType {
@@ -75,7 +74,7 @@ impl KeyType {
             303 => KeyType::LockLiveCellIndex,
             304 => KeyType::LockTx,
 
-            400 => KeyType::BlockDelta,
+            // 400 => KeyType::BlockDelta,
             value => panic!("Unexpected key type: value={}", value),
         }
     }
@@ -101,8 +100,7 @@ pub enum Key {
     LockLiveCellIndexPrefix(H256),
     LockLiveCellIndex(H256, u64, CellIndex),
     LockTx(H256, u64, u32),
-
-    BlockDelta(u64),
+    // BlockDelta(u64),
 }
 
 impl Key {
@@ -177,12 +175,11 @@ impl Key {
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(tx_index.to_be_bytes().to_vec());
                 bytes
-            }
-            Key::BlockDelta(number) => {
-                let mut bytes = KeyType::LockTx.to_bytes();
-                bytes.extend(number.to_be_bytes().to_vec());
-                bytes
-            }
+            } // Key::BlockDelta(number) => {
+              //     let mut bytes = KeyType::LockTx.to_bytes();
+              //     bytes.extend(number.to_be_bytes().to_vec());
+              //     bytes
+              // }
         }
     }
 
@@ -258,13 +255,12 @@ impl Key {
                 let number = u64::from_be_bytes(number_bytes);
                 let tx_index = u32::from_be_bytes(tx_index_bytes);
                 Key::LockTx(lock_hash, number, tx_index)
-            }
-            KeyType::BlockDelta => {
-                let mut number_bytes = [0u8; 8];
-                number_bytes.copy_from_slice(args_bytes);
-                let number = u64::from_be_bytes(number_bytes);
-                Key::BlockDelta(number)
-            }
+            } // KeyType::BlockDelta => {
+              //     let mut number_bytes = [0u8; 8];
+              //     number_bytes.copy_from_slice(args_bytes);
+              //     let number = u64::from_be_bytes(number_bytes);
+              //     Key::BlockDelta(number)
+              // }
         }
     }
 
@@ -286,7 +282,7 @@ impl Key {
             Key::LockLiveCellIndexPrefix(..) => KeyType::LockLiveCellIndex,
             Key::LockLiveCellIndex(..) => KeyType::LockLiveCellIndex,
             Key::LockTx(..) => KeyType::LockTx,
-            Key::BlockDelta(..) => KeyType::BlockDelta,
+            // Key::BlockDelta(..) => KeyType::BlockDelta,
         }
     }
 
@@ -296,8 +292,8 @@ impl Key {
             bincode::serialize(value).unwrap(),
         )
     }
-    pub(crate) fn pair_network(value: &NetworkType) -> (Vec<u8>, Vec<u8>) {
-        (Key::Network.to_bytes(), bincode::serialize(value).unwrap())
+    pub(crate) fn pair_network(value: NetworkType) -> (Vec<u8>, Vec<u8>) {
+        (Key::Network.to_bytes(), bincode::serialize(&value).unwrap())
     }
     pub(crate) fn pair_last_header(value: &CoreHeader) -> (Vec<u8>, Vec<u8>) {
         (
@@ -312,10 +308,10 @@ impl Key {
         )
     }
 
-    pub(crate) fn pair_global_hash(hash: H256, value: &HashType) -> (Vec<u8>, Vec<u8>) {
+    pub(crate) fn pair_global_hash(hash: H256, value: HashType) -> (Vec<u8>, Vec<u8>) {
         (
             Key::GlobalHash(hash).to_bytes(),
-            bincode::serialize(value).unwrap(),
+            bincode::serialize(&value).unwrap(),
         )
     }
     pub(crate) fn pair_tx_map(tx_hash: H256, value: &TxInfo) -> (Vec<u8>, Vec<u8>) {
@@ -356,10 +352,10 @@ impl Key {
             bincode::serialize(value).unwrap(),
         )
     }
-    pub(crate) fn pair_lock_total_capacity(lock_hash: H256, value: &u64) -> (Vec<u8>, Vec<u8>) {
+    pub(crate) fn pair_lock_total_capacity(lock_hash: H256, value: u64) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockTotalCapacity(lock_hash).to_bytes(),
-            bincode::serialize(value).unwrap(),
+            bincode::serialize(&value).unwrap(),
         )
     }
     pub(crate) fn pair_lock_total_capacity_index(
@@ -385,13 +381,6 @@ impl Key {
     ) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockTx(lock_hash, number, tx_index).to_bytes(),
-            bincode::serialize(value).unwrap(),
-        )
-    }
-
-    pub(crate) fn pair_block_delta(number: u64, value: &BlockDeltaInfo) -> (Vec<u8>, Vec<u8>) {
-        (
-            Key::BlockDelta(number).to_bytes(),
             bincode::serialize(value).unwrap(),
         )
     }

@@ -11,14 +11,14 @@ use jsonrpc_types::Script as RpcScript;
 use numext_fixed_hash::H256;
 
 pub struct LocalScriptSubCommand<'a> {
-    rpc_client: &'a mut HttpRpcClient,
+    _rpc_client: &'a mut HttpRpcClient,
     db_path: PathBuf,
 }
 
 impl<'a> LocalScriptSubCommand<'a> {
     pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalScriptSubCommand<'a> {
         LocalScriptSubCommand {
-            rpc_client,
+            _rpc_client: rpc_client,
             db_path,
         }
     }

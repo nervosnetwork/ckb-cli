@@ -89,9 +89,9 @@ impl IndexDatabase {
             } else {
                 log::info!("genesis not found, init db");
                 let mut writer = env_read.write().unwrap();
-                put_pair(&store, &mut writer, Key::pair_network(&network));
+                put_pair(store, &mut writer, Key::pair_network(network));
                 put_pair(
-                    &store,
+                    store,
                     &mut writer,
                     Key::pair_genesis_hash(genesis_header.hash()),
                 );
@@ -160,7 +160,7 @@ impl IndexDatabase {
     }
 
     pub fn last_number(&self) -> Option<u64> {
-        self.last_header.as_ref().map(|header| header.number())
+        self.last_header.as_ref().map(Header::number)
     }
 
     pub fn next_number(&self) -> Option<u64> {
@@ -245,7 +245,7 @@ impl IndexDatabase {
             }
 
             let (key_bytes, value_bytes_opt) = item.unwrap();
-            if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+            if key_bytes[..key_prefix.len()] != key_prefix[..] {
                 log::debug!("Reach the end of this lock");
                 break;
             }
@@ -272,7 +272,7 @@ impl IndexDatabase {
         let mut pairs = Vec::new();
         for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
             let (key_bytes, _) = item.unwrap();
-            if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+            if key_bytes[..key_prefix.len()] != key_prefix[..] {
                 log::debug!("Reach the end of this type");
                 break;
             }
@@ -311,10 +311,10 @@ impl IndexDatabase {
 
         let mut writer = env_read.write().unwrap();
         for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_view(&block, &self.store, &writer);
+            let block_delta_info = BlockDeltaInfo::from_view(&block, self.store, &writer);
             let number = block_delta_info.header.number();
             let hash = block_delta_info.header.hash();
-            let result = block_delta_info.apply(&self.store, &mut writer);
+            let result = block_delta_info.apply(self.store, &mut writer);
             log::info!(
                 "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
                 number,
@@ -334,7 +334,7 @@ impl IndexDatabase {
         if let Some(key_type) = key_type_opt {
             key_types.insert(key_type, KeyMetrics::default());
         } else {
-            for key_type in vec![
+            for key_type in &[
                 KeyType::GenesisHash,
                 KeyType::Network,
                 KeyType::LastHeader,
@@ -349,9 +349,9 @@ impl IndexDatabase {
                 KeyType::LockTotalCapacityIndex,
                 KeyType::LockLiveCellIndex,
                 KeyType::LockTx,
-                KeyType::BlockDelta,
+                // KeyType::BlockDelta,
             ] {
-                key_types.insert(key_type, KeyMetrics::default());
+                key_types.insert(*key_type, KeyMetrics::default());
             }
         }
         let env_read = self.env_arc.read().unwrap();
@@ -360,7 +360,7 @@ impl IndexDatabase {
             let key_prefix = key_type.to_bytes();
             for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
                 let (key_bytes, value_bytes_opt) = item.unwrap();
-                if &key_bytes[..key_prefix.len()] != &key_prefix[..] {
+                if key_bytes[..key_prefix.len()] != key_prefix[..] {
                     log::debug!("Reach the end of this lock");
                     break;
                 }

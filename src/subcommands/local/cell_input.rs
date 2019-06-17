@@ -75,7 +75,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let name: String = m.value_of("name").map(|s| s.to_owned()).unwrap();
+                let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
                 let output_block: Option<&str> = m.value_of("output-block");
                 let cell_name: Option<&str> = m.value_of("cell-name");
                 let cell_tx_hash: Option<&str> = m.value_of("cell-tx-hash");

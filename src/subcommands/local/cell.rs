@@ -12,14 +12,14 @@ use jsonrpc_types::CellOutput as RpcCellOutput;
 use numext_fixed_hash::H256;
 
 pub struct LocalCellSubCommand<'a> {
-    rpc_client: &'a mut HttpRpcClient,
+    _rpc_client: &'a mut HttpRpcClient,
     db_path: PathBuf,
 }
 
 impl<'a> LocalCellSubCommand<'a> {
     pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalCellSubCommand<'a> {
         LocalCellSubCommand {
-            rpc_client,
+            _rpc_client: rpc_client,
             db_path,
         }
     }

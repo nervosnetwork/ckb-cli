@@ -18,7 +18,7 @@ impl<'a> KeyManager<'a> {
     pub fn new(db: &'a DB) -> KeyManager {
         let cf = db.cf_handle(ROCKSDB_COL_KEY).unwrap_or_else(|| {
             db.create_cf(ROCKSDB_COL_KEY, &Options::default())
-                .expect(&format!("Create ColumnFamily {} failed", ROCKSDB_COL_KEY))
+                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_KEY))
         });
         KeyManager { cf, db }
     }
@@ -41,13 +41,13 @@ impl<'a> KeyManager<'a> {
 
     pub fn remove(&self, key: &SecpKey) -> Result<SecpKey, String> {
         let key = self.get(key)?;
-        let key_bytes = RocksdbKey::new(key.pubkey.clone().into()).to_bytes();
+        let key_bytes = RocksdbKey::new(key.pubkey.clone()).to_bytes();
         self.db.delete_cf(self.cf, &key_bytes)?;
         Ok(key)
     }
 
     pub fn get(&self, key: &SecpKey) -> Result<SecpKey, String> {
-        let db_key = RocksdbKey::new(key.pubkey.clone().into());
+        let db_key = RocksdbKey::new(key.pubkey.clone());
         let key_bytes = db_key.to_bytes();
         match self.db.get_cf(self.cf, key_bytes)? {
             Some(db_vec) => {

@@ -93,12 +93,12 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                             return Err(format!("Invalid deps: {}", dep_str));
                         }
                         let tx_hash_str =
-                            parts.get(0).ok_or_else(|| format!("No tx hash found"))?;
+                            parts.get(0).ok_or_else(|| "No tx hash found".to_owned())?;
                         let tx_hash =
                             H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
                         let index = parts
                             .get(1)
-                            .ok_or_else(|| format!("No index found"))?
+                            .ok_or_else(|| "No index found".to_owned())?
                             .parse::<u32>()
                             .map_err(|err| err.to_string())?;
                         Ok(OutPoint::new_cell(tx_hash, index))

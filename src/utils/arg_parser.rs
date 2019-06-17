@@ -20,7 +20,7 @@ pub trait ArgParser<T> {
 
     fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, String> {
         self.from_matches_opt(matches, name, true)
-            .map(|opt| opt.unwrap())
+            .map(Option::unwrap)
     }
 
     fn from_matches_opt<R: From<T>>(
@@ -206,7 +206,7 @@ impl ArgParser<u64> for CapacityParser {
         let mut capacity = ONE_CKB
             * parts
                 .get(0)
-                .ok_or_else(|| format!("Missing input"))?
+                .ok_or_else(|| "Missing input".to_owned())?
                 .parse::<u64>()
                 .map_err(|err| err.to_string())?;
         if let Some(shannon_str) = parts.get(1) {
@@ -214,7 +214,7 @@ impl ArgParser<u64> for CapacityParser {
                 return Err(format!("decimal part too long: {}", shannon_str.len()));
             }
             let shannon = shannon_str.parse::<u32>().map_err(|err| err.to_string())?;
-            capacity += shannon as u64;
+            capacity += u64::from(shannon);
         }
         Ok(capacity)
     }
@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(CapacityParser.parse("12345.234"), Ok(12345 * ONE_CKB + 234));
         assert_eq!(
             CapacityParser.parse("12345.23442222"),
-            Ok(12345 * ONE_CKB + 23442222)
+            Ok(12345 * ONE_CKB + 23_442_222)
         );
         assert!(CapacityParser.parse("12345.234422224").is_err());
         assert!(CapacityParser.parse("abc.234422224").is_err());

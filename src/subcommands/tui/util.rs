@@ -40,13 +40,7 @@ impl TabsState {
         TabsState { titles, index: 0 }
     }
     pub fn fixed_titles(&self) -> Vec<String> {
-        let max_length = self
-            .titles
-            .iter()
-            .map(|title| title.len())
-            .max()
-            .unwrap_or(0)
-            + 1;
+        let max_length = self.titles.iter().map(String::len).max().unwrap_or(0) + 1;
         self.titles
             .iter()
             .map(|title| format!("{:^width$}", title, width = max_length))
@@ -105,16 +99,13 @@ impl Events {
             thread::spawn(move || {
                 let stdin = io::stdin();
                 for evt in stdin.keys() {
-                    match evt {
-                        Ok(key) => {
-                            if let Err(_) = tx.send(Event::Input(key)) {
-                                return;
-                            }
-                            if key == config.exit_key {
-                                return;
-                            }
+                    if let Ok(key) = evt {
+                        if tx.send(Event::Input(key)).is_err() {
+                            return;
                         }
-                        Err(_) => {}
+                        if key == config.exit_key {
+                            return;
+                        }
                     }
                 }
             })

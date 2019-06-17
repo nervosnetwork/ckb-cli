@@ -13,10 +13,7 @@ impl<'a> ScriptManager<'a> {
     pub fn new(db: &'a DB) -> ScriptManager {
         let cf = db.cf_handle(ROCKSDB_COL_SCRIPT).unwrap_or_else(|| {
             db.create_cf(ROCKSDB_COL_SCRIPT, &Options::default())
-                .expect(&format!(
-                    "Create ColumnFamily {} failed",
-                    ROCKSDB_COL_SCRIPT
-                ))
+                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_SCRIPT))
         });
         ScriptManager { cf, db }
     }
