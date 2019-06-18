@@ -129,7 +129,7 @@ impl IndexDatabase {
                     return Err(IndexError::IllegalBlock(block.header().hash().clone()));
                 }
 
-                log::info!("Rollback because of block: {}", block.header().hash());
+                log::warn!("Rollback because of block: {:#x}", block.header().hash());
                 self.init_block_buf.clear();
                 // Reload last header
                 let env_read = self.env_arc.read().unwrap();
