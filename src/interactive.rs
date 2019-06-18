@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use ansi_term::Colour::{Blue, Green};
 use ckb_core::{block::Block, service::Request};
@@ -12,10 +13,8 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
-use crate::subcommands::LocalSubCommand;
-
 use crate::subcommands::{
-    CliSubCommand, IndexController, IndexRequest, RpcSubCommand, WalletSubCommand,
+    CliSubCommand, IndexController, IndexRequest, LocalSubCommand, RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
@@ -137,6 +136,7 @@ impl InteractiveEnv {
             self.index_controller.sender(),
             IndexRequest::UpdateUrl(self.config.get_url().to_string()),
         );
+        let mut last_save_history = Instant::now();
         loop {
             rl_mode(
                 &mut rl,
@@ -167,6 +167,14 @@ impl InteractiveEnv {
                     eprintln!("Error: {:?}", err);
                     break;
                 }
+            }
+
+            if last_save_history.elapsed() >= Duration::from_secs(120) {
+                if let Err(err) = rl.save_history(&self.history_file) {
+                    eprintln!("Save command history failed: {}", err);
+                    break;
+                }
+                last_save_history = Instant::now();
             }
         }
         if let Err(err) = rl.save_history(&self.history_file) {
