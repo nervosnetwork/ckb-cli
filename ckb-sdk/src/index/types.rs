@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use ckb_core::{
     block::Block,
@@ -394,13 +394,9 @@ impl BlockDeltaInfo {
     }
 
     pub(crate) fn rollback(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) {
-        log::debug!(
-            "rollback block: number={}, txs={}, locks={}",
-            self.header_info.header.number(),
-            self.txs.len(),
-            self.locks.len(),
-        );
+        log::debug!("rollback block: {:?}", self);
 
+        let mut delete_lock_txs: HashSet<(H256, u64, u32)> = HashSet::default();
         for tx in &self.txs {
             store
                 .delete(writer, Key::TxMap(tx.tx_hash.clone()).to_bytes())
@@ -413,12 +409,7 @@ impl BlockDeltaInfo {
                     index,
                     ..
                 } = live_cell_info;
-                store
-                    .delete(
-                        writer,
-                        Key::LockTx(lock_hash.clone(), *number, index.tx_index).to_bytes(),
-                    )
-                    .unwrap();
+                delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
                 put_pair(
                     store,
                     writer,
@@ -444,12 +435,7 @@ impl BlockDeltaInfo {
                     index,
                     ..
                 } = live_cell_info;
-                store
-                    .delete(
-                        writer,
-                        Key::LockTx(lock_hash.clone(), *number, index.tx_index).to_bytes(),
-                    )
-                    .unwrap();
+                delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
                 store
                     .delete(writer, Key::LiveCellMap(out_point.clone()).to_bytes())
                     .unwrap();
@@ -463,6 +449,11 @@ impl BlockDeltaInfo {
                     )
                     .unwrap();
             }
+        }
+        for (lock_hash, number, tx_index) in delete_lock_txs {
+            store
+                .delete(writer, Key::LockTx(lock_hash, number, tx_index).to_bytes())
+                .unwrap();
         }
 
         for (lock_hash, info) in &self.locks {

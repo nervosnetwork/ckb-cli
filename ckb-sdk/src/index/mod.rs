@@ -133,19 +133,21 @@ impl IndexDatabase {
                 self.init_block_buf.clear();
                 // Reload last header
                 let env_read = self.env_arc.read().unwrap();
+                let last_block_delta: BlockDeltaInfo = {
+                    let reader = env_read.read().expect("reader");
+                    let last_header: Header = self
+                        .store
+                        .get(&reader, &Key::LastHeader.to_bytes())
+                        .unwrap()
+                        .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                        .unwrap();
+                    self.store
+                        .get(&reader, &Key::BlockDelta(last_header.number()).to_bytes())
+                        .unwrap()
+                        .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                        .unwrap()
+                };
                 let mut writer = env_read.write().unwrap();
-                let last_header: Header = self
-                    .store
-                    .get(&writer, &Key::LastHeader.to_bytes())
-                    .unwrap()
-                    .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
-                    .unwrap();
-                let last_block_delta: BlockDeltaInfo = self
-                    .store
-                    .get(&writer, &Key::BlockDelta(last_header.number()).to_bytes())
-                    .unwrap()
-                    .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
-                    .unwrap();
                 last_block_delta.rollback(self.store, &mut writer);
                 writer.commit().unwrap();
                 self.last_header = last_block_delta.parent_header;
