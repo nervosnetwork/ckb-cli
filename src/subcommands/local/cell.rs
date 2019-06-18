@@ -2,14 +2,16 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use super::super::{from_matches, CliSubCommand};
-use crate::utils::printer::Printable;
 use bytes::Bytes;
 use ckb_core::{transaction::CellOutput, Capacity};
 use ckb_sdk::{with_rocksdb, CellManager, HttpRpcClient, ScriptManager};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonrpc_types::CellOutput as RpcCellOutput;
 use numext_fixed_hash::H256;
+
+use super::super::CliSubCommand;
+use crate::utils::arg_parser::{ArgParser, CapacityParser, FixedHashParser, HexParser};
+use crate::utils::printer::Printable;
 
 pub struct LocalCellSubCommand<'a> {
     _rpc_client: &'a mut HttpRpcClient,
@@ -50,12 +52,14 @@ impl<'a> LocalCellSubCommand<'a> {
                         Arg::with_name("data")
                             .long("data")
                             .takes_value(true)
+                            .validator(|input| HexParser.validate(input))
                             .help("Hex data"),
                     )
                     .arg(
                         Arg::with_name("lock-hash")
                             .long("lock-hash")
                             .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
                             .help("Lock script hash"),
                     )
@@ -63,14 +67,15 @@ impl<'a> LocalCellSubCommand<'a> {
                         Arg::with_name("type-hash")
                             .long("type-hash")
                             .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .help("Type script hash"),
                     )
                     .arg(
                         Arg::with_name("capacity")
                             .long("capacity")
                             .takes_value(true)
-                            .default_value("500000")
-                            .help("Capacity (unit: CKB)"),
+                            .validator(|input| CapacityParser.validate(input))
+                            .help("Capacity (unit: CKB, format: 123.456)"),
                     ),
                 SubCommand::with_name("remove").arg(arg_name.clone()),
                 SubCommand::with_name("show").arg(arg_name.clone()),
@@ -89,19 +94,23 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let name: String = from_matches(m, "name");
-                let data_path: String = from_matches(m, "data-path");
-                let lock_hash: H256 = from_matches(m, "lock-hash");
-                let type_hash: Option<H256> = if m.value_of("type-hash").is_some() {
-                    Some(from_matches(m, "type-hash"))
-                } else {
-                    None
-                };
-                let capacity: usize = from_matches(m, "capacity");
+                let name: String = m.value_of("name").unwrap().to_owned();
+                let data_path: Option<String> = m.value_of("data-path").map(ToOwned::to_owned);
+                let data_bin: Option<Vec<u8>> = HexParser.from_matches_opt(m, "data", false)?;
+                let lock_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let type_hash: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
 
                 let mut data = Vec::new();
-                let mut file = fs::File::open(data_path).map_err(|err| err.to_string())?;
-                file.read_to_end(&mut data).map_err(|err| err.to_string())?;
+                if let Some(path) = data_path {
+                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                    file.read_to_end(&mut data).map_err(|err| err.to_string())?;
+                }
+                if let Some(data_bin) = data_bin {
+                    data = data_bin;
+                }
                 let data = Bytes::from(data);
 
                 let lock = with_rocksdb(&self.db_path, None, |db| {
@@ -119,7 +128,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                 };
 
                 let cell_output = CellOutput {
-                    capacity: Capacity::bytes(capacity).unwrap(),
+                    capacity: Capacity::shannons(capacity),
                     data,
                     lock,
                     type_,
@@ -134,7 +143,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                 Ok(Box::new(serde_json::to_string(&cell_output).unwrap()))
             }
             ("remove", Some(m)) => {
-                let name: String = from_matches(m, "name");
+                let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
                 let cell_output = with_rocksdb(&self.db_path, None, |db| {
                     CellManager::new(db).remove(&name).map_err(Into::into)
                 })
@@ -142,7 +151,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                 Ok(Box::new(serde_json::to_string(&cell_output).unwrap()))
             }
             ("show", Some(m)) => {
-                let name: String = from_matches(m, "name");
+                let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
                 let cell_output = with_rocksdb(&self.db_path, None, |db| {
                     CellManager::new(db).get(&name).map_err(Into::into)
                 })

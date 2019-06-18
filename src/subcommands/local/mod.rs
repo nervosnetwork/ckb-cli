@@ -12,23 +12,46 @@ pub use tx::LocalTxSubCommand;
 
 use std::path::PathBuf;
 
-use ckb_sdk::HttpRpcClient;
+use ckb_core::block::Block;
+use ckb_sdk::{GenesisInfo, HttpRpcClient};
 use clap::{App, ArgMatches, SubCommand};
+use jsonrpc_types::BlockNumber;
 
 use super::CliSubCommand;
 use crate::utils::printer::Printable;
 
 pub struct LocalSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
+    genesis_info: Option<GenesisInfo>,
     db_path: PathBuf,
 }
 
 impl<'a> LocalSubCommand<'a> {
-    pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalSubCommand<'a> {
+    pub fn new(
+        rpc_client: &'a mut HttpRpcClient,
+        genesis_info: Option<GenesisInfo>,
+        db_path: PathBuf,
+    ) -> LocalSubCommand<'a> {
         LocalSubCommand {
             rpc_client,
+            genesis_info,
             db_path,
         }
+    }
+
+    fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
+        if self.genesis_info.is_none() {
+            let genesis_block: Block = self
+                .rpc_client
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+        }
+        Ok(self.genesis_info.clone().unwrap())
     }
 
     pub fn subcommand() -> App<'static, 'static> {
@@ -38,6 +61,7 @@ impl<'a> LocalSubCommand<'a> {
             LocalCellInputSubCommand::subcommand(),
             LocalScriptSubCommand::subcommand(),
             LocalTxSubCommand::subcommand(),
+            SubCommand::with_name("secp-dep"),
         ])
     }
 }
@@ -59,6 +83,10 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
             }
             ("tx", Some(m)) => {
                 LocalTxSubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
+            }
+            ("secp-dep", _) => {
+                let result = self.genesis_info()?.secp_dep();
+                Ok(Box::new(serde_json::to_string(&result).unwrap()))
             }
             _ => Err(matches.usage().to_owned()),
         }

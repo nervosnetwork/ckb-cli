@@ -301,9 +301,13 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("local", Some(sub_matches)) => {
-                    let value =
-                        LocalSubCommand::new(&mut self.rpc_client, self.resource_dir.clone())
-                            .process(&sub_matches)?;
+                    let genesis_info = self.genesis_info()?;
+                    let value = LocalSubCommand::new(
+                        &mut self.rpc_client,
+                        Some(genesis_info),
+                        self.resource_dir.clone(),
+                    )
+                    .process(&sub_matches)?;
                     self.printer.println(&value, self.config.color());
                     Ok(())
                 }

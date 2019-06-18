@@ -87,7 +87,7 @@ fn main() -> Result<(), io::Error> {
         .start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
         ("local", Some(sub_matches)) => {
-            LocalSubCommand::new(&mut rpc_client, resource_dir.clone()).process(&sub_matches)
+            LocalSubCommand::new(&mut rpc_client, None, resource_dir.clone()).process(&sub_matches)
         }
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,

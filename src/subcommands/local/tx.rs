@@ -1,13 +1,15 @@
 use std::path::PathBuf;
 
-use super::super::CliSubCommand;
-use crate::utils::printer::Printable;
 use ckb_core::transaction::{CellInput, CellOutput, OutPoint, TransactionBuilder, Witness};
 use ckb_sdk::{
     with_rocksdb, CellInputManager, CellManager, HttpRpcClient, KeyManager, TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
 use numext_fixed_hash::H256;
+
+use super::super::CliSubCommand;
+use crate::utils::arg_parser::{ArgParser, FixedHashParser};
+use crate::utils::printer::Printable;
 
 pub struct LocalTxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -26,6 +28,7 @@ impl<'a> LocalTxSubCommand<'a> {
         let arg_tx_hash = Arg::with_name("tx-hash")
             .long("tx-hash")
             .takes_value(true)
+            .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true)
             .help("Transaction hash");
         SubCommand::with_name("tx").subcommands(vec![
@@ -53,6 +56,7 @@ impl<'a> LocalTxSubCommand<'a> {
                 )
                 .arg(
                     Arg::with_name("set-witnesses-by-keys")
+                        .long("set-witnesses-by-keys")
                         .help("Set input witnesses by saved private keys"),
                 ),
             SubCommand::with_name("set-witness")
@@ -73,6 +77,7 @@ impl<'a> LocalTxSubCommand<'a> {
                 ),
             SubCommand::with_name("set-witnesses-by-keys").arg(arg_tx_hash.clone()),
             SubCommand::with_name("show").arg(arg_tx_hash.clone()),
+            SubCommand::with_name("remove").arg(arg_tx_hash.clone()),
             SubCommand::with_name("verify").arg(arg_tx_hash.clone()),
             SubCommand::with_name("list"),
         ])
@@ -92,8 +97,12 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         if parts.len() != 2 {
                             return Err(format!("Invalid deps: {}", dep_str));
                         }
-                        let tx_hash_str =
-                            parts.get(0).ok_or_else(|| "No tx hash found".to_owned())?;
+
+                        let mut tx_hash_str =
+                            *(parts.get(0).ok_or_else(|| "No tx hash found".to_owned())?);
+                        if tx_hash_str.starts_with("0x") || tx_hash_str.starts_with("0X") {
+                            tx_hash_str = &tx_hash_str[2..];
+                        }
                         let tx_hash =
                             H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
                         let index = parts
@@ -183,9 +192,20 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 Ok(Box::new(serde_json::to_string(&tx).unwrap()))
             }
+            ("remove", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let tx = with_rocksdb(&self.db_path, None, |db| {
+                    TransactionManager::new(db)
+                        .remove(&tx_hash)
+                        .map_err(Into::into)
+                })
+                .map_err(|err| format!("{:?}", err))?;
+                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+            }
             ("verify", Some(m)) => {
-                let tx_hash_str = m.value_of("tx-hash").unwrap();
-                let tx_hash = H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let db_path = self.db_path.clone();
                 let tx = with_rocksdb(&db_path, None, |db| {
                     TransactionManager::new(db)
@@ -200,6 +220,15 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     TransactionManager::new(db).list().map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
+                let txs = txs
+                    .into_iter()
+                    .map(|tx| {
+                        serde_json::json!({
+                            "tx": serde_json::to_value(&tx).unwrap(),
+                            "tx-hash": tx.hash(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 Ok(Box::new(serde_json::to_string(&txs).unwrap()))
             }
             _ => Err(matches.usage().to_owned()),

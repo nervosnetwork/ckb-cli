@@ -33,7 +33,7 @@ impl<'a> CellManager<'a> {
 
     pub fn get(&self, name: &str) -> Result<CellOutput, String> {
         match self.db.get_cf(self.cf, name.as_bytes())? {
-            Some(db_vec) => bincode::deserialize(&db_vec).unwrap(),
+            Some(db_vec) => Ok(bincode::deserialize(&db_vec).unwrap()),
             None => Err("key not exists".to_owned()),
         }
     }

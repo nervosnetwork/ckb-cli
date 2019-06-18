@@ -125,12 +125,13 @@ impl<'a> TransactionManager<'a> {
 
             let lock = cell_output.lock;
             if lock.code_hash == SECP_CODE_HASH {
-                if let Some(privkey) = lock
+                if let Some((hash, privkey)) = lock
                     .args
                     .get(0)
                     .and_then(|bytes| H160::from_slice(bytes).ok())
-                    .and_then(|hash| key_pairs.get(&hash))
+                    .and_then(|hash| key_pairs.get(&hash).map(|v| (hash, v)))
                 {
+                    log::debug!("set witness[{}] by pubkey hash: {:#x}", idx, hash);
                     witnesses[idx] = build_witness(privkey, tx_hash);
                 } else {
                     log::warn!("Can not find key for secp arg: {:?}", lock.args.get(0));
@@ -139,7 +140,12 @@ impl<'a> TransactionManager<'a> {
                 log::info!("Input with a non-secp lock: code_hash={}", lock.code_hash);
             }
         }
-        Ok(tx)
+        let new_tx = TransactionBuilder::from_transaction(tx)
+            .witnesses_clear()
+            .witnesses(witnesses)
+            .build();
+        self.add(&new_tx)?;
+        Ok(new_tx)
     }
 
     pub fn remove(&self, hash: &H256) -> Result<Transaction, String> {
