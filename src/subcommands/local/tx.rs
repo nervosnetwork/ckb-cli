@@ -5,6 +5,7 @@ use ckb_sdk::{
     with_rocksdb, CellInputManager, CellManager, HttpRpcClient, KeyManager, TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
+use jsonrpc_types::TransactionView;
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
@@ -165,7 +166,8 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     })
                     .map_err(|err| format!("{:?}", err))?;
                 }
-                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+                let tx_view: TransactionView = (&tx).into();
+                Ok(Box::new(serde_json::to_string(&tx_view).unwrap()))
             }
             ("set-witness", Some(_m)) => Ok(Box::new("null".to_string())),
             ("set-witnesses-by-keys", Some(m)) => {
@@ -179,7 +181,8 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+                let tx_view: TransactionView = (&tx).into();
+                Ok(Box::new(serde_json::to_string(&tx_view).unwrap()))
             }
             ("show", Some(m)) => {
                 let tx_hash_str = m.value_of("tx-hash").unwrap();
@@ -190,7 +193,8 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+                let tx_view: TransactionView = (&tx).into();
+                Ok(Box::new(serde_json::to_string(&tx_view).unwrap()))
             }
             ("remove", Some(m)) => {
                 let tx_hash: H256 =
@@ -201,19 +205,20 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+                let tx_view: TransactionView = (&tx).into();
+                Ok(Box::new(serde_json::to_string(&tx_view).unwrap()))
             }
             ("verify", Some(m)) => {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let db_path = self.db_path.clone();
-                let tx = with_rocksdb(&db_path, None, |db| {
+                let result = with_rocksdb(&db_path, None, |db| {
                     TransactionManager::new(db)
                         .verify(&tx_hash, std::u64::MAX, self.rpc_client)
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&tx).unwrap()))
+                Ok(Box::new(serde_json::to_string(&result).unwrap()))
             }
             ("list", Some(_m)) => {
                 let txs = with_rocksdb(&self.db_path, None, |db| {
@@ -223,8 +228,9 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 let txs = txs
                     .into_iter()
                     .map(|tx| {
+                        let tx_view: TransactionView = (&tx).into();
                         serde_json::json!({
-                            "tx": serde_json::to_value(&tx).unwrap(),
+                            "tx": serde_json::to_value(&tx_view).unwrap(),
                             "tx-hash": tx.hash(),
                         })
                     })

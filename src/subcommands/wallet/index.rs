@@ -122,12 +122,12 @@ impl fmt::Display for IndexThreadState {
             IndexThreadState::StartInit => "Initializing".to_owned(),
             IndexThreadState::Error(err) => format!("Error: {}", err),
             IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
-                format!(
-                    "Processed block#{} (tip#{}{})",
-                    number,
-                    tip_number,
-                    if tip_number == number { " synced" } else { "" }
-                )
+                let status = if tip_number == number {
+                    "synced".to_owned()
+                } else {
+                    format!("tip#{}", tip_number)
+                };
+                format!("Processed block#{} ({})", number, status)
             }
             IndexThreadState::Processing(None, tip_number) => {
                 format!("Initializing (tip#{})", tip_number)
