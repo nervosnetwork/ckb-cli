@@ -14,6 +14,7 @@ use super::util::{put_pair, value_to_bytes};
 use crate::{Address, SECP_CODE_HASH};
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
+const KEEP_RECENT_BLOCKS: u64 = 200;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
@@ -24,12 +25,14 @@ pub enum HashType {
     Data,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockDeltaInfo {
     pub(crate) header_info: HeaderInfo,
+    pub(crate) parent_header: Option<Header>,
     txs: Vec<RichTxInfo>,
-    locks: HashMap<H256, LockInfo>,
+    locks: Vec<(H256, LockInfo)>,
     old_headers: Vec<u64>,
+    old_blocks: Vec<u64>,
     old_chain_capacity: u128,
     new_chain_capacity: u128,
 }
@@ -47,20 +50,36 @@ impl BlockDeltaInfo {
         store: rkv::SingleStore,
         writer: &rkv::Writer,
     ) -> BlockDeltaInfo {
-        let header: Header = block.header().clone();
-        let number = header.number();
-        let timestamp = header.timestamp();
+        let block_header: Header = block.header().clone();
+        let block_number = block_header.number();
+        let timestamp = block_header.timestamp();
 
         // Collect old headers to be deleted
         let mut old_headers = Vec::new();
+        let mut old_blocks = Vec::new();
         for item in store
             .iter_from(writer, &KeyType::RecentHeader.to_bytes())
             .unwrap()
         {
             let (key_bytes, _) = item.unwrap();
             if let Key::RecentHeader(number) = Key::from_bytes(key_bytes) {
-                if number + KEEP_RECENT_HEADERS <= header.number() {
+                if number + KEEP_RECENT_HEADERS <= block_number {
                     old_headers.push(number);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        for item in store
+            .iter_from(writer, &KeyType::BlockDelta.to_bytes())
+            .unwrap()
+        {
+            let (key_bytes, _) = item.unwrap();
+            if let Key::BlockDelta(number) = Key::from_bytes(key_bytes) {
+                if number + KEEP_RECENT_BLOCKS <= block_number {
+                    old_blocks.push(number);
                 } else {
                     break;
                 }
@@ -71,7 +90,7 @@ impl BlockDeltaInfo {
 
         let mut cell_removed = 0;
         let mut cell_added = 0;
-        let mut locks = HashMap::default();
+        let mut locks: HashMap<H256, LockInfo> = HashMap::default();
         let txs = block
             .transactions()
             .iter()
@@ -124,7 +143,7 @@ impl BlockDeltaInfo {
                         index: cell_index,
                         lock_hash: lock_hash.clone(),
                         capacity,
-                        number,
+                        number: block_number,
                     };
                     outputs.push(live_cell_info);
 
@@ -145,7 +164,7 @@ impl BlockDeltaInfo {
                 RichTxInfo {
                     tx_hash: tx.hash().clone(),
                     tx_index: tx_index as u32,
-                    block_number: number,
+                    block_number,
                     block_timestamp: timestamp,
                     inputs,
                     outputs,
@@ -165,7 +184,7 @@ impl BlockDeltaInfo {
 
         let capacity_delta = (new_chain_capacity as i128 - old_chain_capacity as i128) as i64;
         let header_info = HeaderInfo {
-            header: header.clone(),
+            header: block_header.clone(),
             txs_size: block.transactions().len() as u32,
             uncles_size: block.uncles().len() as u32,
             proposals_size: block.proposals().len() as u32,
@@ -174,11 +193,29 @@ impl BlockDeltaInfo {
             cell_removed: cell_removed as u32,
             cell_added: cell_added as u32,
         };
+
+        let parent_header = if block_number > 0 {
+            Some(
+                store
+                    .get(writer, Key::RecentHeader(block_number - 1).to_bytes())
+                    .expect("read recent header failed")
+                    .map(|value| {
+                        let info: HeaderInfo =
+                            bincode::deserialize(value_to_bytes(&value)).unwrap();
+                        info.header
+                    })
+                    .expect("Rollback so many blocks???"),
+            )
+        } else {
+            None
+        };
         BlockDeltaInfo {
             header_info,
+            parent_header,
             txs,
-            locks,
+            locks: locks.into_iter().collect::<Vec<_>>(),
             old_headers,
+            old_blocks,
             old_chain_capacity,
             new_chain_capacity,
         }
@@ -286,42 +323,46 @@ impl BlockDeltaInfo {
                 );
             }
 
-            // Update lock capacity keys
-            if let Err(err) = store.delete(
-                writer,
-                Key::LockTotalCapacityIndex(*old_total_capacity, (*lock_hash).clone()).to_bytes(),
-            ) {
-                log::debug!(
-                    "Delete LockTotalCapacityIndex({}, {}) error: {:?}",
-                    old_total_capacity,
-                    lock_hash,
-                    err
-                );
-            }
+            if old_total_capacity != new_total_capacity {
+                // Update lock capacity keys
+                if let Err(err) = store.delete(
+                    writer,
+                    Key::LockTotalCapacityIndex(*old_total_capacity, (*lock_hash).clone())
+                        .to_bytes(),
+                ) {
+                    log::debug!(
+                        "Delete LockTotalCapacityIndex({}, {}) error: {:?}",
+                        old_total_capacity,
+                        lock_hash,
+                        err
+                    );
+                }
 
-            if *new_total_capacity > 0 {
-                put_pair(
-                    store,
-                    writer,
-                    Key::pair_lock_total_capacity((*lock_hash).clone(), *new_total_capacity),
-                );
-                put_pair(
-                    store,
-                    writer,
-                    Key::pair_lock_total_capacity_index((
-                        *new_total_capacity,
-                        (*lock_hash).clone(),
-                    )),
-                );
-            } else {
-                store
-                    .delete(
+                if *new_total_capacity > 0 {
+                    put_pair(
+                        store,
                         writer,
-                        Key::LockTotalCapacity((*lock_hash).clone()).to_bytes(),
-                    )
-                    .unwrap();
+                        Key::pair_lock_total_capacity((*lock_hash).clone(), *new_total_capacity),
+                    );
+                    put_pair(
+                        store,
+                        writer,
+                        Key::pair_lock_total_capacity_index((
+                            *new_total_capacity,
+                            (*lock_hash).clone(),
+                        )),
+                    );
+                } else {
+                    store
+                        .delete(
+                            writer,
+                            Key::LockTotalCapacity((*lock_hash).clone()).to_bytes(),
+                        )
+                        .unwrap();
+                }
             }
         }
+        // Update total capacity
         put_pair(
             store,
             writer,
@@ -330,10 +371,16 @@ impl BlockDeltaInfo {
 
         // Add recent header
         put_pair(store, writer, Key::pair_recent_header(&self.header_info));
+        put_pair(store, writer, Key::pair_block_delta(&self));
         // Clean old header infos
         for old_number in &self.old_headers {
             store
                 .delete(writer, Key::RecentHeader(*old_number).to_bytes())
+                .unwrap();
+        }
+        for old_number in &self.old_blocks {
+            store
+                .delete(writer, Key::BlockDelta(*old_number).to_bytes())
                 .unwrap();
         }
         // Update last header
@@ -346,13 +393,148 @@ impl BlockDeltaInfo {
         self.header_info.clone().into()
     }
 
-    pub(crate) fn _rollback(&self, _store: rkv::SingleStore, _writer: &mut rkv::Writer) {
-        // TODO: rollback when fork happened
-        unimplemented!();
+    pub(crate) fn rollback(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) {
+        log::debug!(
+            "rollback block: number={}, txs={}, locks={}",
+            self.header_info.header.number(),
+            self.txs.len(),
+            self.locks.len(),
+        );
+
+        for tx in &self.txs {
+            store
+                .delete(writer, Key::TxMap(tx.tx_hash.clone()).to_bytes())
+                .unwrap();
+            for live_cell_info in &tx.inputs {
+                let LiveCellInfo {
+                    out_point,
+                    lock_hash,
+                    number,
+                    index,
+                    ..
+                } = live_cell_info;
+                store
+                    .delete(
+                        writer,
+                        Key::LockTx(lock_hash.clone(), *number, index.tx_index).to_bytes(),
+                    )
+                    .unwrap();
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_live_cell_map(out_point.clone(), live_cell_info),
+                );
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_live_cell_index((*number, *index), out_point),
+                );
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_lock_live_cell_index((lock_hash.clone(), *number, *index), out_point),
+                );
+            }
+
+            for live_cell_info in &tx.outputs {
+                let LiveCellInfo {
+                    out_point,
+                    lock_hash,
+                    number,
+                    index,
+                    ..
+                } = live_cell_info;
+                store
+                    .delete(
+                        writer,
+                        Key::LockTx(lock_hash.clone(), *number, index.tx_index).to_bytes(),
+                    )
+                    .unwrap();
+                store
+                    .delete(writer, Key::LiveCellMap(out_point.clone()).to_bytes())
+                    .unwrap();
+                store
+                    .delete(writer, Key::LiveCellIndex(*number, *index).to_bytes())
+                    .unwrap();
+                store
+                    .delete(
+                        writer,
+                        Key::LockLiveCellIndex(lock_hash.clone(), *number, *index).to_bytes(),
+                    )
+                    .unwrap();
+            }
+        }
+
+        for (lock_hash, info) in &self.locks {
+            let LockInfo {
+                old_total_capacity,
+                new_total_capacity,
+                ..
+            } = info;
+
+            if old_total_capacity != new_total_capacity {
+                // Update lock capacity keys
+                if let Err(err) = store.delete(
+                    writer,
+                    Key::LockTotalCapacityIndex(*new_total_capacity, (*lock_hash).clone())
+                        .to_bytes(),
+                ) {
+                    log::debug!(
+                        "Delete LockTotalCapacityIndex({}, {}) error: {:?}",
+                        new_total_capacity,
+                        lock_hash,
+                        err
+                    );
+                }
+
+                if *old_total_capacity > 0 {
+                    put_pair(
+                        store,
+                        writer,
+                        Key::pair_lock_total_capacity((*lock_hash).clone(), *old_total_capacity),
+                    );
+                    put_pair(
+                        store,
+                        writer,
+                        Key::pair_lock_total_capacity_index((
+                            *old_total_capacity,
+                            (*lock_hash).clone(),
+                        )),
+                    );
+                } else {
+                    store
+                        .delete(
+                            writer,
+                            Key::LockTotalCapacity((*lock_hash).clone()).to_bytes(),
+                        )
+                        .unwrap();
+                }
+            }
+        }
+        // Rollback total capacity
+        put_pair(
+            store,
+            writer,
+            Key::pair_total_capacity(&self.old_chain_capacity),
+        );
+        // Remove recent header
+        store
+            .delete(writer, Key::RecentHeader(self.number()).to_bytes())
+            .unwrap();
+        // Remove recent block
+        store
+            .delete(writer, Key::BlockDelta(self.number()).to_bytes())
+            .unwrap();
+        // Update last header
+        put_pair(
+            store,
+            writer,
+            Key::pair_last_header(self.parent_header.as_ref().unwrap()),
+        );
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockInfo {
     script_opt: Option<Script>,
     address_opt: Option<Address>,

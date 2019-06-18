@@ -1,4 +1,4 @@
-use super::types::{CellIndex, HashType, HeaderInfo, LiveCellInfo, TxInfo};
+use super::types::{BlockDeltaInfo, CellIndex, HashType, HeaderInfo, LiveCellInfo, TxInfo};
 use crate::{Address, NetworkType};
 use ckb_core::{header::Header, script::Script, transaction::CellOutPoint};
 use numext_fixed_hash::H256;
@@ -46,7 +46,7 @@ pub enum KeyType {
     LockTx = 304,
     // >> for rollback block when fork happen (keep 1000 blocks?)
     // key = value: {type}:{block-number} => {BlockDeltaInfo}
-    // BlockDelta = 400,
+    BlockDelta = 400,
 }
 
 impl KeyType {
@@ -75,7 +75,7 @@ impl KeyType {
             303 => KeyType::LockLiveCellIndex,
             304 => KeyType::LockTx,
 
-            // 400 => KeyType::BlockDelta,
+            400 => KeyType::BlockDelta,
             value => panic!("Unexpected key type: value={}", value),
         }
     }
@@ -102,7 +102,7 @@ pub enum Key {
     LockLiveCellIndexPrefix(H256),
     LockLiveCellIndex(H256, u64, CellIndex),
     LockTx(H256, u64, u32),
-    // BlockDelta(u64),
+    BlockDelta(u64),
 }
 
 impl Key {
@@ -182,11 +182,12 @@ impl Key {
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(tx_index.to_be_bytes().to_vec());
                 bytes
-            } // Key::BlockDelta(number) => {
-              //     let mut bytes = KeyType::LockTx.to_bytes();
-              //     bytes.extend(number.to_be_bytes().to_vec());
-              //     bytes
-              // }
+            }
+            Key::BlockDelta(number) => {
+                let mut bytes = KeyType::BlockDelta.to_bytes();
+                bytes.extend(number.to_be_bytes().to_vec());
+                bytes
+            }
         }
     }
 
@@ -269,12 +270,13 @@ impl Key {
                 let number = u64::from_be_bytes(number_bytes);
                 let tx_index = u32::from_be_bytes(tx_index_bytes);
                 Key::LockTx(lock_hash, number, tx_index)
-            } // KeyType::BlockDelta => {
-              //     let mut number_bytes = [0u8; 8];
-              //     number_bytes.copy_from_slice(args_bytes);
-              //     let number = u64::from_be_bytes(number_bytes);
-              //     Key::BlockDelta(number)
-              // }
+            }
+            KeyType::BlockDelta => {
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(args_bytes);
+                let number = u64::from_be_bytes(number_bytes);
+                Key::BlockDelta(number)
+            }
         }
     }
 
@@ -297,7 +299,7 @@ impl Key {
             Key::LockLiveCellIndexPrefix(..) => KeyType::LockLiveCellIndex,
             Key::LockLiveCellIndex(..) => KeyType::LockLiveCellIndex,
             Key::LockTx(..) => KeyType::LockTx,
-            // Key::BlockDelta(..) => KeyType::BlockDelta,
+            Key::BlockDelta(..) => KeyType::BlockDelta,
         }
     }
 
@@ -402,6 +404,14 @@ impl Key {
     ) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockTx(lock_hash, number, tx_index).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+
+    pub(crate) fn pair_block_delta(value: &BlockDeltaInfo) -> (Vec<u8>, Vec<u8>) {
+        let number = value.number();
+        (
+            Key::BlockDelta(number).to_bytes(),
             bincode::serialize(value).unwrap(),
         )
     }

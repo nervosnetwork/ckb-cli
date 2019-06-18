@@ -102,7 +102,7 @@ impl IndexThreadState {
     pub fn is_synced(&self) -> bool {
         match self {
             IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
-                (tip_number - number) == 4
+                tip_number == number
             }
             _ => false,
         }
@@ -122,12 +122,11 @@ impl fmt::Display for IndexThreadState {
             IndexThreadState::StartInit => "Initializing".to_owned(),
             IndexThreadState::Error(err) => format!("Error: {}", err),
             IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
-                let synced = (tip_number - number) == 4;
                 format!(
                     "Processed block#{} (tip#{}{})",
                     number,
                     tip_number,
-                    if synced { " synced" } else { "" }
+                    if tip_number == number { " synced" } else { "" }
                 )
             }
             IndexThreadState::Processing(None, tip_number) => {
@@ -287,7 +286,7 @@ fn process(
             log::debug!("Update to tip {}", tip_header.number());
         }
 
-        while tip_header.number().saturating_sub(4) > db.last_number().unwrap() {
+        while tip_header.number() > db.last_number().unwrap() {
             if shutdown.load(Ordering::Relaxed) {
                 return Ok(true);
             }

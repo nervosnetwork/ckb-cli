@@ -120,17 +120,38 @@ impl IndexDatabase {
 
     pub fn apply_next_block(&mut self, block: Block) -> Result<(), IndexError> {
         let number = block.header().number();
-        if let Some(ref last_header) = self.last_header {
+        if let Some(last_header) = self.last_header.clone() {
             if number != last_header.number() + 1 {
-                return Err(IndexError::BlockTooEarly(number));
+                return Err(IndexError::InvalidBlockNumber(number));
             }
             if block.header().parent_hash() != last_header.hash() {
-                return Err(IndexError::BlockInvalid(format!(
-                    "hash={:#x}",
-                    block.header().hash()
-                )));
+                if number == 1 {
+                    return Err(IndexError::IllegalBlock(block.header().hash().clone()));
+                }
+
+                log::info!("Rollback because of block: {}", block.header().hash());
+                self.init_block_buf.clear();
+                // Reload last header
+                let env_read = self.env_arc.read().unwrap();
+                let mut writer = env_read.write().unwrap();
+                let last_header: Header = self
+                    .store
+                    .get(&writer, &Key::LastHeader.to_bytes())
+                    .unwrap()
+                    .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                    .unwrap();
+                let last_block_delta: BlockDeltaInfo = self
+                    .store
+                    .get(&writer, &Key::BlockDelta(last_header.number()).to_bytes())
+                    .unwrap()
+                    .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                    .unwrap();
+                last_block_delta.rollback(self.store, &mut writer);
+                writer.commit().unwrap();
+                self.last_header = last_block_delta.parent_header;
+                return Ok(());
             }
-            if number + 3 >= self.tip_header.number() {
+            if number > self.tip_header.number() {
                 return Err(IndexError::BlockImmature(number));
             }
             self.apply_block_unchecked(block);
@@ -350,7 +371,7 @@ impl IndexDatabase {
                 KeyType::LockTotalCapacityIndex,
                 KeyType::LockLiveCellIndex,
                 KeyType::LockTx,
-                // KeyType::BlockDelta,
+                KeyType::BlockDelta,
             ] {
                 key_types.insert(*key_type, KeyMetrics::default());
             }
@@ -376,7 +397,8 @@ impl IndexDatabase {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IndexError {
     BlockImmature(u64),
-    BlockTooEarly(u64),
+    IllegalBlock(H256),
+    InvalidBlockNumber(u64),
     BlockInvalid(String),
     NotInit,
     IoError(String),
