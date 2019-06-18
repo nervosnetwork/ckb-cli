@@ -4,6 +4,7 @@ use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, NetworkType, SecpKey};
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::super::CliSubCommand;
+use crate::utils::arg_parser::{ArgParser, PrivkeyPathParser, PubkeyHexParser};
 use crate::utils::printer::Printable;
 
 pub struct LocalKeySubCommand<'a> {
@@ -25,6 +26,7 @@ impl<'a> LocalKeySubCommand<'a> {
                 Arg::with_name("privkey-path")
                     .long("privkey-path")
                     .takes_value(true)
+                    .validator(|input| PrivkeyPathParser.validate(input))
                     .required(true)
                     .help("Private key file path"),
             ),
@@ -32,6 +34,7 @@ impl<'a> LocalKeySubCommand<'a> {
                 Arg::with_name("pubkey")
                     .long("pubkey")
                     .takes_value(true)
+                    .validator(|input| PubkeyHexParser.validate(input))
                     .required(true)
                     .help("Public key hex"),
             ),
@@ -54,8 +57,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
         };
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let privkey_path = m.value_of("privkey-path").unwrap();
-                let key = SecpKey::from_privkey_path(privkey_path)?;
+                let key: SecpKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
                 let result = key_info(&key);
                 with_rocksdb(&self.db_path, None, |db| {
                     KeyManager::new(db).add(key).map_err(Into::into)
@@ -64,8 +66,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 Ok(Box::new(serde_json::to_string(&result).unwrap()))
             }
             ("remove", Some(m)) => {
-                let pubkey = m.value_of("pubkey").unwrap();
-                let key = SecpKey::from_pubkey_str(pubkey)?;
+                let key: SecpKey = PubkeyHexParser.from_matches(m, "pubkey")?;
                 let removed_key = with_rocksdb(&self.db_path, None, |db| {
                     KeyManager::new(db).remove(&key).map_err(Into::into)
                 })

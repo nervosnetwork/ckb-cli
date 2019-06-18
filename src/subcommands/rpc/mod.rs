@@ -1,13 +1,13 @@
 mod types;
 
-use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{CellOutPoint, OutPoint};
-
-use super::{from_matches, from_matches_opt, CliSubCommand};
-use crate::utils::arg_parser::{ArgParser, FromStrParser};
-use crate::utils::printer::Printable;
 use ckb_sdk::rpc::HttpRpcClient;
-use jsonrpc_types::BlockNumber;
+use clap::{App, Arg, ArgMatches, SubCommand};
+use jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
+use numext_fixed_hash::H256;
+
+use super::CliSubCommand;
+use crate::utils::arg_parser::{ArgParser, FixedHashParser, FromStrParser};
+use crate::utils::printer::Printable;
 
 pub struct RpcSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -22,12 +22,13 @@ impl<'a> RpcSubCommand<'a> {
         let arg_hash = Arg::with_name("hash")
             .long("hash")
             .takes_value(true)
+            .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true);
         let arg_number = Arg::with_name("number")
             .long("number")
             .takes_value(true)
-            .required(true)
             .validator(|input| FromStrParser::<u64>::default().validate(input))
+            .required(true)
             .help("Block number");
 
         SubCommand::with_name("rpc")
@@ -53,6 +54,7 @@ impl<'a> RpcSubCommand<'a> {
                         Arg::with_name("from")
                             .long("from")
                             .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
                             .help("From block number"),
                     )
@@ -60,6 +62,7 @@ impl<'a> RpcSubCommand<'a> {
                         Arg::with_name("to")
                             .long("to")
                             .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
                             .help("To block number"),
                     ),
@@ -70,6 +73,7 @@ impl<'a> RpcSubCommand<'a> {
                         Arg::with_name("tx-hash")
                             .long("tx-hash")
                             .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
                             .help("Tx hash"),
                     )
@@ -77,6 +81,7 @@ impl<'a> RpcSubCommand<'a> {
                         Arg::with_name("index")
                             .long("index")
                             .takes_value(true)
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
                             .help("Output index"),
                     ),
@@ -104,7 +109,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Box::new(resp))
             }
             ("get_block", Some(m)) => {
-                let hash = from_matches(m, "hash");
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 let resp = self
                     .rpc_client
@@ -115,6 +120,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_block_hash", Some(m)) => {
                 let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
+
                 let resp = self
                     .rpc_client
                     .get_block_hash(BlockNumber(number))
@@ -123,17 +129,17 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Box::new(resp))
             }
             ("get_block_by_number", Some(m)) => {
-                let number = from_matches(m, "number");
+                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 let resp = self
                     .rpc_client
-                    .get_block_by_number(number)
+                    .get_block_by_number(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
             }
             ("get_transaction", Some(m)) => {
-                let hash = from_matches(m, "hash");
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 let resp = self
                     .rpc_client
@@ -143,23 +149,33 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Box::new(resp))
             }
             ("get_cells_by_lock_hash", Some(m)) => {
-                let lock_hash = from_matches(m, "hash");
-                let from_number = from_matches(m, "from");
-                let to_number = from_matches(m, "to");
+                let lock_hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+                let from_number: u64 = FromStrParser::<u64>::default().from_matches(m, "from")?;
+                let to_number: u64 = FromStrParser::<u64>::default().from_matches(m, "to")?;
 
                 let resp = self
                     .rpc_client
-                    .get_cells_by_lock_hash(lock_hash, from_number, to_number)
+                    .get_cells_by_lock_hash(
+                        lock_hash,
+                        BlockNumber(from_number),
+                        BlockNumber(to_number),
+                    )
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
             }
             ("get_live_cell", Some(m)) => {
-                let block_hash = from_matches_opt(m, "hash");
-                let tx_hash = from_matches(m, "tx-hash");
-                let index = from_matches(m, "index");
+                let block_hash: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "hash", false)?;
+
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
                 let out_point = OutPoint {
-                    cell: Some(CellOutPoint { tx_hash, index }),
+                    cell: Some(CellOutPoint {
+                        tx_hash,
+                        index: Unsigned(u64::from(index)),
+                    }),
                     block_hash,
                 };
 
@@ -179,10 +195,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Box::new(resp))
             }
             ("get_epoch_by_number", Some(m)) => {
-                let number = from_matches(m, "number");
+                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
                 let resp = self
                     .rpc_client
-                    .get_epoch_by_number(number)
+                    .get_epoch_by_number(EpochNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))

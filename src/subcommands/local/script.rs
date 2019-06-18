@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use super::super::{from_matches, CliSubCommand};
-use crate::utils::printer::Printable;
 use bytes::Bytes;
 use ckb_core::script::Script;
 use ckb_sdk::{with_rocksdb, HttpRpcClient, ScriptManager};
@@ -9,6 +7,10 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_decode;
 use jsonrpc_types::Script as RpcScript;
 use numext_fixed_hash::H256;
+
+use super::super::CliSubCommand;
+use crate::utils::arg_parser::{ArgParser, FixedHashParser};
+use crate::utils::printer::Printable;
 
 pub struct LocalScriptSubCommand<'a> {
     _rpc_client: &'a mut HttpRpcClient,
@@ -32,6 +34,7 @@ impl<'a> LocalScriptSubCommand<'a> {
                         Arg::with_name("code-hash")
                             .long("code-hash")
                             .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
                             .help("Code hash (CellOutput.data.hash)"),
                     )
@@ -46,6 +49,7 @@ impl<'a> LocalScriptSubCommand<'a> {
                     Arg::with_name("script-hash")
                         .long("script-hash")
                         .takes_value(true)
+                        .validator(|input| FixedHashParser::<H256>::default().validate(input))
                         .required(true)
                         .help("Script hash"),
                 ),
@@ -53,6 +57,7 @@ impl<'a> LocalScriptSubCommand<'a> {
                     Arg::with_name("script-hash")
                         .long("script-hash")
                         .takes_value(true)
+                        .validator(|input| FixedHashParser::<H256>::default().validate(input))
                         .required(true)
                         .help("Script hash"),
                 ),
@@ -65,7 +70,8 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let code_hash: H256 = from_matches(m, "code-hash");
+                let code_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "code-hash")?;
                 let args_result: Result<Vec<Bytes>, String> = m
                     .values_of_lossy("args")
                     .unwrap_or_else(Vec::new)
@@ -92,7 +98,8 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 Ok(Box::new(serde_json::to_string(&script_hash).unwrap()))
             }
             ("remove", Some(m)) => {
-                let script_hash: H256 = from_matches(m, "script-hash");
+                let script_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "script-hash")?;
                 with_rocksdb(&self.db_path, None, |db| {
                     ScriptManager::new(db)
                         .remove(&script_hash)
@@ -102,7 +109,8 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 Ok(Box::new("true".to_string()))
             }
             ("show", Some(m)) => {
-                let script_hash: H256 = from_matches(m, "script-hash");
+                let script_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "script-hash")?;
                 let script = with_rocksdb(&self.db_path, None, |db| {
                     ScriptManager::new(db).get(&script_hash).map_err(Into::into)
                 })

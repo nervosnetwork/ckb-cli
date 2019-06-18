@@ -197,9 +197,9 @@ impl<'a> WalletSubCommand<'a> {
                         Arg::with_name("number")
                             .short("n")
                             .long("number")
+                            .takes_value(true)
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .default_value("10")
-                            .takes_value(true)
                             .help("Get top n capacity addresses"),
                     ),
                 SubCommand::with_name("db-metrics")

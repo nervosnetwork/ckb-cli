@@ -9,7 +9,9 @@ use jsonrpc_types::TransactionView;
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
-use crate::utils::arg_parser::{ArgParser, FixedHashParser};
+use crate::utils::arg_parser::{
+    ArgParser, EitherParser, EitherValue, FixedHashParser, NullParser, OutPointParser,
+};
 use crate::utils::printer::Printable;
 
 pub struct LocalTxSubCommand<'a> {
@@ -38,6 +40,7 @@ impl<'a> LocalTxSubCommand<'a> {
                     Arg::with_name("deps")
                         .long("deps")
                         .takes_value(true)
+                        .validator(|input| OutPointParser.validate(input))
                         .multiple(true)
                         .help("Dependency cells"),
                 )
@@ -45,6 +48,9 @@ impl<'a> LocalTxSubCommand<'a> {
                     Arg::with_name("inputs")
                         .long("inputs")
                         .takes_value(true)
+                        .validator(|input| {
+                            EitherParser::new(OutPointParser, NullParser).validate(input)
+                        })
                         .multiple(true)
                         .help("Input cells"),
                 )
@@ -89,47 +95,25 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let deps_result: Result<Vec<OutPoint>, String> = m
-                    .values_of_lossy("deps")
-                    .unwrap_or_else(Vec::new)
+                let deps: Vec<OutPoint> = OutPointParser.from_matches_vec(m, "deps")?;
+                let inputs: Vec<EitherValue<OutPoint, String>> =
+                    EitherParser::new(OutPointParser, NullParser).from_matches_vec(m, "inputs")?;
+                let inputs: Vec<CellInput> = inputs
                     .into_iter()
-                    .map(|dep_str| {
-                        let parts = dep_str.split('-').collect::<Vec<_>>();
-                        if parts.len() != 2 {
-                            return Err(format!("Invalid deps: {}", dep_str));
-                        }
-
-                        let mut tx_hash_str =
-                            *(parts.get(0).ok_or_else(|| "No tx hash found".to_owned())?);
-                        if tx_hash_str.starts_with("0x") || tx_hash_str.starts_with("0X") {
-                            tx_hash_str = &tx_hash_str[2..];
-                        }
-                        let tx_hash =
-                            H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
-                        let index = parts
-                            .get(1)
-                            .ok_or_else(|| "No index found".to_owned())?
-                            .parse::<u32>()
-                            .map_err(|err| err.to_string())?;
-                        Ok(OutPoint::new_cell(tx_hash, index))
-                    })
-                    .collect();
-                let deps = deps_result?;
-                let inputs_result: Result<Vec<CellInput>, String> = m
-                    .values_of_lossy("inputs")
-                    .unwrap_or_else(Vec::new)
-                    .into_iter()
-                    .map(|input_name| {
-                        let input = with_rocksdb(&self.db_path, None, |db| {
+                    .map(|value| match value {
+                        EitherValue::A(out_point) => Ok(CellInput {
+                            previous_output: out_point,
+                            // TODO: Use a non-zero since
+                            since: 0,
+                        }),
+                        EitherValue::B(input_name) => with_rocksdb(&self.db_path, None, |db| {
                             CellInputManager::new(db)
                                 .get(&input_name)
                                 .map_err(Into::into)
                         })
-                        .map_err(|err| format!("{:?}", err))?;
-                        Ok(input)
+                        .map_err(|err| format!("{:?}", err)),
                     })
-                    .collect();
-                let inputs = inputs_result?;
+                    .collect::<Result<Vec<_>, String>>()?;
                 let outputs_result: Result<Vec<CellOutput>, String> = m
                     .values_of_lossy("outputs")
                     .unwrap_or_else(Vec::new)

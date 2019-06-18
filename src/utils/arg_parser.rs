@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+use ckb_core::transaction::OutPoint;
 use ckb_sdk::{Address, NetworkType, SecpKey, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
@@ -49,6 +50,53 @@ pub trait ArgParser<T> {
             .into_iter()
             .map(|input| self.parse(&input).map(Into::into))
             .collect()
+    }
+}
+
+pub struct NullParser;
+impl ArgParser<String> for NullParser {
+    fn parse(&self, input: &str) -> Result<String, String> {
+        Ok(input.to_owned())
+    }
+}
+
+pub enum EitherValue<TA, TB> {
+    A(TA),
+    B(TB),
+}
+
+pub struct EitherParser<TA, TB, A, B> {
+    a: A,
+    b: B,
+    _ta: PhantomData<TA>,
+    _tb: PhantomData<TB>,
+}
+
+impl<TA, TB, A, B> EitherParser<TA, TB, A, B>
+where
+    A: ArgParser<TA>,
+    B: ArgParser<TB>,
+{
+    pub fn new(a: A, b: B) -> Self {
+        EitherParser {
+            a,
+            b,
+            _ta: PhantomData,
+            _tb: PhantomData,
+        }
+    }
+}
+
+impl<TA, TB, A, B> ArgParser<EitherValue<TA, TB>> for EitherParser<TA, TB, A, B>
+where
+    A: ArgParser<TA>,
+    B: ArgParser<TB>,
+{
+    fn parse(&self, input: &str) -> Result<EitherValue<TA, TB>, String> {
+        self.a
+            .parse(input)
+            .map(EitherValue::A)
+            .or_else(|_| self.b.parse(input).map(EitherValue::B))
     }
 }
 
@@ -217,6 +265,23 @@ impl ArgParser<u64> for CapacityParser {
             capacity += u64::from(shannon);
         }
         Ok(capacity)
+    }
+}
+
+pub struct OutPointParser;
+
+impl ArgParser<OutPoint> for OutPointParser {
+    fn parse(&self, input: &str) -> Result<OutPoint, String> {
+        let parts = input.split('-').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid OutPoint: {}, format: {{tx-hash}}-{{index}}",
+                input
+            ));
+        }
+        let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
+        let index = FromStrParser::<u32>::default().parse(parts[1])?;
+        Ok(OutPoint::new_cell(tx_hash, index))
     }
 }
 

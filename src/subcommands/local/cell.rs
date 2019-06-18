@@ -10,7 +10,9 @@ use jsonrpc_types::CellOutput as RpcCellOutput;
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
-use crate::utils::arg_parser::{ArgParser, CapacityParser, FixedHashParser, HexParser};
+use crate::utils::arg_parser::{
+    ArgParser, CapacityParser, FilePathParser, FixedHashParser, HexParser,
+};
 use crate::utils::printer::Printable;
 
 pub struct LocalCellSubCommand<'a> {
@@ -35,6 +37,7 @@ impl<'a> LocalCellSubCommand<'a> {
         let arg_json_path = Arg::with_name("path")
             .long("path")
             .takes_value(true)
+            .validator(|input| FilePathParser::new(false).validate(input))
             .required(true)
             .help("JSON file path");
         SubCommand::with_name("cell")
@@ -46,6 +49,7 @@ impl<'a> LocalCellSubCommand<'a> {
                         Arg::with_name("data-path")
                             .long("data-path")
                             .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
                             .help("Data file path"),
                     )
                     .arg(
