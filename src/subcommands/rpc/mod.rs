@@ -34,19 +34,16 @@ impl<'a> RpcSubCommand<'a> {
         SubCommand::with_name("rpc")
             .about("Invoke RPC call to node")
             .subcommands(vec![
-                SubCommand::with_name("get_tip_header").about("Get tip header"),
+                // [Chain]
                 SubCommand::with_name("get_block")
                     .about("Get block content by hash")
                     .arg(arg_hash.clone().help("Block hash")),
-                SubCommand::with_name("get_block_hash")
-                    .about("Get block hash by block number")
-                    .arg(arg_number.clone()),
                 SubCommand::with_name("get_block_by_number")
                     .about("Get block content by block number")
                     .arg(arg_number.clone()),
-                SubCommand::with_name("get_transaction")
-                    .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().help("Tx hash")),
+                SubCommand::with_name("get_block_hash")
+                    .about("Get block hash by block number")
+                    .arg(arg_number.clone()),
                 SubCommand::with_name("get_cells_by_lock_hash")
                     .about("Get cells by lock script hash")
                     .arg(arg_hash.clone().help("Lock hash"))
@@ -66,6 +63,10 @@ impl<'a> RpcSubCommand<'a> {
                             .required(true)
                             .help("To block number"),
                     ),
+                SubCommand::with_name("get_current_epoch").about("Get current epoch information"),
+                SubCommand::with_name("get_epoch_by_number")
+                    .about("Get epoch information by epoch number")
+                    .arg(arg_number.clone().help("Epoch number")),
                 SubCommand::with_name("get_live_cell")
                     .about("Get live cell (live means unspent)")
                     .arg(arg_hash.clone().required(false).help("Block hash"))
@@ -85,14 +86,18 @@ impl<'a> RpcSubCommand<'a> {
                             .required(true)
                             .help("Output index"),
                     ),
-                SubCommand::with_name("get_current_epoch").about("Get current epoch information"),
-                SubCommand::with_name("get_epoch_by_number")
-                    .about("Get epoch information by epoch number")
-                    .arg(arg_number.clone().help("Epoch number")),
-                SubCommand::with_name("local_node_info").about("Get local node information"),
-                SubCommand::with_name("get_blockchain_info").about("Get chain information"),
-                SubCommand::with_name("tx_pool_info").about("Get transaction pool information"),
+                SubCommand::with_name("get_tip_block_number").about("Get tip block number"),
+                SubCommand::with_name("get_tip_header").about("Get tip header"),
+                SubCommand::with_name("get_transaction")
+                    .about("Get transaction content by transaction hash")
+                    .arg(arg_hash.clone().help("Tx hash")),
+                // [Net]
                 SubCommand::with_name("get_peers").about("Get connected peers"),
+                SubCommand::with_name("local_node_info").about("Get local node information"),
+                // [Pool]
+                SubCommand::with_name("tx_pool_info").about("Get transaction pool information"),
+                // [`Stats`]
+                SubCommand::with_name("get_blockchain_info").about("Get chain information"),
             ])
     }
 }
@@ -100,30 +105,12 @@ impl<'a> RpcSubCommand<'a> {
 impl<'a> CliSubCommand for RpcSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
         match matches.subcommand() {
-            ("get_tip_header", _) => {
-                let resp = self
-                    .rpc_client
-                    .get_tip_header()
-                    .call()
-                    .map_err(|err| err.to_string())?;
-                Ok(Box::new(resp))
-            }
             ("get_block", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 let resp = self
                     .rpc_client
                     .get_block(hash)
-                    .call()
-                    .map_err(|err| err.to_string())?;
-                Ok(Box::new(resp))
-            }
-            ("get_block_hash", Some(m)) => {
-                let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
-
-                let resp = self
-                    .rpc_client
-                    .get_block_hash(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
@@ -138,12 +125,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
             }
-            ("get_transaction", Some(m)) => {
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            ("get_block_hash", Some(m)) => {
+                let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 let resp = self
                     .rpc_client
-                    .get_transaction(hash)
+                    .get_block_hash(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
@@ -160,6 +147,23 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         BlockNumber(from_number),
                         BlockNumber(to_number),
                     )
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(Box::new(resp))
+            }
+            ("get_current_epoch", _) => {
+                let resp = self
+                    .rpc_client
+                    .get_current_epoch()
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(Box::new(resp))
+            }
+            ("get_epoch_by_number", Some(m)) => {
+                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+                let resp = self
+                    .rpc_client
+                    .get_epoch_by_number(EpochNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
@@ -186,19 +190,28 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
             }
-            ("get_current_epoch", _) => {
+            ("get_tip_block_number", _) => {
                 let resp = self
                     .rpc_client
-                    .get_current_epoch()
+                    .get_tip_block_number()
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))
             }
-            ("get_epoch_by_number", Some(m)) => {
-                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+            ("get_tip_header", _) => {
                 let resp = self
                     .rpc_client
-                    .get_epoch_by_number(EpochNumber(number))
+                    .get_tip_header()
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(Box::new(resp))
+            }
+            ("get_transaction", Some(m)) => {
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+
+                let resp = self
+                    .rpc_client
+                    .get_transaction(hash)
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(Box::new(resp))

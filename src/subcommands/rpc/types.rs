@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
 use serde_json::to_string_pretty;
 
@@ -11,6 +12,12 @@ use ckb_sdk::rpc::{
 use crate::utils::printer::{OutputFormat, Printable};
 
 // FIXME: Implement printable
+
+impl Printable for BlockNumber {
+    fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {
+        Rc::new(to_string_pretty(&self).unwrap())
+    }
+}
 
 impl Printable for H256 {
     fn rc_string(&self, _format: OutputFormat, _color: bool) -> Rc<String> {

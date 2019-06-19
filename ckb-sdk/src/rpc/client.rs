@@ -45,7 +45,7 @@ jsonrpc_client!(pub struct RpcClient {
     pub fn get_block(&mut self, hash: H256) -> RpcRequest<OptionBlockView>;
     pub fn get_block_hash(&mut self, number: BlockNumber) -> RpcRequest<OptionH256>;
     pub fn get_block_by_number(&mut self, number: BlockNumber) -> RpcRequest<OptionBlockView>;
-    pub fn get_tip_block_number(&mut self) -> RpcRequest<String>;
+    pub fn get_tip_block_number(&mut self) -> RpcRequest<BlockNumber>;
 });
 
 impl RpcClient<HttpHandle> {
