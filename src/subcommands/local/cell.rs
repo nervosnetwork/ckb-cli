@@ -1,7 +1,6 @@
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use bytes::Bytes;
 use ckb_core::{transaction::CellOutput, Capacity};
@@ -101,7 +100,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let name: String = m.value_of("name").unwrap().to_owned();
@@ -150,7 +149,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
 
-                Ok(cell_output.rc_string(format, color))
+                Ok(cell_output.render(format, color))
             }
             ("remove", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -158,7 +157,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     CellManager::new(db).remove(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(cell_output.rc_string(format, color))
+                Ok(cell_output.render(format, color))
             }
             ("show", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -166,7 +165,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     CellManager::new(db).get(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(cell_output.rc_string(format, color))
+                Ok(cell_output.render(format, color))
             }
             ("list", _) => {
                 let cells = with_rocksdb(&self.db_path, None, |db| {
@@ -177,10 +176,10 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     .into_iter()
                     .map(|(name, cell)| (name, cell.into()))
                     .collect();
-                Ok(rpc_cells.rc_string(format, color))
+                Ok(rpc_cells.render(format, color))
             }
-            ("dump", Some(_m)) => Ok(Rc::new("null".to_string())),
-            ("load", Some(_m)) => Ok(Rc::new("null".to_string())),
+            ("dump", Some(_m)) => Ok("null".to_string()),
+            ("load", Some(_m)) => Ok("null".to_string()),
             _ => Err(matches.usage().to_owned()),
         }
     }

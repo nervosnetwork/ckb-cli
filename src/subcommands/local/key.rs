@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, NetworkType, SecpKey};
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -50,7 +49,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         let key_info = |key: &SecpKey| {
             let address = key.address().unwrap();
             serde_json::json!({
@@ -69,7 +68,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     KeyManager::new(db).add(key).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(result.rc_string(format, color))
+                Ok(result.render(format, color))
             }
             ("remove", Some(m)) => {
                 let key: SecpKey = PubkeyHexParser.from_matches(m, "pubkey")?;
@@ -78,7 +77,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let result = key_info(&removed_key);
-                Ok(result.rc_string(format, color))
+                Ok(result.render(format, color))
             }
             ("list", _) => {
                 let keys = with_rocksdb(&self.db_path, None, |db| {
@@ -89,7 +88,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     .into_iter()
                     .map(|key| key_info(&key))
                     .collect::<Vec<_>>();
-                Ok(results.rc_string(format, color))
+                Ok(results.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

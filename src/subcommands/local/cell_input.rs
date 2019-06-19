@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use ckb_core::transaction::{CellInput, CellOutPoint, OutPoint};
 use ckb_sdk::{to_local_cell_out_point, with_rocksdb, CellInputManager, HttpRpcClient};
@@ -83,7 +82,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -134,7 +133,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(cell_input.rc_string(format, color))
+                Ok(cell_input.render(format, color))
             }
             ("remove", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -142,7 +141,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     CellInputManager::new(db).remove(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(cell_input.rc_string(format, color))
+                Ok(cell_input.render(format, color))
             }
             ("show", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -150,7 +149,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     CellInputManager::new(db).get(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(cell_input.rc_string(format, color))
+                Ok(cell_input.render(format, color))
             }
             ("list", _) => {
                 let cell_inputs = with_rocksdb(&self.db_path, None, |db| {
@@ -161,7 +160,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     .into_iter()
                     .map(|(name, cell_input)| (name, cell_input.into()))
                     .collect();
-                Ok(rpc_cell_inputs.rc_string(format, color))
+                Ok(rpc_cell_inputs.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

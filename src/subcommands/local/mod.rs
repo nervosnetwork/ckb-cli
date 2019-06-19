@@ -11,7 +11,6 @@ pub use script::LocalScriptSubCommand;
 pub use tx::LocalTxSubCommand;
 
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use ckb_core::block::Block;
 use ckb_sdk::{GenesisInfo, HttpRpcClient};
@@ -73,7 +72,7 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("key", Some(m)) => LocalKeySubCommand::new(self.rpc_client, self.db_path.clone())
                 .process(m, format, color),
@@ -91,7 +90,7 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
                 .process(m, format, color),
             ("secp-dep", _) => {
                 let result = self.genesis_info()?.secp_dep();
-                Ok(result.rc_string(format, color))
+                Ok(result.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

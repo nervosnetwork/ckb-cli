@@ -278,7 +278,7 @@ impl InteractiveEnv {
                 }
                 ("get", Some(m)) => {
                     let key = m.value_of("key");
-                    println!("{}", self.config.get(key).rc_string(format, color));
+                    println!("{}", self.config.get(key).render(format, color));
                     Ok(())
                 }
                 ("info", _) => {

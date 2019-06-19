@@ -228,18 +228,16 @@ pub enum KV<'a> {
 }
 
 impl<'a> Printable for KV<'a> {
-    fn rc_string(&self, format: OutputFormat, color: bool) -> ::std::rc::Rc<String> {
+    fn render(&self, format: OutputFormat, color: bool) -> String {
         match self {
-            KV::Value(Some(value)) => value.rc_string(format, color),
-            KV::Keys(value) => ::std::rc::Rc::new(
-                value
-                    .iter()
-                    .enumerate()
-                    .map(|(index, key)| format!("{}) {}", index, key))
-                    .collect::<Vec<String>>()
-                    .join("\n"),
-            ),
-            KV::Value(None) => ::std::rc::Rc::new("None".to_string()),
+            KV::Value(Some(value)) => value.render(format, color),
+            KV::Keys(value) => value
+                .iter()
+                .enumerate()
+                .map(|(index, key)| format!("{}) {}", index, key))
+                .collect::<Vec<String>>()
+                .join("\n"),
+            KV::Value(None) => "None".to_owned(),
         }
     }
 }

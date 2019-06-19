@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use ckb_core::transaction::{CellInput, CellOutput, OutPoint, TransactionBuilder, Witness};
 use ckb_sdk::{
@@ -98,7 +97,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let deps: Vec<OutPoint> = OutPointParser.from_matches_vec(m, "deps")?;
@@ -157,9 +156,9 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     .map_err(|err| format!("{:?}", err))?;
                 }
                 let tx_view: TransactionView = (&tx).into();
-                Ok(tx_view.rc_string(format, color))
+                Ok(tx_view.render(format, color))
             }
-            ("set-witness", Some(_m)) => Ok(Rc::new("null".to_string())),
+            ("set-witness", Some(_m)) => Ok("null".to_string()),
             ("set-witnesses-by-keys", Some(m)) => {
                 let tx_hash_str = m.value_of("tx-hash").unwrap();
                 let tx_hash = H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
@@ -172,7 +171,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let tx_view: TransactionView = (&tx).into();
-                Ok(tx_view.rc_string(format, color))
+                Ok(tx_view.render(format, color))
             }
             ("show", Some(m)) => {
                 let tx_hash_str = m.value_of("tx-hash").unwrap();
@@ -184,7 +183,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let tx_view: TransactionView = (&tx).into();
-                Ok(tx_view.rc_string(format, color))
+                Ok(tx_view.render(format, color))
             }
             ("remove", Some(m)) => {
                 let tx_hash: H256 =
@@ -196,7 +195,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let tx_view: TransactionView = (&tx).into();
-                Ok(tx_view.rc_string(format, color))
+                Ok(tx_view.render(format, color))
             }
             ("verify", Some(m)) => {
                 let tx_hash: H256 =
@@ -208,7 +207,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(result.rc_string(format, color))
+                Ok(result.render(format, color))
             }
             ("list", Some(_m)) => {
                 let txs = with_rocksdb(&self.db_path, None, |db| {
@@ -225,7 +224,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                         })
                     })
                     .collect::<Vec<_>>();
-                Ok(txs.rc_string(format, color))
+                Ok(txs.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

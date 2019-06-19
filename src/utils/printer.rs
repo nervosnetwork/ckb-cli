@@ -1,6 +1,5 @@
 use std::env;
 use std::fmt;
-use std::rc::Rc;
 
 use atty;
 use colored::Colorize;
@@ -86,12 +85,12 @@ impl ColorWhen {
 }
 
 pub trait Printable {
-    fn rc_string(&self, format: OutputFormat, color: bool) -> Rc<String>;
+    fn render(&self, format: OutputFormat, color: bool) -> String;
 }
 
 impl Printable for Box<dyn Printable> {
-    fn rc_string(&self, format: OutputFormat, color: bool) -> Rc<String> {
-        self.as_ref().rc_string(format, color)
+    fn render(&self, format: OutputFormat, color: bool) -> String {
+        self.as_ref().render(format, color)
     }
 }
 
@@ -99,8 +98,9 @@ impl<T: ?Sized> Printable for T
 where
     T: serde::ser::Serialize,
 {
-    fn rc_string(&self, format: OutputFormat, color: bool) -> Rc<String> {
-        let content = match format {
+    fn render(&self, format: OutputFormat, color: bool) -> String {
+        match format {
+            OutputFormat::Yaml => yaml_ser::to_string(self, color).unwrap(),
             OutputFormat::Json => {
                 let value = serde_json::to_value(self).unwrap();
                 if color {
@@ -109,9 +109,7 @@ where
                     serde_json::to_string_pretty(&value).unwrap()
                 }
             }
-            OutputFormat::Yaml => yaml_ser::to_string(self, color).unwrap(),
-        };
-        Rc::new(content)
+        }
     }
 }
 

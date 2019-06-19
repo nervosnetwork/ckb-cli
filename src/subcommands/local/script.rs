@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use bytes::Bytes;
 use ckb_core::script::Script;
@@ -73,7 +72,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let code_hash: H256 =
@@ -101,7 +100,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                     ScriptManager::new(db).add(script).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(script_hash.rc_string(format, color))
+                Ok(script_hash.render(format, color))
             }
             ("remove", Some(m)) => {
                 let script_hash: H256 =
@@ -112,7 +111,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok("true".rc_string(format, color))
+                Ok("true".render(format, color))
             }
             ("show", Some(m)) => {
                 let script_hash: H256 =
@@ -122,7 +121,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let rpc_script: RpcScript = script.into();
-                Ok(rpc_script.rc_string(format, color))
+                Ok(rpc_script.render(format, color))
             }
             ("list", _) => {
                 let scripts = with_rocksdb(&self.db_path, None, |db| {
@@ -130,7 +129,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let rpc_scripts: Vec<RpcScript> = scripts.into_iter().map(Into::into).collect();
-                Ok(rpc_scripts.rc_string(format, color))
+                Ok(rpc_scripts.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

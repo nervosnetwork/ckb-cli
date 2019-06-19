@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use ckb_sdk::rpc::HttpRpcClient;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
@@ -108,7 +106,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String> {
+    ) -> Result<String, String> {
         match matches.subcommand() {
             ("get_block", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -118,7 +116,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_block(hash)
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_block_by_number", Some(m)) => {
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
@@ -128,7 +126,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_block_by_number(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_block_hash", Some(m)) => {
                 let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
@@ -138,7 +136,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_block_hash(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_cells_by_lock_hash", Some(m)) => {
                 let lock_hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -154,7 +152,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     )
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_current_epoch", _) => {
                 let resp = self
@@ -162,7 +160,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_current_epoch()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_epoch_by_number", Some(m)) => {
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
@@ -171,7 +169,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_epoch_by_number(EpochNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_live_cell", Some(m)) => {
                 let block_hash: Option<H256> =
@@ -193,7 +191,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_live_cell(out_point)
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_tip_block_number", _) => {
                 let resp = self
@@ -201,7 +199,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_tip_block_number()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_tip_header", _) => {
                 let resp = self
@@ -209,7 +207,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_tip_header()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_transaction", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -219,7 +217,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_transaction(hash)
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_blockchain_info", _) => {
                 let resp = self
@@ -227,7 +225,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_blockchain_info()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("local_node_info", _) => {
                 let resp = self
@@ -235,7 +233,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .local_node_info()
                     .call()
                     .map_err(|err| err.description().to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("tx_pool_info", _) => {
                 let resp = self
@@ -243,7 +241,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .tx_pool_info()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             ("get_peers", _) => {
                 let resp = self
@@ -251,7 +249,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .get_peers()
                     .call()
                     .map_err(|err| err.to_string())?;
-                Ok(resp.rc_string(format, color))
+                Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

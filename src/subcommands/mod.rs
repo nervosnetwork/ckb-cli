@@ -20,7 +20,6 @@ pub use wallet::{
 };
 
 use clap::ArgMatches;
-use std::rc::Rc;
 
 use crate::utils::printer::OutputFormat;
 
@@ -30,5 +29,5 @@ pub trait CliSubCommand {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-    ) -> Result<Rc<String>, String>;
+    ) -> Result<String, String>;
 }

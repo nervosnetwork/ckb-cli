@@ -4,7 +4,6 @@ mod widgets;
 
 use std::io;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use ckb_util::RwLock;
@@ -48,7 +47,7 @@ impl TuiSubCommand {
         }
     }
 
-    pub fn start(self) -> Result<Rc<String>, String> {
+    pub fn start(self) -> Result<String, String> {
         let genesis_header = {
             let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
                 .get_block_by_number(BlockNumber(0))
@@ -180,7 +179,7 @@ impl TuiSubCommand {
                 Event::Tick => {}
             }
         }
-        Ok(Rc::new("".to_owned()))
+        Ok("".to_owned())
     }
 }
 
