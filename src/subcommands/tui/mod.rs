@@ -4,6 +4,7 @@ mod widgets;
 
 use std::io;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use ckb_util::RwLock;
@@ -24,7 +25,6 @@ use ckb_sdk::{HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE, ON
 use jsonrpc_types::BlockNumber;
 
 use super::wallet::{IndexController, IndexRequest};
-use crate::utils::printer::Printable;
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{human_capacity, ts_now, App, Event, Events, TabsState};
 use widgets::List;
@@ -48,7 +48,7 @@ impl TuiSubCommand {
         }
     }
 
-    pub fn start(self) -> Result<Box<dyn Printable>, String> {
+    pub fn start(self) -> Result<Rc<String>, String> {
         let genesis_header = {
             let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
                 .get_block_by_number(BlockNumber(0))
@@ -180,7 +180,7 @@ impl TuiSubCommand {
                 Event::Tick => {}
             }
         }
-        Ok(Box::new("".to_owned()))
+        Ok(Rc::new("".to_owned()))
     }
 }
 

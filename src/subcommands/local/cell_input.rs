@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use ckb_core::transaction::{CellInput, CellOutPoint, OutPoint};
 use ckb_sdk::{to_local_cell_out_point, with_rocksdb, CellInputManager, HttpRpcClient};
@@ -8,7 +9,7 @@ use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
 use crate::utils::arg_parser::{ArgParser, FixedHashParser, FromStrParser};
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalCellInputSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -77,7 +78,12 @@ impl<'a> LocalCellInputSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -128,7 +134,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&cell_input).unwrap()))
+                Ok(cell_input.rc_string(format, color))
             }
             ("remove", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -136,7 +142,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     CellInputManager::new(db).remove(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&cell_input).unwrap()))
+                Ok(cell_input.rc_string(format, color))
             }
             ("show", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -144,7 +150,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     CellInputManager::new(db).get(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&cell_input).unwrap()))
+                Ok(cell_input.rc_string(format, color))
             }
             ("list", _) => {
                 let cell_inputs = with_rocksdb(&self.db_path, None, |db| {
@@ -155,7 +161,7 @@ impl<'a> CliSubCommand for LocalCellInputSubCommand<'a> {
                     .into_iter()
                     .map(|(name, cell_input)| (name, cell_input.into()))
                     .collect();
-                Ok(Box::new(serde_json::to_string(&rpc_cell_inputs).unwrap()))
+                Ok(rpc_cell_inputs.rc_string(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

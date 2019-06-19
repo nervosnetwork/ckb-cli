@@ -3,6 +3,7 @@ mod index;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 
@@ -21,7 +22,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 use ckb_sdk::{
     GenesisInfo, HttpRpcClient, IndexDatabase, SecpKey, TransferTransactionBuilder,
     LMDB_EXTRA_MAP_SIZE, MIN_SECP_CELL_CAPACITY, ONE_CKB,
@@ -209,7 +210,12 @@ impl<'a> WalletSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for WalletSubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let from_key: SecpKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
@@ -266,7 +272,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .send_transaction(tx)
                     .call()
                     .map_err(|err| format!("Send transaction error: {:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("generate-key", Some(m)) => {
                 let (privkey, pubkey) = Generator::new()
@@ -311,7 +317,7 @@ args = ["{:#x}"]
                         .unwrap()
                         .insert("privkey".to_owned(), privkey.to_string().into());
                 }
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("key-info", Some(m)) => {
                 let secp_key_opt: Option<SecpKey> =
@@ -342,7 +348,7 @@ args = ["{:#x}"]
                     "address": address_string,
                     "lock_hash": address.lock_script().hash(),
                 });
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("get-capacity", Some(m)) => {
                 let lock_hash: H256 =
@@ -350,7 +356,7 @@ args = ["{:#x}"]
                 let resp = serde_json::json!({
                     "capacity": self.get_db()?.get_capacity(lock_hash)
                 });
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("get-live-cells", Some(m)) => {
                 let lock_hash: H256 =
@@ -365,7 +371,7 @@ args = ["{:#x}"]
                     }).collect::<Vec<_>>(),
                     "total_capacity": total_capacity,
                 });
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("get-lock-by-address", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;
@@ -387,7 +393,7 @@ args = ["{:#x}"]
                             }
                         })
                     });
-                Ok(Box::new(serde_json::to_string(&lock_script).unwrap()))
+                Ok(lock_script.rc_string(format, color))
             }
             ("get-balance", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;
@@ -395,7 +401,7 @@ args = ["{:#x}"]
                 let resp = serde_json::json!({
                     "capacity": self.get_db()?.get_capacity(lock_hash)
                 });
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("top-capacity", Some(m)) => {
                 let n: usize = m
@@ -416,12 +422,12 @@ args = ["{:#x}"]
                         .collect::<Vec<_>>()
                 })
                 .map_err(|err| err.to_string())?;
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             ("db-metrics", _) => {
                 let resp = serde_json::to_value(self.get_db()?.get_metrics(None))
                     .map_err(|err| err.to_string())?;
-                Ok(Box::new(serde_json::to_string(&resp).unwrap()))
+                Ok(resp.rc_string(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

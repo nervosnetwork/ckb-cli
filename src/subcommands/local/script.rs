@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use bytes::Bytes;
 use ckb_core::script::Script;
@@ -10,7 +11,7 @@ use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
 use crate::utils::arg_parser::{ArgParser, FixedHashParser};
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalScriptSubCommand<'a> {
     _rpc_client: &'a mut HttpRpcClient,
@@ -67,7 +68,12 @@ impl<'a> LocalScriptSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let code_hash: H256 =
@@ -95,7 +101,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                     ScriptManager::new(db).add(script).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&script_hash).unwrap()))
+                Ok(script_hash.rc_string(format, color))
             }
             ("remove", Some(m)) => {
                 let script_hash: H256 =
@@ -106,7 +112,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new("true".to_string()))
+                Ok("true".rc_string(format, color))
             }
             ("show", Some(m)) => {
                 let script_hash: H256 =
@@ -116,7 +122,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let rpc_script: RpcScript = script.into();
-                Ok(Box::new(serde_json::to_string(&rpc_script).unwrap()))
+                Ok(rpc_script.rc_string(format, color))
             }
             ("list", _) => {
                 let scripts = with_rocksdb(&self.db_path, None, |db| {
@@ -124,7 +130,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let rpc_scripts: Vec<RpcScript> = scripts.into_iter().map(Into::into).collect();
-                Ok(Box::new(serde_json::to_string(&rpc_scripts).unwrap()))
+                Ok(rpc_scripts.rc_string(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

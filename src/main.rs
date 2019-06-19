@@ -22,7 +22,7 @@ use subcommands::{
 };
 use utils::arg_parser::{ArgParser, UrlParser};
 use utils::config::GlobalConfig;
-use utils::printer::Printer;
+use utils::printer::{ColorWhen, OutputFormat};
 
 mod interactive;
 mod subcommands;
@@ -30,6 +30,9 @@ mod utils;
 
 fn main() -> Result<(), io::Error> {
     env_logger::init();
+
+    #[cfg(not(unix))]
+    let enabled = ansi_term::enable_ansi_support();
 
     let version = get_version();
     let version_short = version.short();
@@ -41,8 +44,6 @@ fn main() -> Result<(), io::Error> {
         .value_of("url")
         .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("API_URL"));
-
-    let printer = Printer::default();
 
     let mut ckb_cli_dir = dirs::home_dir().unwrap();
     ckb_cli_dir.push(".ckb-cli");
@@ -56,6 +57,7 @@ fn main() -> Result<(), io::Error> {
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
 
+    let mut output_format = OutputFormat::Yaml;
     if config_file.as_path().exists() {
         let mut file = fs::File::open(&config_file)?;
         let mut content = String::new();
@@ -68,7 +70,10 @@ fn main() -> Result<(), io::Error> {
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
         config.set_color(configs["color"].as_bool().unwrap_or(true));
-        config.set_json_format(configs["json_format"].as_bool().unwrap_or(true));
+        output_format =
+            OutputFormat::from_str(&configs["output_format"].as_str().unwrap_or("yaml"))
+                .unwrap_or(OutputFormat::Yaml);
+        config.set_output_format(output_format);
         config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
         config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
     }
@@ -77,6 +82,7 @@ fn main() -> Result<(), io::Error> {
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
+    let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let result = match matches.subcommand() {
         #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(
@@ -85,10 +91,15 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
         )
         .start(),
-        ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client).process(&sub_matches),
-        ("local", Some(sub_matches)) => {
-            LocalSubCommand::new(&mut rpc_client, None, resource_dir.clone()).process(&sub_matches)
+        ("rpc", Some(sub_matches)) => {
+            RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color)
         }
+        ("local", Some(sub_matches)) => LocalSubCommand::new(
+            &mut rpc_client,
+            None,
+            resource_dir.clone(),
+        )
+        .process(&sub_matches, output_format, color),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             None,
@@ -96,7 +107,7 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
             false,
         )
-        .process(&sub_matches),
+        .process(&sub_matches, output_format, color),
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
@@ -111,14 +122,13 @@ fn main() -> Result<(), io::Error> {
         }
     };
 
-    let color = !matches.is_present("no-color");
     match result {
         Ok(message) => {
-            printer.println(&message, color);
+            println!("{}", message);
             index_controller.shutdown();
         }
         Err(err) => {
-            printer.eprintln(&err, color);
+            eprintln!("{}", err);
             index_controller.shutdown();
             process::exit(1);
         }
@@ -224,9 +234,12 @@ pub fn build_interactive() -> App<'static, 'static> {
                         .help("Switch debug mode"),
                 )
                 .arg(
-                    Arg::with_name("json")
-                        .long("json")
-                        .help("Switch json format"),
+                    Arg::with_name("output-format")
+                        .long("output-format")
+                        .takes_value(true)
+                        .possible_values(&["yaml", "json"])
+                        .default_value("yaml")
+                        .help("Select output format"),
                 )
                 .arg(
                     Arg::with_name("completion_style")

@@ -159,6 +159,7 @@ impl Colorizer {
     /// # Errors
     ///
     /// An error is returned if the string is invalid JSON or an I/O error occurs.
+    #[allow(dead_code)]
     pub fn colorize_json_str(&self, s: &str) -> Result<String> {
         let value: Value = ::serde_json::from_str(s)?;
         self.colorize_json_value(&value)

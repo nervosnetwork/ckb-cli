@@ -18,7 +18,7 @@ use crate::subcommands::{
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
-use crate::utils::printer::Printer;
+use crate::utils::printer::{ColorWhen, OutputFormat, Printable};
 use ckb_sdk::{GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
@@ -26,7 +26,6 @@ const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 /// Interactive command line
 pub struct InteractiveEnv {
     config: GlobalConfig,
-    printer: Printer,
     config_file: PathBuf,
     resource_dir: PathBuf,
     history_file: PathBuf,
@@ -66,16 +65,10 @@ impl InteractiveEnv {
             }
         }
 
-        let mut printer = Printer::default();
-        if !config.json_format() {
-            printer.switch_format();
-        }
-
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::from_uri(config.get_url());
         Ok(InteractiveEnv {
             config,
-            printer,
             config_file,
             resource_dir,
             index_dir,
@@ -151,7 +144,7 @@ impl InteractiveEnv {
                         }
                         Ok(false) => {}
                         Err(err) => {
-                            self.printer.eprintln(&err.to_string(), true);
+                            eprintln!("{}", err.to_string());
                         }
                     }
                     rl.add_history_entry(line.as_ref());
@@ -226,6 +219,8 @@ impl InteractiveEnv {
             Err(e) => return Err(e.to_string()),
         };
 
+        let format = self.config.output_format();
+        let color = ColorWhen::new(self.config.color()).color();
         match self.parser.clone().get_matches_from_safe(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
@@ -241,9 +236,10 @@ impl InteractiveEnv {
                         self.config.switch_color();
                     }
 
-                    if m.is_present("json") {
-                        self.printer.switch_format();
-                        self.config.switch_format();
+                    if let Some(format) = m.value_of("output-format") {
+                        let output_format =
+                            OutputFormat::from_str(format).unwrap_or(OutputFormat::Yaml);
+                        self.config.set_output_format(output_format);
                     }
 
                     if m.is_present("debug") {
@@ -265,7 +261,7 @@ impl InteractiveEnv {
                         "url": self.config.get_url().to_string(),
                         "color": self.config.color(),
                         "debug": self.config.debug(),
-                        "json_format": self.config.json_format(),
+                        "output_format": self.config.output_format().to_string(),
                         "completion_style": self.config.completion_style(),
                         "edit_style": self.config.edit_style(),
                     }))
@@ -282,8 +278,7 @@ impl InteractiveEnv {
                 }
                 ("get", Some(m)) => {
                     let key = m.value_of("key");
-                    self.printer
-                        .println(&self.config.get(key).clone(), self.config.color());
+                    println!("{}", self.config.get(key).rc_string(format, color));
                     Ok(())
                 }
                 ("info", _) => {
@@ -291,32 +286,36 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("rpc", Some(sub_matches)) => {
-                    let value = RpcSubCommand::new(&mut self.rpc_client).process(&sub_matches)?;
-                    self.printer.println(&value, self.config.color());
+                    let output = RpcSubCommand::new(&mut self.rpc_client).process(
+                        &sub_matches,
+                        format,
+                        color,
+                    )?;
+                    println!("{}", output);
                     Ok(())
                 }
                 ("wallet", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
-                    let value = WalletSubCommand::new(
+                    let output = WalletSubCommand::new(
                         &mut self.rpc_client,
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         true,
                     )
-                    .process(&sub_matches)?;
-                    self.printer.println(&value, self.config.color());
+                    .process(&sub_matches, format, color)?;
+                    println!("{}", output);
                     Ok(())
                 }
                 ("local", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
-                    let value = LocalSubCommand::new(
+                    let output = LocalSubCommand::new(
                         &mut self.rpc_client,
                         Some(genesis_info),
                         self.resource_dir.clone(),
                     )
-                    .process(&sub_matches)?;
-                    self.printer.println(&value, self.config.color());
+                    .process(&sub_matches, format, color)?;
+                    println!("{}", output);
                     Ok(())
                 }
                 ("exit", _) => {

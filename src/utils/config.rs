@@ -17,7 +17,7 @@ pub struct GlobalConfig {
     url: Option<String>,
     color: bool,
     debug: bool,
-    json_format: bool,
+    output_format: OutputFormat,
     path: PathBuf,
     completion_style: bool,
     edit_style: bool,
@@ -31,7 +31,7 @@ impl GlobalConfig {
             url,
             color: true,
             debug: false,
-            json_format: true,
+            output_format: OutputFormat::Yaml,
             path: env::current_dir().unwrap(),
             completion_style: true,
             edit_style: true,
@@ -126,10 +126,6 @@ impl GlobalConfig {
         self.debug = !self.debug;
     }
 
-    pub fn switch_format(&mut self) {
-        self.json_format = !self.json_format;
-    }
-
     pub fn switch_completion_style(&mut self) {
         self.completion_style = !self.completion_style;
     }
@@ -146,8 +142,8 @@ impl GlobalConfig {
         self.debug = value;
     }
 
-    pub fn set_json_format(&mut self, value: bool) {
-        self.json_format = value;
+    pub fn set_output_format(&mut self, value: OutputFormat) {
+        self.output_format = value;
     }
 
     pub fn set_completion_style(&mut self, value: bool) {
@@ -166,8 +162,8 @@ impl GlobalConfig {
         self.debug
     }
 
-    pub fn json_format(&self) -> bool {
-        self.json_format
+    pub fn output_format(&self) -> OutputFormat {
+        self.output_format
     }
 
     pub fn completion_style(&self) -> bool {
@@ -182,7 +178,7 @@ impl GlobalConfig {
         let path = self.path.to_string_lossy();
         let color = self.color.to_string();
         let debug = self.debug.to_string();
-        let json = self.json_format.to_string();
+        let output_format = self.output_format.to_string();
         let completion_style = if self.completion_style {
             "List"
         } else {
@@ -198,7 +194,7 @@ impl GlobalConfig {
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),
-            ("json", json.as_str()),
+            ("output format", output_format.as_str()),
             ("completion style", completion_style),
             ("edit style", edit_style),
             ("index db state", index_state.as_str()),

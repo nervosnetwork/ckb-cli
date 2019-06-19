@@ -1,11 +1,12 @@
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, NetworkType, SecpKey};
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::super::CliSubCommand;
 use crate::utils::arg_parser::{ArgParser, PrivkeyPathParser, PubkeyHexParser};
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalKeySubCommand<'a> {
     _rpc_client: &'a mut HttpRpcClient,
@@ -44,7 +45,12 @@ impl<'a> LocalKeySubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         let key_info = |key: &SecpKey| {
             let address = key.address().unwrap();
             serde_json::json!({
@@ -63,7 +69,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     KeyManager::new(db).add(key).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&result).unwrap()))
+                Ok(result.rc_string(format, color))
             }
             ("remove", Some(m)) => {
                 let key: SecpKey = PubkeyHexParser.from_matches(m, "pubkey")?;
@@ -72,7 +78,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
                 let result = key_info(&removed_key);
-                Ok(Box::new(serde_json::to_string(&result).unwrap()))
+                Ok(result.rc_string(format, color))
             }
             ("list", _) => {
                 let keys = with_rocksdb(&self.db_path, None, |db| {
@@ -83,7 +89,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                     .into_iter()
                     .map(|key| key_info(&key))
                     .collect::<Vec<_>>();
-                Ok(Box::new(serde_json::to_string(&results).unwrap()))
+                Ok(results.rc_string(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

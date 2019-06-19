@@ -20,9 +20,15 @@ pub use wallet::{
 };
 
 use clap::ArgMatches;
+use std::rc::Rc;
 
-use crate::utils::printer::Printable;
+use crate::utils::printer::OutputFormat;
 
 pub trait CliSubCommand {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String>;
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String>;
 }

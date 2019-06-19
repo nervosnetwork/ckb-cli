@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use bytes::Bytes;
 use ckb_core::{transaction::CellOutput, Capacity};
@@ -13,7 +14,7 @@ use super::super::CliSubCommand;
 use crate::utils::arg_parser::{
     ArgParser, CapacityParser, FilePathParser, FixedHashParser, HexParser,
 };
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalCellSubCommand<'a> {
     _rpc_client: &'a mut HttpRpcClient,
@@ -95,7 +96,12 @@ impl<'a> LocalCellSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let name: String = m.value_of("name").unwrap().to_owned();
@@ -144,7 +150,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                 })
                 .map_err(|err| format!("{:?}", err))?;
 
-                Ok(Box::new(serde_json::to_string(&cell_output).unwrap()))
+                Ok(cell_output.rc_string(format, color))
             }
             ("remove", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -152,7 +158,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     CellManager::new(db).remove(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&cell_output).unwrap()))
+                Ok(cell_output.rc_string(format, color))
             }
             ("show", Some(m)) => {
                 let name: String = m.value_of("name").map(ToOwned::to_owned).unwrap();
@@ -160,7 +166,7 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     CellManager::new(db).get(&name).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                Ok(Box::new(serde_json::to_string(&cell_output).unwrap()))
+                Ok(cell_output.rc_string(format, color))
             }
             ("list", _) => {
                 let cells = with_rocksdb(&self.db_path, None, |db| {
@@ -171,10 +177,10 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
                     .into_iter()
                     .map(|(name, cell)| (name, cell.into()))
                     .collect();
-                Ok(Box::new(serde_json::to_string(&rpc_cells).unwrap()))
+                Ok(rpc_cells.rc_string(format, color))
             }
-            ("dump", Some(_m)) => Ok(Box::new("null".to_string())),
-            ("load", Some(_m)) => Ok(Box::new("null".to_string())),
+            ("dump", Some(_m)) => Ok(Rc::new("null".to_string())),
+            ("load", Some(_m)) => Ok(Rc::new("null".to_string())),
             _ => Err(matches.usage().to_owned()),
         }
     }

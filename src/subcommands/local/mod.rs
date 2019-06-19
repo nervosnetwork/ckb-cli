@@ -11,6 +11,7 @@ pub use script::LocalScriptSubCommand;
 pub use tx::LocalTxSubCommand;
 
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use ckb_core::block::Block;
 use ckb_sdk::{GenesisInfo, HttpRpcClient};
@@ -18,7 +19,7 @@ use clap::{App, ArgMatches, SubCommand};
 use jsonrpc_types::BlockNumber;
 
 use super::CliSubCommand;
-use crate::utils::printer::Printable;
+use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -67,26 +68,30 @@ impl<'a> LocalSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for LocalSubCommand<'a> {
-    fn process(&mut self, matches: &ArgMatches) -> Result<Box<dyn Printable>, String> {
+    fn process(
+        &mut self,
+        matches: &ArgMatches,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<Rc<String>, String> {
         match matches.subcommand() {
-            ("key", Some(m)) => {
-                LocalKeySubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
-            }
+            ("key", Some(m)) => LocalKeySubCommand::new(self.rpc_client, self.db_path.clone())
+                .process(m, format, color),
             ("script", Some(m)) => {
-                LocalScriptSubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
+                LocalScriptSubCommand::new(self.rpc_client, self.db_path.clone())
+                    .process(m, format, color)
             }
-            ("cell", Some(m)) => {
-                LocalCellSubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
-            }
+            ("cell", Some(m)) => LocalCellSubCommand::new(self.rpc_client, self.db_path.clone())
+                .process(m, format, color),
             ("cell-input", Some(m)) => {
-                LocalCellInputSubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
+                LocalCellInputSubCommand::new(self.rpc_client, self.db_path.clone())
+                    .process(m, format, color)
             }
-            ("tx", Some(m)) => {
-                LocalTxSubCommand::new(self.rpc_client, self.db_path.clone()).process(m)
-            }
+            ("tx", Some(m)) => LocalTxSubCommand::new(self.rpc_client, self.db_path.clone())
+                .process(m, format, color),
             ("secp-dep", _) => {
                 let result = self.genesis_info()?.secp_dep();
-                Ok(Box::new(serde_json::to_string(&result).unwrap()))
+                Ok(result.rc_string(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }
