@@ -99,7 +99,7 @@ pub enum Key {
     LockScript(H256),
     LockTotalCapacity(H256),
     LockTotalCapacityIndex(u64, H256),
-    LockLiveCellIndexPrefix(H256),
+    LockLiveCellIndexPrefix(H256, Option<u64>),
     LockLiveCellIndex(H256, u64, CellIndex),
     LockTx(H256, u64, u32),
     BlockDelta(u64),
@@ -162,9 +162,12 @@ impl Key {
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
                 bytes
             }
-            Key::LockLiveCellIndexPrefix(lock_hash) => {
+            Key::LockLiveCellIndexPrefix(lock_hash, number_opt) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
                 bytes.extend(bincode::serialize(lock_hash).unwrap());
+                if let Some(number) = number_opt {
+                    bytes.extend(number.to_be_bytes().to_vec());
+                }
                 bytes
             }
             Key::LockLiveCellIndex(lock_hash, number, cell_index) => {

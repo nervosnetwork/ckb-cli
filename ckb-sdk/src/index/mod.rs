@@ -244,29 +244,24 @@ impl IndexDatabase {
     //     self.get_address_inner(&reader, lock_hash)
     // }
 
-    pub fn get_live_cell_infos<F: Fn(usize, Option<&LiveCellInfo>, u64) -> bool>(
+    pub fn get_live_cell_infos<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
         lock_hash: H256,
-        terminator: F,
-    ) -> (Vec<LiveCellInfo>, u64) {
+        from_number: Option<u64>,
+        mut terminator: F,
+    ) -> Vec<LiveCellInfo> {
         let env_read = self.env_arc.read().unwrap();
         let reader = env_read.read().unwrap();
-        let key_prefix: Vec<u8> = Key::LockLiveCellIndexPrefix(lock_hash).to_bytes();
+        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone(), None).to_bytes();
+        let key_start = Key::LockLiveCellIndexPrefix(lock_hash, from_number).to_bytes();
 
         let mut infos = Vec::new();
-        let mut result_total_capacity = 0;
         for (idx, item) in self
             .store
-            .iter_from(&reader, &key_prefix)
+            .iter_from(&reader, &key_start)
             .unwrap()
             .enumerate()
         {
-            let stop = terminator(idx, None, result_total_capacity);
-            if stop {
-                log::trace!("Stop search");
-                break;
-            }
-
             let (key_bytes, value_bytes_opt) = item.unwrap();
             if key_bytes[..key_prefix.len()] != key_prefix[..] {
                 log::debug!("Reach the end of this lock");
@@ -276,15 +271,16 @@ impl IndexDatabase {
             let out_point: CellOutPoint =
                 bincode::deserialize(value_to_bytes(&value_bytes)).unwrap();
             let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
-            result_total_capacity += live_cell_info.capacity;
-            let stop = terminator(idx, Some(&live_cell_info), result_total_capacity);
-            infos.push(live_cell_info);
+            let (stop, push_info) = terminator(idx, &live_cell_info);
+            if push_info {
+                infos.push(live_cell_info);
+            }
             if stop {
                 log::trace!("Stop search");
                 break;
             }
         }
-        (infos, result_total_capacity)
+        infos
     }
 
     pub fn get_top_n(&self, n: usize) -> Vec<(H256, Option<Address>, u64)> {

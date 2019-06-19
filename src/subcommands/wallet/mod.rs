@@ -184,6 +184,20 @@ impl<'a> WalletSubCommand<'a> {
                             .validator(|input| FromStrParser::<usize>::default().validate(input))
                             .default_value("15")
                             .help("Get live cells <= limit")
+                    )
+                    .arg(
+                        Arg::with_name("from")
+                            .long("from")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .help("From block number"),
+                    )
+                    .arg(
+                        Arg::with_name("to")
+                            .long("to")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .help("To block number"),
                     ),
                 SubCommand::with_name("get-lock-by-address")
                     .about("Get lock script (include hash) by address")
@@ -241,9 +255,15 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_pubkey = from_key.pubkey;
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
-                let (infos, total_capacity) = self.get_db()?.get_live_cell_infos(
+                let mut total_capacity = 0;
+                let infos = self.get_db()?.get_live_cell_infos(
                     from_address.lock_script().hash().clone(),
-                    |_, _, result_total| result_total >= capacity,
+                    None,
+                    |_, info| {
+                        total_capacity += info.capacity;
+                        let stop = total_capacity >= capacity;
+                        (stop, true)
+                    },
                 );
                 if total_capacity < capacity {
                     return Err(format!(
@@ -361,9 +381,25 @@ args = ["{:#x}"]
                 let lock_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
                 let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
-                let (infos, total_capacity) = self
-                    .get_db()?
-                    .get_live_cell_infos(lock_hash.clone(), |idx, _, _| idx >= limit);
+                let from_number_opt: Option<u64> =
+                    FromStrParser::<u64>::default().from_matches_opt(m, "from", false)?;
+                let to_number_opt: Option<u64> =
+                    FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
+
+                let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+                let mut total_capacity = 0;
+                let infos = self.get_db()?.get_live_cell_infos(
+                    lock_hash.clone(),
+                    from_number_opt,
+                    |idx, info| {
+                        let stop = idx >= limit || info.number > to_number;
+                        let push_info = !stop;
+                        if push_info {
+                            total_capacity += info.capacity;
+                        }
+                        (stop, push_info)
+                    },
+                );
                 let resp = serde_json::json!({
                     "live_cells": infos.into_iter().map(|info| {
                         serde_json::to_value(&info).unwrap()
