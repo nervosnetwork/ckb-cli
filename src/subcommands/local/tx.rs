@@ -160,8 +160,8 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
             }
             ("set-witness", Some(_m)) => Ok("null".to_string()),
             ("set-witnesses-by-keys", Some(m)) => {
-                let tx_hash_str = m.value_of("tx-hash").unwrap();
-                let tx_hash = H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let db_path = self.db_path.clone();
                 let tx = with_rocksdb(&db_path, None, |db| {
                     let keys = KeyManager::new(db).list()?;
@@ -174,8 +174,8 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 Ok(tx_view.render(format, color))
             }
             ("show", Some(m)) => {
-                let tx_hash_str = m.value_of("tx-hash").unwrap();
-                let tx_hash = H256::from_hex_str(tx_hash_str).map_err(|err| err.to_string())?;
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let tx = with_rocksdb(&self.db_path, None, |db| {
                     TransactionManager::new(db)
                         .get(&tx_hash)
