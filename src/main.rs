@@ -83,6 +83,9 @@ fn main() -> Result<(), io::Error> {
     let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
+    if let Some(format) = matches.value_of("output-format") {
+        output_format = OutputFormat::from_str(format).unwrap();
+    }
     let result = match matches.subcommand() {
         #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(
@@ -184,6 +187,15 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
                 .help("RPC API server url"),
+        )
+        .arg(
+            Arg::with_name("output-format")
+                .long("output-format")
+                .takes_value(true)
+                .possible_values(&["yaml", "json"])
+                .default_value("yaml")
+                .global(true)
+                .help("Select output format"),
         )
         .arg(
             Arg::with_name("no-color")
