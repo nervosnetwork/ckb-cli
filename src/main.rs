@@ -32,7 +32,7 @@ fn main() -> Result<(), io::Error> {
     env_logger::init();
 
     #[cfg(not(unix))]
-    let enabled = ansi_term::enable_ansi_support();
+    let _enabled = ansi_term::enable_ansi_support();
 
     let version = get_version();
     let version_short = version.short();

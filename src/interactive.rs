@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use ansi_term::Colour::{Blue, Green};
+use ansi_term::Colour::Green;
 use ckb_core::{block::Block, service::Request};
 use jsonrpc_types::BlockNumber;
 use regex::Regex;
@@ -85,15 +85,15 @@ impl InteractiveEnv {
         self.config.print();
 
         let env_regex = Regex::new(ENV_PATTERN).unwrap();
-        let colored_prompt = Blue.bold().paint("CKB> ").to_string();
         let prompt = {
             #[cfg(unix)]
             {
-                &colored_prompt
+                use ansi_term::Colour::Blue;
+                Blue.bold().paint("CKB> ").to_string()
             }
             #[cfg(not(unix))]
             {
-                "CKB> "
+                "CKB> ".to_string()
             }
         };
 
@@ -136,7 +136,7 @@ impl InteractiveEnv {
                 self.config.completion_style(),
                 self.config.edit_style(),
             );
-            match rl.readline(prompt) {
+            match rl.readline(&prompt) {
                 Ok(line) => {
                     match self.handle_command(line.as_str(), &env_regex) {
                         Ok(true) => {
