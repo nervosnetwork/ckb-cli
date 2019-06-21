@@ -11,7 +11,7 @@ use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
 use super::util::{put_pair, value_to_bytes};
-use crate::{Address, SECP_CODE_HASH};
+use crate::Address;
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
 const KEEP_RECENT_BLOCKS: u64 = 200;
@@ -49,6 +49,7 @@ impl BlockDeltaInfo {
         block: &Block,
         store: rkv::SingleStore,
         writer: &rkv::Writer,
+        secp_code_hash: &H256,
     ) -> BlockDeltaInfo {
         let block_header: Header = block.header().clone();
         let block_number = block_header.number();
@@ -155,7 +156,7 @@ impl BlockDeltaInfo {
                             .unwrap_or(0);
                         LockInfo::new(lock_capacity)
                     });
-                    lock_info.set_script(lock.clone());
+                    lock_info.set_script(lock.clone(), secp_code_hash);
                     lock_info.add_output(capacity);
                 }
 
@@ -547,8 +548,8 @@ impl LockInfo {
         }
     }
 
-    fn set_script(&mut self, script: Script) {
-        let address_opt = if script.code_hash == SECP_CODE_HASH {
+    fn set_script(&mut self, script: Script, secp_code_hash: &H256) {
+        let address_opt = if &script.code_hash == secp_code_hash {
             if script.args.len() == 1 {
                 let lock_arg = &script.args[0];
                 match Address::from_lock_arg(&lock_arg) {

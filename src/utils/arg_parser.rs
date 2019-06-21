@@ -258,6 +258,7 @@ impl ArgParser<u64> for CapacityParser {
                 .parse::<u64>()
                 .map_err(|err| err.to_string())?;
         if let Some(shannon_str) = parts.get(1) {
+            let shannon_str = shannon_str.trim();
             if shannon_str.len() > 8 {
                 return Err(format!("decimal part too long: {}", shannon_str.len()));
             }

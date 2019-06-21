@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_core::{block::Block, header::Header, service::Request};
-use ckb_sdk::NetworkType;
+use ckb_sdk::{GenesisInfo, NetworkType};
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
 use jsonrpc_client_core::Error as RpcError;
@@ -258,9 +258,10 @@ fn process(
         .0
         .expect("Can not get genesis block?")
         .into();
+    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
     let mut db = IndexDatabase::from_path(
         NetworkType::TestNet,
-        genesis_block.header(),
+        genesis_info.clone(),
         index_dir.clone(),
         LMDB_EXTRA_MAP_SIZE,
     )
@@ -305,7 +306,7 @@ fn process(
                     log::info!("Reopen database");
                     db = IndexDatabase::from_path(
                         NetworkType::TestNet,
-                        genesis_block.header(),
+                        genesis_info.clone(),
                         index_dir.clone(),
                         LMDB_EXTRA_MAP_SIZE,
                     )

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use ckb_core::{block::Block, service::Request};
-use ckb_sdk::{Address, AddressFormat, NetworkType, SECP_CODE_HASH};
+use ckb_sdk::{Address, AddressFormat, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crypto::secp::Generator;
 use faster_hex::hex_string;
@@ -91,7 +91,7 @@ impl<'a> WalletSubCommand<'a> {
         }
         IndexDatabase::from_path(
             NetworkType::TestNet,
-            self.genesis_info()?.header(),
+            self.genesis_info()?,
             self.index_dir.clone(),
             LMDB_EXTRA_MAP_SIZE,
         )
@@ -255,9 +255,14 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_pubkey = from_key.pubkey;
                 let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
 
+                let genesis_info = self.genesis_info()?;
+                let secp_code_hash = genesis_info.secp_code_hash();
                 let mut total_capacity = 0;
                 let infos = self.get_db()?.get_live_cell_infos(
-                    from_address.lock_script().hash().clone(),
+                    from_address
+                        .lock_script(secp_code_hash.clone())
+                        .hash()
+                        .clone(),
                     None,
                     |_, info| {
                         total_capacity += info.capacity;
@@ -280,7 +285,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: &to_address,
                     to_capacity: capacity,
                 };
-                let tx = tx_args.build(infos, self.genesis_info()?.secp_dep());
+                let tx = tx_args.build(infos, &genesis_info);
                 // TODO: print when debug
                 // println!(
                 //     "[Send Transaction]:\n{}",
@@ -315,6 +320,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 file.write(format!("{}\n", address_string).as_bytes())
                     .map_err(|err| err.to_string())?;
 
+                let genesis_info = self.genesis_info()?;
+                let secp_code_hash = genesis_info.secp_code_hash();
                 println!(
                     r#"Put this config in < ckb.toml >:
 
@@ -322,14 +329,14 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 code_hash = "{:#x}"
 args = ["{:#x}"]
 "#,
-                    SECP_CODE_HASH,
+                    secp_code_hash,
                     address.hash()
                 );
 
                 let mut resp = json!({
                     "pubkey": pubkey_string,
                     "address": address_string,
-                    "lock_hash": address.lock_script().hash(),
+                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
                 });
                 if print_privkey {
                     resp.as_object_mut()
@@ -351,6 +358,8 @@ args = ["{:#x}"]
                 let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
                 let address_string = address.to_string(NetworkType::TestNet);
 
+                let genesis_info = self.genesis_info()?;
+                let secp_code_hash = genesis_info.secp_code_hash();
                 println!(
                     r#"Put this config in < ckb.toml >:
 
@@ -358,14 +367,14 @@ args = ["{:#x}"]
 code_hash = "{:#x}"
 args = ["{:#x}"]
 "#,
-                    SECP_CODE_HASH,
+                    secp_code_hash,
                     address.hash()
                 );
 
                 let resp = json!({
                     "pubkey": pubkey_string,
                     "address": address_string,
-                    "lock_hash": address.lock_script().hash(),
+                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
                 });
                 Ok(resp.render(format, color))
             }
@@ -432,7 +441,8 @@ args = ["{:#x}"]
             }
             ("get-balance", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;
-                let lock_hash = address.lock_script().hash().clone();
+                let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
+                let lock_hash = address.lock_script(secp_code_hash).hash().clone();
                 let resp = serde_json::json!({
                     "capacity": self.get_db()?.get_capacity(lock_hash)
                 });

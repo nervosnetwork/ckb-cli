@@ -8,7 +8,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use crate::{Address, NetworkType};
+use crate::{Address, GenesisInfo, NetworkType};
 use ckb_core::{block::Block, header::Header, script::Script, transaction::CellOutPoint};
 use numext_fixed_hash::H256;
 
@@ -26,7 +26,7 @@ pub struct IndexDatabase {
     env_arc: Arc<RwLock<rkv::Rkv>>,
     store: rkv::SingleStore,
     // network: NetworkType,
-    genesis: Header,
+    genesis_info: GenesisInfo,
     last_header: Option<Header>,
     tip_header: Header,
     init_block_buf: Vec<Block>,
@@ -35,10 +35,11 @@ pub struct IndexDatabase {
 impl IndexDatabase {
     pub fn from_path(
         network: NetworkType,
-        genesis_header: &Header,
+        genesis_info: GenesisInfo,
         mut directory: PathBuf,
         extra_size: u64,
     ) -> Result<IndexDatabase, IndexError> {
+        let genesis_header = genesis_info.header().clone();
         assert_eq!(genesis_header.number(), 0);
 
         directory.push(format!("{:#x}", genesis_header.hash()));
@@ -112,8 +113,8 @@ impl IndexDatabase {
             store,
             // network,
             last_header,
-            genesis: genesis_header.clone(),
-            tip_header: genesis_header.clone(),
+            genesis_info,
+            tip_header: genesis_header,
             init_block_buf: Vec::new(),
         })
     }
@@ -159,11 +160,11 @@ impl IndexDatabase {
             self.apply_block_unchecked(block);
             Ok(())
         } else if number == 0 {
-            if block.header().hash() != self.genesis.hash() {
+            if block.header().hash() != self.genesis_info.header().hash() {
                 Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",
                     block.header().hash(),
-                    self.genesis.hash(),
+                    self.genesis_info.header().hash(),
                 )))
             } else {
                 self.apply_block_unchecked(block);
@@ -328,9 +329,11 @@ impl IndexDatabase {
             blocks
         };
 
+        let secp_code_hash = self.genesis_info.secp_code_hash();
         let mut writer = env_read.write().unwrap();
         for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_block(&block, self.store, &writer);
+            let block_delta_info =
+                BlockDeltaInfo::from_block(&block, self.store, &writer, secp_code_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
             let result = block_delta_info.apply(self.store, &mut writer);

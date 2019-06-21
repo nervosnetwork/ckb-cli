@@ -126,7 +126,7 @@ impl State {
                 epoch: info.epoch.clone(),
                 difficulty: info.difficulty.clone(),
                 is_initial_block_download: info.is_initial_block_download,
-                warnings: info.warnings.clone(),
+                alerts: info.alerts.clone(),
             }),
             tx_pool: self.tx_pool.clone(),
             peer_count: self.peers.len(),

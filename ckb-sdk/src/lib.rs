@@ -9,7 +9,7 @@ mod util;
 
 pub mod rpc;
 
-pub use basic::{Address, AddressFormat, NetworkType, SecpKey, SECP_CODE_HASH};
+pub use basic::{Address, AddressFormat, NetworkType, SecpKey};
 pub use chain::{
     build_witness, GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };

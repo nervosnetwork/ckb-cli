@@ -10,7 +10,7 @@ use ckb_core::script::Script as CoreScript;
 use crypto::secp::{Generator, Privkey, Pubkey};
 use faster_hex::{hex_decode, hex_string};
 use hash::blake2b_256;
-use numext_fixed_hash::{h256, H160, H256};
+use numext_fixed_hash::{H160, H256};
 use secp256k1::key;
 use serde_derive::{Deserialize, Serialize};
 
@@ -18,8 +18,6 @@ const PREFIX_MAINNET: &str = "ckb";
 const PREFIX_TESTNET: &str = "ckt";
 // \x01 is the P2PH version
 const P2PH_MARK: &[u8] = b"\x01P2PH";
-pub const SECP_CODE_HASH: H256 =
-    h256!("0xf1951123466e4479842387a66fabfd6b65fc87fd84ae8e6cd3053edb27fff2fd");
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NetworkType {
@@ -113,10 +111,10 @@ impl Address {
         &self.hash
     }
 
-    pub fn lock_script(&self) -> CoreScript {
+    pub fn lock_script(&self, code_hash: H256) -> CoreScript {
         CoreScript {
             args: vec![Bytes::from(self.hash.as_bytes())],
-            code_hash: SECP_CODE_HASH.clone(),
+            code_hash,
         }
     }
 

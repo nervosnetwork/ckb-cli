@@ -1,23 +1,46 @@
 use std::path::PathBuf;
 
-use ckb_sdk::{with_rocksdb, HttpRpcClient, KeyManager, NetworkType, SecpKey};
+use ckb_core::block::Block;
+use ckb_sdk::{with_rocksdb, GenesisInfo, HttpRpcClient, KeyManager, NetworkType, SecpKey};
 use clap::{App, Arg, ArgMatches, SubCommand};
+use jsonrpc_types::BlockNumber;
 
 use super::super::CliSubCommand;
 use crate::utils::arg_parser::{ArgParser, PrivkeyPathParser, PubkeyHexParser};
 use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalKeySubCommand<'a> {
-    _rpc_client: &'a mut HttpRpcClient,
+    rpc_client: &'a mut HttpRpcClient,
+    genesis_info: Option<GenesisInfo>,
     db_path: PathBuf,
 }
 
 impl<'a> LocalKeySubCommand<'a> {
-    pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalKeySubCommand<'a> {
+    pub fn new(
+        rpc_client: &'a mut HttpRpcClient,
+        genesis_info: Option<GenesisInfo>,
+        db_path: PathBuf,
+    ) -> LocalKeySubCommand<'a> {
         LocalKeySubCommand {
-            _rpc_client: rpc_client,
+            rpc_client,
+            genesis_info,
             db_path,
         }
+    }
+
+    fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
+        if self.genesis_info.is_none() {
+            let genesis_block: Block = self
+                .rpc_client
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+        }
+        Ok(self.genesis_info.clone().unwrap())
     }
 
     pub fn subcommand() -> App<'static, 'static> {
@@ -50,6 +73,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
+        let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
         let key_info = |key: &SecpKey| {
             let address = key.address().unwrap();
             serde_json::json!({
@@ -57,7 +81,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
                 "pubkey": key.pubkey_string(),
                 "address_string": address.to_string(NetworkType::TestNet),
                 "address": address,
-                "lock-hash": address.lock_script().hash(),
+                "lock-hash": address.lock_script(secp_code_hash.clone()).hash(),
             })
         };
         match matches.subcommand() {

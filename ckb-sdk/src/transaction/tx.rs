@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use ckb_chain_spec::consensus::Consensus;
 use ckb_core::extras::{BlockExt, EpochExt, TransactionAddress};
@@ -19,7 +18,7 @@ use ckb_core::{
     BlockNumber, Cycle, EpochNumber,
 };
 use ckb_db::Error as CkbDbError;
-use ckb_script::{ScriptConfig, TransactionScriptsVerifier};
+use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use ckb_store::{ChainStore, StoreBatch};
 use fnv::FnvHashSet;
 use hash::blake2b_256;
@@ -27,8 +26,8 @@ use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
-use super::{from_local_cell_out_point, CellAliasManager, CellManager};
-use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX, SECP_CODE_HASH};
+use super::{from_local_cell_out_point, CellManager, CellAliasManager};
+use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX};
 
 pub struct TransactionManager<'a> {
     cf: ColumnFamily<'a>,
@@ -91,6 +90,7 @@ impl<'a> TransactionManager<'a> {
         hash: &H256,
         keys: &[SecpKey],
         rpc_client: &mut HttpRpcClient,
+        secp_code_hash: &H256,
     ) -> Result<Transaction, String> {
         let tx = self.get(hash)?;
         let tx_hash = tx.hash();
@@ -127,7 +127,7 @@ impl<'a> TransactionManager<'a> {
                 })?;
 
             let lock = cell_output.lock;
-            if lock.code_hash == SECP_CODE_HASH {
+            if &lock.code_hash == secp_code_hash {
                 if let Some((hash, privkey)) = lock
                     .args
                     .get(0)
@@ -196,8 +196,7 @@ impl<'a> TransactionManager<'a> {
         };
 
         let script_config = ScriptConfig::default();
-        let store = Arc::new(resource);
-        let verifier = TransactionScriptsVerifier::new(&rtx, store, &script_config);
+        let verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
         let cycle = verifier
             .verify(max_cycle)
             .map_err(|err| format!("Verify script error: {:?}", err))?;
@@ -338,6 +337,23 @@ impl CellProvider for Resource {
     }
 }
 
+impl DataLoader for Resource {
+    // load CellOutput
+    fn lazy_load_cell_output(&self, cell: &CellMeta) -> CellOutput {
+        cell.cell_output.clone().unwrap_or_else(|| {
+            self.required_cells
+                .get(&cell.out_point)
+                .and_then(|cell_meta| cell_meta.cell_output.clone())
+                .unwrap()
+        })
+    }
+    // load BlockExt
+    fn get_block_ext(&self, _block_hash: &H256) -> Option<BlockExt> {
+        // TODO: visit this later
+        None
+    }
+}
+
 struct DummyStoreBatch;
 
 impl StoreBatch for DummyStoreBatch {
@@ -400,11 +416,15 @@ impl ChainStore for Resource {
         unimplemented!();
     }
     /// Get header by block header hash
-    fn get_header(&self, _block_hash: &H256) -> Option<Header> {
+    fn get_block_header(&self, _block_hash: &H256) -> Option<Header> {
         unimplemented!();
     }
     /// Get block body by block header hash
     fn get_block_body(&self, _block_hash: &H256) -> Option<Vec<Transaction>> {
+        unimplemented!();
+    }
+    /// Get all transaction-hashes in block body by block header hash
+    fn get_block_txs_hashes(&self, _block_hash: &H256) -> Option<Vec<H256>> {
         unimplemented!();
     }
     /// Get proposal short id by block header hash
@@ -481,6 +501,9 @@ impl ChainStore for Resource {
         unimplemented!();
     }
     fn is_uncle(&self, _hash: &H256) -> bool {
+        unimplemented!();
+    }
+    fn get_cellbase(&self, _hash: &H256) -> Option<Transaction> {
         unimplemented!();
     }
 }

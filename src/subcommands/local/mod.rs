@@ -74,8 +74,11 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
         color: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
-            ("key", Some(m)) => LocalKeySubCommand::new(self.rpc_client, self.db_path.clone())
-                .process(m, format, color),
+            ("key", Some(m)) => {
+                let genesis_info = self.genesis_info()?;
+                LocalKeySubCommand::new(self.rpc_client, Some(genesis_info), self.db_path.clone())
+                    .process(m, format, color)
+            }
             ("script", Some(m)) => {
                 LocalScriptSubCommand::new(self.rpc_client, self.db_path.clone())
                     .process(m, format, color)
@@ -86,8 +89,11 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
                 LocalCellInputSubCommand::new(self.rpc_client, self.db_path.clone())
                     .process(m, format, color)
             }
-            ("tx", Some(m)) => LocalTxSubCommand::new(self.rpc_client, self.db_path.clone())
-                .process(m, format, color),
+            ("tx", Some(m)) => {
+                let genesis_info = self.genesis_info()?;
+                LocalTxSubCommand::new(self.rpc_client, Some(genesis_info), self.db_path.clone())
+                    .process(m, format, color)
+            }
             ("secp-dep", _) => {
                 let result = self.genesis_info()?.secp_dep();
                 Ok(result.render(format, color))
