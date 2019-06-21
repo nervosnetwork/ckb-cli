@@ -27,7 +27,7 @@ use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
-use super::{from_local_cell_out_point, CellManager};
+use super::{from_local_cell_out_point, CellAliasManager, CellManager};
 use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX, SECP_CODE_HASH};
 
 pub struct TransactionManager<'a> {
@@ -74,6 +74,7 @@ impl<'a> TransactionManager<'a> {
         let mut witnesses = tx.witnesses().to_vec();
         witnesses[input_index] = witness;
         let tx_new = TransactionBuilder::from_transaction(tx)
+            .witnesses_clear()
             .witnesses(witnesses)
             .build();
         assert_eq!(
@@ -104,10 +105,12 @@ impl<'a> TransactionManager<'a> {
             })
             .collect::<HashMap<_, _>>();
         let mut witnesses = tx.witnesses().to_vec();
+        let cell_alias_manager = CellAliasManager::new(self.db);
         let cell_manager = CellManager::new(self.db);
         for (idx, input) in tx.inputs().iter().enumerate() {
             let cell_out_point = input.previous_output.cell.as_ref().unwrap();
             let cell_output = from_local_cell_out_point(cell_out_point)
+                .or_else(|_| cell_alias_manager.get(&cell_out_point))
                 .and_then(|name| cell_manager.get(&name))
                 .or_else(|_| {
                     let out_point = OutPoint {
@@ -157,7 +160,7 @@ impl<'a> TransactionManager<'a> {
     pub fn get(&self, hash: &H256) -> Result<Transaction, String> {
         match self.db.get_cf(self.cf, hash.as_bytes())? {
             Some(db_vec) => Ok(bincode::deserialize(&db_vec).unwrap()),
-            None => Err("key not found".to_owned()),
+            None => Err(format!("tx not found: {:#x}", hash)),
         }
     }
 
@@ -184,7 +187,8 @@ impl<'a> TransactionManager<'a> {
     ) -> Result<VerifyResult, String> {
         let tx = self.get(hash)?;
         let cell_manager = CellManager::new(self.db);
-        let resource = Resource::from_both(&tx, &cell_manager, rpc_client)?;
+        let cell_alias_manager = CellAliasManager::new(self.db);
+        let resource = Resource::from_both(&tx, &cell_manager, &cell_alias_manager, rpc_client)?;
         let rtx = {
             let mut seen_inputs = FnvHashSet::default();
             resolve_transaction(&tx, &mut seen_inputs, &resource, &resource)
@@ -217,6 +221,7 @@ impl Resource {
     fn from_both(
         tx: &Transaction,
         cell_manager: &CellManager,
+        cell_alias_manager: &CellAliasManager,
         rpc_client: &mut HttpRpcClient,
     ) -> Result<Resource, String> {
         let mut out_point_blocks = HashMap::default();
@@ -245,7 +250,12 @@ impl Resource {
                 out_point_blocks.insert(cell_out_point.clone(), hash.clone());
             }
 
-            match cell_manager.get_by_cell_out_point(&cell_out_point) {
+            match cell_manager
+                .get_by_cell_out_point(&cell_out_point)
+                .or_else(|_| {
+                    let name = cell_alias_manager.get(&cell_out_point)?;
+                    cell_manager.get(&name)
+                }) {
                 Ok(cell_output) => {
                     let cell_meta =
                         cell_output_to_meta(cell_out_point.clone(), cell_output, block_info);
@@ -256,7 +266,9 @@ impl Resource {
                     let cell_output = rpc_client
                         .get_live_cell(out_point.clone().into())
                         .call()
-                        .unwrap()
+                        .map_err(|err| {
+                            format!("can not find out_point: {:?}, error={:?}", out_point, err)
+                        })?
                         .cell
                         .unwrap()
                         .into();

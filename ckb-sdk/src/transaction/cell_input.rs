@@ -33,7 +33,7 @@ impl<'a> CellInputManager<'a> {
     pub fn get(&self, name: &str) -> Result<CellInput, String> {
         match self.db.get_cf(self.cf, name.as_bytes())? {
             Some(db_vec) => Ok(bincode::deserialize(&db_vec).unwrap()),
-            None => Err("key not exists".to_owned()),
+            None => Err(format!("cell input ({}) key not exists", name)),
         }
     }
 

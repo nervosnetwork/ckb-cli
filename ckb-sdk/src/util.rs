@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use rocksdb::{Options, DB};
 
 use crate::{
-    Error, ROCKSDB_COL_CELL, ROCKSDB_COL_CELL_INPUT, ROCKSDB_COL_KEY, ROCKSDB_COL_SCRIPT,
-    ROCKSDB_COL_TX,
+    Error, ROCKSDB_COL_CELL, ROCKSDB_COL_CELL_ALIAS, ROCKSDB_COL_CELL_INPUT, ROCKSDB_COL_KEY,
+    ROCKSDB_COL_SCRIPT, ROCKSDB_COL_TX,
 };
 
 pub fn with_rocksdb<P, T, F>(path: P, timeout: Option<Duration>, func: F) -> Result<T, Error>
@@ -23,6 +23,7 @@ where
     let columns = vec![
         ROCKSDB_COL_KEY,
         ROCKSDB_COL_CELL,
+        ROCKSDB_COL_CELL_ALIAS,
         ROCKSDB_COL_CELL_INPUT,
         ROCKSDB_COL_SCRIPT,
         ROCKSDB_COL_TX,

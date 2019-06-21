@@ -34,7 +34,7 @@ impl<'a> ScriptManager<'a> {
     pub fn get(&self, hash: &H256) -> Result<Script, String> {
         match self.db.get_cf(self.cf, hash.as_bytes())? {
             Some(db_vec) => Ok(bincode::deserialize(&db_vec).unwrap()),
-            None => Err("key not found".to_owned()),
+            None => Err(format!("script not found: {:#x}", hash)),
         }
     }
 

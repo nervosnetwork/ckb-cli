@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use ckb_core::transaction::OutPoint;
+use ckb_core::transaction::CellOutPoint;
 use ckb_sdk::{Address, NetworkType, SecpKey, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
@@ -261,27 +261,30 @@ impl ArgParser<u64> for CapacityParser {
             if shannon_str.len() > 8 {
                 return Err(format!("decimal part too long: {}", shannon_str.len()));
             }
-            let shannon = shannon_str.parse::<u32>().map_err(|err| err.to_string())?;
+            let mut shannon = shannon_str.parse::<u32>().map_err(|err| err.to_string())?;
+            for _ in 0..(8 - shannon_str.len()) {
+                shannon *= 10;
+            }
             capacity += u64::from(shannon);
         }
         Ok(capacity)
     }
 }
 
-pub struct OutPointParser;
+pub struct CellOutPointParser;
 
-impl ArgParser<OutPoint> for OutPointParser {
-    fn parse(&self, input: &str) -> Result<OutPoint, String> {
+impl ArgParser<CellOutPoint> for CellOutPointParser {
+    fn parse(&self, input: &str) -> Result<CellOutPoint, String> {
         let parts = input.split('-').collect::<Vec<_>>();
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid OutPoint: {}, format: {{tx-hash}}-{{index}}",
+                "Invalid CellOutPoint: {}, format: {{tx-hash}}-{{index}}",
                 input
             ));
         }
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
-        Ok(OutPoint::new_cell(tx_hash, index))
+        Ok(CellOutPoint { tx_hash, index })
     }
 }
 
@@ -364,7 +367,10 @@ mod tests {
     #[test]
     fn test_capacity() {
         assert_eq!(CapacityParser.parse("12345"), Ok(12345 * ONE_CKB));
-        assert_eq!(CapacityParser.parse("12345.234"), Ok(12345 * ONE_CKB + 234));
+        assert_eq!(
+            CapacityParser.parse("12345.234"),
+            Ok(12345 * ONE_CKB + 23_400_000)
+        );
         assert_eq!(
             CapacityParser.parse("12345.23442222"),
             Ok(12345 * ONE_CKB + 23_442_222)

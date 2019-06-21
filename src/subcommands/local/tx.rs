@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use ckb_core::transaction::{CellInput, CellOutput, OutPoint, TransactionBuilder, Witness};
+use bytes::Bytes;
+use ckb_core::transaction::{
+    CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness,
+};
 use ckb_sdk::{
     with_rocksdb, CellInputManager, CellManager, HttpRpcClient, KeyManager, TransactionManager,
 };
@@ -10,7 +13,8 @@ use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
 use crate::utils::arg_parser::{
-    ArgParser, EitherParser, EitherValue, FixedHashParser, NullParser, OutPointParser,
+    ArgParser, CellOutPointParser, EitherParser, EitherValue, FixedHashParser, FromStrParser,
+    HexParser, NullParser,
 };
 use crate::utils::printer::{OutputFormat, Printable};
 
@@ -40,7 +44,7 @@ impl<'a> LocalTxSubCommand<'a> {
                     Arg::with_name("deps")
                         .long("deps")
                         .takes_value(true)
-                        .validator(|input| OutPointParser.validate(input))
+                        .validator(|input| CellOutPointParser.validate(input))
                         .multiple(true)
                         .help("Dependency cells"),
                 )
@@ -49,7 +53,7 @@ impl<'a> LocalTxSubCommand<'a> {
                         .long("inputs")
                         .takes_value(true)
                         .validator(|input| {
-                            EitherParser::new(OutPointParser, NullParser).validate(input)
+                            EitherParser::new(CellOutPointParser, NullParser).validate(input)
                         })
                         .multiple(true)
                         .help("Input cells"),
@@ -69,16 +73,18 @@ impl<'a> LocalTxSubCommand<'a> {
             SubCommand::with_name("set-witness")
                 .arg(arg_tx_hash.clone())
                 .arg(
-                    Arg::with_name("input")
-                        .long("input")
+                    Arg::with_name("input-index")
+                        .long("input-index")
                         .takes_value(true)
+                        .validator(|input| FromStrParser::<usize>::default().validate(input))
                         .required(true)
-                        .help("Set witnesses for which input"),
+                        .help("Set witnesses for which input (index)"),
                 )
                 .arg(
                     Arg::with_name("witness")
                         .long("witness")
                         .takes_value(true)
+                        .validator(|input| HexParser.validate(input))
                         .multiple(true)
                         .help("Witness data list"),
                 ),
@@ -100,14 +106,25 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let deps: Vec<OutPoint> = OutPointParser.from_matches_vec(m, "deps")?;
-                let inputs: Vec<EitherValue<OutPoint, String>> =
-                    EitherParser::new(OutPointParser, NullParser).from_matches_vec(m, "inputs")?;
+                let deps: Vec<OutPoint> = CellOutPointParser
+                    .from_matches_vec(m, "deps")?
+                    .into_iter()
+                    .map(|cell_out_point| OutPoint {
+                        cell: cell_out_point,
+                        block_hash: None,
+                    })
+                    .collect();
+                let inputs: Vec<EitherValue<CellOutPoint, String>> =
+                    EitherParser::new(CellOutPointParser, NullParser)
+                        .from_matches_vec(m, "inputs")?;
                 let inputs: Vec<CellInput> = inputs
                     .into_iter()
                     .map(|value| match value {
-                        EitherValue::A(out_point) => Ok(CellInput {
-                            previous_output: out_point,
+                        EitherValue::A(cell_out_point) => Ok(CellInput {
+                            previous_output: OutPoint {
+                                cell: Some(cell_out_point),
+                                block_hash: None,
+                            },
                             // TODO: Use a non-zero since
                             since: 0,
                         }),
@@ -158,7 +175,21 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 let tx_view: TransactionView = (&tx).into();
                 Ok(tx_view.render(format, color))
             }
-            ("set-witness", Some(_m)) => Ok("null".to_string()),
+            ("set-witness", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let input_index: usize =
+                    FromStrParser::<usize>::default().from_matches(m, "input-index")?;
+                let witness: Vec<Bytes> = HexParser.from_matches_vec(m, "witness")?;
+                let tx = with_rocksdb(&self.db_path, None, |db| {
+                    TransactionManager::new(db)
+                        .set_witness(&tx_hash, input_index, witness)
+                        .map_err(Into::into)
+                })
+                .map_err(|err| format!("{:?}", err))?;
+                let tx_view: TransactionView = (&tx).into();
+                Ok(tx_view.render(format, color))
+            }
             ("set-witnesses-by-keys", Some(m)) => {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
@@ -218,10 +249,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     .into_iter()
                     .map(|tx| {
                         let tx_view: TransactionView = (&tx).into();
-                        serde_json::json!({
-                            "tx": serde_json::to_value(&tx_view).unwrap(),
-                            "tx-hash": tx.hash(),
-                        })
+                        tx_view
                     })
                     .collect::<Vec<_>>();
                 Ok(txs.render(format, color))
