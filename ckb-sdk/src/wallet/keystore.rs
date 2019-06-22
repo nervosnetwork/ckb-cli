@@ -77,15 +77,7 @@ impl ScryptParams {
     }
 
     pub fn new_standard() -> ScryptParams {
-        let mut rng = rand::thread_rng();
-        let salt: [u8; 32] = rng.gen();
-        ScryptParams {
-            salt,
-            log_n: SCRYPT_DK_STD_LOG_N,
-            p: SCRYPT_DK_STD_P,
-            r: SCRYPT_DK_R,
-            dklen: SCRYPT_DK_LEN,
-        }
+        Self::new_standard_with_salt(rand::thread_rng().gen())
     }
 
     pub fn new_light_with_salt(salt: [u8; 32]) -> ScryptParams {
@@ -99,15 +91,7 @@ impl ScryptParams {
     }
 
     pub fn new_light() -> ScryptParams {
-        let mut rng = rand::thread_rng();
-        let salt: [u8; 32] = rng.gen();
-        ScryptParams {
-            salt,
-            log_n: SCRYPT_DK_LIGHT_LOG_N,
-            p: SCRYPT_DK_LIGHT_P,
-            r: SCRYPT_DK_R,
-            dklen: SCRYPT_DK_LEN,
-        }
+        Self::new_light_with_salt(rand::thread_rng().gen())
     }
 
     fn kdf_key(&self, password: &[u8]) -> [u8; 32] {
