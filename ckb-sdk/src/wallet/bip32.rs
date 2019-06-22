@@ -512,9 +512,13 @@ impl From<secp256k1::Error> for Error {
 }
 
 impl ExtendedPrivKey {
-    /// Construct a new master key from a seed value
-    pub fn new_master(network: NetworkType, seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
-        let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(b"Bitcoin seed");
+    /// Construct a new master key from a seed value and prefix
+    pub fn new_master_with_seed_prefix(
+        network: NetworkType,
+        seed: &[u8],
+        seed_prefix: &[u8],
+    ) -> Result<ExtendedPrivKey, Error> {
+        let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(seed_prefix);
         hmac_engine.input(seed);
         let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
 
@@ -527,6 +531,11 @@ impl ExtendedPrivKey {
                 .map_err(Error::Ecdsa)?,
             chain_code: ChainCode::from(&hmac_result[32..]),
         })
+    }
+
+    /// Construct a new master key from a seed value
+    pub fn new_master(network: NetworkType, seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
+        Self::new_master_with_seed_prefix(network, seed, b"CKB seed")
     }
 
     /// Attempts to derive an extended private key from a path.
@@ -676,5 +685,784 @@ impl ExtendedPubKey {
     /// Returns the first four bytes of the identifier
     pub fn fingerprint(&self) -> Fingerprint {
         Fingerprint::from(&self.identifier()[0..4])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bitcoin_hashes::{sha256d, Hash};
+    use byteorder::{LittleEndian, ReadBytesExt};
+    use faster_hex::hex_decode;
+    use std::io::Cursor;
+    use std::{error, fmt, iter, slice, str};
+
+    /// An error that might occur during base58 decoding
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub enum B58Error {
+        /// Invalid character encountered
+        BadByte(u8),
+        /// Checksum was not correct (expected, actual)
+        BadChecksum(u32, u32),
+        /// The length (in bytes) of the object was not correct
+        /// Note that if the length is excessively long the provided length may be
+        /// an estimate (and the checksum step may be skipped).
+        InvalidLength(usize),
+        /// Version byte(s) were not recognized
+        InvalidVersion(Vec<u8>),
+        /// Checked data was less than 4 bytes
+        TooShort(usize),
+        /// Any other error
+        Other(String),
+    }
+
+    impl fmt::Display for B58Error {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match *self {
+                B58Error::BadByte(b) => write!(f, "invalid base58 character 0x{:x}", b),
+                B58Error::BadChecksum(exp, actual) => write!(
+                    f,
+                    "base58ck checksum 0x{:x} does not match expected 0x{:x}",
+                    actual, exp
+                ),
+                B58Error::InvalidLength(ell) => {
+                    write!(f, "length {} invalid for this base58 type", ell)
+                }
+                B58Error::InvalidVersion(ref v) => {
+                    write!(f, "version {:?} invalid for this base58 type", v)
+                }
+                B58Error::TooShort(_) => {
+                    write!(f, "base58ck data not even long enough for a checksum")
+                }
+                B58Error::Other(ref s) => f.write_str(s),
+            }
+        }
+    }
+
+    impl error::Error for B58Error {
+        fn cause(&self) -> Option<&error::Error> {
+            None
+        }
+        fn description(&self) -> &'static str {
+            match *self {
+                B58Error::BadByte(_) => "invalid b58 character",
+                B58Error::BadChecksum(_, _) => "invalid b58ck checksum",
+                B58Error::InvalidLength(_) => "invalid length for b58 type",
+                B58Error::InvalidVersion(_) => "invalid version for b58 type",
+                B58Error::TooShort(_) => "b58ck data less than 4 bytes",
+                B58Error::Other(_) => "unknown b58 error",
+            }
+        }
+    }
+
+    /// Vector-like object that holds the first 100 elements on the stack. If more space is needed it
+    /// will be allocated on the heap.
+    struct SmallVec<T> {
+        len: usize,
+        stack: [T; 100],
+        heap: Vec<T>,
+    }
+
+    impl<T: Default + Copy> SmallVec<T> {
+        pub fn new() -> SmallVec<T> {
+            SmallVec {
+                len: 0,
+                stack: [T::default(); 100],
+                heap: Vec::new(),
+            }
+        }
+
+        pub fn push(&mut self, val: T) {
+            if self.len < 100 {
+                self.stack[self.len] = val;
+                self.len += 1;
+            } else {
+                self.heap.push(val);
+            }
+        }
+
+        pub fn iter(&self) -> iter::Chain<slice::Iter<T>, slice::Iter<T>> {
+            // If len<100 then we just append an empty vec
+            self.stack[0..self.len].iter().chain(self.heap.iter())
+        }
+
+        pub fn iter_mut(&mut self) -> iter::Chain<slice::IterMut<T>, slice::IterMut<T>> {
+            // If len<100 then we just append an empty vec
+            self.stack[0..self.len]
+                .iter_mut()
+                .chain(self.heap.iter_mut())
+        }
+    }
+
+    static BASE58_CHARS: &'static [u8] =
+        b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+    static BASE58_DIGITS: [Option<u8>; 128] = [
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 0-7
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 8-15
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 16-23
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 24-31
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 32-39
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 40-47
+        None,
+        Some(0),
+        Some(1),
+        Some(2),
+        Some(3),
+        Some(4),
+        Some(5),
+        Some(6), // 48-55
+        Some(7),
+        Some(8),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None, // 56-63
+        None,
+        Some(9),
+        Some(10),
+        Some(11),
+        Some(12),
+        Some(13),
+        Some(14),
+        Some(15), // 64-71
+        Some(16),
+        None,
+        Some(17),
+        Some(18),
+        Some(19),
+        Some(20),
+        Some(21),
+        None, // 72-79
+        Some(22),
+        Some(23),
+        Some(24),
+        Some(25),
+        Some(26),
+        Some(27),
+        Some(28),
+        Some(29), // 80-87
+        Some(30),
+        Some(31),
+        Some(32),
+        None,
+        None,
+        None,
+        None,
+        None, // 88-95
+        None,
+        Some(33),
+        Some(34),
+        Some(35),
+        Some(36),
+        Some(37),
+        Some(38),
+        Some(39), // 96-103
+        Some(40),
+        Some(41),
+        Some(42),
+        Some(43),
+        None,
+        Some(44),
+        Some(45),
+        Some(46), // 104-111
+        Some(47),
+        Some(48),
+        Some(49),
+        Some(50),
+        Some(51),
+        Some(52),
+        Some(53),
+        Some(54), // 112-119
+        Some(55),
+        Some(56),
+        Some(57),
+        None,
+        None,
+        None,
+        None,
+        None, // 120-127
+    ];
+
+    /// Decode base58-encoded string into a byte vector
+    fn from(data: &str) -> Result<Vec<u8>, B58Error> {
+        // 11/15 is just over log_256(58)
+        let mut scratch = vec![0u8; 1 + data.len() * 11 / 15];
+        // Build in base 256
+        for d58 in data.bytes() {
+            // Compute "X = X * 58 + next_digit" in base 256
+            if d58 as usize > BASE58_DIGITS.len() {
+                return Err(B58Error::BadByte(d58));
+            }
+            let mut carry = match BASE58_DIGITS[d58 as usize] {
+                Some(d58) => u32::from(d58),
+                None => {
+                    return Err(B58Error::BadByte(d58));
+                }
+            };
+            for d256 in scratch.iter_mut().rev() {
+                carry += u32::from(*d256) * 58;
+                *d256 = carry as u8;
+                carry /= 256;
+            }
+            assert_eq!(carry, 0);
+        }
+
+        // Copy leading zeroes directly
+        let mut ret: Vec<u8> = data
+            .bytes()
+            .take_while(|&x| x == BASE58_CHARS[0])
+            .map(|_| 0)
+            .collect();
+        // Copy rest of string
+        ret.extend(scratch.into_iter().skip_while(|&x| x == 0));
+        Ok(ret)
+    }
+
+    /// Decode a base58check-encoded string
+    fn from_check(data: &str) -> Result<Vec<u8>, B58Error> {
+        let mut ret: Vec<u8> = from(data)?;
+        if ret.len() < 4 {
+            return Err(B58Error::TooShort(ret.len()));
+        }
+        let ck_start = ret.len() - 4;
+        let expected = LittleEndian::read_u32(&sha256d::Hash::hash(&ret[..ck_start])[..4]);
+        let actual = LittleEndian::read_u32(&ret[ck_start..(ck_start + 4)]);
+        if expected != actual {
+            return Err(B58Error::BadChecksum(expected, actual));
+        }
+
+        ret.truncate(ck_start);
+        Ok(ret)
+    }
+
+    fn format_iter<I, W>(writer: &mut W, data: I) -> Result<(), fmt::Error>
+    where
+        I: Iterator<Item = u8> + Clone,
+        W: fmt::Write,
+    {
+        let mut ret = SmallVec::new();
+
+        let mut leading_zero_count = 0;
+        let mut leading_zeroes = true;
+        // Build string in little endian with 0-58 in place of characters...
+        for d256 in data {
+            let mut carry = d256 as usize;
+            if leading_zeroes && carry == 0 {
+                leading_zero_count += 1;
+            } else {
+                leading_zeroes = false;
+            }
+
+            for ch in ret.iter_mut() {
+                let new_ch = *ch as usize * 256 + carry;
+                *ch = (new_ch % 58) as u8;
+                carry = new_ch / 58;
+            }
+            while carry > 0 {
+                ret.push((carry % 58) as u8);
+                carry /= 58;
+            }
+        }
+
+        // ... then reverse it and convert to chars
+        for _ in 0..leading_zero_count {
+            ret.push(0);
+        }
+
+        for ch in ret.iter().rev() {
+            writer.write_char(BASE58_CHARS[*ch as usize] as char)?;
+        }
+
+        Ok(())
+    }
+
+    fn encode_iter<I>(data: I) -> String
+    where
+        I: Iterator<Item = u8> + Clone,
+    {
+        let mut ret = String::new();
+        format_iter(&mut ret, data).expect("writing into string shouldn't fail");
+        ret
+    }
+
+    /// Directly encode a slice as base58
+    #[allow(dead_code)]
+    fn encode_slice(data: &[u8]) -> String {
+        encode_iter(data.iter().cloned())
+    }
+
+    /// Obtain a string with the base58check encoding of a slice
+    /// (Tack the first 4 256-digits of the object's Bitcoin hash onto the end.)
+    fn check_encode_slice(data: &[u8]) -> String {
+        let checksum = sha256d::Hash::hash(&data);
+        encode_iter(data.iter().cloned().chain(checksum[0..4].iter().cloned()))
+    }
+
+    /// Obtain a string with the base58check encoding of a slice
+    /// (Tack the first 4 256-digits of the object's Bitcoin hash onto the end.)
+    #[allow(dead_code)]
+    fn check_encode_slice_to_fmt(fmt: &mut fmt::Formatter, data: &[u8]) -> fmt::Result {
+        let checksum = sha256d::Hash::hash(&data);
+        let iter = data.iter().cloned().chain(checksum[0..4].iter().cloned());
+        format_iter(fmt, iter)
+    }
+
+    impl fmt::Display for ExtendedPrivKey {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            let mut ret = [0; 78];
+            ret[0..4].copy_from_slice(
+                &match self.network {
+                    // NOTE: WARNING!!! this number is just for test from Bitcoin
+                    NetworkType::MainNet => [0x04, 0x88, 0xAD, 0xE4],
+                    // NOTE: WARNING!!! this number is just for test from Bitcoin
+                    _ => [0x04, 0x35, 0x83, 0x94],
+                }[..],
+            );
+            ret[4] = self.depth as u8;
+            ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
+
+            BigEndian::write_u32(&mut ret[9..13], u32::from(self.child_number));
+
+            ret[13..45].copy_from_slice(&self.chain_code[..]);
+            ret[45] = 0;
+            ret[46..78].copy_from_slice(&self.private_key[..]);
+            fmt.write_str(&check_encode_slice(&ret[..]))
+        }
+    }
+
+    impl FromStr for ExtendedPrivKey {
+        type Err = B58Error;
+
+        fn from_str(inp: &str) -> Result<ExtendedPrivKey, B58Error> {
+            let data = from_check(inp)?;
+
+            if data.len() != 78 {
+                return Err(B58Error::InvalidLength(data.len()));
+            }
+
+            let cn_int: u32 = Cursor::new(&data[9..13]).read_u32::<BigEndian>().unwrap();
+            let child_number: ChildNumber = ChildNumber::from(cn_int);
+
+            // NOTE: WARNING!!! this number is just for test from Bitcoin
+            let network = if data[0..4] == [0x04u8, 0x88, 0xAD, 0xE4] {
+                NetworkType::MainNet
+            } else if data[0..4] == [0x04u8, 0x35, 0x83, 0x94] {
+                NetworkType::TestNet
+            } else {
+                return Err(B58Error::InvalidVersion((&data[0..4]).to_vec()));
+            };
+
+            Ok(ExtendedPrivKey {
+                network,
+                depth: data[4],
+                parent_fingerprint: Fingerprint::from(&data[5..9]),
+                child_number,
+                chain_code: ChainCode::from(&data[13..45]),
+                private_key: secp256k1::SecretKey::from_slice(&data[46..78])
+                    .map_err(|e| B58Error::Other(e.to_string()))?,
+            })
+        }
+    }
+
+    impl fmt::Display for ExtendedPubKey {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            let mut ret = [0; 78];
+            // NOTE: WARNING!!! this number is just for test from Bitcoin
+            ret[0..4].copy_from_slice(
+                &match self.network {
+                    NetworkType::MainNet => [0x04u8, 0x88, 0xB2, 0x1E],
+                    _ => [0x04u8, 0x35, 0x87, 0xCF],
+                }[..],
+            );
+            ret[4] = self.depth as u8;
+            ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
+
+            BigEndian::write_u32(&mut ret[9..13], u32::from(self.child_number));
+
+            ret[13..45].copy_from_slice(&self.chain_code[..]);
+            ret[45..78].copy_from_slice(&self.public_key.serialize()[..]);
+            fmt.write_str(&check_encode_slice(&ret[..]))
+        }
+    }
+
+    impl FromStr for ExtendedPubKey {
+        type Err = B58Error;
+
+        fn from_str(inp: &str) -> Result<ExtendedPubKey, B58Error> {
+            let data = from_check(inp)?;
+
+            if data.len() != 78 {
+                return Err(B58Error::InvalidLength(data.len()));
+            }
+
+            let cn_int: u32 = Cursor::new(&data[9..13]).read_u32::<BigEndian>().unwrap();
+            let child_number: ChildNumber = ChildNumber::from(cn_int);
+
+            Ok(ExtendedPubKey {
+                // NOTE: WARNING!!! this number is just for test from Bitcoin
+                network: if data[0..4] == [0x04u8, 0x88, 0xB2, 0x1E] {
+                    NetworkType::MainNet
+                } else if data[0..4] == [0x04u8, 0x35, 0x87, 0xCF] {
+                    NetworkType::TestNet
+                } else {
+                    return Err(B58Error::InvalidVersion((&data[0..4]).to_vec()));
+                },
+                depth: data[4],
+                parent_fingerprint: Fingerprint::from(&data[5..9]),
+                child_number,
+                chain_code: ChainCode::from(&data[13..45]),
+                public_key: PublicKey::from_slice(&data[45..78])
+                    .map_err(|e| B58Error::Other(e.to_string()))?,
+            })
+        }
+    }
+
+    fn test_path<C: secp256k1::Signing + secp256k1::Verification>(
+        secp: &Secp256k1<C>,
+        network: NetworkType,
+        seed: &[u8],
+        path: DerivationPath,
+        expected_sk: &str,
+        expected_pk: &str,
+    ) {
+        let mut sk =
+            ExtendedPrivKey::new_master_with_seed_prefix(network, seed, b"Bitcoin seed").unwrap();
+        let mut pk = ExtendedPubKey::from_private(secp, &sk);
+
+        // Check derivation convenience method for ExtendedPrivKey
+        assert_eq!(
+            &sk.derive_priv(secp, &path).unwrap().to_string()[..],
+            expected_sk
+        );
+
+        // Check derivation convenience method for ExtendedPubKey, should error
+        // appropriately if any ChildNumber is hardened
+        if path.0.iter().any(|cnum| cnum.is_hardened()) {
+            assert_eq!(
+                pk.derive_pub(secp, &path),
+                Err(Error::CannotDeriveFromHardenedKey)
+            );
+        } else {
+            assert_eq!(
+                &pk.derive_pub(secp, &path).unwrap().to_string()[..],
+                expected_pk
+            );
+        }
+
+        // Derive keys, checking hardened and non-hardened derivation one-by-one
+        for &num in path.0.iter() {
+            sk = sk.ckd_priv(secp, num).unwrap();
+            match num {
+                ChildNumber::Normal { .. } => {
+                    let pk2 = pk.ckd_pub(secp, num).unwrap();
+                    pk = ExtendedPubKey::from_private(secp, &sk);
+                    assert_eq!(pk, pk2);
+                }
+                ChildNumber::Hardened { .. } => {
+                    assert_eq!(
+                        pk.ckd_pub(secp, num),
+                        Err(Error::CannotDeriveFromHardenedKey)
+                    );
+                    pk = ExtendedPubKey::from_private(secp, &sk);
+                }
+            }
+        }
+
+        // Check result against expected base58
+        assert_eq!(&sk.to_string()[..], expected_sk);
+        assert_eq!(&pk.to_string()[..], expected_pk);
+        // Check decoded base58 against result
+        let decoded_sk = ExtendedPrivKey::from_str(expected_sk);
+        let decoded_pk = ExtendedPubKey::from_str(expected_pk);
+        assert_eq!(Ok(sk), decoded_sk);
+        assert_eq!(Ok(pk), decoded_pk);
+    }
+
+    #[test]
+    fn test_vector_1() {
+        let secp = Secp256k1::new();
+        let seed_hex = b"000102030405060708090a0b0c0d0e0f";
+        let mut seed = vec![0u8; seed_hex.len() / 2];
+        hex_decode(seed_hex, &mut seed).unwrap();
+
+        // m
+        test_path(&secp, NetworkType::MainNet, &seed, "m".parse().unwrap(),
+                  "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi",
+                  "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8");
+
+        // m/0h
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h".parse().unwrap(),
+                  "xprv9uHRZZhk6KAJC1avXpDAp4MDc3sQKNxDiPvvkX8Br5ngLNv1TxvUxt4cV1rGL5hj6KCesnDYUhd7oWgT11eZG7XnxHrnYeSvkzY7d2bhkJ7",
+                  "xpub68Gmy5EdvgibQVfPdqkBBCHxA5htiqg55crXYuXoQRKfDBFA1WEjWgP6LHhwBZeNK1VTsfTFUHCdrfp1bgwQ9xv5ski8PX9rL2dZXvgGDnw");
+
+        // m/0h/1
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h/1".parse().unwrap(),
+                   "xprv9wTYmMFdV23N2TdNG573QoEsfRrWKQgWeibmLntzniatZvR9BmLnvSxqu53Kw1UmYPxLgboyZQaXwTCg8MSY3H2EU4pWcQDnRnrVA1xe8fs",
+                   "xpub6ASuArnXKPbfEwhqN6e3mwBcDTgzisQN1wXN9BJcM47sSikHjJf3UFHKkNAWbWMiGj7Wf5uMash7SyYq527Hqck2AxYysAA7xmALppuCkwQ");
+
+        // m/0h/1/2h
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h/1/2h".parse().unwrap(),
+                  "xprv9z4pot5VBttmtdRTWfWQmoH1taj2axGVzFqSb8C9xaxKymcFzXBDptWmT7FwuEzG3ryjH4ktypQSAewRiNMjANTtpgP4mLTj34bhnZX7UiM",
+                  "xpub6D4BDPcP2GT577Vvch3R8wDkScZWzQzMMUm3PWbmWvVJrZwQY4VUNgqFJPMM3No2dFDFGTsxxpG5uJh7n7epu4trkrX7x7DogT5Uv6fcLW5");
+
+        // m/0h/1/2h/2
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h/1/2h/2".parse().unwrap(),
+                  "xprvA2JDeKCSNNZky6uBCviVfJSKyQ1mDYahRjijr5idH2WwLsEd4Hsb2Tyh8RfQMuPh7f7RtyzTtdrbdqqsunu5Mm3wDvUAKRHSC34sJ7in334",
+                  "xpub6FHa3pjLCk84BayeJxFW2SP4XRrFd1JYnxeLeU8EqN3vDfZmbqBqaGJAyiLjTAwm6ZLRQUMv1ZACTj37sR62cfN7fe5JnJ7dh8zL4fiyLHV");
+
+        // m/0h/1/2h/2/1000000000
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h/1/2h/2/1000000000".parse().unwrap(),
+                  "xprvA41z7zogVVwxVSgdKUHDy1SKmdb533PjDz7J6N6mV6uS3ze1ai8FHa8kmHScGpWmj4WggLyQjgPie1rFSruoUihUZREPSL39UNdE3BBDu76",
+                  "xpub6H1LXWLaKsWFhvm6RVpEL9P4KfRZSW7abD2ttkWP3SSQvnyA8FSVqNTEcYFgJS2UaFcxupHiYkro49S8yGasTvXEYBVPamhGW6cFJodrTHy");
+    }
+
+    #[test]
+    fn test_vector_2() {
+        let secp = Secp256k1::new();
+        let seed_hex = b"fffcf9f6f3f0edeae7e4e1dedbd8d5d2cfccc9c6c3c0bdbab7b4b1aeaba8a5a29f9c999693908d8a8784817e7b7875726f6c696663605d5a5754514e4b484542";
+        let mut seed = vec![0u8; seed_hex.len() / 2];
+        hex_decode(seed_hex, &mut seed).unwrap();
+
+        // m
+        test_path(&secp, NetworkType::MainNet, &seed, "m".parse().unwrap(),
+                  "xprv9s21ZrQH143K31xYSDQpPDxsXRTUcvj2iNHm5NUtrGiGG5e2DtALGdso3pGz6ssrdK4PFmM8NSpSBHNqPqm55Qn3LqFtT2emdEXVYsCzC2U",
+                  "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB");
+
+        // m/0
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0".parse().unwrap(),
+                  "xprv9vHkqa6EV4sPZHYqZznhT2NPtPCjKuDKGY38FBWLvgaDx45zo9WQRUT3dKYnjwih2yJD9mkrocEZXo1ex8G81dwSM1fwqWpWkeS3v86pgKt",
+                  "xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH");
+
+        // m/0/2147483647h
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0/2147483647h".parse().unwrap(),
+                  "xprv9wSp6B7kry3Vj9m1zSnLvN3xH8RdsPP1Mh7fAaR7aRLcQMKTR2vidYEeEg2mUCTAwCd6vnxVrcjfy2kRgVsFawNzmjuHc2YmYRmagcEPdU9",
+                  "xpub6ASAVgeehLbnwdqV6UKMHVzgqAG8Gr6riv3Fxxpj8ksbH9ebxaEyBLZ85ySDhKiLDBrQSARLq1uNRts8RuJiHjaDMBU4Zn9h8LZNnBC5y4a");
+
+        // m/0/2147483647h/1
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0/2147483647h/1".parse().unwrap(),
+                  "xprv9zFnWC6h2cLgpmSA46vutJzBcfJ8yaJGg8cX1e5StJh45BBciYTRXSd25UEPVuesF9yog62tGAQtHjXajPPdbRCHuWS6T8XA2ECKADdw4Ef",
+                  "xpub6DF8uhdarytz3FWdA8TvFSvvAh8dP3283MY7p2V4SeE2wyWmG5mg5EwVvmdMVCQcoNJxGoWaU9DCWh89LojfZ537wTfunKau47EL2dhHKon");
+
+        // m/0/2147483647h/1/2147483646h
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0/2147483647h/1/2147483646h".parse().unwrap(),
+                  "xprvA1RpRA33e1JQ7ifknakTFpgNXPmW2YvmhqLQYMmrj4xJXXWYpDPS3xz7iAxn8L39njGVyuoseXzU6rcxFLJ8HFsTjSyQbLYnMpCqE2VbFWc",
+                  "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL");
+
+        // m/0/2147483647h/1/2147483646h/2
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0/2147483647h/1/2147483646h/2".parse().unwrap(),
+                  "xprvA2nrNbFZABcdryreWet9Ea4LvTJcGsqrMzxHx98MMrotbir7yrKCEXw7nadnHM8Dq38EGfSh6dqA9QWTyefMLEcBYJUuekgW4BYPJcr9E7j",
+                  "xpub6FnCn6nSzZAw5Tw7cgR9bi15UV96gLZhjDstkXXxvCLsUXBGXPdSnLFbdpq8p9HmGsApME5hQTZ3emM2rnY5agb9rXpVGyy3bdW6EEgAtqt");
+    }
+
+    #[test]
+    fn test_vector_3() {
+        let secp = Secp256k1::new();
+        let seed_hex = b"4b381541583be4423346c643850da4b320e46a87ae3d2a4e6da11eba819cd4acba45d239319ac14f863b8d5ab5a0d0c64d2e8a1e7d1457df2e5a3c51c73235be";
+        let mut seed = vec![0u8; seed_hex.len() / 2];
+        hex_decode(seed_hex, &mut seed).unwrap();
+
+        // m
+        test_path(&secp, NetworkType::MainNet, &seed, "m".parse().unwrap(),
+                  "xprv9s21ZrQH143K25QhxbucbDDuQ4naNntJRi4KUfWT7xo4EKsHt2QJDu7KXp1A3u7Bi1j8ph3EGsZ9Xvz9dGuVrtHHs7pXeTzjuxBrCmmhgC6",
+                  "xpub661MyMwAqRbcEZVB4dScxMAdx6d4nFc9nvyvH3v4gJL378CSRZiYmhRoP7mBy6gSPSCYk6SzXPTf3ND1cZAceL7SfJ1Z3GC8vBgp2epUt13");
+
+        // m/0h
+        test_path(&secp, NetworkType::MainNet, &seed, "m/0h".parse().unwrap(),
+                  "xprv9uPDJpEQgRQfDcW7BkF7eTya6RPxXeJCqCJGHuCJ4GiRVLzkTXBAJMu2qaMWPrS7AANYqdq6vcBcBUdJCVVFceUvJFjaPdGZ2y9WACViL4L",
+                  "xpub68NZiKmJWnxxS6aaHmn81bvJeTESw724CRDs6HbuccFQN9Ku14VQrADWgqbhhTHBaohPX4CjNLf9fq9MYo6oDaPPLPxSb7gwQN3ih19Zm4Y");
+    }
+
+    #[test]
+    fn test_parse_derivation_path() {
+        assert_eq!(
+            DerivationPath::from_str("42"),
+            Err(Error::InvalidDerivationPathFormat)
+        );
+        assert_eq!(
+            DerivationPath::from_str("n/0'/0"),
+            Err(Error::InvalidDerivationPathFormat)
+        );
+        assert_eq!(
+            DerivationPath::from_str("4/m/5"),
+            Err(Error::InvalidDerivationPathFormat)
+        );
+        assert_eq!(
+            DerivationPath::from_str("m//3/0'"),
+            Err(Error::InvalidChildNumberFormat)
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0h/0x"),
+            Err(Error::InvalidChildNumberFormat)
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/2147483648"),
+            Err(Error::InvalidChildNumber(2_147_483_648))
+        );
+
+        assert_eq!(DerivationPath::from_str("m"), Ok(vec![].into()));
+        assert_eq!(
+            DerivationPath::from_str("m/0'"),
+            Ok(vec![ChildNumber::from_hardened_idx(0).unwrap()].into())
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0'/1"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap()
+            ]
+            .into())
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0h/1/2'"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
+                ChildNumber::from_hardened_idx(2).unwrap(),
+            ]
+            .into())
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0'/1/2h/2"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
+                ChildNumber::from_hardened_idx(2).unwrap(),
+                ChildNumber::from_normal_idx(2).unwrap(),
+            ]
+            .into())
+        );
+        assert_eq!(
+            DerivationPath::from_str("m/0'/1/2'/2/1000000000"),
+            Ok(vec![
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap(),
+                ChildNumber::from_hardened_idx(2).unwrap(),
+                ChildNumber::from_normal_idx(2).unwrap(),
+                ChildNumber::from_normal_idx(1_000_000_000).unwrap(),
+            ]
+            .into())
+        );
+    }
+
+    #[test]
+    fn test_derivation_path_convertion_index() {
+        let path = DerivationPath::from_str("m/0h/1/2'").unwrap();
+        let numbers: Vec<ChildNumber> = path.clone().into();
+        let path2: DerivationPath = numbers.into();
+        assert_eq!(path, path2);
+        assert_eq!(
+            &path[..2],
+            &[
+                ChildNumber::from_hardened_idx(0).unwrap(),
+                ChildNumber::from_normal_idx(1).unwrap()
+            ]
+        );
+        let indexed: DerivationPath = path[..2].into();
+        assert_eq!(indexed, DerivationPath::from_str("m/0h/1").unwrap());
+        assert_eq!(
+            indexed.child(ChildNumber::from_hardened_idx(2).unwrap()),
+            path
+        );
+    }
+
+    #[test]
+    fn test_increment() {
+        let idx = 9_345_497; // randomly generated, I promise
+        let cn = ChildNumber::from_normal_idx(idx).unwrap();
+        assert_eq!(
+            cn.increment().ok(),
+            Some(ChildNumber::from_normal_idx(idx + 1).unwrap())
+        );
+        let cn = ChildNumber::from_hardened_idx(idx).unwrap();
+        assert_eq!(
+            cn.increment().ok(),
+            Some(ChildNumber::from_hardened_idx(idx + 1).unwrap())
+        );
+
+        let max = (1 << 31) - 1;
+        let cn = ChildNumber::from_normal_idx(max).unwrap();
+        assert_eq!(
+            cn.increment().err(),
+            Some(Error::InvalidChildNumber(1 << 31))
+        );
+        let cn = ChildNumber::from_hardened_idx(max).unwrap();
+        assert_eq!(
+            cn.increment().err(),
+            Some(Error::InvalidChildNumber(1 << 31))
+        );
+
+        let cn = ChildNumber::from_normal_idx(350).unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
+        let mut iter = path.children_from(cn);
+        assert_eq!(iter.next(), Some("m/42'/350".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/351".parse().unwrap()));
+
+        let path = DerivationPath::from_str("m/42'/350'").unwrap();
+        let mut iter = path.normal_children();
+        assert_eq!(iter.next(), Some("m/42'/350'/0".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/1".parse().unwrap()));
+
+        let path = DerivationPath::from_str("m/42'/350'").unwrap();
+        let mut iter = path.hardened_children();
+        assert_eq!(iter.next(), Some("m/42'/350'/0'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/350'/1'".parse().unwrap()));
+
+        let cn = ChildNumber::from_hardened_idx(42350).unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
+        let mut iter = path.children_from(cn);
+        assert_eq!(iter.next(), Some("m/42'/42350'".parse().unwrap()));
+        assert_eq!(iter.next(), Some("m/42'/42351'".parse().unwrap()));
+
+        let cn = ChildNumber::from_hardened_idx(max).unwrap();
+        let path = DerivationPath::from_str("m/42'").unwrap();
+        let mut iter = path.children_from(cn);
+        assert!(iter.next().is_some());
+        assert!(iter.next().is_none());
     }
 }
