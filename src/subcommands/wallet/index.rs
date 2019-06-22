@@ -14,7 +14,7 @@ use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
-use ckb_sdk::rpc::HttpRpcClient;
+use ckb_sdk::HttpRpcClient;
 use ckb_sdk::{IndexDatabase, LMDB_EXTRA_MAP_SIZE};
 
 // Reopen database every 10000 blocks (for increase map size)

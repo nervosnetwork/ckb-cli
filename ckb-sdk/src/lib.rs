@@ -2,12 +2,12 @@ mod basic;
 mod chain;
 mod error;
 mod index;
-
 mod key;
+mod rpc;
 mod transaction;
 mod util;
 
-pub mod rpc;
+pub mod wallet;
 
 pub use basic::{Address, AddressFormat, NetworkType, SecpKey};
 pub use chain::{

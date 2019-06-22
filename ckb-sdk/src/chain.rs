@@ -14,7 +14,8 @@ use numext_fixed_hash::{h256, H256};
 pub const ONE_CKB: u64 = 100_000_000;
 // H256(secp code hash) + H160 (secp pubkey hash) + u64(capacity) = 32 + 20 + 8 = 60
 pub const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
-pub const SECP_CODE_HASH: H256 =
+
+const SECP_CODE_HASH: H256 =
     h256!("0x94334bdda40b69bae067d84937aa6bbccf8acd0df6626d4b9ac70d4612a11933");
 
 #[derive(Debug, Clone)]

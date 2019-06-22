@@ -7,7 +7,7 @@ use std::process;
 use std::sync::Arc;
 
 use build_info::Version;
-use ckb_sdk::rpc::RpcClient;
+use ckb_sdk::HttpRpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -80,7 +80,7 @@ fn main() -> Result<(), io::Error> {
 
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
-    let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
+    let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     if let Some(format) = matches.value_of("output-format") {

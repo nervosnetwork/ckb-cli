@@ -9,7 +9,7 @@ use jsonrpc_client_core::Error as RpcError;
 use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
-use ckb_sdk::rpc::HttpRpcClient;
+use ckb_sdk::HttpRpcClient;
 
 const MAX_SAVE_BLOCKS: usize = 100;
 
