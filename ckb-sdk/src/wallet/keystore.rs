@@ -274,20 +274,26 @@ impl Crypto {
         Self::encrypt_key(key, password, kdfparams, cipherparams).expect("encrypt key light failed")
     }
 
-    pub fn decrypt(&self, password: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn decrypt(&self, password: &[u8]) -> Result<Option<Vec<u8>>, String> {
         let kdf_key = self.kdfparams.kdf_key(password)?;
+        if !self.check_password_inner(&kdf_key) {
+            return Ok(None);
+        }
         let aes_key = GenericArray::from_slice(&kdf_key[..16]);
         let aes_iv = GenericArray::from_slice(&self.cipherparams.iv);
         let mut cipher = Aes128Ctr::new(aes_key, aes_iv);
         let mut plaintext = self.ciphertext.clone();
         cipher.apply_keystream(&mut plaintext);
-        Ok(plaintext)
+        Ok(Some(plaintext))
+    }
+
+    fn check_password_inner(&self, kdf_key: &[u8; 32]) -> bool {
+        self.mac == calculate_mac(&self.ciphertext, &kdf_key)
     }
 
     pub fn check_password(&self, password: &[u8]) -> Result<bool, String> {
         let kdf_key = self.kdfparams.kdf_key(password)?;
-        let mac = calculate_mac(&self.ciphertext, &kdf_key);
-        Ok(mac == self.mac)
+        Ok(self.check_password_inner(&kdf_key))
     }
 
     pub fn to_json(&self) -> serde_json::Value {
@@ -369,11 +375,20 @@ mod tests {
     }
 
     #[test]
-    fn test_decrypt() {
+    fn test_decrypt_success() {
         let data = test_data();
         assert_eq!(
             data.crypto.decrypt(&data.password).unwrap(),
-            data.secret_key
+            Some(data.secret_key.to_vec())
+        );
+    }
+
+    #[test]
+    fn test_decrypt_failed() {
+        let data = test_data();
+        assert_eq!(
+            data.crypto.decrypt(b"this is a wrong password").unwrap(),
+            None
         );
     }
 
