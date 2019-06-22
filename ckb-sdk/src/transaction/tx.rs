@@ -26,7 +26,7 @@ use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
-use super::{from_local_cell_out_point, CellManager, CellAliasManager};
+use super::{from_local_cell_out_point, CellAliasManager, CellManager};
 use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX};
 
 pub struct TransactionManager<'a> {

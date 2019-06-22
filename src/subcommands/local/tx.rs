@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use ckb_core::{
     block::Block,
-    transaction::{CellInput, CellOutput, OutPoint, CellOutPoint, TransactionBuilder, Witness},
+    transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
 use ckb_sdk::{
     with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient, KeyManager,
