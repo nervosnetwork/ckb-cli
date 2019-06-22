@@ -233,6 +233,14 @@ impl Default for CipherParams {
     }
 }
 
+fn calculate_mac(ciphertext: &[u8], kdf_key: &[u8; 32]) -> [u8; 32] {
+    let ciphertext_len = ciphertext.len();
+    let mut mac_bytes = vec![0u8; 16 + ciphertext_len];
+    mac_bytes[..16].copy_from_slice(&kdf_key[16..]);
+    mac_bytes[16..16 + ciphertext_len].copy_from_slice(ciphertext);
+    tiny_keccak::keccak256(&mac_bytes)
+}
+
 #[derive(Debug, Clone)]
 pub struct Crypto {
     cipher: &'static str,
@@ -256,13 +264,7 @@ impl Crypto {
         let mut cipher = Aes128Ctr::new(aes_key, aes_iv);
         let mut ciphertext = key.to_vec();
         cipher.apply_keystream(&mut ciphertext);
-
-        let ciphertext_len = key.len();
-        let mut mac_bytes = vec![0u8; 16 + ciphertext_len];
-        mac_bytes[..16].copy_from_slice(&kdf_key[16..]);
-        mac_bytes[16..16 + ciphertext_len].copy_from_slice(&ciphertext);
-        let mac = tiny_keccak::keccak256(&mac_bytes);
-
+        let mac = calculate_mac(&ciphertext, &kdf_key);
         Ok(Crypto {
             cipher: SUPPORT_CIPHER_TYPE,
             cipherparams,
@@ -300,11 +302,7 @@ impl Crypto {
 
     pub fn check_password(&self, password: &[u8]) -> Result<bool, String> {
         let kdf_key = self.kdfparams.kdf_key(password)?;
-        let ciphertext_len = self.ciphertext.len();
-        let mut mac_bytes = vec![0u8; 16 + ciphertext_len];
-        mac_bytes[..16].copy_from_slice(&kdf_key[16..]);
-        mac_bytes[16..16 + ciphertext_len].copy_from_slice(&self.ciphertext);
-        let mac = tiny_keccak::keccak256(&mac_bytes);
+        let mac = calculate_mac(&self.ciphertext, &kdf_key);
         Ok(mac == self.mac)
     }
 
