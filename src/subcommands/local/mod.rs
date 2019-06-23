@@ -1,12 +1,10 @@
 mod cell;
 mod cell_input;
-// mod key;
 mod script;
 mod tx;
 
 pub use cell::LocalCellSubCommand;
 pub use cell_input::LocalCellInputSubCommand;
-// pub use key::LocalKeySubCommand;
 pub use script::LocalScriptSubCommand;
 pub use tx::LocalTxSubCommand;
 
@@ -73,11 +71,6 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
         color: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
-            // ("key", Some(m)) => {
-            //     let genesis_info = self.genesis_info()?;
-            //     LocalKeySubCommand::new(self.rpc_client, Some(genesis_info), self.db_path.clone())
-            //         .process(m, format, color)
-            // }
             ("script", Some(m)) => {
                 LocalScriptSubCommand::new(self.rpc_client, self.db_path.clone())
                     .process(m, format, color)

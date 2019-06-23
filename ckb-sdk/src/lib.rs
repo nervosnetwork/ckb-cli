@@ -28,7 +28,6 @@ pub use util::with_rocksdb;
 // 200MB extra disk space
 pub const LMDB_EXTRA_MAP_SIZE: u64 = 200 * 1024 * 1024;
 
-const ROCKSDB_COL_KEY: &str = "key";
 const ROCKSDB_COL_CELL: &str = "cell";
 const ROCKSDB_COL_CELL_ALIAS: &str = "cell-alias";
 const ROCKSDB_COL_CELL_INPUT: &str = "cell-input";

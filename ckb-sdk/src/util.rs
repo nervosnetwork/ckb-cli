@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use rocksdb::{Options, DB};
 
 use crate::{
-    Error, ROCKSDB_COL_CELL, ROCKSDB_COL_CELL_ALIAS, ROCKSDB_COL_CELL_INPUT, ROCKSDB_COL_KEY,
+    Error, ROCKSDB_COL_CELL, ROCKSDB_COL_CELL_ALIAS, ROCKSDB_COL_CELL_INPUT,
     ROCKSDB_COL_SCRIPT, ROCKSDB_COL_TX,
 };
 
@@ -21,7 +21,6 @@ where
     options.create_if_missing(true);
     options.create_missing_column_families(true);
     let columns = vec![
-        ROCKSDB_COL_KEY,
         ROCKSDB_COL_CELL,
         ROCKSDB_COL_CELL_ALIAS,
         ROCKSDB_COL_CELL_INPUT,
