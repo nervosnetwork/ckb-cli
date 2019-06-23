@@ -83,16 +83,16 @@ impl KeyStore {
     pub fn lock(&mut self, address: &H160) -> bool {
         self.unlocked_keys.remove(address).is_some()
     }
-    pub fn unlock(&mut self, address: &H160, password: &[u8]) -> Result<(), Error> {
+    pub fn unlock(&mut self, address: &H160, password: &[u8]) -> Result<Option<Instant>, Error> {
         self.unlock_inner(address, password, None)
     }
     pub fn timed_unlock(
         &mut self,
         address: &H160,
         password: &[u8],
-        last_time: Duration,
-    ) -> Result<(), Error> {
-        self.unlock_inner(address, password, Some(last_time))
+        keep: Duration,
+    ) -> Result<Option<Instant>, Error> {
+        self.unlock_inner(address, password, Some(keep))
     }
 
     pub fn import(
@@ -133,32 +133,38 @@ impl KeyStore {
         Ok(key.to_json(new_password, scrypt_type))
     }
 
-    pub fn sign_hash(
+    pub fn sign(&mut self, address: &H160, hash: &H256) -> Result<secp256k1::Signature, Error> {
+        Ok(self.get_timed_key(address)?.master_privkey().sign(hash))
+    }
+    pub fn sign_recoverable(
         &mut self,
         address: &H160,
         hash: &H256,
-        recoverable: bool,
-    ) -> Result<SignatureValue, Error> {
-        let timed_key = self
-            .unlocked_keys
-            .get(address)
-            .ok_or_else(|| Error::AccountLocked(address.clone()))?;
-        if timed_key.is_expired() {
-            self.unlocked_keys.remove(address);
-            return Err(Error::AccountLocked(address.clone()));
-        }
-        Ok(timed_key.master_privkey().sign(hash, recoverable))
+    ) -> Result<secp256k1::RecoverableSignature, Error> {
+        Ok(self
+            .get_timed_key(address)?
+            .master_privkey()
+            .sign_recoverable(hash))
     }
-    pub fn sign_hash_with_password(
+    pub fn sign_with_password(
         &self,
         address: &H160,
         hash: &H256,
         password: &[u8],
-        recoverable: bool,
-    ) -> Result<SignatureValue, Error> {
+    ) -> Result<secp256k1::Signature, Error> {
         let filepath = self.get_filepath(address)?;
         let key = self.storage.get_key(address, &filepath, password)?;
-        Ok(key.privkey.sign(hash, recoverable))
+        Ok(key.master_privkey.sign(hash))
+    }
+    pub fn sign_recoverable_with_password(
+        &self,
+        address: &H160,
+        hash: &H256,
+        password: &[u8],
+    ) -> Result<secp256k1::RecoverableSignature, Error> {
+        let filepath = self.get_filepath(address)?;
+        let key = self.storage.get_key(address, &filepath, password)?;
+        Ok(key.master_privkey.sign_recoverable(hash))
     }
 
     // NOTE: assume refresh keystore directory is not a hot action
@@ -183,6 +189,24 @@ impl KeyStore {
         Ok(())
     }
 
+    fn get_timed_key(&mut self, address: &H160) -> Result<&TimedKey, Error> {
+        let is_expired = self
+            .unlocked_keys
+            .get(address)
+            .ok_or_else(|| Error::AccountLocked(address.clone()))?
+            .is_expired();
+        if is_expired {
+            self.unlocked_keys.remove(address);
+            return Err(Error::AccountLocked(address.clone()));
+        }
+
+        let timed_key = self
+            .unlocked_keys
+            .get(address)
+            .ok_or_else(|| Error::AccountLocked(address.clone()))?;
+        Ok(timed_key)
+    }
+
     fn get_filepath(&self, address: &H160) -> Result<PathBuf, Error> {
         self.files
             .get(address)
@@ -194,8 +218,8 @@ impl KeyStore {
         &mut self,
         address: &H160,
         password: &[u8],
-        last_time: Option<Duration>,
-    ) -> Result<(), Error> {
+        keep: Option<Duration>,
+    ) -> Result<Option<Instant>, Error> {
         let filepath = self.get_filepath(address)?;
         let entry = self.unlocked_keys.entry(address.clone());
         let value = match entry {
@@ -205,15 +229,9 @@ impl KeyStore {
                 entry.insert(TimedKey::new_timed(key, Duration::default()))
             }
         };
-        value.extend(last_time);
-        Ok(())
+        value.extend(keep);
+        Ok(value.timeout)
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum SignatureValue {
-    Normal(secp256k1::Signature),
-    Recoverable(secp256k1::RecoverableSignature),
 }
 
 /// KeyStore protected by password
@@ -275,11 +293,11 @@ struct TimedKey {
 
 impl TimedKey {
     fn master_privkey(&self) -> &MasterPrivKey {
-        &self.key.privkey
+        &self.key.master_privkey
     }
 
-    fn new_timed(key: Key, last_time: Duration) -> TimedKey {
-        let timeout = Instant::now() + last_time;
+    fn new_timed(key: Key, keep: Duration) -> TimedKey {
+        let timeout = Instant::now() + keep;
         TimedKey {
             key,
             timeout: Some(timeout),
@@ -287,6 +305,9 @@ impl TimedKey {
     }
 
     fn extend(&mut self, extra: Option<Duration>) {
+        if self.is_expired() {
+            self.timeout = Some(Instant::now());
+        }
         if let Some(extra) = extra {
             if let Some(ref mut timeout) = self.timeout {
                 *timeout += extra;
@@ -309,17 +330,17 @@ pub struct Key {
     // H160::from_slice(&blake2b_256(pubkey)[0..20])
     address: H160,
     // The extended secp256k1 private key (privkey + chaincode)
-    privkey: MasterPrivKey,
+    master_privkey: MasterPrivKey,
 }
 
 impl Key {
-    pub fn new(privkey: MasterPrivKey) -> Key {
+    pub fn new(master_privkey: MasterPrivKey) -> Key {
         let id = Uuid::new_v4();
-        let address = privkey.address();
+        let address = master_privkey.address();
         Key {
             id,
             address,
-            privkey,
+            master_privkey,
         }
     }
 
@@ -368,13 +389,13 @@ impl Key {
         let key_vec = crypto.decrypt(password)?;
         let mut key_bytes = [0u8; 64];
         key_bytes[..].copy_from_slice(&key_vec[..]);
-        let privkey = MasterPrivKey::from_bytes(key_bytes)?;
+        let master_privkey = MasterPrivKey::from_bytes(key_bytes)?;
 
-        let address = privkey.address();
+        let address = master_privkey.address();
         Ok(Key {
             id,
             address,
-            privkey,
+            master_privkey,
         })
     }
 
@@ -382,7 +403,7 @@ impl Key {
         let mut buf = Uuid::encode_buffer();
         let id_str = self.id.to_hyphenated().encode_lower(&mut buf);
         let address_hex = format!("{:x}", self.address);
-        let master_privkey = self.privkey.to_bytes();
+        let master_privkey = self.master_privkey.to_bytes();
         let crypto = Crypto::encrypt_key_scrypt(&master_privkey, password, scrypt_type);
         serde_json::json!({
             "id": id_str,
@@ -394,7 +415,7 @@ impl Key {
 }
 
 pub struct MasterPrivKey {
-    secp_secrety_key: secp256k1::SecretKey,
+    secp_secret_key: secp256k1::SecretKey,
     chain_code: [u8; 32],
 }
 
@@ -403,10 +424,10 @@ impl MasterPrivKey {
         let mut rng = rand::thread_rng();
         for _ in 0..time {
             let privkey_bytes: [u8; 32] = rng.gen();
-            if let Ok(secp_secrety_key) = secp256k1::SecretKey::from_slice(&privkey_bytes) {
+            if let Ok(secp_secret_key) = secp256k1::SecretKey::from_slice(&privkey_bytes) {
                 let chain_code: [u8; 32] = rng.gen();
                 return Ok(MasterPrivKey {
-                    secp_secrety_key,
+                    secp_secret_key,
                     chain_code,
                 });
             }
@@ -414,46 +435,46 @@ impl MasterPrivKey {
         Err(Error::GenSecpFailed(time))
     }
 
-    pub fn from_secp_key(secp_secrety_key: &secp256k1::SecretKey) -> MasterPrivKey {
-        let secp_secrety_key = *secp_secrety_key;
+    pub fn from_secp_key(secp_secret_key: &secp256k1::SecretKey) -> MasterPrivKey {
+        let secp_secret_key = *secp_secret_key;
         let mut rng = rand::thread_rng();
         let chain_code = rng.gen();
         MasterPrivKey {
-            secp_secrety_key,
+            secp_secret_key,
             chain_code,
         }
     }
 
     pub fn from_bytes(bytes: [u8; 64]) -> Result<MasterPrivKey, Error> {
-        let secp_secrety_key = secp256k1::SecretKey::from_slice(&bytes[0..32])
+        let secp_secret_key = secp256k1::SecretKey::from_slice(&bytes[0..32])
             .map_err(|_| Error::InvalidSecpSecret)?;
         let mut chain_code_bytes = [0u8; 32];
         chain_code_bytes.copy_from_slice(&bytes[32..64]);
         Ok(MasterPrivKey {
-            secp_secrety_key,
+            secp_secret_key,
             chain_code: chain_code_bytes,
         })
     }
 
     pub fn to_bytes(&self) -> [u8; 64] {
         let mut bytes = [0u8; 64];
-        bytes[0..32].copy_from_slice(&self.secp_secrety_key[..]);
+        bytes[0..32].copy_from_slice(&self.secp_secret_key[..]);
         bytes[32..64].copy_from_slice(&self.chain_code[..]);
         bytes
     }
 
-    pub fn sign(&self, hash: &H256, recoverable: bool) -> SignatureValue {
+    pub fn sign(&self, hash: &H256) -> secp256k1::Signature {
         let message = secp256k1::Message::from_slice(&hash[..]).expect("Convert to message failed");
-        let secret_key = &self.secp_secrety_key;
-        if recoverable {
-            SignatureValue::Recoverable(SECP256K1.sign_recoverable(&message, secret_key))
-        } else {
-            SignatureValue::Normal(SECP256K1.sign(&message, secret_key))
-        }
+        SECP256K1.sign(&message, &self.secp_secret_key)
+    }
+
+    pub fn sign_recoverable(&self, hash: &H256) -> secp256k1::RecoverableSignature {
+        let message = secp256k1::Message::from_slice(&hash[..]).expect("Convert to message failed");
+        SECP256K1.sign_recoverable(&message, &self.secp_secret_key)
     }
 
     pub fn address(&self) -> H160 {
-        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &self.secp_secrety_key);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &self.secp_secret_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
     }

@@ -9,5 +9,5 @@ pub use bip32::{
 pub use error::Error as WalletError;
 pub use keystore::{
     CipherParams, Crypto, Error as KeyStoreError, KdfParams, Key, KeyStore, MasterPrivKey,
-    ScryptParams, ScryptType, SignatureValue,
+    ScryptParams, ScryptType,
 };

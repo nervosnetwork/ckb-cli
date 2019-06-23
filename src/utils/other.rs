@@ -1,3 +1,7 @@
+use std::fs;
+use std::path::PathBuf;
+
+use ckb_sdk::wallet::{KeyStore, ScryptType};
 use rpassword::prompt_password_stdout;
 
 pub fn read_password(repeat: bool) -> Result<String, String> {
@@ -10,4 +14,14 @@ pub fn read_password(repeat: bool) -> Result<String, String> {
         }
     }
     Ok(pass)
+}
+
+pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
+    let mut keystore_dir = ckb_cli_dir.clone();
+    keystore_dir.push("keystore");
+    fs::create_dir_all(&keystore_dir)
+        .map_err(|err| err.to_string())
+        .and_then(|_| {
+            KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
+        })
 }

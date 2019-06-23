@@ -4,6 +4,7 @@ use std::io::Read;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use ckb_core::transaction::CellOutPoint;
 use ckb_sdk::{Address, NetworkType, ONE_CKB};
@@ -302,6 +303,32 @@ impl ArgParser<CellOutPoint> for CellOutPointParser {
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
         Ok(CellOutPoint { tx_hash, index })
+    }
+}
+
+pub struct DurationParser;
+
+impl ArgParser<Duration> for DurationParser {
+    fn parse(&self, input: &str) -> Result<Duration, String> {
+        if input.is_empty() {
+            return Err("Missing input".to_owned());
+        }
+        let input_lower = input.to_lowercase();
+        let value_part = &input_lower[0..input_lower.len() - 1];
+        let value: u64 = value_part.parse::<u64>().map_err(|err| err.to_string())?;
+        let unit_part = &input_lower[input_lower.len() - 2..input_lower.len() - 1];
+        let seconds = match unit_part {
+            "s" => value,
+            "m" => value * 60,
+            "h" => value * 3600,
+            "d" => value * 3600 * 24,
+            _ => {
+                return Err(
+                    "Please give an unit, {{s: second, m: minute, h: hour, d: day}}".to_owned(),
+                );
+            }
+        };
+        Ok(Duration::from_secs(seconds))
     }
 }
 

@@ -6,7 +6,8 @@ use ckb_core::{
     transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
 use ckb_sdk::{
-    with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient, TransactionManager,
+    wallet::KeyStore, with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient,
+    TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonrpc_types::{BlockNumber, TransactionView};
@@ -21,6 +22,7 @@ use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalTxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
+    key_store: &'a mut KeyStore,
     genesis_info: Option<GenesisInfo>,
     db_path: PathBuf,
 }
@@ -28,11 +30,13 @@ pub struct LocalTxSubCommand<'a> {
 impl<'a> LocalTxSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
+        key_store: &'a mut KeyStore,
         genesis_info: Option<GenesisInfo>,
         db_path: PathBuf,
     ) -> LocalTxSubCommand<'a> {
         LocalTxSubCommand {
             rpc_client,
+            key_store,
             genesis_info,
             db_path,
         }
@@ -190,7 +194,12 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     tx = with_rocksdb(&db_path, None, |db| {
                         // TODO: use keystore
                         TransactionManager::new(db)
-                            .set_witnesses_by_keys(tx.hash(), &[], self.rpc_client, &secp_code_hash)
+                            .set_witnesses_by_keys(
+                                tx.hash(),
+                                self.key_store,
+                                self.rpc_client,
+                                &secp_code_hash,
+                            )
                             .map_err(Into::into)
                     })
                     .map_err(|err| format!("{:?}", err))?;
@@ -221,7 +230,12 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 let tx = with_rocksdb(&db_path, None, |db| {
                     // TODO: use keystore
                     TransactionManager::new(db)
-                        .set_witnesses_by_keys(&tx_hash, &[], self.rpc_client, &secp_code_hash)
+                        .set_witnesses_by_keys(
+                            &tx_hash,
+                            self.key_store,
+                            self.rpc_client,
+                            &secp_code_hash,
+                        )
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;

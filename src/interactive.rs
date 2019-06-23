@@ -330,6 +330,7 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info()?;
                     let output = LocalSubCommand::new(
                         &mut self.rpc_client,
+                        &mut self.key_store,
                         Some(genesis_info),
                         self.resource_dir.clone(),
                     )

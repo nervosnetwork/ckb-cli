@@ -20,15 +20,14 @@ use ckb_core::{
 use ckb_db::Error as CkbDbError;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use ckb_store::{ChainStore, StoreBatch};
-use crypto::secp::SECP256K1;
 use fnv::FnvHashSet;
-use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
 use super::{from_local_cell_out_point, CellAliasManager, CellManager};
-use crate::{build_witness, HttpRpcClient, ROCKSDB_COL_TX};
+use crate::wallet::{KeyStore, KeyStoreError};
+use crate::{HttpRpcClient, ROCKSDB_COL_TX};
 
 pub struct TransactionManager<'a> {
     cf: ColumnFamily<'a>,
@@ -89,21 +88,12 @@ impl<'a> TransactionManager<'a> {
     pub fn set_witnesses_by_keys(
         &self,
         hash: &H256,
-        keys: &[secp256k1::SecretKey],
+        key_store: &mut KeyStore,
         rpc_client: &mut HttpRpcClient,
         secp_code_hash: &H256,
     ) -> Result<Transaction, String> {
         let tx = self.get(hash)?;
         let tx_hash = tx.hash();
-        let key_pairs = keys
-            .iter()
-            .map(|privkey| {
-                let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, privkey);
-                let hash = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
-                    .expect("Generate hash(H160) from pubkey failed");
-                (hash, privkey)
-            })
-            .collect::<HashMap<_, _>>();
         let mut witnesses = tx.witnesses().to_vec();
         let cell_alias_manager = CellAliasManager::new(self.db);
         let cell_manager = CellManager::new(self.db);
@@ -123,19 +113,36 @@ impl<'a> TransactionManager<'a> {
                         .unwrap()
                         .cell
                         .map(Into::into)
-                        .ok_or_else(|| "Input not found or dead".to_owned())
+                        .ok_or_else(|| {
+                            format!(
+                                "Input(tx-hash: {:#x}, index: {}) not found or dead",
+                                cell_out_point.tx_hash, cell_out_point.index,
+                            )
+                        })
                 })?;
 
             let lock = cell_output.lock;
             if &lock.code_hash == secp_code_hash {
-                if let Some((hash, privkey)) = lock
+                if let Some(lock_arg) = lock
                     .args
                     .get(0)
                     .and_then(|bytes| H160::from_slice(bytes).ok())
-                    .and_then(|hash| key_pairs.get(&hash).map(|v| (hash, v)))
                 {
-                    log::debug!("set witness[{}] by pubkey hash: {:#x}", idx, hash);
-                    witnesses[idx] = build_witness(privkey, tx_hash);
+                    let signature = key_store.sign_recoverable(&lock_arg, tx_hash)
+                        .map_err(|err| {
+                            match err {
+                                KeyStoreError::AccountLocked(lock_arg) => {
+                                    format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it", lock_arg)
+                                }
+                                err => err.to_string(),
+                            }
+                        })?;
+                    let (recov_id, data) = signature.serialize_compact();
+                    let mut signature_bytes = [0u8; 65];
+                    signature_bytes[0..64].copy_from_slice(&data[0..64]);
+                    signature_bytes[64] = recov_id.to_i32() as u8;
+                    log::debug!("set witness[{}] by pubkey hash(lock_arg): {:x}", idx, hash);
+                    witnesses[idx] = vec![signature_bytes.to_vec().into()];
                 } else {
                     log::warn!("Can not find key for secp arg: {:?}", lock.args.get(0));
                 }

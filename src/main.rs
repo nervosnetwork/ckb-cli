@@ -7,10 +7,7 @@ use std::process;
 use std::sync::Arc;
 
 use build_info::Version;
-use ckb_sdk::{
-    wallet::{KeyStore, ScryptType},
-    HttpRpcClient,
-};
+use ckb_sdk::HttpRpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -22,9 +19,12 @@ use subcommands::{
     start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, LocalSubCommand,
     RpcSubCommand, WalletSubCommand,
 };
-use utils::arg_parser::{ArgParser, UrlParser};
-use utils::config::GlobalConfig;
-use utils::printer::{ColorWhen, OutputFormat};
+use utils::{
+    arg_parser::{ArgParser, UrlParser},
+    config::GlobalConfig,
+    other::get_key_store,
+    printer::{ColorWhen, OutputFormat},
+};
 
 mod interactive;
 mod subcommands;
@@ -99,29 +99,13 @@ fn main() -> Result<(), io::Error> {
         ("rpc", Some(sub_matches)) => {
             RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color)
         }
-        ("local", Some(sub_matches)) => LocalSubCommand::new(
-            &mut rpc_client,
-            None,
-            resource_dir.clone(),
-        )
-        .process(&sub_matches, output_format, color),
-        ("account", Some(sub_matches)) => {
-            let mut keystore_dir = ckb_cli_dir.clone();
-            keystore_dir.push("keystore");
-            fs::create_dir_all(&keystore_dir)
-                .map_err(|err| err.to_string())
-                .and_then(|_| {
-                    KeyStore::from_dir(keystore_dir, ScryptType::default())
-                        .map_err(|err| err.to_string())
-                })
-                .and_then(|mut key_store| {
-                    AccountSubCommand::new(&mut key_store).process(
-                        &sub_matches,
-                        output_format,
-                        color,
-                    )
-                })
-        }
+        ("local", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            LocalSubCommand::new(&mut rpc_client, &mut key_store, None, resource_dir.clone())
+                .process(&sub_matches, output_format, color)
+        }),
+        ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            AccountSubCommand::new(&mut key_store).process(&sub_matches, output_format, color)
+        }),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             None,

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use ckb_sdk::{wallet::KeyStore, Address, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -6,7 +7,7 @@ use numext_fixed_hash::H160;
 
 use super::CliSubCommand;
 use crate::utils::{
-    arg_parser::{ArgParser, PrivkeyPathParser},
+    arg_parser::{ArgParser, DurationParser, FixedHashParser, PrivkeyPathParser},
     other::read_password,
     printer::{OutputFormat, Printable},
 };
@@ -36,6 +37,24 @@ impl<'a> AccountSubCommand<'a> {
                             .required(true)
                             .help("The keyfile is assumed to contain an unencrypted private key in hexadecimal format.")
                     ) ,
+                SubCommand::with_name("unlock")
+                    .about("Unlock an account")
+                    .arg(
+                        Arg::with_name("lock-arg")
+                            .long("lock-arg")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H160>::default().validate(input))
+                            .required(true)
+                            .help("The lock_arg (identifier) of the account")
+                    )
+                    .arg(
+                        Arg::with_name("keep")
+                            .long("keep")
+                            .takes_value(true)
+                            .validator(|input| DurationParser.validate(input))
+                            .default_value("30m")
+                            .help("How long before the key expired (repeat unlock will increase the time)")
+                    ),
                 SubCommand::with_name("update"),
                 SubCommand::with_name("export"),
             ])
@@ -109,6 +128,31 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "mainnet": address.to_string(NetworkType::MainNet),
                         "testnet": address.to_string(NetworkType::TestNet),
                     },
+                });
+                Ok(resp.render(format, color))
+            }
+            ("unlock", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let keep: Duration = DurationParser.from_matches(m, "keep")?;
+                let password = read_password(true)?;
+                let timeout_after = self
+                    .key_store
+                    .timed_unlock(&lock_arg, password.as_bytes(), keep)
+                    .map_err(|err| err.to_string())?
+                    .map(|timeout| (timeout - Instant::now()).as_secs())
+                    .map(|seconds| {
+                        let hours = seconds / 3600;
+                        let secs = seconds % 3600;
+                        match (hours, secs) {
+                            (0, secs) => format!("{} seconds", secs),
+                            (hours, 0) => format!("{} hours", hours),
+                            (hours, secs) => format!("{} hours {} seconds", hours, secs),
+                        }
+                    })
+                    .unwrap_or_else(|| "infinite time".to_owned());
+                let resp = serde_json::json!({
+                    "timeout-after": timeout_after,
                 });
                 Ok(resp.render(format, color))
             }
