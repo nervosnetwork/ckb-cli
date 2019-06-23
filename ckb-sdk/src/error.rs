@@ -2,7 +2,8 @@ use std::io;
 
 use failure::Fail;
 
-use crate::{IndexError, KeyStoreError};
+use crate::index::IndexError;
+use crate::wallet::KeyStoreError;
 
 #[derive(Debug, Fail)]
 pub enum Error {

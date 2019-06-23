@@ -210,15 +210,21 @@ impl KeyStore {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum SignatureValue {
+    Normal(secp256k1::Signature),
+    Recoverable(secp256k1::RecoverableSignature),
+}
+
 /// KeyStore protected by password
-pub struct PassphraseKeyStore {
+struct PassphraseKeyStore {
     keys_dir_path: PathBuf,
     scrypt_type: ScryptType,
 }
 
 impl PassphraseKeyStore {
     // Loads and decrypts the key from disk.
-    pub fn get_key<P: AsRef<Path>>(
+    fn get_key<P: AsRef<Path>>(
         &self,
         address: &H160,
         filename: P,
@@ -239,7 +245,7 @@ impl PassphraseKeyStore {
     }
 
     // Writes and encrypts the key.
-    pub fn store_key<P: AsRef<Path>>(
+    fn store_key<P: AsRef<Path>>(
         &self,
         filename: P,
         key: &Key,
@@ -260,10 +266,6 @@ impl PassphraseKeyStore {
             self.keys_dir_path.join(filename.as_ref())
         }
     }
-
-    pub fn scrypt_type(&self) -> ScryptType {
-        self.scrypt_type
-    }
 }
 
 struct TimedKey {
@@ -282,10 +284,6 @@ impl TimedKey {
             key,
             timeout: Some(timeout),
         }
-    }
-
-    fn new_infinite(key: Key) -> TimedKey {
-        TimedKey { key, timeout: None }
     }
 
     fn extend(&mut self, extra: Option<Duration>) {
@@ -396,8 +394,8 @@ impl Key {
 }
 
 pub struct MasterPrivKey {
-    pub secp_secrety_key: secp256k1::SecretKey,
-    pub chain_code: [u8; 32],
+    secp_secrety_key: secp256k1::SecretKey,
+    chain_code: [u8; 32],
 }
 
 impl MasterPrivKey {
@@ -459,10 +457,4 @@ impl MasterPrivKey {
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum SignatureValue {
-    Normal(secp256k1::Signature),
-    Recoverable(secp256k1::RecoverableSignature),
 }

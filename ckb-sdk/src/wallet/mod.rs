@@ -7,4 +7,7 @@ pub use bip32::{
     Fingerprint,
 };
 pub use error::Error as WalletError;
-pub use keystore::{CipherParams, Crypto, Error as KeyStoreError, KdfParams, ScryptParams};
+pub use keystore::{
+    CipherParams, Crypto, Error as KeyStoreError, KdfParams, Key, KeyStore, MasterPrivKey,
+    ScryptParams, ScryptType, SignatureValue,
+};

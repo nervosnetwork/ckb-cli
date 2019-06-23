@@ -19,7 +19,6 @@ pub use index::{
     KeyType as IndexKeyType, LiveCellInfo, TxInfo,
 };
 pub use rpc::HttpRpcClient;
-pub use wallet::KeyStoreError;
 
 pub use key::KeyManager;
 pub use transaction::{
