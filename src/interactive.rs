@@ -1,5 +1,4 @@
 use std::fs;
-use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -14,12 +13,16 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    CliSubCommand, IndexController, IndexRequest, LocalSubCommand, RpcSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, LocalSubCommand,
+    RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::completer::CkbCompleter;
 use crate::utils::config::GlobalConfig;
 use crate::utils::printer::{ColorWhen, OutputFormat, Printable};
-use ckb_sdk::{GenesisInfo, HttpRpcClient};
+use ckb_sdk::{
+    wallet::{KeyStore, ScryptType},
+    GenesisInfo, HttpRpcClient,
+};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -31,6 +34,7 @@ pub struct InteractiveEnv {
     history_file: PathBuf,
     index_dir: PathBuf,
     parser: clap::App<'static, 'static>,
+    key_store: KeyStore,
     rpc_client: HttpRpcClient,
     index_controller: IndexController,
     genesis_info: Option<GenesisInfo>,
@@ -41,9 +45,9 @@ impl InteractiveEnv {
         ckb_cli_dir: PathBuf,
         mut config: GlobalConfig,
         index_controller: IndexController,
-    ) -> io::Result<InteractiveEnv> {
+    ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
-            fs::create_dir(&ckb_cli_dir)?;
+            fs::create_dir(&ckb_cli_dir).map_err(|err| err.to_string())?;
         }
         let mut history_file = ckb_cli_dir.clone();
         history_file.push("history");
@@ -53,11 +57,13 @@ impl InteractiveEnv {
         resource_dir.push("resource");
         let mut index_dir = ckb_cli_dir.clone();
         index_dir.push("index");
+        let mut keystore_dir = ckb_cli_dir.clone();
+        keystore_dir.push("keystore");
 
         let mut env_file = ckb_cli_dir.clone();
         env_file.push("env_vars");
         if env_file.as_path().exists() {
-            let file = fs::File::open(&env_file)?;
+            let file = fs::File::open(&env_file).map_err(|err| err.to_string())?;
             let env_vars_json = serde_json::from_reader(file).unwrap_or(json!(null));
             match env_vars_json {
                 serde_json::Value::Object(env_vars) => config.add_env_vars(env_vars),
@@ -67,6 +73,9 @@ impl InteractiveEnv {
 
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::from_uri(config.get_url());
+        fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
+        let key_store = KeyStore::from_dir(keystore_dir, ScryptType::default())
+            .map_err(|err| err.to_string())?;
         Ok(InteractiveEnv {
             config,
             config_file,
@@ -75,12 +84,13 @@ impl InteractiveEnv {
             history_file,
             parser,
             rpc_client,
+            key_store,
             index_controller,
             genesis_info: None,
         })
     }
 
-    pub fn start(&mut self) -> io::Result<()> {
+    pub fn start(&mut self) -> Result<(), String> {
         self.print_logo();
         self.config.print();
 
@@ -287,6 +297,15 @@ impl InteractiveEnv {
                 }
                 ("rpc", Some(sub_matches)) => {
                     let output = RpcSubCommand::new(&mut self.rpc_client).process(
+                        &sub_matches,
+                        format,
+                        color,
+                    )?;
+                    println!("{}", output);
+                    Ok(())
+                }
+                ("account", Some(sub_matches)) => {
+                    let output = AccountSubCommand::new(&mut self.key_store).process(
                         &sub_matches,
                         format,
                         color,

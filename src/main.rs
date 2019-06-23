@@ -7,18 +7,20 @@ use std::process;
 use std::sync::Arc;
 
 use build_info::Version;
-use ckb_sdk::HttpRpcClient;
+use ckb_sdk::{
+    wallet::{KeyStore, ScryptType},
+    HttpRpcClient,
+};
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 
-use subcommands::LocalSubCommand;
-
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
+    start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, LocalSubCommand,
+    RpcSubCommand, WalletSubCommand,
 };
 use utils::arg_parser::{ArgParser, UrlParser};
 use utils::config::GlobalConfig;
@@ -103,6 +105,23 @@ fn main() -> Result<(), io::Error> {
             resource_dir.clone(),
         )
         .process(&sub_matches, output_format, color),
+        ("account", Some(sub_matches)) => {
+            let mut keystore_dir = ckb_cli_dir.clone();
+            keystore_dir.push("keystore");
+            fs::create_dir_all(&keystore_dir)
+                .map_err(|err| err.to_string())
+                .and_then(|_| {
+                    KeyStore::from_dir(keystore_dir, ScryptType::default())
+                        .map_err(|err| err.to_string())
+                })
+                .and_then(|mut key_store| {
+                    AccountSubCommand::new(&mut key_store).process(
+                        &sub_matches,
+                        output_format,
+                        color,
+                    )
+                })
+        }
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             None,
@@ -116,7 +135,7 @@ fn main() -> Result<(), io::Error> {
                 InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
                     .and_then(|mut env| env.start())
             {
-                eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
+                eprintln!("Process error: {}", err);
                 index_controller.shutdown();
                 process::exit(1);
             }
@@ -180,6 +199,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
+        .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(WalletSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
@@ -271,6 +291,7 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .about("Exit the interactive interface"),
         )
         .subcommand(RpcSubCommand::subcommand())
+        .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(LocalSubCommand::subcommand())
 }

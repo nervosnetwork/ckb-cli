@@ -148,6 +148,12 @@ pub enum ScryptType {
     Custom { log_n: u8, p: u32 },
 }
 
+impl Default for ScryptType {
+    fn default() -> ScryptType {
+        ScryptType::Standard
+    }
+}
+
 // Example:
 // ========
 // {

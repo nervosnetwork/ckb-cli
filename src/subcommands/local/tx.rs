@@ -6,8 +6,7 @@ use ckb_core::{
     transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
 use ckb_sdk::{
-    with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient, KeyManager,
-    TransactionManager,
+    with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient, TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
 use jsonrpc_types::{BlockNumber, TransactionView};
@@ -189,14 +188,9 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                     let db_path = self.db_path.clone();
                     let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
                     tx = with_rocksdb(&db_path, None, |db| {
-                        let keys = KeyManager::new(db).list()?;
+                        // TODO: use keystore
                         TransactionManager::new(db)
-                            .set_witnesses_by_keys(
-                                tx.hash(),
-                                &keys,
-                                self.rpc_client,
-                                &secp_code_hash,
-                            )
+                            .set_witnesses_by_keys(tx.hash(), &[], self.rpc_client, &secp_code_hash)
                             .map_err(Into::into)
                     })
                     .map_err(|err| format!("{:?}", err))?;
@@ -225,9 +219,9 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 let db_path = self.db_path.clone();
                 let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
                 let tx = with_rocksdb(&db_path, None, |db| {
-                    let keys = KeyManager::new(db).list()?;
+                    // TODO: use keystore
                     TransactionManager::new(db)
-                        .set_witnesses_by_keys(&tx_hash, &keys, self.rpc_client, &secp_code_hash)
+                        .set_witnesses_by_keys(&tx_hash, &[], self.rpc_client, &secp_code_hash)
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;

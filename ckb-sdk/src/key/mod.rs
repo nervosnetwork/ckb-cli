@@ -4,7 +4,7 @@ use crypto::secp::Pubkey;
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{SecpKey, ROCKSDB_COL_KEY};
+use crate::{basic::SecpKey, ROCKSDB_COL_KEY};
 
 const KEY_SECP256K1: &[u8] = b"secp256k1";
 const KEY_DELIMITER: u8 = b':';

@@ -20,6 +20,7 @@ use ckb_core::{
 use ckb_db::Error as CkbDbError;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use ckb_store::{ChainStore, StoreBatch};
+use crypto::secp::SECP256K1;
 use fnv::FnvHashSet;
 use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
@@ -27,7 +28,7 @@ use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
 
 use super::{from_local_cell_out_point, CellAliasManager, CellManager};
-use crate::{build_witness, HttpRpcClient, SecpKey, ROCKSDB_COL_TX};
+use crate::{build_witness, HttpRpcClient, ROCKSDB_COL_TX};
 
 pub struct TransactionManager<'a> {
     cf: ColumnFamily<'a>,
@@ -88,7 +89,7 @@ impl<'a> TransactionManager<'a> {
     pub fn set_witnesses_by_keys(
         &self,
         hash: &H256,
-        keys: &[SecpKey],
+        keys: &[secp256k1::SecretKey],
         rpc_client: &mut HttpRpcClient,
         secp_code_hash: &H256,
     ) -> Result<Transaction, String> {
@@ -96,10 +97,9 @@ impl<'a> TransactionManager<'a> {
         let tx_hash = tx.hash();
         let key_pairs = keys
             .iter()
-            .filter_map(|key| key.privkey.as_ref())
             .map(|privkey| {
-                let pubkey = privkey.pubkey().unwrap();
-                let hash = H160::from_slice(&blake2b_256(pubkey.serialize())[0..20])
+                let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, privkey);
+                let hash = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
                     .expect("Generate hash(H160) from pubkey failed");
                 (hash, privkey)
             })

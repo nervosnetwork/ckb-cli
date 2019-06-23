@@ -10,8 +10,9 @@ use bytes::Bytes;
 use ckb_core::{block::Block, service::Request};
 use ckb_sdk::{Address, AddressFormat, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use crypto::secp::Generator;
+use crypto::secp::{Generator, SECP256K1};
 use faster_hex::hex_string;
+use hash::blake2b_256;
 use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
 use serde_json::json;
@@ -23,8 +24,8 @@ use crate::utils::arg_parser::{
 };
 use crate::utils::printer::{OutputFormat, Printable};
 use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, IndexDatabase, SecpKey, TransferTransactionBuilder,
-    LMDB_EXTRA_MAP_SIZE, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    GenesisInfo, HttpRpcClient, IndexDatabase, TransferTransactionBuilder, LMDB_EXTRA_MAP_SIZE,
+    MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -231,7 +232,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
-                let from_key: SecpKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
+                let from_privkey: secp256k1::SecretKey =
+                    PrivkeyPathParser.from_matches(m, "privkey-path")?;
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
                 let to_data: Bytes = HexParser
                     .from_matches_opt(m, "to-data", false)?
@@ -251,9 +253,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     ));
                 }
 
-                let from_privkey = from_key.privkey.unwrap();
-                let from_pubkey = from_key.pubkey;
-                let from_address = Address::from_pubkey(AddressFormat::default(), &from_pubkey)?;
+                let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
+                let from_address = {
+                    let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
+                    Address::from_lock_arg(&pubkey_hash[0..20])?
+                };
 
                 let genesis_info = self.genesis_info()?;
                 let secp_code_hash = genesis_info.secp_code_hash();
@@ -346,16 +350,25 @@ args = ["{:#x}"]
                 Ok(resp.render(format, color))
             }
             ("key-info", Some(m)) => {
-                let secp_key_opt: Option<SecpKey> =
+                let secp_key_opt: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let pubkey = secp_key_opt
-                    .map(|key| Result::<_, String>::Ok(key.pubkey))
+                    .map(|privkey| {
+                        Result::<_, String>::Ok(secp256k1::PublicKey::from_secret_key(
+                            &SECP256K1, &privkey,
+                        ))
+                    })
                     .unwrap_or_else(|| {
-                        let key: SecpKey = PubkeyHexParser.from_matches(m, "pubkey")?;
-                        Ok(key.pubkey)
+                        let key: secp256k1::PublicKey =
+                            PubkeyHexParser.from_matches(m, "pubkey")?;
+                        Ok(key)
                     })?;
-                let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
-                let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
+                let pubkey_string =
+                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed");
+                let address = {
+                    let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
+                    Address::from_lock_arg(&pubkey_hash[0..20])?
+                };
                 let address_string = address.to_string(NetworkType::TestNet);
 
                 let genesis_info = self.genesis_info()?;

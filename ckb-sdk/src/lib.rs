@@ -2,14 +2,13 @@ mod basic;
 mod chain;
 mod error;
 mod index;
-mod key;
 mod rpc;
 mod transaction;
 mod util;
 
 pub mod wallet;
 
-pub use basic::{Address, AddressFormat, NetworkType, SecpKey};
+pub use basic::{Address, AddressFormat, NetworkType};
 pub use chain::{
     build_witness, GenesisInfo, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
@@ -20,7 +19,6 @@ pub use index::{
 };
 pub use rpc::HttpRpcClient;
 
-pub use key::KeyManager;
 pub use transaction::{
     from_local_cell_out_point, to_local_cell_out_point, CellAliasManager, CellInputManager,
     CellManager, ScriptManager, TransactionManager, VerifyResult,

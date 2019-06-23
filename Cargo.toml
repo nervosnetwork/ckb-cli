@@ -42,6 +42,7 @@ bech32 = "0.6.0"
 chrono = "0.4"
 rkv = "0.9.5"
 bincode = "1.1.4"
+rpassword = "3.0.2"
 
 [target.'cfg(unix)'.dependencies]
 tui = "0.6.0"

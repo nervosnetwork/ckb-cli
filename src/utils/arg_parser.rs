@@ -1,10 +1,12 @@
 use std::fmt::Display;
+use std::fs;
+use std::io::Read;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use ckb_core::transaction::CellOutPoint;
-use ckb_sdk::{Address, NetworkType, SecpKey, ONE_CKB};
+use ckb_sdk::{Address, NetworkType, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use numext_fixed_hash::{H160, H256};
@@ -223,17 +225,31 @@ impl ArgParser<PathBuf> for DirPathParser {
 
 pub struct PrivkeyPathParser;
 
-impl ArgParser<SecpKey> for PrivkeyPathParser {
-    fn parse(&self, input: &str) -> Result<SecpKey, String> {
-        SecpKey::from_privkey_path(input)
+impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
+    fn parse(&self, input: &str) -> Result<secp256k1::SecretKey, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let mut content = String::new();
+        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|err| err.to_string())?;
+        let privkey_string: String = content
+            .split_whitespace()
+            .next()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| "File is empty".to_string())?;
+        let data: H256 = FixedHashParser::<H256>::default().parse(privkey_string.as_str())?;
+        secp256k1::SecretKey::from_slice(&data[..])
+            .map_err(|err| format!("Invalid secp256k1 secret key format, error: {}", err))
     }
 }
 
 pub struct PubkeyHexParser;
 
-impl ArgParser<SecpKey> for PubkeyHexParser {
-    fn parse(&self, input: &str) -> Result<SecpKey, String> {
-        SecpKey::from_pubkey_str(input)
+impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
+    fn parse(&self, input: &str) -> Result<secp256k1::PublicKey, String> {
+        let data = HexParser.parse(input)?;
+        secp256k1::PublicKey::from_slice(&data)
+            .map_err(|err| format!("Invalid secp256k1 public key format, error: {}", err))
     }
 }
 

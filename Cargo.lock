@@ -346,6 +346,7 @@ dependencies = [
  "occupied-capacity 0.15.0-pre (git+https://github.com/nervosnetwork/ckb?branch=develop)",
  "regex 1.1.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "rkv 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rpassword 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustyline 4.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "secp256k1 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.92 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1954,6 +1955,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libc 0.2.58 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2926,6 +2937,7 @@ dependencies = [
 "checksum rgb 0.8.13 (registry+https://github.com/rust-lang/crates.io-index)" = "4f089652ca87f5a82a62935ec6172a534066c7b97be003cc8f702ee9a7a59c92"
 "checksum rkv 0.9.6 (registry+https://github.com/rust-lang/crates.io-index)" = "9ebeb7e046283b72b4bcd3b8ee4720cf69cd09f5b140b5ab46495df4af0e5113"
 "checksum rocksdb 0.12.2 (registry+https://github.com/rust-lang/crates.io-index)" = "d29e12aab379a49bfbca337132440be73d1de6f328d5635641c2b28ac9dfe514"
+"checksum rpassword 3.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "c34fa7bcae7fca3c8471e8417088bbc3ad9af8066b0ecf4f3c0d98a0d772716e"
 "checksum rustc-demangle 0.1.15 (registry+https://github.com/rust-lang/crates.io-index)" = "a7f4dccf6f4891ebcc0c39f9b6eb1a83b9bf5d747cb439ec6fba4f3b977038af"
 "checksum rustc_version 0.2.3 (registry+https://github.com/rust-lang/crates.io-index)" = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 "checksum rustyline 4.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "0f47ea1ceb347d2deae482d655dc8eef4bd82363d3329baffa3818bd76fea48b"

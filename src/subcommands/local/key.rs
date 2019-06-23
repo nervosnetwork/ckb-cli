@@ -86,7 +86,7 @@ impl<'a> CliSubCommand for LocalKeySubCommand<'a> {
         };
         match matches.subcommand() {
             ("add", Some(m)) => {
-                let key: SecpKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
+                let key: secp256k1::SecretKey = PrivkeyPathParser.from_matches(m, "privkey-path")?;
                 let result = key_info(&key);
                 with_rocksdb(&self.db_path, None, |db| {
                     KeyManager::new(db).add(key).map_err(Into::into)

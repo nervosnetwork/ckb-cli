@@ -6,7 +6,7 @@ use ckb_core::{
     transaction::{CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
     Capacity,
 };
-use crypto::secp::Privkey;
+use crypto::secp::SECP256K1;
 use hash::blake2b_256;
 use jsonrpc_types::Transaction as RpcTransaction;
 use numext_fixed_hash::{h256, H256};
@@ -93,7 +93,7 @@ impl GenesisInfo {
 
 #[derive(Debug)]
 pub struct TransferTransactionBuilder<'a> {
-    pub from_privkey: &'a Privkey,
+    pub from_privkey: &'a secp256k1::SecretKey,
     pub from_address: &'a Address,
     pub from_capacity: u64,
     pub to_data: &'a Bytes,
@@ -155,8 +155,14 @@ impl<'a> TransferTransactionBuilder<'a> {
     }
 }
 
-pub fn build_witness(privkey: &Privkey, tx_hash: &H256) -> Vec<Bytes> {
-    let message = H256::from(blake2b_256(tx_hash));
-    let signature_bytes = privkey.sign_recoverable(&message).unwrap().serialize();
-    vec![Bytes::from(signature_bytes)]
+pub fn build_witness(privkey: &secp256k1::SecretKey, tx_hash: &H256) -> Vec<Bytes> {
+    let message = secp256k1::Message::from_slice(&blake2b_256(tx_hash))
+        .expect("Convert to secp256k1 message failed");
+    let (recov_id, data) = SECP256K1
+        .sign_recoverable(&message, privkey)
+        .serialize_compact();
+    let mut signature_bytes = [0u8; 65];
+    signature_bytes[0..64].copy_from_slice(&data[0..64]);
+    signature_bytes[64] = recov_id.to_i32() as u8;
+    vec![Bytes::from(signature_bytes.to_vec())]
 }
