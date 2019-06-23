@@ -1,12 +1,20 @@
 use std::io;
 
-use crate::IndexError;
+use failure::Fail;
 
-#[derive(Debug)]
+use crate::{IndexError, KeyStoreError};
+
+#[derive(Debug, Fail)]
 pub enum Error {
+    #[fail(display = "Rocksdb error: {}", _0)]
     Rocksdb(rocksdb::Error),
+    #[fail(display = "IO error: {}", _0)]
     Io(io::Error),
+    #[fail(display = "KeyStore error: {}", _0)]
+    KeyStore(KeyStoreError),
+    #[fail(display = "Index DB error: {}", _0)]
     Index(IndexError),
+    #[fail(display = "Other error: {}", _0)]
     Other(String),
 }
 

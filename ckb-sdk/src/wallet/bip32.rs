@@ -512,13 +512,9 @@ impl From<secp256k1::Error> for Error {
 }
 
 impl ExtendedPrivKey {
-    /// Construct a new master key from a seed value and prefix
-    pub fn new_master_with_seed_prefix(
-        network: NetworkType,
-        seed: &[u8],
-        seed_prefix: &[u8],
-    ) -> Result<ExtendedPrivKey, Error> {
-        let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(seed_prefix);
+    /// Construct a new master key from a seed value
+    pub fn new_master(network: NetworkType, seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
+        let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(b"Bitcoin seed");
         hmac_engine.input(seed);
         let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
 
@@ -531,11 +527,6 @@ impl ExtendedPrivKey {
                 .map_err(Error::Ecdsa)?,
             chain_code: ChainCode::from(&hmac_result[32..]),
         })
-    }
-
-    /// Construct a new master key from a seed value
-    pub fn new_master(network: NetworkType, seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
-        Self::new_master_with_seed_prefix(network, seed, b"CKB seed")
     }
 
     /// Attempts to derive an extended private key from a path.
@@ -1171,8 +1162,7 @@ mod tests {
         expected_sk: &str,
         expected_pk: &str,
     ) {
-        let mut sk =
-            ExtendedPrivKey::new_master_with_seed_prefix(network, seed, b"Bitcoin seed").unwrap();
+        let mut sk = ExtendedPrivKey::new_master(network, seed).unwrap();
         let mut pk = ExtendedPubKey::from_private(secp, &sk);
 
         // Check derivation convenience method for ExtendedPrivKey
