@@ -14,7 +14,7 @@ use crypto::secp::{Generator, SECP256K1};
 use faster_hex::hex_string;
 use hash::blake2b_256;
 use jsonrpc_types::BlockNumber;
-use numext_fixed_hash::H256;
+use numext_fixed_hash::{H160, H256};
 use serde_json::json;
 
 use super::CliSubCommand;
@@ -24,6 +24,8 @@ use crate::utils::arg_parser::{
 };
 use crate::utils::printer::{OutputFormat, Printable};
 use ckb_sdk::{
+    build_witness_with_key, serialize_signature,
+    wallet::{KeyStore, KeyStoreError},
     GenesisInfo, HttpRpcClient, IndexDatabase, TransferTransactionBuilder, LMDB_EXTRA_MAP_SIZE,
     MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
@@ -34,6 +36,7 @@ pub use index::{
 
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
+    key_store: &'a mut KeyStore,
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -43,6 +46,7 @@ pub struct WalletSubCommand<'a> {
 impl<'a> WalletSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
+        key_store: &'a mut KeyStore,
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
@@ -50,6 +54,7 @@ impl<'a> WalletSubCommand<'a> {
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
+            key_store,
             genesis_info,
             index_dir,
             index_controller,
@@ -122,7 +127,14 @@ impl<'a> WalletSubCommand<'a> {
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg_privkey.clone().required(true))
+                    .arg(arg_privkey.clone())
+                    .arg(
+                        Arg::with_name("from-lock-arg")
+                            .long("from-lock-arg")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H160>::default().validate(input))
+                            .help("The account's lock-arg (transfer from this account)")
+                    )
                     .arg(
                         Arg::with_name("to-address")
                             .long("to-address")
@@ -232,14 +244,19 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
-                let from_privkey: secp256k1::SecretKey =
-                    PrivkeyPathParser.from_matches(m, "privkey-path")?;
+                let from_privkey: Option<secp256k1::SecretKey> =
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                let from_lock_arg: Option<H160> =
+                    FixedHashParser::<H160>::default().from_matches(m, "from-lock-arg")?;
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
                 let to_data: Bytes = HexParser
                     .from_matches_opt(m, "to-data", false)?
                     .unwrap_or_else(Bytes::new);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
 
+                if from_privkey.is_none() && from_lock_arg.is_none() {
+                    return Err("<privkey-path> or <from-lock-arg> is required!".to_owned());
+                }
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
                         "Capacity can not less than {} shannons",
@@ -253,10 +270,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     ));
                 }
 
-                let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
-                let from_address = {
+                let from_address = if let Some(from_privkey) = from_privkey {
+                    let from_pubkey =
+                        secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
                     let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
                     Address::from_lock_arg(&pubkey_hash[0..20])?
+                } else {
+                    Address::from_lock_arg(&from_lock_arg.as_ref().unwrap()[..])?
                 };
 
                 let genesis_info = self.genesis_info()?;
@@ -282,24 +302,38 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     ));
                 }
                 let tx_args = TransferTransactionBuilder {
-                    from_privkey: &from_privkey,
                     from_address: &from_address,
                     from_capacity: total_capacity,
                     to_data: &to_data,
                     to_address: &to_address,
                     to_capacity: capacity,
                 };
-                let tx = tx_args.build(infos, &genesis_info);
-                // TODO: print when debug
-                // println!(
-                //     "[Send Transaction]:\n{}",
-                //     serde_json::to_string_pretty(&tx).unwrap()
-                // );
+                let tx = if let Some(privkey) = from_privkey {
+                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                        Ok(build_witness_with_key(&privkey, tx_hash))
+                    })?
+                } else {
+                    let lock_arg = from_lock_arg.as_ref().unwrap();
+                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                        self.key_store
+                            .sign_recoverable(lock_arg, tx_hash)
+                            .map(|signature| serialize_signature(&signature))
+                            .map_err(|err| {
+                                match err {
+                                    KeyStoreError::AccountLocked(lock_arg) => {
+                                        format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it", lock_arg)
+                                    }
+                                    err => err.to_string(),
+                                }
+                            })
+                    })?
+                };
+                println!("[Send Transaction]:\n{}", tx.render(format, color),);
                 let resp = self
                     .rpc_client
                     .send_transaction(tx)
                     .call()
-                    .map_err(|err| format!("Send transaction error: {:?}", err))?;
+                    .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
             }
             ("generate-key", Some(m)) => {

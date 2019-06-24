@@ -95,7 +95,11 @@ impl<'a> CliSubCommand for LocalSubCommand<'a> {
                 .process(m, format, color)
             }
             ("secp-dep", _) => {
-                let result = self.genesis_info()?.secp_dep();
+                let genesis_info = self.genesis_info()?;
+                let result = serde_json::json!({
+                    "out_point": genesis_info.secp_dep(),
+                    "code_hash": genesis_info.secp_code_hash(),
+                });
                 Ok(result.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),

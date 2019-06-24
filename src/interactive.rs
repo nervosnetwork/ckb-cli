@@ -317,6 +317,7 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info()?;
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
+                        &mut self.key_store,
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),

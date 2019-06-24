@@ -93,7 +93,6 @@ impl GenesisInfo {
 
 #[derive(Debug)]
 pub struct TransferTransactionBuilder<'a> {
-    pub from_privkey: &'a secp256k1::SecretKey,
     pub from_address: &'a Address,
     pub from_capacity: u64,
     pub to_data: &'a Bytes,
@@ -102,11 +101,15 @@ pub struct TransferTransactionBuilder<'a> {
 }
 
 impl<'a> TransferTransactionBuilder<'a> {
-    pub fn build(
+    pub fn build<F>(
         &self,
         input_infos: Vec<LiveCellInfo>,
         genesis_info: &GenesisInfo,
-    ) -> RpcTransaction {
+        build_witness: F,
+    ) -> Result<RpcTransaction, String>
+    where
+        F: FnOnce(&H256) -> Result<Bytes, String>,
+    {
         assert!(self.from_capacity >= self.to_capacity);
         let secp_dep = genesis_info.secp_dep();
         let secp_code_hash = genesis_info.secp_code_hash();
@@ -143,26 +146,28 @@ impl<'a> TransferTransactionBuilder<'a> {
             .dep(secp_dep.clone())
             .build();
 
-        let witness = build_witness(&self.from_privkey, core_tx.hash());
+        let witness = vec![build_witness(core_tx.hash())?];
         let witnesses = inputs.iter().map(|_| witness.clone()).collect::<Vec<_>>();
-        (&TransactionBuilder::default()
+        Ok((&TransactionBuilder::default()
             .inputs(inputs)
             .outputs(outputs)
             .dep(secp_dep)
             .witnesses(witnesses)
             .build())
-            .into()
+            .into())
     }
 }
 
-pub fn build_witness(privkey: &secp256k1::SecretKey, tx_hash: &H256) -> Vec<Bytes> {
+pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, tx_hash: &H256) -> Bytes {
     let message = secp256k1::Message::from_slice(&blake2b_256(tx_hash))
         .expect("Convert to secp256k1 message failed");
-    let (recov_id, data) = SECP256K1
-        .sign_recoverable(&message, privkey)
-        .serialize_compact();
+    serialize_signature(&SECP256K1.sign_recoverable(&message, privkey))
+}
+
+pub fn serialize_signature(signature: &secp256k1::RecoverableSignature) -> Bytes {
+    let (recov_id, data) = signature.serialize_compact();
     let mut signature_bytes = [0u8; 65];
     signature_bytes[0..64].copy_from_slice(&data[0..64]);
     signature_bytes[64] = recov_id.to_i32() as u8;
-    vec![Bytes::from(signature_bytes.to_vec())]
+    Bytes::from(signature_bytes.to_vec())
 }

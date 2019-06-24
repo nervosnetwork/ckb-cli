@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use ckb_sdk::{wallet::KeyStore, Address, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -82,6 +82,10 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .enumerate()
                     .map(|(idx, (lock_arg, filepath))| {
                         let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
+                        let timeout = self.key_store.get_lock_timeout(&lock_arg);
+                        let status = timeout
+                            .map(|timeout| format!("lock after: {}", timeout))
+                            .unwrap_or_else(|| "locked".to_owned());
                         serde_json::json!({
                             "#": idx,
                             "lock_arg": format!("{:x}", lock_arg),
@@ -90,6 +94,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "testnet": address.to_string(NetworkType::TestNet),
                             },
                             "path": filepath.to_string_lossy(),
+                            "status": status,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -135,24 +140,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let keep: Duration = DurationParser.from_matches(m, "keep")?;
-                let password = read_password(true)?;
-                let timeout_after = self
+                let password = read_password(false)?;
+                let lock_after = self
                     .key_store
                     .timed_unlock(&lock_arg, password.as_bytes(), keep)
-                    .map_err(|err| err.to_string())?
-                    .map(|timeout| (timeout - Instant::now()).as_secs())
-                    .map(|seconds| {
-                        let hours = seconds / 3600;
-                        let secs = seconds % 3600;
-                        match (hours, secs) {
-                            (0, secs) => format!("{} seconds", secs),
-                            (hours, 0) => format!("{} hours", hours),
-                            (hours, secs) => format!("{} hours {} seconds", hours, secs),
-                        }
-                    })
-                    .unwrap_or_else(|| "infinite time".to_owned());
+                    .map(|timeout| timeout.to_string())
+                    .map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
-                    "timeout-after": timeout_after,
+                    "lock-after": lock_after,
                 });
                 Ok(resp.render(format, color))
             }

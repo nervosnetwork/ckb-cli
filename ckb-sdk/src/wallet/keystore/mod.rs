@@ -5,6 +5,7 @@ mod util;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -83,7 +84,7 @@ impl KeyStore {
     pub fn lock(&mut self, address: &H160) -> bool {
         self.unlocked_keys.remove(address).is_some()
     }
-    pub fn unlock(&mut self, address: &H160, password: &[u8]) -> Result<Option<Instant>, Error> {
+    pub fn unlock(&mut self, address: &H160, password: &[u8]) -> Result<KeyTimeout, Error> {
         self.unlock_inner(address, password, None)
     }
     pub fn timed_unlock(
@@ -91,8 +92,13 @@ impl KeyStore {
         address: &H160,
         password: &[u8],
         keep: Duration,
-    ) -> Result<Option<Instant>, Error> {
+    ) -> Result<KeyTimeout, Error> {
         self.unlock_inner(address, password, Some(keep))
+    }
+    pub fn get_lock_timeout(&self, address: &H160) -> Option<KeyTimeout> {
+        self.unlocked_keys
+            .get(address)
+            .map(|timed_key| timed_key.timeout)
     }
 
     pub fn import(
@@ -219,15 +225,13 @@ impl KeyStore {
         address: &H160,
         password: &[u8],
         keep: Option<Duration>,
-    ) -> Result<Option<Instant>, Error> {
+    ) -> Result<KeyTimeout, Error> {
         let filepath = self.get_filepath(address)?;
+        let key = self.storage.get_key(address, filepath, password)?;
         let entry = self.unlocked_keys.entry(address.clone());
         let value = match entry {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let key = self.storage.get_key(address, filepath, password)?;
-                entry.insert(TimedKey::new_timed(key, Duration::default()))
-            }
+            Entry::Vacant(entry) => entry.insert(TimedKey::new_timed(key, Duration::default())),
         };
         value.extend(keep);
         Ok(value.timeout)
@@ -286,9 +290,38 @@ impl PassphraseKeyStore {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum KeyTimeout {
+    Infinite,
+    Timeout(Instant),
+}
+
+impl fmt::Display for KeyTimeout {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = match self {
+            KeyTimeout::Timeout(timeout) => {
+                let total_secs = (*timeout - Instant::now()).as_secs();
+                let hours = total_secs / 3600;
+                let left = total_secs % 3600;
+                let minutes = left / 60;
+                let seconds = left % 60;
+                match (hours, minutes, seconds) {
+                    (0, 0, seconds) => format!("{} seconds", seconds),
+                    (0, minutes, seconds) => format!("{} minutes, {} seconds", minutes, seconds),
+                    (hours, minutes, seconds) => {
+                        format!("{} hours, {} minutes, {} seconds", hours, minutes, seconds,)
+                    }
+                }
+            }
+            KeyTimeout::Infinite => "infinite time".to_owned(),
+        };
+        write!(f, "{}", output)
+    }
+}
+
 struct TimedKey {
     key: Key,
-    timeout: Option<Instant>,
+    timeout: KeyTimeout,
 }
 
 impl TimedKey {
@@ -300,27 +333,28 @@ impl TimedKey {
         let timeout = Instant::now() + keep;
         TimedKey {
             key,
-            timeout: Some(timeout),
+            timeout: KeyTimeout::Timeout(timeout),
         }
     }
 
     fn extend(&mut self, extra: Option<Duration>) {
         if self.is_expired() {
-            self.timeout = Some(Instant::now());
+            self.timeout = KeyTimeout::Timeout(Instant::now());
         }
         if let Some(extra) = extra {
-            if let Some(ref mut timeout) = self.timeout {
+            if let KeyTimeout::Timeout(ref mut timeout) = self.timeout {
                 *timeout += extra;
             }
         } else {
-            self.timeout = None;
+            self.timeout = KeyTimeout::Infinite;
         }
     }
 
     fn is_expired(&self) -> bool {
-        self.timeout
-            .map(|timeout| timeout <= Instant::now())
-            .unwrap_or(false)
+        match self.timeout {
+            KeyTimeout::Timeout(timeout) => timeout <= Instant::now(),
+            KeyTimeout::Infinite => false,
+        }
     }
 }
 

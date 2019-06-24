@@ -316,7 +316,7 @@ impl ArgParser<Duration> for DurationParser {
         let input_lower = input.to_lowercase();
         let value_part = &input_lower[0..input_lower.len() - 1];
         let value: u64 = value_part.parse::<u64>().map_err(|err| err.to_string())?;
-        let unit_part = &input_lower[input_lower.len() - 2..input_lower.len() - 1];
+        let unit_part = &input_lower[input_lower.len() - 1..input_lower.len()];
         let seconds = match unit_part {
             "s" => value,
             "m" => value * 60,
