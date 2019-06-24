@@ -1,25 +1,16 @@
 use std::collections::HashMap;
 
-use ckb_chain_spec::consensus::Consensus;
-use ckb_core::extras::{BlockExt, EpochExt, TransactionAddress};
 use ckb_core::{
-    block::Block,
     cell::{
         resolve_transaction, BlockInfo, CellMeta, CellMetaBuilder, CellProvider, CellStatus,
         HeaderProvider, HeaderStatus,
     },
+    extras::BlockExt,
     header::Header,
-    transaction::{
-        CellOutPoint, CellOutput, OutPoint, ProposalShortId, Transaction, TransactionBuilder,
-        Witness,
-    },
-    transaction_meta::TransactionMeta,
-    uncle::UncleBlock,
-    BlockNumber, Cycle, EpochNumber,
+    transaction::{CellOutPoint, CellOutput, OutPoint, Transaction, TransactionBuilder, Witness},
+    Cycle,
 };
-use ckb_db::Error as CkbDbError;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
-use ckb_store::{ChainStore, StoreBatch};
 use fnv::FnvHashSet;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
@@ -358,159 +349,5 @@ impl DataLoader for Resource {
     fn get_block_ext(&self, _block_hash: &H256) -> Option<BlockExt> {
         // TODO: visit this later
         None
-    }
-}
-
-struct DummyStoreBatch;
-
-impl StoreBatch for DummyStoreBatch {
-    fn insert_block(&mut self, _block: &Block) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn insert_block_ext(&mut self, _block_hash: &H256, _ext: &BlockExt) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn insert_tip_header(&mut self, _header: &Header) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn insert_current_epoch_ext(&mut self, _epoch: &EpochExt) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn insert_block_epoch_index(
-        &mut self,
-        _block_hash: &H256,
-        _epoch_hash: &H256,
-    ) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn insert_epoch_ext(&mut self, _hash: &H256, _epoch: &EpochExt) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-
-    fn attach_block(&mut self, _block: &Block) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn detach_block(&mut self, _block: &Block) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-
-    fn update_cell_set(
-        &mut self,
-        _tx_hash: &H256,
-        _meta: &TransactionMeta,
-    ) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    fn delete_cell_set(&mut self, _tx_hash: &H256) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-
-    fn commit(self) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-}
-
-impl ChainStore for Resource {
-    /// Batch handle
-    type Batch = DummyStoreBatch;
-    /// New a store batch handle
-    fn new_batch(&self) -> Result<Self::Batch, CkbDbError> {
-        unimplemented!();
-    }
-
-    /// Get block by block header hash
-    fn get_block(&self, _block_hash: &H256) -> Option<Block> {
-        unimplemented!();
-    }
-    /// Get header by block header hash
-    fn get_block_header(&self, _block_hash: &H256) -> Option<Header> {
-        unimplemented!();
-    }
-    /// Get block body by block header hash
-    fn get_block_body(&self, _block_hash: &H256) -> Option<Vec<Transaction>> {
-        unimplemented!();
-    }
-    /// Get all transaction-hashes in block body by block header hash
-    fn get_block_txs_hashes(&self, _block_hash: &H256) -> Option<Vec<H256>> {
-        unimplemented!();
-    }
-    /// Get proposal short id by block header hash
-    fn get_block_proposal_txs_ids(&self, _h: &H256) -> Option<Vec<ProposalShortId>> {
-        unimplemented!();
-    }
-    /// Get block uncles by block header hash
-    fn get_block_uncles(&self, _block_hash: &H256) -> Option<Vec<UncleBlock>> {
-        unimplemented!();
-    }
-    /// Get block ext by block header hash
-    fn get_block_ext(&self, _block_hash: &H256) -> Option<BlockExt> {
-        unimplemented!();
-    }
-
-    fn init(&self, _consensus: &Consensus) -> Result<(), CkbDbError> {
-        unimplemented!();
-    }
-    /// Get block header hash by block number
-    fn get_block_hash(&self, _number: BlockNumber) -> Option<H256> {
-        unimplemented!();
-    }
-    /// Get block number by block header hash
-    fn get_block_number(&self, _hash: &H256) -> Option<BlockNumber> {
-        unimplemented!();
-    }
-    /// Get the tip(highest) header
-    fn get_tip_header(&self) -> Option<Header> {
-        unimplemented!();
-    }
-    /// Get commit transaction and block hash by it's hash
-    fn get_transaction(&self, _h: &H256) -> Option<(Transaction, H256)> {
-        unimplemented!();
-    }
-    fn get_transaction_address(&self, _hash: &H256) -> Option<TransactionAddress> {
-        unimplemented!();
-    }
-    fn get_cell_meta(&self, tx_hash: &H256, index: u32) -> Option<CellMeta> {
-        let cell_out_point = CellOutPoint {
-            tx_hash: tx_hash.clone(),
-            index,
-        };
-        self.required_cells.get(&cell_out_point).cloned()
-    }
-    fn get_cell_output(&self, tx_hash: &H256, index: u32) -> Option<CellOutput> {
-        let cell_out_point = CellOutPoint {
-            tx_hash: tx_hash.clone(),
-            index,
-        };
-        self.required_cells
-            .get(&cell_out_point)
-            .and_then(|cell_meta| cell_meta.cell_output.clone())
-    }
-    // Get current epoch ext
-    fn get_current_epoch_ext(&self) -> Option<EpochExt> {
-        unimplemented!();
-    }
-    // Get epoch ext by epoch index
-    fn get_epoch_ext(&self, _hash: &H256) -> Option<EpochExt> {
-        unimplemented!();
-    }
-    // Get epoch index by epoch number
-    fn get_epoch_index(&self, _number: EpochNumber) -> Option<H256> {
-        unimplemented!();
-    }
-    // Get epoch index by block hash
-    fn get_block_epoch_index(&self, _h256: &H256) -> Option<H256> {
-        unimplemented!();
-    }
-    fn traverse_cell_set<F>(&self, _callback: F) -> Result<(), CkbDbError>
-    where
-        F: FnMut(H256, TransactionMeta) -> Result<(), CkbDbError>,
-    {
-        unimplemented!();
-    }
-    fn is_uncle(&self, _hash: &H256) -> bool {
-        unimplemented!();
-    }
-    fn get_cellbase(&self, _hash: &H256) -> Option<Transaction> {
-        unimplemented!();
     }
 }

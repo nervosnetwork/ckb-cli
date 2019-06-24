@@ -17,7 +17,7 @@ rkv = "0.9.5"
 # fs2 = "0.4.3"
 jsonrpc-client-core = "0.5.0"
 jsonrpc-client-http = "0.5.0"
-rocksdb = { version = "0.12.2", default-features = false, optional = true }
+rocksdb = { version = "0.12.2", default-features = false }
 secp256k1 = {version = "0.12.2" }
 faster-hex = "0.3"
 fnv = "1.0.3"
@@ -32,15 +32,8 @@ uuid = { version = "0.7.4", features = ["v4"] }
 chrono = "0.4.6"
 failure = "0.1.5"
 
-ckb-store = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", optional = true }
-ckb-db = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", optional = true}
-ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", optional = true }
-ckb-traits = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", optional = true  }
-ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", optional = true  }
-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
 crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
-
-[features]
-default = [ "rocksdb", "ckb-store", "ckb-db", "ckb-script", "ckb-traits", "ckb-chain-spec" ]
