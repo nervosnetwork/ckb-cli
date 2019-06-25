@@ -246,8 +246,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let from_lock_arg: Option<H160> =
-                    FixedHashParser::<H160>::default().from_matches(m, "from-lock-arg")?;
+                let from_lock_arg: Option<H160> = FixedHashParser::<H160>::default()
+                    .from_matches_opt(m, "from-lock-arg", false)?;
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
                 let to_data: Bytes = HexParser
                     .from_matches_opt(m, "to-data", false)?
@@ -315,8 +315,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 } else {
                     let lock_arg = from_lock_arg.as_ref().unwrap();
                     tx_args.build(infos, &genesis_info, |tx_hash| {
+                        let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
+                            .expect("Tx hash convert to H256 failed");
                         self.key_store
-                            .sign_recoverable(lock_arg, tx_hash)
+                            .sign_recoverable(lock_arg, &sign_hash)
                             .map(|signature| serialize_signature(&signature))
                             .map_err(|err| {
                                 match err {
@@ -328,7 +330,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             })
                     })?
                 };
-                println!("[Send Transaction]:\n{}", tx.render(format, color),);
+                // let tx_view: TransactionView = (&Into::<Transaction>::into(tx.clone())).into();
+                // println!("[Send Transaction]:\n{}", tx_view.render(format, color));
                 let resp = self
                     .rpc_client
                     .send_transaction(tx)

@@ -12,6 +12,7 @@ use ckb_core::{
 };
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use fnv::FnvHashSet;
+use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
@@ -119,7 +120,9 @@ impl<'a> TransactionManager<'a> {
                     .get(0)
                     .and_then(|bytes| H160::from_slice(bytes).ok())
                 {
-                    let signature = key_store.sign_recoverable(&lock_arg, tx_hash)
+                    let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
+                        .expect("Tx hash convert to H256 failed");
+                    let signature = key_store.sign_recoverable(&lock_arg, &sign_hash)
                         .map_err(|err| {
                             match err {
                                 KeyStoreError::AccountLocked(lock_arg) => {
