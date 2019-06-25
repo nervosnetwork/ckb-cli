@@ -100,6 +100,7 @@ impl<'a> WalletSubCommand<'a> {
             self.genesis_info()?,
             self.index_dir.clone(),
             LMDB_EXTRA_MAP_SIZE,
+            false,
         )
         .map_err(|err| err.to_string())
     }

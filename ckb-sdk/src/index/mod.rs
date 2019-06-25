@@ -30,6 +30,8 @@ pub struct IndexDatabase {
     last_header: Option<Header>,
     tip_header: Header,
     init_block_buf: Vec<Block>,
+    // Disable record tx info by default
+    enable_tx: bool,
 }
 
 impl IndexDatabase {
@@ -38,6 +40,7 @@ impl IndexDatabase {
         genesis_info: GenesisInfo,
         mut directory: PathBuf,
         extra_size: u64,
+        enable_tx: bool,
     ) -> Result<IndexDatabase, IndexError> {
         let genesis_header = genesis_info.header().clone();
         assert_eq!(genesis_header.number(), 0);
@@ -116,6 +119,7 @@ impl IndexDatabase {
             genesis_info,
             tip_header: genesis_header,
             init_block_buf: Vec::new(),
+            enable_tx,
         })
     }
 
@@ -336,7 +340,7 @@ impl IndexDatabase {
                 BlockDeltaInfo::from_block(&block, self.store, &writer, secp_code_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
-            let result = block_delta_info.apply(self.store, &mut writer);
+            let result = block_delta_info.apply(self.store, &mut writer, self.enable_tx);
             log::info!(
                 "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
                 number,

@@ -264,6 +264,7 @@ fn process(
         genesis_info.clone(),
         index_dir.clone(),
         LMDB_EXTRA_MAP_SIZE,
+        false,
     )
     .unwrap();
 
@@ -309,6 +310,7 @@ fn process(
                         genesis_info.clone(),
                         index_dir.clone(),
                         LMDB_EXTRA_MAP_SIZE,
+                        false,
                     )
                     .unwrap();
                     db.update_tip(tip_header.clone());

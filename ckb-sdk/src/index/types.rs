@@ -222,7 +222,12 @@ impl BlockDeltaInfo {
         }
     }
 
-    pub(crate) fn apply(&self, store: rkv::SingleStore, writer: &mut rkv::Writer) -> ApplyResult {
+    pub(crate) fn apply(
+        &self,
+        store: rkv::SingleStore,
+        writer: &mut rkv::Writer,
+        enable_tx: bool,
+    ) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             self.header_info.header.number(),
@@ -232,11 +237,13 @@ impl BlockDeltaInfo {
 
         // Update cells and transactions
         for tx in &self.txs {
-            put_pair(
-                store,
-                writer,
-                Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()),
-            );
+            if enable_tx {
+                put_pair(
+                    store,
+                    writer,
+                    Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()),
+                );
+            }
 
             for LiveCellInfo {
                 out_point,
@@ -246,11 +253,16 @@ impl BlockDeltaInfo {
                 ..
             } in &tx.inputs
             {
-                put_pair(
-                    store,
-                    writer,
-                    Key::pair_lock_tx((lock_hash.clone(), *number, index.tx_index), &tx.tx_hash),
-                );
+                if enable_tx {
+                    put_pair(
+                        store,
+                        writer,
+                        Key::pair_lock_tx(
+                            (lock_hash.clone(), *number, index.tx_index),
+                            &tx.tx_hash,
+                        ),
+                    );
+                }
                 store
                     .delete(writer, Key::LiveCellMap(out_point.clone()).to_bytes())
                     .unwrap();
@@ -273,11 +285,16 @@ impl BlockDeltaInfo {
                     index,
                     ..
                 } = live_cell_info;
-                put_pair(
-                    store,
-                    writer,
-                    Key::pair_lock_tx((lock_hash.clone(), *number, index.tx_index), &tx.tx_hash),
-                );
+                if enable_tx {
+                    put_pair(
+                        store,
+                        writer,
+                        Key::pair_lock_tx(
+                            (lock_hash.clone(), *number, index.tx_index),
+                            &tx.tx_hash,
+                        ),
+                    );
+                }
                 put_pair(
                     store,
                     writer,
@@ -401,7 +418,7 @@ impl BlockDeltaInfo {
         for tx in &self.txs {
             store
                 .delete(writer, Key::TxMap(tx.tx_hash.clone()).to_bytes())
-                .unwrap();
+                .ok();
             for live_cell_info in &tx.inputs {
                 let LiveCellInfo {
                     out_point,
@@ -454,7 +471,7 @@ impl BlockDeltaInfo {
         for (lock_hash, number, tx_index) in delete_lock_txs {
             store
                 .delete(writer, Key::LockTx(lock_hash, number, tx_index).to_bytes())
-                .unwrap();
+                .ok();
         }
 
         for (lock_hash, info) in &self.locks {

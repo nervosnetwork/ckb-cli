@@ -503,6 +503,7 @@ fn render_top_capacity<B: Backend>(
             genesis_info.clone(),
             index_dir,
             LMDB_EXTRA_MAP_SIZE,
+            false,
         ) {
             Ok(db) => db
                 .get_top_n(50)
