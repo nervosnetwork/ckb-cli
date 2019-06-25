@@ -7,13 +7,13 @@ edition = "2018"
 
 [dependencies]
 numext-fixed-hash = "~0.1"
-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-occupied-capacity = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
+occupied-capacity = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
+hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
+crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z", features = ["secp", "bech32"] }
+build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
+ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
 ckb-sdk = { path = "ckb-sdk" }
 
 jsonrpc-client-core = "0.5.0"
@@ -49,7 +49,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
 
 [workspace]
 members = ["ckb-sdk"]
