@@ -1,4 +1,5 @@
 mod key;
+mod overlay;
 mod types;
 mod util;
 
@@ -17,6 +18,7 @@ const LMDB_MAX_DBS: u32 = 6;
 pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
+use overlay::DBOverlay;
 use types::BlockDeltaInfo;
 use util::{dir_size, put_pair, value_to_bytes};
 
@@ -152,9 +154,10 @@ impl IndexDatabase {
                         .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
                         .unwrap()
                 };
-                let mut writer = env_read.write().unwrap();
-                last_block_delta.rollback(self.store, &mut writer);
-                writer.commit().unwrap();
+                let writer = env_read.write().unwrap();
+                let mut overlay = DBOverlay::new(self.store, writer);
+                last_block_delta.rollback(&mut overlay);
+                overlay.commit();
                 self.last_header = last_block_delta.parent_header;
                 return Ok(());
             }
@@ -334,13 +337,13 @@ impl IndexDatabase {
         };
 
         let secp_code_hash = self.genesis_info.secp_code_hash();
-        let mut writer = env_read.write().unwrap();
+        let writer = env_read.write().unwrap();
+        let mut overlay = DBOverlay::new(self.store, writer);
         for block in blocks {
-            let block_delta_info =
-                BlockDeltaInfo::from_block(&block, self.store, &writer, secp_code_hash);
+            let block_delta_info = BlockDeltaInfo::from_block(&block, &overlay, secp_code_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
-            let result = block_delta_info.apply(self.store, &mut writer, self.enable_tx);
+            let result = block_delta_info.apply(&mut overlay, self.enable_tx);
             log::info!(
                 "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
                 number,
@@ -352,7 +355,7 @@ impl IndexDatabase {
                 result.cell_added,
             );
         }
-        writer.commit().unwrap();
+        overlay.commit();
     }
 
     pub fn get_metrics(&self, key_type_opt: Option<KeyType>) -> BTreeMap<KeyType, KeyMetrics> {
