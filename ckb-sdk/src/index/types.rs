@@ -10,8 +10,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
-use super::kvdb::{KVReader, KVTxn, LmdbTxn};
-use crate::Address;
+use crate::{Address, KVTxn};
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
 const KEEP_RECENT_BLOCKS: u64 = 200;
@@ -45,9 +44,9 @@ impl BlockDeltaInfo {
         self.header_info.header.number()
     }
 
-    pub(crate) fn from_block(
+    pub(crate) fn from_block<'r, T: KVTxn<'r>>(
         block: &Block,
-        txn: &LmdbTxn,
+        txn: &'r T,
         secp_code_hash: &H256,
     ) -> BlockDeltaInfo {
         let block_header: Header = block.header().clone();
@@ -204,7 +203,7 @@ impl BlockDeltaInfo {
         }
     }
 
-    pub(crate) fn apply(&self, txn: &mut LmdbTxn, enable_tx: bool) -> ApplyResult {
+    pub(crate) fn apply<'r, T: KVTxn<'r>>(&self, txn: &mut T, enable_tx: bool) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             self.header_info.header.number(),
@@ -327,7 +326,7 @@ impl BlockDeltaInfo {
         self.header_info.clone().into()
     }
 
-    pub(crate) fn rollback(&self, txn: &mut LmdbTxn) {
+    pub(crate) fn rollback<'r, T: KVTxn<'r>>(&self, txn: &mut T) {
         log::debug!("rollback block: {:?}", self);
 
         let mut delete_lock_txs: HashSet<(H256, u64, u32)> = HashSet::default();

@@ -26,8 +26,8 @@ use crate::utils::printer::{OutputFormat, Printable};
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    GenesisInfo, HttpRpcClient, IndexDatabase, TransferTransactionBuilder, LMDB_EXTRA_MAP_SIZE,
-    MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
+    TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -77,7 +77,10 @@ impl<'a> WalletSubCommand<'a> {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    fn get_db(&mut self) -> Result<IndexDatabase, String> {
+    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
+    where
+        F: FnOnce(IndexDatabase) -> T,
+    {
         if !self.interactive {
             Request::call(self.index_controller.sender(), IndexRequest::Kick);
             for _ in 0..600 {
@@ -95,13 +98,14 @@ impl<'a> WalletSubCommand<'a> {
                 ));
             }
         }
-        IndexDatabase::from_path(
-            NetworkType::TestNet,
-            self.genesis_info()?,
-            self.index_dir.clone(),
-            LMDB_EXTRA_MAP_SIZE,
-            false,
-        )
+
+        let genesis_info = self.genesis_info()?;
+        let genesis_hash = genesis_info.header().hash().clone();
+        with_index_db(&self.index_dir, genesis_hash, |backend, cf| {
+            let db =
+                IndexDatabase::from_db(backend, cf, NetworkType::TestNet, genesis_info, false)?;
+            Ok(func(db))
+        })
         .map_err(|err| err.to_string())
     }
 
@@ -282,19 +286,22 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                 let genesis_info = self.genesis_info()?;
                 let secp_code_hash = genesis_info.secp_code_hash();
-                let mut total_capacity = 0;
-                let infos = self.get_db()?.get_live_cell_infos(
-                    from_address
-                        .lock_script(secp_code_hash.clone())
-                        .hash()
-                        .clone(),
-                    None,
-                    |_, info| {
-                        total_capacity += info.capacity;
-                        let stop = total_capacity >= capacity;
-                        (stop, true)
-                    },
-                );
+                let (infos, total_capacity): (Vec<LiveCellInfo>, u64) = self.with_db(|db| {
+                    let mut total_capacity = 0;
+                    let infos = db.get_live_cell_infos(
+                        from_address
+                            .lock_script(secp_code_hash.clone())
+                            .hash()
+                            .clone(),
+                        None,
+                        |_, info| {
+                            total_capacity += info.capacity;
+                            let stop = total_capacity >= capacity;
+                            (stop, true)
+                        },
+                    );
+                    (infos, total_capacity)
+                })?;
                 if total_capacity < capacity {
                     return Err(format!(
                         "Capacity not enough: {} => {}",
@@ -432,8 +439,9 @@ args = ["{:#x}"]
             ("get-capacity", Some(m)) => {
                 let lock_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
                 let resp = serde_json::json!({
-                    "capacity": self.get_db()?.get_capacity(lock_hash)
+                    "capacity": capacity,
                 });
                 Ok(resp.render(format, color))
             }
@@ -447,19 +455,19 @@ args = ["{:#x}"]
                     FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
 
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-                let mut total_capacity = 0;
-                let infos = self.get_db()?.get_live_cell_infos(
-                    lock_hash.clone(),
-                    from_number_opt,
-                    |idx, info| {
-                        let stop = idx >= limit || info.number > to_number;
-                        let push_info = !stop;
-                        if push_info {
-                            total_capacity += info.capacity;
-                        }
-                        (stop, push_info)
-                    },
-                );
+                let (infos, total_capacity) = self.with_db(|db| {
+                    let mut total_capacity = 0;
+                    let infos =
+                        db.get_live_cell_infos(lock_hash.clone(), from_number_opt, |idx, info| {
+                            let stop = idx >= limit || info.number > to_number;
+                            let push_info = !stop;
+                            if push_info {
+                                total_capacity += info.capacity;
+                            }
+                            (stop, push_info)
+                        });
+                    (infos, total_capacity)
+                })?;
                 let resp = serde_json::json!({
                     "live_cells": infos.into_iter().map(|info| {
                         serde_json::to_value(&info).unwrap()
@@ -470,32 +478,33 @@ args = ["{:#x}"]
             }
             ("get-lock-by-address", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;
-                let db = self.get_db()?;
-                let lock_script = db
-                    .get_lock_hash_by_address(address)
-                    .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
-                    .map(|lock_script| {
-                        let args = lock_script
-                            .args
-                            .iter()
-                            .map(|arg| hex_string(arg).unwrap())
-                            .collect::<Vec<_>>();
-                        serde_json::json!({
-                            "hash": lock_script.hash(),
-                            "script": {
-                                "code_hash": lock_script.code_hash,
-                                "args": args,
-                            }
+                let lock_script = self.with_db(|db| {
+                    db.get_lock_hash_by_address(address)
+                        .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
+                        .map(|lock_script| {
+                            let args = lock_script
+                                .args
+                                .iter()
+                                .map(|arg| hex_string(arg).unwrap())
+                                .collect::<Vec<_>>();
+                            serde_json::json!({
+                                "hash": lock_script.hash(),
+                                "script": {
+                                    "code_hash": lock_script.code_hash,
+                                    "args": args,
+                                }
+                            })
                         })
-                    });
+                })?;
                 Ok(lock_script.render(format, color))
             }
             ("get-balance", Some(m)) => {
                 let address: Address = AddressParser.from_matches(m, "address")?;
                 let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
                 let lock_hash = address.lock_script(secp_code_hash).hash().clone();
+                let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
                 let resp = serde_json::json!({
-                    "capacity": self.get_db()?.get_capacity(lock_hash)
+                    "capacity": capacity,
                 });
                 Ok(resp.render(format, color))
             }
@@ -504,9 +513,8 @@ args = ["{:#x}"]
                     .value_of("number")
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
-                let resp = serde_json::to_value({
-                    self.get_db()?
-                        .get_top_n(n)
+                let resp = self.with_db(|db| {
+                    db.get_top_n(n)
                         .into_iter()
                         .map(|(lock_hash, address, capacity)| {
                             serde_json::json!({
@@ -516,13 +524,12 @@ args = ["{:#x}"]
                             })
                         })
                         .collect::<Vec<_>>()
-                })
-                .map_err(|err| err.to_string())?;
+                })?;
                 Ok(resp.render(format, color))
             }
             ("db-metrics", _) => {
-                let resp = serde_json::to_value(self.get_db()?.get_metrics(None))
-                    .map_err(|err| err.to_string())?;
+                let metrcis = self.with_db(|db| db.get_metrics(None))?;
+                let resp = serde_json::to_value(metrcis).map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),

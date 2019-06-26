@@ -20,9 +20,7 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_core::service::Request;
-use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE, ONE_CKB,
-};
+use ckb_sdk::{with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, NetworkType, ONE_CKB};
 use jsonrpc_types::BlockNumber;
 
 use super::wallet::{IndexController, IndexRequest};
@@ -498,15 +496,19 @@ fn render_top_capacity<B: Backend>(
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
     let lines = if index.state().read().is_processing() {
-        match IndexDatabase::from_path(
-            NetworkType::TestNet,
-            genesis_info.clone(),
-            index_dir,
-            LMDB_EXTRA_MAP_SIZE,
-            false,
-        ) {
-            Ok(db) => db
-                .get_top_n(50)
+        let genesis_hash = genesis_info.header().hash().clone();
+        let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
+            let db = IndexDatabase::from_db(
+                backend,
+                cf,
+                NetworkType::TestNet,
+                genesis_info.clone(),
+                false,
+            )?;
+            Ok(db.get_top_n(50))
+        });
+        match capacity_list_result {
+            Ok(capacity_list) => capacity_list
                 .iter()
                 .flat_map(|(lock_hash, address, capacity)| {
                     vec![

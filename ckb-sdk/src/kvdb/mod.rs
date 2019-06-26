@@ -1,7 +1,8 @@
 mod lmdb;
-mod rocksdb;
+mod rocks;
 
-pub use lmdb::{LmdbReader, LmdbTxn};
+pub use lmdb::{LmdbReader, LmdbTxn, LMDB_EXTRA_MAP_SIZE, LMDB_MAX_DBS};
+pub use rocks::{RocksReader, RocksTxn};
 
 pub trait KVReader<'r> {
     type Iter: Iterator<Item = (Vec<u8>, Vec<u8>)>;

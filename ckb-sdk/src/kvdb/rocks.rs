@@ -2,80 +2,81 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem;
 use std::ops::Bound;
 
-use super::super::Key;
+use rocksdb::{ColumnFamily, DBIterator, Direction, IteratorMode, WriteBatch, DB};
+
 use super::{KVReader, KVTxn};
 
-pub struct LmdbReader<'a> {
-    store: rkv::SingleStore,
-    reader: rkv::Reader<'a>,
+pub struct RocksReader<'a> {
+    cf: ColumnFamily<'a>,
+    db: &'a DB,
 }
 
-impl<'a> LmdbReader<'a> {
-    pub fn new(store: rkv::SingleStore, reader: rkv::Reader<'a>) -> LmdbReader<'a> {
-        LmdbReader { store, reader }
+impl<'a> RocksReader<'a> {
+    pub fn new(db: &'a DB, cf: ColumnFamily<'a>) -> RocksReader<'a> {
+        RocksReader { db, cf }
     }
 }
 
-impl<'a> KVReader<'a> for LmdbReader<'a> {
+impl<'a> KVReader<'a> for RocksReader<'a> {
     type Iter = ReaderIter<'a>;
 
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        self.store
-            .get(&self.reader, key)
-            .unwrap()
-            .as_ref()
-            .map(|value| value_to_bytes(value).to_vec())
+        get_cf(self.db, self.cf, key)
     }
 
     fn iter_from(&'a self, key_start: &[u8]) -> Self::Iter {
-        let iter = self.store.iter_from(&self.reader, key_start).unwrap();
+        let mode = IteratorMode::From(key_start, Direction::Forward);
+        let iter = self
+            .db
+            .iterator_cf(self.cf, mode)
+            .expect("RocksReader iterator_cf failed");
         ReaderIter { iter }
     }
 }
 
 pub struct ReaderIter<'a> {
-    iter: rkv::store::single::Iter<'a>,
+    iter: DBIterator<'a>,
 }
 
 impl<'a> Iterator for ReaderIter<'a> {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(|item_result| {
-            let (key_ref, value_ref_opt) = item_result.unwrap();
-            (
-                key_ref.to_vec(),
-                value_to_bytes(&value_ref_opt.unwrap()).to_vec(),
-            )
-        })
+        self.iter
+            .next()
+            .map(|(key, value)| (key.into(), value.into()))
     }
 }
 
-pub struct LmdbTxn<'a> {
-    store: rkv::SingleStore,
-    writer: rkv::Writer<'a>,
+pub struct RocksTxn<'a> {
+    cf: ColumnFamily<'a>,
+    db: &'a DB,
     removed: HashMap<Vec<u8>, bool>,
     inserted: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
-impl<'a> KVReader<'a> for LmdbTxn<'a> {
+impl<'a> RocksTxn<'a> {
+    pub fn new(db: &'a DB, cf: ColumnFamily<'a>) -> RocksTxn<'a> {
+        RocksTxn {
+            cf,
+            db,
+            removed: HashMap::default(),
+            inserted: BTreeMap::default(),
+        }
+    }
+}
+
+impl<'a> KVReader<'a> for RocksTxn<'a> {
     type Iter = TxnIter<'a>;
 
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         if self.removed.contains_key(key) {
             return None;
         }
-
-        self.inserted.get(key).cloned().or_else(|| {
-            self.store
-                .get(&self.writer, key)
-                .unwrap()
-                .as_ref()
-                .map(|value| match value {
-                    rkv::Value::Blob(inner) => inner.to_vec(),
-                    _ => panic!("Invalid value type: {:?}", value),
-                })
-        })
+        self.inserted
+            .get(key)
+            .cloned()
+            .or_else(|| get_cf(self.db, self.cf, key))
     }
 
     fn iter_from(&'a self, key_start: &[u8]) -> TxnIter<'a> {
@@ -83,7 +84,7 @@ impl<'a> KVReader<'a> for LmdbTxn<'a> {
     }
 }
 
-impl<'a> KVTxn<'a> for LmdbTxn<'a> {
+impl<'a> KVTxn<'a> for RocksTxn<'a> {
     fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) -> Option<Vec<u8>> {
         self.removed.remove(&key);
         self.inserted.insert(key, value)
@@ -94,17 +95,20 @@ impl<'a> KVTxn<'a> for LmdbTxn<'a> {
         self.removed.insert(key, must_exists)
     }
 
-    fn commit(mut self) {
-        log::debug!("Lmdb txn committing...");
+    fn commit(self) {
+        log::debug!("Rocks txn committing...");
         let mut common_keys = Vec::new();
+        let mut batch = WriteBatch::default();
         for (removed_key, must_exists) in self.removed {
             if self.inserted.contains_key(&removed_key) {
                 common_keys.push(removed_key.clone());
             }
-            if let Err(err) = self.store.delete(&mut self.writer, &removed_key) {
+            if let Err(err) = batch.delete_cf(self.cf, &removed_key) {
                 if must_exists {
-                    let key = Key::from_bytes(&removed_key);
-                    panic!("Txn remove key failed, key={:?}, error: {:?}", key, err);
+                    panic!(
+                        "Txn remove key failed, key={:?}, error: {:?}",
+                        removed_key, err
+                    );
                 }
             }
         }
@@ -113,28 +117,19 @@ impl<'a> KVTxn<'a> for LmdbTxn<'a> {
         }
 
         for (key, value) in self.inserted {
-            self.store
-                .put(&mut self.writer, key, &rkv::Value::Blob(&value))
-                .unwrap();
+            batch
+                .put_cf(self.cf, key, value)
+                .expect("Put kv to rocks batch failed")
         }
-        self.writer.commit().expect("Commit txn transaction failed");
-        log::debug!("Lmdb txn commited!");
-    }
-}
-
-impl<'a> LmdbTxn<'a> {
-    pub fn new(store: rkv::SingleStore, writer: rkv::Writer<'a>) -> LmdbTxn<'a> {
-        LmdbTxn {
-            store,
-            writer,
-            removed: HashMap::default(),
-            inserted: BTreeMap::default(),
-        }
+        self.db
+            .write(batch)
+            .expect("Commit rocks txn transaction failed");
+        log::debug!("Rocks txn commited!");
     }
 }
 
 pub struct TxnIter<'a> {
-    iter: rkv::store::single::Iter<'a>,
+    iter: ReaderIter<'a>,
     next_disk_pair: Option<(Vec<u8>, Vec<u8>)>,
     next_mem_pair: Option<(Vec<u8>, Vec<u8>)>,
     removed: &'a HashMap<Vec<u8>, bool>,
@@ -142,15 +137,20 @@ pub struct TxnIter<'a> {
 }
 
 impl<'a> TxnIter<'a> {
-    fn new(txn: &'a LmdbTxn<'a>, key_start: &[u8]) -> TxnIter<'a> {
-        let iter = txn.store.iter_from(&txn.writer, key_start).unwrap();
+    fn new(txn: &'a RocksTxn<'a>, key_start: &[u8]) -> TxnIter<'a> {
+        let mode = IteratorMode::From(key_start, Direction::Forward);
+        let iter = txn
+            .db
+            .iterator_cf(txn.cf, mode)
+            .expect("RocksReader iterator_cf failed");
+        let reader_iter = ReaderIter { iter };
         let next_mem_pair = txn
             .inserted
             .range((Bound::Included(key_start.to_vec()), Bound::Unbounded))
             .next()
             .map(|(key, value)| (key.clone(), value.clone()));
         let mut txn_iter = TxnIter {
-            iter,
+            iter: reader_iter,
             next_disk_pair: None,
             next_mem_pair,
             removed: &txn.removed,
@@ -171,11 +171,7 @@ impl<'a> TxnIter<'a> {
     }
 
     fn update_next_disk_pair(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
-        let new_pair = self.iter.next().map(|item_result| {
-            let (key_ref, value_ref_opt) = item_result.unwrap();
-            (key_ref.to_vec(), value_ref_opt.unwrap().to_bytes().unwrap())
-        });
-        mem::replace(&mut self.next_disk_pair, new_pair)
+        mem::replace(&mut self.next_disk_pair, self.iter.next())
     }
 }
 
@@ -209,9 +205,8 @@ impl<'a> Iterator for TxnIter<'a> {
     }
 }
 
-fn value_to_bytes<'a>(value: &'a rkv::Value) -> &'a [u8] {
-    match value {
-        rkv::Value::Blob(inner) => inner,
-        _ => panic!("Invalid value type: {:?}", value),
-    }
+fn get_cf(db: &DB, cf: ColumnFamily, key: &[u8]) -> Option<Vec<u8>> {
+    db.get_cf(cf, key)
+        .expect("RocksReader get_cf failed")
+        .map(|value| value.to_vec())
 }
