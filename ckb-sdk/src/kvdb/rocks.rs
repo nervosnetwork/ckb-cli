@@ -143,21 +143,20 @@ impl<'a> TxnIter<'a> {
             .db
             .iterator_cf(txn.cf, mode)
             .expect("RocksReader iterator_cf failed");
-        let reader_iter = ReaderIter { iter };
+        let mut reader_iter = ReaderIter { iter };
         let next_mem_pair = txn
             .inserted
             .range((Bound::Included(key_start.to_vec()), Bound::Unbounded))
             .next()
             .map(|(key, value)| (key.clone(), value.clone()));
-        let mut txn_iter = TxnIter {
+        let next_disk_pair = reader_iter.next();
+        TxnIter {
             iter: reader_iter,
-            next_disk_pair: None,
+            next_disk_pair,
             next_mem_pair,
             removed: &txn.removed,
             inserted: &txn.inserted,
-        };
-        txn_iter.next_disk_pair = txn_iter.update_next_disk_pair();
-        txn_iter
+        }
     }
 
     fn update_next_mem_pair(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {

@@ -10,7 +10,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
-use crate::{Address, KVTxn};
+use crate::{Address, KVReader, KVTxn};
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
 const KEEP_RECENT_BLOCKS: u64 = 200;
@@ -44,9 +44,9 @@ impl BlockDeltaInfo {
         self.header_info.header.number()
     }
 
-    pub(crate) fn from_block<'r, T: KVTxn<'r>>(
+    pub(crate) fn from_block<'r, T: KVReader<'r>>(
         block: &Block,
-        txn: &'r T,
+        reader: &'r T,
         secp_code_hash: &H256,
     ) -> BlockDeltaInfo {
         let block_header: Header = block.header().clone();
@@ -56,7 +56,7 @@ impl BlockDeltaInfo {
         // Collect old headers to be deleted
         let mut old_headers = Vec::new();
         let mut old_blocks = Vec::new();
-        for (key_bytes, _) in txn.iter_from(&KeyType::RecentHeader.to_bytes()) {
+        for (key_bytes, _) in reader.iter_from(&KeyType::RecentHeader.to_bytes()) {
             if let Key::RecentHeader(number) = Key::from_bytes(&key_bytes) {
                 if number + KEEP_RECENT_HEADERS <= block_number {
                     old_headers.push(number);
@@ -67,7 +67,7 @@ impl BlockDeltaInfo {
                 break;
             }
         }
-        for (key_bytes, _) in txn.iter_from(&KeyType::BlockDelta.to_bytes()) {
+        for (key_bytes, _) in reader.iter_from(&KeyType::BlockDelta.to_bytes()) {
             if let Key::BlockDelta(number) = Key::from_bytes(&key_bytes) {
                 if number + KEEP_RECENT_BLOCKS <= block_number {
                     old_blocks.push(number);
@@ -78,6 +78,11 @@ impl BlockDeltaInfo {
                 break;
             }
         }
+        log::info!(
+            "old_headers: {:?}, old_blocks: {:?}",
+            old_headers,
+            old_blocks
+        );
 
         let mut cell_removed = 0;
         let mut cell_added = 0;
@@ -95,7 +100,7 @@ impl BlockDeltaInfo {
                     .iter()
                     .filter_map(|input| input.previous_output.cell.as_ref())
                 {
-                    let live_cell_info: LiveCellInfo = txn
+                    let live_cell_info: LiveCellInfo = reader
                         .get(&Key::LiveCellMap(out_point.clone()).to_bytes())
                         .map(|bytes| bincode::deserialize(&bytes).unwrap())
                         .unwrap();
@@ -106,7 +111,7 @@ impl BlockDeltaInfo {
                     locks
                         .entry(lock_hash.clone())
                         .or_insert_with(move || {
-                            let lock_capacity: u64 = txn
+                            let lock_capacity: u64 = reader
                                 .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
                                 .map(|bytes| bincode::deserialize(&bytes).unwrap())
                                 .unwrap_or(0);
@@ -135,7 +140,7 @@ impl BlockDeltaInfo {
                     outputs.push(live_cell_info);
 
                     let lock_info = locks.entry(lock_hash.clone()).or_insert_with(|| {
-                        let lock_capacity: u64 = txn
+                        let lock_capacity: u64 = reader
                             .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
                             .map(|bytes| bincode::deserialize(&bytes).unwrap())
                             .unwrap_or(0);
@@ -160,7 +165,7 @@ impl BlockDeltaInfo {
 
         let locks_old_total: u64 = locks.values().map(|info| info.old_total_capacity).sum();
         let locks_new_total: u64 = locks.values().map(|info| info.new_total_capacity).sum();
-        let old_chain_capacity: u128 = txn
+        let old_chain_capacity: u128 = reader
             .get(&Key::TotalCapacity.to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
             .unwrap_or(0);
@@ -181,7 +186,8 @@ impl BlockDeltaInfo {
 
         let parent_header = if block_number > 0 {
             Some(
-                txn.get(&Key::RecentHeader(block_number - 1).to_bytes())
+                reader
+                    .get(&Key::RecentHeader(block_number - 1).to_bytes())
                     .map(|bytes| {
                         let info: HeaderInfo = bincode::deserialize(&bytes).unwrap();
                         info.header
