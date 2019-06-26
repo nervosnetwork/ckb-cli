@@ -10,7 +10,7 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
-use super::overlay::DBOverlay;
+use super::kvdb::{KVReader, KVTxn, LmdbTxn};
 use crate::Address;
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
@@ -47,7 +47,7 @@ impl BlockDeltaInfo {
 
     pub(crate) fn from_block(
         block: &Block,
-        overlay: &DBOverlay,
+        txn: &LmdbTxn,
         secp_code_hash: &H256,
     ) -> BlockDeltaInfo {
         let block_header: Header = block.header().clone();
@@ -57,7 +57,7 @@ impl BlockDeltaInfo {
         // Collect old headers to be deleted
         let mut old_headers = Vec::new();
         let mut old_blocks = Vec::new();
-        for (key_bytes, _) in overlay.iter_from(KeyType::RecentHeader.to_bytes()) {
+        for (key_bytes, _) in txn.iter_from(&KeyType::RecentHeader.to_bytes()) {
             if let Key::RecentHeader(number) = Key::from_bytes(&key_bytes) {
                 if number + KEEP_RECENT_HEADERS <= block_number {
                     old_headers.push(number);
@@ -68,7 +68,7 @@ impl BlockDeltaInfo {
                 break;
             }
         }
-        for (key_bytes, _) in overlay.iter_from(KeyType::BlockDelta.to_bytes()) {
+        for (key_bytes, _) in txn.iter_from(&KeyType::BlockDelta.to_bytes()) {
             if let Key::BlockDelta(number) = Key::from_bytes(&key_bytes) {
                 if number + KEEP_RECENT_BLOCKS <= block_number {
                     old_blocks.push(number);
@@ -96,7 +96,7 @@ impl BlockDeltaInfo {
                     .iter()
                     .filter_map(|input| input.previous_output.cell.as_ref())
                 {
-                    let live_cell_info: LiveCellInfo = overlay
+                    let live_cell_info: LiveCellInfo = txn
                         .get(&Key::LiveCellMap(out_point.clone()).to_bytes())
                         .map(|bytes| bincode::deserialize(&bytes).unwrap())
                         .unwrap();
@@ -107,7 +107,7 @@ impl BlockDeltaInfo {
                     locks
                         .entry(lock_hash.clone())
                         .or_insert_with(move || {
-                            let lock_capacity: u64 = overlay
+                            let lock_capacity: u64 = txn
                                 .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
                                 .map(|bytes| bincode::deserialize(&bytes).unwrap())
                                 .unwrap_or(0);
@@ -136,7 +136,7 @@ impl BlockDeltaInfo {
                     outputs.push(live_cell_info);
 
                     let lock_info = locks.entry(lock_hash.clone()).or_insert_with(|| {
-                        let lock_capacity: u64 = overlay
+                        let lock_capacity: u64 = txn
                             .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
                             .map(|bytes| bincode::deserialize(&bytes).unwrap())
                             .unwrap_or(0);
@@ -161,7 +161,7 @@ impl BlockDeltaInfo {
 
         let locks_old_total: u64 = locks.values().map(|info| info.old_total_capacity).sum();
         let locks_new_total: u64 = locks.values().map(|info| info.new_total_capacity).sum();
-        let old_chain_capacity: u128 = overlay
+        let old_chain_capacity: u128 = txn
             .get(&Key::TotalCapacity.to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
             .unwrap_or(0);
@@ -182,8 +182,7 @@ impl BlockDeltaInfo {
 
         let parent_header = if block_number > 0 {
             Some(
-                overlay
-                    .get(&Key::RecentHeader(block_number - 1).to_bytes())
+                txn.get(&Key::RecentHeader(block_number - 1).to_bytes())
                     .map(|bytes| {
                         let info: HeaderInfo = bincode::deserialize(&bytes).unwrap();
                         info.header
@@ -205,7 +204,7 @@ impl BlockDeltaInfo {
         }
     }
 
-    pub(crate) fn apply(&self, overlay: &mut DBOverlay, enable_tx: bool) -> ApplyResult {
+    pub(crate) fn apply(&self, txn: &mut LmdbTxn, enable_tx: bool) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             self.header_info.header.number(),
@@ -216,7 +215,7 @@ impl BlockDeltaInfo {
         // Update cells and transactions
         for tx in &self.txs {
             if enable_tx {
-                overlay.put_pair(Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()));
+                txn.put_pair(Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()));
             }
 
             for LiveCellInfo {
@@ -228,15 +227,14 @@ impl BlockDeltaInfo {
             } in &tx.inputs
             {
                 if enable_tx {
-                    overlay.put_pair(Key::pair_lock_tx(
+                    txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
                         &tx.tx_hash,
                     ));
                 }
-                overlay.remove(Key::LiveCellMap(out_point.clone()).to_bytes());
-                overlay.remove(Key::LiveCellIndex(*number, *index).to_bytes());
-                overlay
-                    .remove(Key::LockLiveCellIndex(lock_hash.clone(), *number, *index).to_bytes());
+                txn.remove(Key::LiveCellMap(out_point.clone()).to_bytes());
+                txn.remove(Key::LiveCellIndex(*number, *index).to_bytes());
+                txn.remove(Key::LockLiveCellIndex(lock_hash.clone(), *number, *index).to_bytes());
             }
 
             for live_cell_info in &tx.outputs {
@@ -248,14 +246,14 @@ impl BlockDeltaInfo {
                     ..
                 } = live_cell_info;
                 if enable_tx {
-                    overlay.put_pair(Key::pair_lock_tx(
+                    txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
                         &tx.tx_hash,
                     ));
                 }
-                overlay.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
-                overlay.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
-                overlay.put_pair(Key::pair_lock_live_cell_index(
+                txn.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
+                txn.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
+                txn.put_pair(Key::pair_lock_live_cell_index(
                     (lock_hash.clone(), *number, *index),
                     out_point,
                 ));
@@ -270,62 +268,62 @@ impl BlockDeltaInfo {
                 new_total_capacity,
                 ..
             } = info;
-            overlay.put_pair(Key::pair_global_hash(lock_hash.clone(), HashType::Lock));
+            txn.put_pair(Key::pair_global_hash(lock_hash.clone(), HashType::Lock));
             if let Some(script) = script_opt {
-                overlay.put_pair(Key::pair_lock_script(lock_hash.clone(), script));
+                txn.put_pair(Key::pair_lock_script(lock_hash.clone(), script));
             }
             if let Some(address) = address_opt {
-                overlay.put_pair(Key::pair_secp_addr_lock(address.clone(), &lock_hash));
+                txn.put_pair(Key::pair_secp_addr_lock(address.clone(), &lock_hash));
             }
 
             if old_total_capacity != new_total_capacity {
                 // Update lock capacity keys
                 if *old_total_capacity > 0 {
-                    overlay.remove(
+                    txn.remove(
                         Key::LockTotalCapacityIndex(*old_total_capacity, (*lock_hash).clone())
                             .to_bytes(),
                     );
                 }
 
                 if *new_total_capacity > 0 {
-                    overlay.put_pair(Key::pair_lock_total_capacity(
+                    txn.put_pair(Key::pair_lock_total_capacity(
                         (*lock_hash).clone(),
                         *new_total_capacity,
                     ));
-                    overlay.put_pair(Key::pair_lock_total_capacity_index((
+                    txn.put_pair(Key::pair_lock_total_capacity_index((
                         *new_total_capacity,
                         (*lock_hash).clone(),
                     )));
                 } else {
-                    overlay.remove(Key::LockTotalCapacity((*lock_hash).clone()).to_bytes());
+                    txn.remove(Key::LockTotalCapacity((*lock_hash).clone()).to_bytes());
                 }
             }
         }
         // Update total capacity
-        overlay.put_pair(Key::pair_total_capacity(&self.new_chain_capacity));
+        txn.put_pair(Key::pair_total_capacity(&self.new_chain_capacity));
 
         // Add recent header
-        overlay.put_pair(Key::pair_recent_header(&self.header_info));
-        overlay.put_pair(Key::pair_block_delta(&self));
+        txn.put_pair(Key::pair_recent_header(&self.header_info));
+        txn.put_pair(Key::pair_block_delta(&self));
         // Clean old header infos
         for old_number in &self.old_headers {
-            overlay.remove(Key::RecentHeader(*old_number).to_bytes());
+            txn.remove(Key::RecentHeader(*old_number).to_bytes());
         }
         for old_number in &self.old_blocks {
-            overlay.remove(Key::BlockDelta(*old_number).to_bytes());
+            txn.remove(Key::BlockDelta(*old_number).to_bytes());
         }
         // Update last header
-        overlay.put_pair(Key::pair_last_header(&self.header_info.header));
+        txn.put_pair(Key::pair_last_header(&self.header_info.header));
 
         self.header_info.clone().into()
     }
 
-    pub(crate) fn rollback(&self, overlay: &mut DBOverlay) {
+    pub(crate) fn rollback(&self, txn: &mut LmdbTxn) {
         log::debug!("rollback block: {:?}", self);
 
         let mut delete_lock_txs: HashSet<(H256, u64, u32)> = HashSet::default();
         for tx in &self.txs {
-            overlay.remove_ok(Key::TxMap(tx.tx_hash.clone()).to_bytes());
+            txn.remove_ok(Key::TxMap(tx.tx_hash.clone()).to_bytes());
             for live_cell_info in &tx.inputs {
                 let LiveCellInfo {
                     out_point,
@@ -335,9 +333,9 @@ impl BlockDeltaInfo {
                     ..
                 } = live_cell_info;
                 delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
-                overlay.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
-                overlay.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
-                overlay.put_pair(Key::pair_lock_live_cell_index(
+                txn.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
+                txn.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
+                txn.put_pair(Key::pair_lock_live_cell_index(
                     (lock_hash.clone(), *number, *index),
                     out_point,
                 ));
@@ -352,14 +350,13 @@ impl BlockDeltaInfo {
                     ..
                 } = live_cell_info;
                 delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
-                overlay.remove(Key::LiveCellMap(out_point.clone()).to_bytes());
-                overlay.remove(Key::LiveCellIndex(*number, *index).to_bytes());
-                overlay
-                    .remove(Key::LockLiveCellIndex(lock_hash.clone(), *number, *index).to_bytes());
+                txn.remove(Key::LiveCellMap(out_point.clone()).to_bytes());
+                txn.remove(Key::LiveCellIndex(*number, *index).to_bytes());
+                txn.remove(Key::LockLiveCellIndex(lock_hash.clone(), *number, *index).to_bytes());
             }
         }
         for (lock_hash, number, tx_index) in delete_lock_txs {
-            overlay.remove_ok(Key::LockTx(lock_hash, number, tx_index).to_bytes());
+            txn.remove_ok(Key::LockTx(lock_hash, number, tx_index).to_bytes());
         }
 
         for (lock_hash, info) in &self.locks {
@@ -372,34 +369,34 @@ impl BlockDeltaInfo {
             if old_total_capacity != new_total_capacity {
                 // Update lock capacity keys
                 if *new_total_capacity > 0 {
-                    overlay.remove(
+                    txn.remove(
                         Key::LockTotalCapacityIndex(*new_total_capacity, (*lock_hash).clone())
                             .to_bytes(),
                     );
                 }
 
                 if *old_total_capacity > 0 {
-                    overlay.put_pair(Key::pair_lock_total_capacity(
+                    txn.put_pair(Key::pair_lock_total_capacity(
                         (*lock_hash).clone(),
                         *old_total_capacity,
                     ));
-                    overlay.put_pair(Key::pair_lock_total_capacity_index((
+                    txn.put_pair(Key::pair_lock_total_capacity_index((
                         *old_total_capacity,
                         (*lock_hash).clone(),
                     )));
                 } else {
-                    overlay.remove(Key::LockTotalCapacity((*lock_hash).clone()).to_bytes());
+                    txn.remove(Key::LockTotalCapacity((*lock_hash).clone()).to_bytes());
                 }
             }
         }
         // Rollback total capacity
-        overlay.put_pair(Key::pair_total_capacity(&self.old_chain_capacity));
+        txn.put_pair(Key::pair_total_capacity(&self.old_chain_capacity));
         // Remove recent header
-        overlay.remove(Key::RecentHeader(self.number()).to_bytes());
+        txn.remove(Key::RecentHeader(self.number()).to_bytes());
         // Remove recent block
-        overlay.remove(Key::BlockDelta(self.number()).to_bytes());
+        txn.remove(Key::BlockDelta(self.number()).to_bytes());
         // Update last header
-        overlay.put_pair(Key::pair_last_header(self.parent_header.as_ref().unwrap()));
+        txn.put_pair(Key::pair_last_header(self.parent_header.as_ref().unwrap()));
     }
 }
 

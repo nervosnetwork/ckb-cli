@@ -420,6 +420,24 @@ impl Key {
     }
 }
 
+impl Into<Vec<u8>> for &Key {
+    fn into(self) -> Vec<u8> {
+        self.to_bytes()
+    }
+}
+
+impl Into<Vec<u8>> for Key {
+    fn into(self) -> Vec<u8> {
+        (&self).into()
+    }
+}
+
+impl From<&[u8]> for Key {
+    fn from(data: &[u8]) -> Key {
+        Key::from_bytes(data)
+    }
+}
+
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KeyMetrics {
     count: usize,

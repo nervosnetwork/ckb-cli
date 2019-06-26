@@ -2,24 +2,66 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem;
 use std::ops::Bound;
 
-pub struct DBOverlay<'a> {
+use super::super::Key;
+use super::{KVReader, KVTxn};
+
+pub struct LmdbReader<'a> {
+    store: rkv::SingleStore,
+    reader: rkv::Reader<'a>,
+}
+
+impl<'a> LmdbReader<'a> {
+    pub fn new(store: rkv::SingleStore, reader: rkv::Reader<'a>) -> LmdbReader<'a> {
+        LmdbReader { store, reader }
+    }
+}
+
+impl<'a> KVReader<'a> for LmdbReader<'a> {
+    type Iter = ReaderIter<'a>;
+
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        self.store
+            .get(&self.reader, key)
+            .unwrap()
+            .as_ref()
+            .map(|value| match value {
+                rkv::Value::Blob(inner) => inner.to_vec(),
+                _ => panic!("Invalid value type: {:?}", value),
+            })
+    }
+
+    fn iter_from(&'a self, key_start: &[u8]) -> Self::Iter {
+        let iter = self.store.iter_from(&self.reader, key_start).unwrap();
+        ReaderIter { iter }
+    }
+}
+
+pub struct ReaderIter<'a> {
+    iter: rkv::store::single::Iter<'a>,
+}
+
+impl<'a> Iterator for ReaderIter<'a> {
+    type Item = (Vec<u8>, Vec<u8>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|item_result| {
+            let (key_ref, value_ref_opt) = item_result.unwrap();
+            (key_ref.to_vec(), value_ref_opt.unwrap().to_bytes().unwrap())
+        })
+    }
+}
+
+pub struct LmdbTxn<'a> {
     store: rkv::SingleStore,
     writer: rkv::Writer<'a>,
     removed: HashMap<Vec<u8>, bool>,
     inserted: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
-impl<'a> DBOverlay<'a> {
-    pub fn new(store: rkv::SingleStore, writer: rkv::Writer<'a>) -> DBOverlay<'a> {
-        DBOverlay {
-            store,
-            writer,
-            removed: HashMap::default(),
-            inserted: BTreeMap::default(),
-        }
-    }
+impl<'a> KVReader<'a> for LmdbTxn<'a> {
+    type Iter = TxnIter<'a>;
 
-    pub fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
         if self.removed.contains_key(key) {
             return None;
         }
@@ -36,42 +78,37 @@ impl<'a> DBOverlay<'a> {
         })
     }
 
-    pub fn iter_from(&'a self, key_start: Vec<u8>) -> OverlayIter<'a> {
-        OverlayIter::new(&self, key_start)
+    fn iter_from(&'a self, key_start: &[u8]) -> TxnIter<'a> {
+        TxnIter::new(self, key_start)
     }
+}
 
-    pub fn put_pair(&mut self, (key, value): (Vec<u8>, Vec<u8>)) -> Option<Vec<u8>> {
-        self.insert(key, value)
-    }
-    pub fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) -> Option<Vec<u8>> {
+impl<'a> KVTxn<'a> for LmdbTxn<'a> {
+    fn insert(&mut self, key: Vec<u8>, value: Vec<u8>) -> Option<Vec<u8>> {
         self.removed.remove(&key);
         self.inserted.insert(key, value)
     }
 
-    fn remove_inner(&mut self, key: Vec<u8>, must_exists: bool) -> Option<bool> {
+    fn remove_maybe(&mut self, key: Vec<u8>, must_exists: bool) -> Option<bool> {
         self.inserted.remove(&key);
         self.removed.insert(key, must_exists)
     }
-    pub fn remove_ok(&mut self, key: Vec<u8>) -> Option<bool> {
-        self.remove_inner(key, false)
-    }
-    pub fn remove(&mut self, key: Vec<u8>) -> Option<bool> {
-        self.remove_inner(key, true)
-    }
 
-    pub fn commit(mut self) {
+    fn commit(mut self) {
         let mut common_keys = Vec::new();
         for (removed_key, must_exists) in self.removed {
             if self.inserted.contains_key(&removed_key) {
                 common_keys.push(removed_key.clone());
             }
-            let result = self.store.delete(&mut self.writer, removed_key);
-            if must_exists {
-                result.expect("Overlay remove key failed");
+            if let Err(err) = self.store.delete(&mut self.writer, &removed_key) {
+                if must_exists {
+                    let key = Key::from_bytes(&removed_key);
+                    panic!("Txn remove key failed, key={:?}, error: {:?}", key, err);
+                }
             }
         }
         if !common_keys.is_empty() {
-            panic!("Overlay logic error, common keys: {:?}", common_keys);
+            panic!("Txn logic error, common keys: {:?}", common_keys);
         }
 
         for (key, value) in self.inserted {
@@ -79,13 +116,22 @@ impl<'a> DBOverlay<'a> {
                 .put(&mut self.writer, key, &rkv::Value::Blob(&value))
                 .unwrap();
         }
-        self.writer
-            .commit()
-            .expect("Commit overlay transaction failed");
+        self.writer.commit().expect("Commit txn transaction failed");
     }
 }
 
-pub struct OverlayIter<'a> {
+impl<'a> LmdbTxn<'a> {
+    pub fn new(store: rkv::SingleStore, writer: rkv::Writer<'a>) -> LmdbTxn<'a> {
+        LmdbTxn {
+            store,
+            writer,
+            removed: HashMap::default(),
+            inserted: BTreeMap::default(),
+        }
+    }
+}
+
+pub struct TxnIter<'a> {
     iter: rkv::store::single::Iter<'a>,
     next_disk_pair: Option<(Vec<u8>, Vec<u8>)>,
     next_mem_pair: Option<(Vec<u8>, Vec<u8>)>,
@@ -93,26 +139,23 @@ pub struct OverlayIter<'a> {
     inserted: &'a BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
-impl<'a> OverlayIter<'a> {
-    fn new(overlay: &'a DBOverlay<'a>, key_start: Vec<u8>) -> OverlayIter<'a> {
-        let iter = overlay
-            .store
-            .iter_from(&overlay.writer, &key_start)
-            .unwrap();
-        let next_mem_pair = overlay
+impl<'a> TxnIter<'a> {
+    fn new(txn: &'a LmdbTxn<'a>, key_start: &[u8]) -> TxnIter<'a> {
+        let iter = txn.store.iter_from(&txn.writer, key_start).unwrap();
+        let next_mem_pair = txn
             .inserted
-            .range((Bound::Included(key_start), Bound::Unbounded))
+            .range((Bound::Included(key_start.to_vec()), Bound::Unbounded))
             .next()
             .map(|(key, value)| (key.clone(), value.clone()));
-        let mut overlay_iter = OverlayIter {
+        let mut txn_iter = TxnIter {
             iter,
             next_disk_pair: None,
             next_mem_pair,
-            removed: &overlay.removed,
-            inserted: &overlay.inserted,
+            removed: &txn.removed,
+            inserted: &txn.inserted,
         };
-        overlay_iter.next_disk_pair = overlay_iter.update_next_disk_pair();
-        overlay_iter
+        txn_iter.next_disk_pair = txn_iter.update_next_disk_pair();
+        txn_iter
     }
 
     fn update_next_mem_pair(&mut self) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -134,7 +177,7 @@ impl<'a> OverlayIter<'a> {
     }
 }
 
-impl<'a> Iterator for OverlayIter<'a> {
+impl<'a> Iterator for TxnIter<'a> {
     // NOTE: assume key and value are small data
     type Item = (Vec<u8>, Vec<u8>);
 

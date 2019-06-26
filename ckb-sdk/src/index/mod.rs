@@ -1,12 +1,12 @@
 mod key;
-mod overlay;
+mod kvdb;
 mod types;
-mod util;
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use crate::{Address, GenesisInfo, NetworkType};
@@ -18,9 +18,8 @@ const LMDB_MAX_DBS: u32 = 6;
 pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
-use overlay::DBOverlay;
+use kvdb::{KVReader, KVTxn, LmdbReader, LmdbTxn};
 use types::BlockDeltaInfo;
-use util::{dir_size, put_pair, value_to_bytes};
 
 // NOTE: You should reopen to increase database size when processed enough blocks
 //  [reference]: https://stackoverflow.com/a/33571804
@@ -44,6 +43,15 @@ impl IndexDatabase {
         extra_size: u64,
         enable_tx: bool,
     ) -> Result<IndexDatabase, IndexError> {
+        fn dir_size<P: AsRef<Path>>(path: P) -> u64 {
+            let mut total_size = 0;
+            for dir_entry in fs::read_dir(path.as_ref()).unwrap() {
+                let metadata = dir_entry.unwrap().metadata().unwrap();
+                total_size += metadata.len();
+            }
+            total_size
+        }
+
         let genesis_header = genesis_info.header().clone();
         assert_eq!(genesis_header.number(), 0);
 
@@ -67,15 +75,13 @@ impl IndexDatabase {
                 .open_single("index", rkv::StoreOptions::create())
                 .unwrap();
             let (genesis_hash_opt, network_opt): (Option<H256>, Option<NetworkType>) = {
-                let reader = env_read.read().expect("reader");
-                let genesis_hash_opt = store
-                    .get(&reader, Key::GenesisHash.to_bytes())
-                    .unwrap()
-                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap());
-                let network_opt = store
-                    .get(&reader, Key::Network.to_bytes())
-                    .unwrap()
-                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap());
+                let reader = LmdbReader::new(store, env_read.read().expect("reader"));
+                let genesis_hash_opt = reader
+                    .get(&Key::GenesisHash.to_bytes())
+                    .map(|bytes| bincode::deserialize(&bytes).unwrap());
+                let network_opt = reader
+                    .get(&Key::Network.to_bytes())
+                    .map(|bytes| bincode::deserialize(&bytes).unwrap());
                 (genesis_hash_opt, network_opt)
             };
             if let Some(genesis_hash) = genesis_hash_opt {
@@ -94,22 +100,17 @@ impl IndexDatabase {
                 }
             } else {
                 log::info!("genesis not found, init db");
-                let mut writer = env_read.write().unwrap();
-                put_pair(store, &mut writer, Key::pair_network(network));
-                put_pair(
-                    store,
-                    &mut writer,
-                    Key::pair_genesis_hash(genesis_header.hash()),
-                );
-                writer.commit().unwrap();
+                let mut writer = LmdbTxn::new(store, env_read.write().unwrap());
+                writer.put_pair(Key::pair_network(network));
+                writer.put_pair(Key::pair_genesis_hash(genesis_header.hash()));
+                writer.commit();
             }
 
             let last_header = {
-                let reader = env_read.read().expect("reader");
-                store
-                    .get(&reader, Key::LastHeader.to_bytes())
-                    .unwrap()
-                    .map(|value| bincode::deserialize(value_to_bytes(&value)).unwrap())
+                let reader = LmdbReader::new(store, env_read.read().expect("reader"));
+                reader
+                    .get(&Key::LastHeader.to_bytes())
+                    .map(|bytes| bincode::deserialize(&bytes).unwrap())
             };
             (store, last_header)
         };
@@ -141,23 +142,20 @@ impl IndexDatabase {
                 // Reload last header
                 let env_read = self.env_arc.read().unwrap();
                 let last_block_delta: BlockDeltaInfo = {
-                    let reader = env_read.read().expect("reader");
-                    let last_header: Header = self
-                        .store
-                        .get(&reader, &Key::LastHeader.to_bytes())
-                        .unwrap()
-                        .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                    let reader = LmdbReader::new(self.store, env_read.read().expect("reader"));
+                    let last_header: Header = reader
+                        .get(&Key::LastHeader.to_bytes())
+                        .map(|bytes| bincode::deserialize(&bytes).unwrap())
                         .unwrap();
-                    self.store
-                        .get(&reader, &Key::BlockDelta(last_header.number()).to_bytes())
-                        .unwrap()
-                        .map(|value| bincode::deserialize(&value_to_bytes(&value)).unwrap())
+                    reader
+                        .get(&Key::BlockDelta(last_header.number()).to_bytes())
+                        .map(|bytes| bincode::deserialize(&bytes).unwrap())
                         .unwrap()
                 };
                 let writer = env_read.write().unwrap();
-                let mut overlay = DBOverlay::new(self.store, writer);
-                last_block_delta.rollback(&mut overlay);
-                overlay.commit();
+                let mut txn = LmdbTxn::new(self.store, writer);
+                last_block_delta.rollback(&mut txn);
+                txn.commit();
                 self.last_header = last_block_delta.parent_header;
                 return Ok(());
             }
@@ -198,15 +196,9 @@ impl IndexDatabase {
         self.last_number().map(|number| number + 1)
     }
 
-    fn get(&self, reader: &rkv::Reader, key: &[u8]) -> Option<Vec<u8>> {
-        self.store
-            .get(reader, key)
-            .unwrap()
-            .map(|value| value_to_bytes(&value).to_vec())
-    }
-
-    fn get_address_inner(&self, reader: &rkv::Reader, lock_hash: H256) -> Option<Address> {
-        self.get(reader, &Key::LockScript(lock_hash).to_bytes())
+    fn get_address_inner(&self, reader: &LmdbReader, lock_hash: H256) -> Option<Address> {
+        reader
+            .get(&Key::LockScript(lock_hash).to_bytes())
             .and_then(|bytes| {
                 let script: Script = bincode::deserialize(&bytes).unwrap();
                 script
@@ -216,33 +208,27 @@ impl IndexDatabase {
             })
     }
 
-    fn get_live_cell_info(
-        &self,
-        reader: &rkv::Reader,
-        out_point: CellOutPoint,
-    ) -> Option<LiveCellInfo> {
-        self.get(reader, &Key::LiveCellMap(out_point).to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap())
-    }
-
     pub fn get_capacity(&self, lock_hash: H256) -> Option<u64> {
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
-        self.get(&reader, &Key::LockTotalCapacity(lock_hash).to_bytes())
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
+        reader
+            .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
     pub fn get_lock_hash_by_address(&self, address: Address) -> Option<H256> {
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
-        self.get(&reader, &Key::SecpAddrLock(address).to_bytes())
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
+        reader
+            .get(&Key::SecpAddrLock(address).to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
     pub fn get_lock_script_by_hash(&self, lock_hash: H256) -> Option<Script> {
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
-        self.get(&reader, &Key::LockScript(lock_hash).to_bytes())
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
+        reader
+            .get(&Key::LockScript(lock_hash).to_bytes())
             .map(|bytes| bincode::deserialize(&bytes).unwrap())
     }
 
@@ -258,27 +244,28 @@ impl IndexDatabase {
         from_number: Option<u64>,
         mut terminator: F,
     ) -> Vec<LiveCellInfo> {
+        fn get_live_cell_info(
+            reader: &LmdbReader,
+            out_point: CellOutPoint,
+        ) -> Option<LiveCellInfo> {
+            reader
+                .get(&Key::LiveCellMap(out_point).to_bytes())
+                .map(|bytes| bincode::deserialize(&bytes).unwrap())
+        }
+
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
         let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone(), None).to_bytes();
         let key_start = Key::LockLiveCellIndexPrefix(lock_hash, from_number).to_bytes();
 
         let mut infos = Vec::new();
-        for (idx, item) in self
-            .store
-            .iter_from(&reader, &key_start)
-            .unwrap()
-            .enumerate()
-        {
-            let (key_bytes, value_bytes_opt) = item.unwrap();
+        for (idx, (key_bytes, value_bytes)) in reader.iter_from(&key_start).enumerate() {
             if key_bytes[..key_prefix.len()] != key_prefix[..] {
                 log::debug!("Reach the end of this lock");
                 break;
             }
-            let value_bytes = value_bytes_opt.unwrap();
-            let out_point: CellOutPoint =
-                bincode::deserialize(value_to_bytes(&value_bytes)).unwrap();
-            let live_cell_info = self.get_live_cell_info(&reader, out_point).unwrap();
+            let out_point: CellOutPoint = bincode::deserialize(&value_bytes).unwrap();
+            let live_cell_info = get_live_cell_info(&reader, out_point).unwrap();
             let (stop, push_info) = terminator(idx, &live_cell_info);
             if push_info {
                 infos.push(live_cell_info);
@@ -293,17 +280,16 @@ impl IndexDatabase {
 
     pub fn get_top_n(&self, n: usize) -> Vec<(H256, Option<Address>, u64)> {
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
         let key_prefix: Vec<u8> = KeyType::LockTotalCapacityIndex.to_bytes();
 
         let mut pairs = Vec::new();
-        for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
-            let (key_bytes, _) = item.unwrap();
+        for (key_bytes, _) in reader.iter_from(&key_prefix) {
             if key_bytes[..key_prefix.len()] != key_prefix[..] {
                 log::debug!("Reach the end of this type");
                 break;
             }
-            if let Key::LockTotalCapacityIndex(capacity, lock_hash) = Key::from_bytes(key_bytes) {
+            if let Key::LockTotalCapacityIndex(capacity, lock_hash) = Key::from_bytes(&key_bytes) {
                 let address_opt = self.get_address_inner(&reader, lock_hash.clone());
                 pairs.push((lock_hash, address_opt, capacity));
             } else {
@@ -338,12 +324,12 @@ impl IndexDatabase {
 
         let secp_code_hash = self.genesis_info.secp_code_hash();
         let writer = env_read.write().unwrap();
-        let mut overlay = DBOverlay::new(self.store, writer);
+        let mut txn = LmdbTxn::new(self.store, writer);
         for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_block(&block, &overlay, secp_code_hash);
+            let block_delta_info = BlockDeltaInfo::from_block(&block, &txn, secp_code_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
-            let result = block_delta_info.apply(&mut overlay, self.enable_tx);
+            let result = block_delta_info.apply(&mut txn, self.enable_tx);
             log::info!(
                 "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
                 number,
@@ -355,7 +341,7 @@ impl IndexDatabase {
                 result.cell_added,
             );
         }
-        overlay.commit();
+        txn.commit();
     }
 
     pub fn get_metrics(&self, key_type_opt: Option<KeyType>) -> BTreeMap<KeyType, KeyMetrics> {
@@ -385,16 +371,14 @@ impl IndexDatabase {
             }
         }
         let env_read = self.env_arc.read().unwrap();
-        let reader = env_read.read().unwrap();
+        let reader = LmdbReader::new(self.store, env_read.read().unwrap());
         for (key_type, metrics) in &mut key_types {
             let key_prefix = key_type.to_bytes();
-            for item in self.store.iter_from(&reader, &key_prefix).unwrap() {
-                let (key_bytes, value_bytes_opt) = item.unwrap();
+            for (key_bytes, value_bytes) in reader.iter_from(&key_prefix) {
                 if key_bytes[..key_prefix.len()] != key_prefix[..] {
                     log::debug!("Reach the end of this lock");
                     break;
                 }
-                let value_bytes = value_bytes_opt.unwrap().to_bytes().unwrap();
                 metrics.add_pair(&key_bytes, &value_bytes);
             }
         }
