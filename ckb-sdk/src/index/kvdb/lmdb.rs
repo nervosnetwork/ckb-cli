@@ -24,10 +24,7 @@ impl<'a> KVReader<'a> for LmdbReader<'a> {
             .get(&self.reader, key)
             .unwrap()
             .as_ref()
-            .map(|value| match value {
-                rkv::Value::Blob(inner) => inner.to_vec(),
-                _ => panic!("Invalid value type: {:?}", value),
-            })
+            .map(|value| value_to_bytes(value).to_vec())
     }
 
     fn iter_from(&'a self, key_start: &[u8]) -> Self::Iter {
@@ -46,7 +43,10 @@ impl<'a> Iterator for ReaderIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item_result| {
             let (key_ref, value_ref_opt) = item_result.unwrap();
-            (key_ref.to_vec(), value_ref_opt.unwrap().to_bytes().unwrap())
+            (
+                key_ref.to_vec(),
+                value_to_bytes(&value_ref_opt.unwrap()).to_vec(),
+            )
         })
     }
 }
@@ -95,6 +95,7 @@ impl<'a> KVTxn<'a> for LmdbTxn<'a> {
     }
 
     fn commit(mut self) {
+        log::debug!("Lmdb txn committing...");
         let mut common_keys = Vec::new();
         for (removed_key, must_exists) in self.removed {
             if self.inserted.contains_key(&removed_key) {
@@ -117,6 +118,7 @@ impl<'a> KVTxn<'a> for LmdbTxn<'a> {
                 .unwrap();
         }
         self.writer.commit().expect("Commit txn transaction failed");
+        log::debug!("Lmdb txn commited!");
     }
 }
 
@@ -204,5 +206,12 @@ impl<'a> Iterator for TxnIter<'a> {
                 return Some((next_key, next_value));
             }
         }
+    }
+}
+
+fn value_to_bytes<'a>(value: &'a rkv::Value) -> &'a [u8] {
+    match value {
+        rkv::Value::Blob(inner) => inner,
+        _ => panic!("Invalid value type: {:?}", value),
     }
 }

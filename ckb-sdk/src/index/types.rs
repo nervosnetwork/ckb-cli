@@ -277,19 +277,28 @@ impl BlockDeltaInfo {
             }
 
             if old_total_capacity != new_total_capacity {
+                log::debug!(
+                    "[total capacity]: lock_hash={:x}, old(remove)={}, new={}",
+                    lock_hash,
+                    old_total_capacity,
+                    new_total_capacity
+                );
                 // Update lock capacity keys
-                if *old_total_capacity > 0 {
-                    txn.remove(
-                        Key::LockTotalCapacityIndex(*old_total_capacity, (*lock_hash).clone())
-                            .to_bytes(),
-                    );
-                }
+                txn.remove_ok(
+                    Key::LockTotalCapacityIndex(*old_total_capacity, (*lock_hash).clone())
+                        .to_bytes(),
+                );
 
                 if *new_total_capacity > 0 {
                     txn.put_pair(Key::pair_lock_total_capacity(
                         (*lock_hash).clone(),
                         *new_total_capacity,
                     ));
+                    log::debug!(
+                        "[total capacity]: lock_hash={:x}, add new={}",
+                        lock_hash,
+                        new_total_capacity
+                    );
                     txn.put_pair(Key::pair_lock_total_capacity_index((
                         *new_total_capacity,
                         (*lock_hash).clone(),
@@ -367,19 +376,28 @@ impl BlockDeltaInfo {
             } = info;
 
             if old_total_capacity != new_total_capacity {
+                log::debug!(
+                    "[rollback: total capacity]: lock_hash={:x}, old={}, new(remove)={}",
+                    lock_hash,
+                    old_total_capacity,
+                    new_total_capacity
+                );
                 // Update lock capacity keys
-                if *new_total_capacity > 0 {
-                    txn.remove(
-                        Key::LockTotalCapacityIndex(*new_total_capacity, (*lock_hash).clone())
-                            .to_bytes(),
-                    );
-                }
+                txn.remove_ok(
+                    Key::LockTotalCapacityIndex(*new_total_capacity, (*lock_hash).clone())
+                        .to_bytes(),
+                );
 
                 if *old_total_capacity > 0 {
                     txn.put_pair(Key::pair_lock_total_capacity(
                         (*lock_hash).clone(),
                         *old_total_capacity,
                     ));
+                    log::debug!(
+                        "[rollback: total capacity]: lock_hash={:x}, add old={}",
+                        lock_hash,
+                        old_total_capacity
+                    );
                     txn.put_pair(Key::pair_lock_total_capacity_index((
                         *old_total_capacity,
                         (*lock_hash).clone(),
