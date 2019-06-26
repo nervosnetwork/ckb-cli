@@ -19,9 +19,7 @@ pub use index::{
     CellIndex, HashType, IndexDatabase, IndexError, Key as IndexKey, KeyMetrics as IndexKeyMetrics,
     KeyType as IndexKeyType, LiveCellInfo, TxInfo,
 };
-pub use kvdb::{
-    KVReader, KVTxn, LmdbReader, LmdbTxn, RocksReader, RocksTxn, LMDB_EXTRA_MAP_SIZE, LMDB_MAX_DBS,
-};
+pub use kvdb::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use rpc::HttpRpcClient;
 
 pub use transaction::{

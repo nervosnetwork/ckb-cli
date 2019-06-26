@@ -1,7 +1,5 @@
-mod lmdb;
 mod rocks;
 
-pub use lmdb::{LmdbReader, LmdbTxn, LMDB_EXTRA_MAP_SIZE, LMDB_MAX_DBS};
 pub use rocks::{RocksReader, RocksTxn};
 
 pub trait KVReader<'r> {
