@@ -130,6 +130,11 @@ impl<'a> WalletSubCommand<'a> {
             .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true)
             .help("Lock hash");
+        let arg_pubkey = Arg::with_name("pubkey")
+            .long("pubkey")
+            .takes_value(true)
+            .validator(|input| PubkeyHexParser.validate(input))
+            .help("Public key (hex string, compressed format)");
         SubCommand::with_name("wallet")
             .about("tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
@@ -185,17 +190,18 @@ impl<'a> WalletSubCommand<'a> {
                 SubCommand::with_name("key-info")
                     .about("Show public information of a secp256k1 private key (from file) or public key")
                     .arg(arg_privkey.clone())
-                    .arg(
-                        Arg::with_name("pubkey")
-                            .long("pubkey")
-                            .takes_value(true)
-                            .validator(|input| PubkeyHexParser.validate(input))
-                            .required_if("privkey-path", "")
-                            .help("Public key (hex string, compressed format)"),
-                    ),
+                    .arg(arg_pubkey.clone().required_if("privkey-path", "")),
                 SubCommand::with_name("get-capacity")
-                    .about("Get capacity by lock script hash")
-                    .arg(arg_lock_hash.clone()),
+                    .about("Get capacity by lock script hash or address or lock arg or pubkey")
+                    .arg(arg_lock_hash.clone().required(false))
+                    .arg(arg_address.clone().required(false))
+                    .arg(arg_pubkey.clone())
+                    .arg(Arg::with_name("lock-arg")
+                         .long("lock-arg")
+                         .takes_value(true)
+                         .validator(|input| FixedHashParser::<H160>::default().validate(input))
+                         .help("Lock argument (account identifier, blake2b(pubkey)[0..20])")
+                    ),
                 SubCommand::with_name("get-live-cells")
                     .about("Get live cells by lock script hash")
                     .arg(arg_lock_hash.clone())
@@ -221,12 +227,13 @@ impl<'a> WalletSubCommand<'a> {
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .help("To block number"),
                     ),
+                // Move to index subcommand
                 SubCommand::with_name("get-lock-by-address")
                     .about("Get lock script (include hash) by address")
                     .arg(arg_address.clone()),
-                SubCommand::with_name("get-balance")
-                    .about("Get balance by address (balance is capacity)")
-                    .arg(arg_address.clone()),
+                // Move to index subcommand
+                SubCommand::with_name("db-metrics")
+                    .about("Show index database metrics"),
                 SubCommand::with_name("top-capacity")
                     .about("Show top n capacity owned by lock script hash")
                     .arg(
@@ -238,8 +245,6 @@ impl<'a> WalletSubCommand<'a> {
                             .default_value("10")
                             .help("Get top n capacity addresses"),
                     ),
-                SubCommand::with_name("db-metrics")
-                    .about("Show index database metrics"),
             ])
     }
 }
@@ -445,8 +450,31 @@ args = ["{:#x}"]
                 Ok(resp.render(format, color))
             }
             ("get-capacity", Some(m)) => {
-                let lock_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let lock_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                let lock_hash = if let Some(lock_hash) = lock_hash_opt {
+                    lock_hash
+                } else {
+                    let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
+                    let address: Option<Address> =
+                        AddressParser.from_matches_opt(m, "address", false)?;
+                    let pubkey: Option<secp256k1::PublicKey> =
+                        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                    let lock_arg: Option<H160> = FixedHashParser::<H160>::default()
+                        .from_matches_opt(m, "lock-arg", false)?;
+                    let address = address
+                        .or_else(|| {
+                            pubkey.map(|pubkey| {
+                                Address::from_pubkey(AddressFormat::default(), &pubkey.into())
+                                    .unwrap()
+                            })
+                        })
+                        .or_else(|| {
+                            lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap())
+                        })
+                        .ok_or_else(|| "Please give one argument".to_owned())?;
+                    address.lock_script(secp_code_hash).hash().clone()
+                };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
                 let resp = serde_json::json!({
                     "capacity": capacity,
@@ -505,16 +533,6 @@ args = ["{:#x}"]
                         })
                 })?;
                 Ok(lock_script.render(format, color))
-            }
-            ("get-balance", Some(m)) => {
-                let address: Address = AddressParser.from_matches(m, "address")?;
-                let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
-                let lock_hash = address.lock_script(secp_code_hash).hash().clone();
-                let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
-                let resp = serde_json::json!({
-                    "capacity": capacity,
-                });
-                Ok(resp.render(format, color))
             }
             ("top-capacity", Some(m)) => {
                 let n: usize = m
