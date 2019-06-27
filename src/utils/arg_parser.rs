@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_core::transaction::CellOutPoint;
-use ckb_sdk::{Address, NetworkType, ONE_CKB};
+use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use numext_fixed_hash::{H160, H256};
@@ -241,6 +241,33 @@ impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
         let data: H256 = FixedHashParser::<H256>::default().parse(privkey_string.as_str())?;
         secp256k1::SecretKey::from_slice(&data[..])
             .map_err(|err| format!("Invalid secp256k1 secret key format, error: {}", err))
+    }
+}
+
+pub struct ExtendedPrivkeyPathParser;
+
+impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
+    fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let mut content = String::new();
+        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|err| err.to_string())?;
+        let lines = content
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .take(2)
+            .collect::<Vec<String>>();
+        if lines.len() < 2 {
+            return Err("Not enough line for parse extended private key".to_owned());
+        }
+        let hash_parser = FixedHashParser::<H256>::default();
+        let line1: H256 = hash_parser.parse(&lines[0])?;
+        let line2: H256 = hash_parser.parse(&lines[1])?;
+        let mut bytes = [0u8; 64];
+        bytes[0..32].copy_from_slice(&line1[0..32]);
+        bytes[32..64].copy_from_slice(&line2[0..32]);
+        MasterPrivKey::from_bytes(bytes).map_err(|err| err.to_string())
     }
 }
 

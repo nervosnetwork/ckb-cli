@@ -55,9 +55,11 @@ impl KeyStore {
         Ok(address)
     }
     pub fn get_accounts(&mut self) -> &HashMap<H160, PathBuf> {
+        self.refresh_dir().ok();
         &self.files
     }
     pub fn has_account(&mut self, address: &H160) -> bool {
+        self.refresh_dir().ok();
         self.files.contains_key(address)
     }
 
@@ -137,6 +139,11 @@ impl KeyStore {
         let filepath = self.get_filepath(address)?;
         let key = self.storage.get_key(address, &filepath, password)?;
         Ok(key.to_json(new_password, scrypt_type))
+    }
+    pub fn export_key(&self, address: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
+        let filepath = self.get_filepath(address)?;
+        let key = self.storage.get_key(address, &filepath, password)?;
+        Ok(key.master_privkey)
     }
 
     pub fn sign(&mut self, address: &H160, hash: &H256) -> Result<secp256k1::Signature, Error> {

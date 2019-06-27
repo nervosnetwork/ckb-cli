@@ -338,7 +338,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                     }
                                 })
                         } else {
-                            let password = read_password(false)?;
+                            let password = read_password(false, None)?;
                             self.key_store
                                 .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
                                 .map_err(|err| err.to_string())
