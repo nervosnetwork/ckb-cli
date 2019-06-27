@@ -18,11 +18,14 @@ use numext_fixed_hash::{H160, H256};
 use serde_json::json;
 
 use super::CliSubCommand;
-use crate::utils::arg_parser::{
-    AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-    HexParser, PrivkeyPathParser, PubkeyHexParser,
+use crate::utils::{
+    arg_parser::{
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PubkeyHexParser,
+    },
+    other::read_password,
+    printer::{OutputFormat, Printable},
 };
-use crate::utils::printer::{OutputFormat, Printable};
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
@@ -142,12 +145,6 @@ impl<'a> WalletSubCommand<'a> {
                             .help("The account's lock-arg (transfer from this account)")
                     )
                     .arg(
-                        Arg::with_name("password")
-                            .long("password")
-                            .takes_value(true)
-                            .help("The password for the account (only used with <from-account> argument in CLI mode)")
-                    )
-                    .arg(
                         Arg::with_name("to-address")
                             .long("to-address")
                             .takes_value(true)
@@ -260,19 +257,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let from_account: Option<H160> = FixedHashParser::<H160>::default()
                     .from_matches_opt(m, "from-account", false)?;
-                let password: Option<&str> = m.value_of("password");
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
                 let to_data: Bytes = HexParser
                     .from_matches_opt(m, "to-data", false)?
                     .unwrap_or_else(Bytes::new);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
 
-                if self.interactive && from_account.is_some() && password.is_none() {
-                    return Err(
-                        "<password> is required when <from-account> is given and in CLI mode"
-                            .to_owned(),
-                    );
-                }
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
                         "Capacity can not less than {} shannons",
@@ -348,9 +338,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                     }
                                 })
                         } else {
-                            let password = password.as_ref().map(|s| s.as_bytes()).unwrap();
+                            let password = read_password(false)?;
                             self.key_store
-                                .sign_recoverable_with_password(lock_arg, &sign_hash, password)
+                                .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
                                 .map_err(|err| err.to_string())
                         };
                         signature_result.map(|signature| serialize_signature(&signature))
