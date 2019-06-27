@@ -132,13 +132,20 @@ impl<'a> WalletSubCommand<'a> {
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg_privkey.clone())
+                    .arg(arg_privkey.clone().required_unless("from-account"))
                     .arg(
-                        Arg::with_name("from-lock-arg")
-                            .long("from-lock-arg")
+                        Arg::with_name("from-account")
+                            .long("from-account")
+                            .required_unless("privkey-path")
                             .takes_value(true)
                             .validator(|input| FixedHashParser::<H160>::default().validate(input))
                             .help("The account's lock-arg (transfer from this account)")
+                    )
+                    .arg(
+                        Arg::with_name("password")
+                            .long("password")
+                            .takes_value(true)
+                            .help("The password for the account (only used with <from-account> argument in CLI mode)")
                     )
                     .arg(
                         Arg::with_name("to-address")
@@ -251,16 +258,20 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let from_lock_arg: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-lock-arg", false)?;
+                let from_account: Option<H160> = FixedHashParser::<H160>::default()
+                    .from_matches_opt(m, "from-account", false)?;
+                let password: Option<&str> = m.value_of("password");
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
                 let to_data: Bytes = HexParser
                     .from_matches_opt(m, "to-data", false)?
                     .unwrap_or_else(Bytes::new);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
 
-                if from_privkey.is_none() && from_lock_arg.is_none() {
-                    return Err("<privkey-path> or <from-lock-arg> is required!".to_owned());
+                if self.interactive && from_account.is_some() && password.is_none() {
+                    return Err(
+                        "<password> is required when <from-account> is given and in CLI mode"
+                            .to_owned(),
+                    );
                 }
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
@@ -281,7 +292,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
                     Address::from_lock_arg(&pubkey_hash[0..20])?
                 } else {
-                    Address::from_lock_arg(&from_lock_arg.as_ref().unwrap()[..])?
+                    Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
                 };
 
                 let genesis_info = self.genesis_info()?;
@@ -321,21 +332,28 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         Ok(build_witness_with_key(&privkey, tx_hash))
                     })?
                 } else {
-                    let lock_arg = from_lock_arg.as_ref().unwrap();
+                    let lock_arg = from_account.as_ref().unwrap();
                     tx_args.build(infos, &genesis_info, |tx_hash| {
                         let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
                             .expect("Tx hash convert to H256 failed");
-                        self.key_store
-                            .sign_recoverable(lock_arg, &sign_hash)
-                            .map(|signature| serialize_signature(&signature))
-                            .map_err(|err| {
-                                match err {
-                                    KeyStoreError::AccountLocked(lock_arg) => {
-                                        format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it", lock_arg)
+                        let signature_result = if self.interactive {
+                            self.key_store
+                                .sign_recoverable(lock_arg, &sign_hash)
+                                .map_err(|err| {
+                                    match err {
+                                        KeyStoreError::AccountLocked(lock_arg) => {
+                                            format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it", lock_arg)
+                                        }
+                                        err => err.to_string(),
                                     }
-                                    err => err.to_string(),
-                                }
-                            })
+                                })
+                        } else {
+                            let password = password.as_ref().map(|s| s.as_bytes()).unwrap();
+                            self.key_store
+                                .sign_recoverable_with_password(lock_arg, &sign_hash, password)
+                                .map_err(|err| err.to_string())
+                        };
+                        signature_result.map(|signature| serialize_signature(&signature))
                     })?
                 };
                 // let tx_view: TransactionView = (&Into::<Transaction>::into(tx.clone())).into();
