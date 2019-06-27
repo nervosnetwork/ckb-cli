@@ -285,7 +285,10 @@ pub struct AddressParser;
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
-        Address::from_input(NetworkType::TestNet, input)
+        let prefix = input.chars().take(3).collect::<String>();
+        let network = NetworkType::from_prefix(prefix.as_str())
+            .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
+        Address::from_input(network, input)
     }
 }
 

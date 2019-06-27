@@ -1,8 +1,6 @@
 mod index;
 
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -10,7 +8,7 @@ use bytes::Bytes;
 use ckb_core::{block::Block, service::Request};
 use ckb_sdk::{Address, AddressFormat, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use crypto::secp::{Generator, SECP256K1};
+use crypto::secp::SECP256K1;
 use faster_hex::hex_string;
 use hash::blake2b_256;
 use jsonrpc_types::BlockNumber;
@@ -20,8 +18,8 @@ use serde_json::json;
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-        HexParser, PrivkeyPathParser, PubkeyHexParser,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
+        PrivkeyPathParser, PubkeyHexParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -171,21 +169,6 @@ impl<'a> WalletSubCommand<'a> {
                             .validator(|input| CapacityParser.validate(input))
                             .required(true)
                             .help("The capacity (unit: CKB, format: 123.335)"),
-                    ),
-                SubCommand::with_name("generate-key")
-                    .about("Generate a random secp256k1 privkey and save to file (print block_assembler config)")
-                    .arg(
-                        Arg::with_name("print-privkey")
-                            .long("print-privkey")
-                            .help("Print privkey key (default: no)"),
-                    )
-                    .arg(
-                        Arg::with_name("privkey-path")
-                            .long("privkey-path")
-                            .takes_value(true)
-                            .validator(|input| FilePathParser::new(false).validate(input))
-                            .required(true)
-                            .help("Output privkey file path (content = privkey + address)"),
                     ),
                 SubCommand::with_name("key-info")
                     .about("Show public information of a secp256k1 private key (from file) or public key")
@@ -360,53 +343,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
             }
-            ("generate-key", Some(m)) => {
-                let (privkey, pubkey) = Generator::new()
-                    .random_keypair()
-                    .expect("generate random key error");
-                let print_privkey = m.is_present("print-privkey");
-                let privkey_path = m.value_of("privkey-path").unwrap();
-                let pubkey_string = hex_string(&pubkey.serialize()).expect("encode pubkey failed");
-                let address = Address::from_pubkey(AddressFormat::default(), &pubkey)?;
-                let address_string = address.to_string(NetworkType::TestNet);
-
-                if Path::new(privkey_path).exists() {
-                    return Err(format!(
-                        "ERROR: output path ( {} ) already exists",
-                        privkey_path
-                    ));
-                }
-                let mut file = fs::File::create(privkey_path).map_err(|err| err.to_string())?;
-                file.write(format!("{}\n", privkey.to_string()).as_bytes())
-                    .map_err(|err| err.to_string())?;
-                file.write(format!("{}\n", address_string).as_bytes())
-                    .map_err(|err| err.to_string())?;
-
-                let genesis_info = self.genesis_info()?;
-                let secp_code_hash = genesis_info.secp_code_hash();
-                println!(
-                    r#"Put this config in < ckb.toml >:
-
-[block_assembler]
-code_hash = "{:#x}"
-args = ["{:#x}"]
-"#,
-                    secp_code_hash,
-                    address.hash()
-                );
-
-                let mut resp = json!({
-                    "pubkey": pubkey_string,
-                    "address": address_string,
-                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
-                });
-                if print_privkey {
-                    resp.as_object_mut()
-                        .unwrap()
-                        .insert("privkey".to_owned(), privkey.to_string().into());
-                }
-                Ok(resp.render(format, color))
-            }
             ("key-info", Some(m)) => {
                 let secp_key_opt: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -427,7 +363,6 @@ args = ["{:#x}"]
                     let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
                     Address::from_lock_arg(&pubkey_hash[0..20])?
                 };
-                let address_string = address.to_string(NetworkType::TestNet);
 
                 let genesis_info = self.genesis_info()?;
                 let secp_code_hash = genesis_info.secp_code_hash();
@@ -444,7 +379,11 @@ args = ["{:#x}"]
 
                 let resp = json!({
                     "pubkey": pubkey_string,
-                    "address": address_string,
+                    "address": {
+                        "testnet": address.to_string(NetworkType::TestNet),
+                        "mainnet": address.to_string(NetworkType::MainNet),
+                    },
+                    "lock_arg": format!("{:x}", address.hash()),
                     "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
                 });
                 Ok(resp.render(format, color))
