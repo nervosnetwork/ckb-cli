@@ -21,6 +21,7 @@ where
     let mut options = Options::default();
     options.create_if_missing(true);
     options.create_missing_column_families(true);
+    options.set_keep_log_file_num(32);
     let columns = vec![
         // TODO: remove this later
         "key",

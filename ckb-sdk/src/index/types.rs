@@ -209,7 +209,11 @@ impl BlockDeltaInfo {
         }
     }
 
-    pub(crate) fn apply<'r, T: KVTxn<'r>>(&self, txn: &mut T, enable_tx: bool) -> ApplyResult {
+    pub(crate) fn apply<'r, T: KVTxn<'r>>(
+        &self,
+        txn: &mut T,
+        enable_explorer: bool,
+    ) -> ApplyResult {
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             self.header_info.header.number(),
@@ -219,7 +223,7 @@ impl BlockDeltaInfo {
 
         // Update cells and transactions
         for tx in &self.txs {
-            if enable_tx {
+            if enable_explorer {
                 txn.put_pair(Key::pair_tx_map(tx.tx_hash.clone(), &tx.to_thin()));
             }
 
@@ -231,7 +235,7 @@ impl BlockDeltaInfo {
                 ..
             } in &tx.inputs
             {
-                if enable_tx {
+                if enable_explorer {
                     txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
                         &tx.tx_hash,
@@ -250,7 +254,7 @@ impl BlockDeltaInfo {
                     index,
                     ..
                 } = live_cell_info;
-                if enable_tx {
+                if enable_explorer {
                     txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
                         &tx.tx_hash,
@@ -273,7 +277,9 @@ impl BlockDeltaInfo {
                 new_total_capacity,
                 ..
             } = info;
-            txn.put_pair(Key::pair_global_hash(lock_hash.clone(), HashType::Lock));
+            if enable_explorer {
+                txn.put_pair(Key::pair_global_hash(lock_hash.clone(), HashType::Lock));
+            }
             if let Some(script) = script_opt {
                 txn.put_pair(Key::pair_lock_script(lock_hash.clone(), script));
             }

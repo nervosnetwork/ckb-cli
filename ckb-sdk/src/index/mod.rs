@@ -26,7 +26,7 @@ pub struct IndexDatabase<'a> {
     tip_header: Header,
     init_block_buf: Vec<Block>,
     // Disable record tx info by default
-    enable_tx: bool,
+    enable_explorer: bool,
 }
 
 impl<'a> IndexDatabase<'a> {
@@ -35,7 +35,7 @@ impl<'a> IndexDatabase<'a> {
         cf: ColumnFamily<'a>,
         network: NetworkType,
         genesis_info: GenesisInfo,
-        enable_tx: bool,
+        enable_explorer: bool,
     ) -> Result<IndexDatabase<'a>, IndexError> {
         let genesis_header = genesis_info.header().clone();
         assert_eq!(genesis_header.number(), 0);
@@ -83,7 +83,7 @@ impl<'a> IndexDatabase<'a> {
             genesis_info,
             tip_header: genesis_header,
             init_block_buf: Vec::new(),
-            enable_tx,
+            enable_explorer,
         })
     }
 
@@ -280,7 +280,7 @@ impl<'a> IndexDatabase<'a> {
             let block_delta_info = BlockDeltaInfo::from_block(&block, &txn, secp_code_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
-            let result = block_delta_info.apply(&mut txn, self.enable_tx);
+            let result = block_delta_info.apply(&mut txn, self.enable_explorer);
             log::info!(
                 "Block: {} => {:x} (chain_capacity={}, delta={}), txs={}, cell-removed={}, cell-added={}",
                 number,
@@ -300,13 +300,11 @@ impl<'a> IndexDatabase<'a> {
         if let Some(key_type) = key_type_opt {
             key_types.insert(key_type, KeyMetrics::default());
         } else {
-            for key_type in &[
+            let mut types = vec![
                 KeyType::GenesisHash,
                 KeyType::Network,
                 KeyType::LastHeader,
                 KeyType::TotalCapacity,
-                KeyType::GlobalHash,
-                KeyType::TxMap,
                 KeyType::SecpAddrLock,
                 KeyType::RecentHeader,
                 KeyType::LiveCellMap,
@@ -315,10 +313,13 @@ impl<'a> IndexDatabase<'a> {
                 KeyType::LockTotalCapacity,
                 KeyType::LockTotalCapacityIndex,
                 KeyType::LockLiveCellIndex,
-                KeyType::LockTx,
                 KeyType::BlockDelta,
-            ] {
-                key_types.insert(*key_type, KeyMetrics::default());
+            ];
+            if self.enable_explorer {
+                types.extend(vec![KeyType::TxMap, KeyType::LockTx, KeyType::GlobalHash]);
+            }
+            for key_type in types {
+                key_types.insert(key_type, KeyMetrics::default());
             }
         }
         let reader = RocksReader::new(self.db, self.cf);
