@@ -40,7 +40,6 @@ jobs:
       - powershell: |
           mkdir ckb-cli_$(Build.SourceBranchName)_x86_64-pc-windows-msvc
           cp -r target/release/ckb-cli.exe,README.md,CHANGELOG.md,COPYING ckb-cli_$(Build.SourceBranchName)_x86_64-pc-windows-msvc
-          cp rpc/README.md ckb-cli_$(Build.SourceBranchName)_x86_64-pc-windows-msvc/docs/rpc.md
         displayName: Prepare archive
       - task: ArchiveFiles@2
         inputs:
