@@ -61,7 +61,7 @@ jobs:
       - task: GitHubRelease@0
         inputs:
           gitHubConnection: nervos-bot
-          repositoryName: nervosnetwork/ckb
+          repositoryName: nervosnetwork/ckb-cli
           action: edit
           tag: $(Build.SourceBranchName)
           assets: |
