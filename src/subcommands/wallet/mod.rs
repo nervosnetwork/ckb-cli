@@ -169,7 +169,13 @@ impl<'a> WalletSubCommand<'a> {
                             .validator(|input| CapacityParser.validate(input))
                             .required(true)
                             .help("The capacity (unit: CKB, format: 123.335)"),
-                    ),
+                    )
+                    .arg(
+                        Arg::with_name("with-password")
+                            .long("with-password")
+                            .help("Input password to unlock keystore account just for current transfer transaction")
+                    )
+                    ,
                 SubCommand::with_name("key-info")
                     .about("Show public information of a secp256k1 private key (from file) or public key")
                     .arg(arg_privkey.clone())
@@ -314,13 +320,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     tx_args.build(infos, &genesis_info, |tx_hash| {
                         let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
                             .expect("Tx hash convert to H256 failed");
-                        let signature_result = if self.interactive {
+                        let signature_result = if self.interactive && !m.is_present("with-password") {
                             self.key_store
                                 .sign_recoverable(lock_arg, &sign_hash)
                                 .map_err(|err| {
                                     match err {
                                         KeyStoreError::AccountLocked(lock_arg) => {
-                                            format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it", lock_arg)
+                                            format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
                                         }
                                         err => err.to_string(),
                                     }

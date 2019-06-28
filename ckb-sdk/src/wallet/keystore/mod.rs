@@ -305,22 +305,25 @@ pub enum KeyTimeout {
 
 impl fmt::Display for KeyTimeout {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let now = Instant::now();
         let output = match self {
-            KeyTimeout::Timeout(timeout) => {
-                let total_secs = (*timeout - Instant::now()).as_secs();
+            KeyTimeout::Timeout(timeout) if *timeout > now => {
+                let total_secs = (*timeout - now).as_secs();
                 let hours = total_secs / 3600;
                 let left = total_secs % 3600;
                 let minutes = left / 60;
                 let seconds = left % 60;
-                match (hours, minutes, seconds) {
+                let time = match (hours, minutes, seconds) {
                     (0, 0, seconds) => format!("{} seconds", seconds),
                     (0, minutes, seconds) => format!("{} minutes, {} seconds", minutes, seconds),
                     (hours, minutes, seconds) => {
                         format!("{} hours, {} minutes, {} seconds", hours, minutes, seconds,)
                     }
-                }
+                };
+                format!("lock after: {}", time)
             }
-            KeyTimeout::Infinite => "infinite time".to_owned(),
+            KeyTimeout::Timeout(_) => "locked".to_owned(),
+            KeyTimeout::Infinite => "locked after exit interactive mode".to_owned(),
         };
         write!(f, "{}", output)
     }

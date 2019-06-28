@@ -69,8 +69,8 @@ impl<'a> AccountSubCommand<'a> {
                             .long("keep")
                             .takes_value(true)
                             .validator(|input| DurationParser.validate(input))
-                            .default_value("30m")
-                            .help("How long before the key expired (repeat unlock will increase the time)")
+                            .required(true)
+                            .help("How long before the key expired, format: 30s, 15m, 1h (repeat unlock will increase the time)")
                     ),
                 SubCommand::with_name("update")
                     .about("Update password of an account")
@@ -111,7 +111,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
                         let timeout = self.key_store.get_lock_timeout(&lock_arg);
                         let status = timeout
-                            .map(|timeout| format!("lock after: {}", timeout))
+                            .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
                         serde_json::json!({
                             "#": idx,
@@ -182,7 +182,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|timeout| timeout.to_string())
                     .map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
-                    "lock-after": lock_after,
+                    "status": lock_after,
                 });
                 Ok(resp.render(format, color))
             }
