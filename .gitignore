@@ -1,2 +1,3 @@
 /target
 **/*.rs.bk
+/devtools/ci/travis-secret.asc
