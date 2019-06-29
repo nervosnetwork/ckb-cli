@@ -102,6 +102,7 @@ impl IndexThreadState {
             _ => false,
         }
     }
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn is_processing(&self) -> bool {
         match self {
             IndexThreadState::Processing(Some(_), _) => true,
