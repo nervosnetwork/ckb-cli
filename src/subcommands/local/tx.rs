@@ -1,14 +1,16 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use ckb_core::transaction::{
-    CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness,
+use ckb_core::{
+    block::Block,
+    transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
 use ckb_sdk::{
-    with_rocksdb, CellInputManager, CellManager, HttpRpcClient, KeyManager, TransactionManager,
+    wallet::KeyStore, with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient,
+    TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::TransactionView;
+use jsonrpc_types::{BlockNumber, TransactionView};
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
@@ -20,15 +22,39 @@ use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct LocalTxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
+    key_store: &'a mut KeyStore,
+    genesis_info: Option<GenesisInfo>,
     db_path: PathBuf,
 }
 
 impl<'a> LocalTxSubCommand<'a> {
-    pub fn new(rpc_client: &'a mut HttpRpcClient, db_path: PathBuf) -> LocalTxSubCommand<'a> {
+    pub fn new(
+        rpc_client: &'a mut HttpRpcClient,
+        key_store: &'a mut KeyStore,
+        genesis_info: Option<GenesisInfo>,
+        db_path: PathBuf,
+    ) -> LocalTxSubCommand<'a> {
         LocalTxSubCommand {
             rpc_client,
+            key_store,
+            genesis_info,
             db_path,
         }
+    }
+
+    fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
+        if self.genesis_info.is_none() {
+            let genesis_block: Block = self
+                .rpc_client
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+        }
+        Ok(self.genesis_info.clone().unwrap())
     }
 
     pub fn subcommand() -> App<'static, 'static> {
@@ -164,10 +190,16 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 if set_witnesses_by_keys {
                     let db_path = self.db_path.clone();
+                    let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
                     tx = with_rocksdb(&db_path, None, |db| {
-                        let keys = KeyManager::new(db).list()?;
+                        // TODO: use keystore
                         TransactionManager::new(db)
-                            .set_witnesses_by_keys(tx.hash(), &keys, self.rpc_client)
+                            .set_witnesses_by_keys(
+                                tx.hash(),
+                                self.key_store,
+                                self.rpc_client,
+                                &secp_code_hash,
+                            )
                             .map_err(Into::into)
                     })
                     .map_err(|err| format!("{:?}", err))?;
@@ -194,10 +226,16 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let db_path = self.db_path.clone();
+                let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
                 let tx = with_rocksdb(&db_path, None, |db| {
-                    let keys = KeyManager::new(db).list()?;
+                    // TODO: use keystore
                     TransactionManager::new(db)
-                        .set_witnesses_by_keys(&tx_hash, &keys, self.rpc_client)
+                        .set_witnesses_by_keys(
+                            &tx_hash,
+                            self.key_store,
+                            self.rpc_client,
+                            &secp_code_hash,
+                        )
                         .map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;

@@ -9,7 +9,7 @@ use jsonrpc_client_core::Error as RpcError;
 use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
-use ckb_sdk::rpc::HttpRpcClient;
+use ckb_sdk::HttpRpcClient;
 
 const MAX_SAVE_BLOCKS: usize = 100;
 
@@ -126,7 +126,7 @@ impl State {
                 epoch: info.epoch.clone(),
                 difficulty: info.difficulty.clone(),
                 is_initial_block_download: info.is_initial_block_download,
-                warnings: info.warnings.clone(),
+                alerts: info.alerts.clone(),
             }),
             tx_pool: self.tx_pool.clone(),
             peer_count: self.peers.len(),

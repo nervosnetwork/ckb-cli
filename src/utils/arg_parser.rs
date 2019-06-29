@@ -1,10 +1,13 @@
 use std::fmt::Display;
+use std::fs;
+use std::io::Read;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 use ckb_core::transaction::CellOutPoint;
-use ckb_sdk::{Address, NetworkType, SecpKey, ONE_CKB};
+use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use numext_fixed_hash::{H160, H256};
@@ -223,17 +226,58 @@ impl ArgParser<PathBuf> for DirPathParser {
 
 pub struct PrivkeyPathParser;
 
-impl ArgParser<SecpKey> for PrivkeyPathParser {
-    fn parse(&self, input: &str) -> Result<SecpKey, String> {
-        SecpKey::from_privkey_path(input)
+impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
+    fn parse(&self, input: &str) -> Result<secp256k1::SecretKey, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let mut content = String::new();
+        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|err| err.to_string())?;
+        let privkey_string: String = content
+            .split_whitespace()
+            .next()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| "File is empty".to_string())?;
+        let data: H256 = FixedHashParser::<H256>::default().parse(privkey_string.as_str())?;
+        secp256k1::SecretKey::from_slice(&data[..])
+            .map_err(|err| format!("Invalid secp256k1 secret key format, error: {}", err))
+    }
+}
+
+pub struct ExtendedPrivkeyPathParser;
+
+impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
+    fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let mut content = String::new();
+        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        file.read_to_string(&mut content)
+            .map_err(|err| err.to_string())?;
+        let lines = content
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .take(2)
+            .collect::<Vec<String>>();
+        if lines.len() < 2 {
+            return Err("Not enough line for parse extended private key".to_owned());
+        }
+        let hash_parser = FixedHashParser::<H256>::default();
+        let line1: H256 = hash_parser.parse(&lines[0])?;
+        let line2: H256 = hash_parser.parse(&lines[1])?;
+        let mut bytes = [0u8; 64];
+        bytes[0..32].copy_from_slice(&line1[0..32]);
+        bytes[32..64].copy_from_slice(&line2[0..32]);
+        MasterPrivKey::from_bytes(bytes).map_err(|err| err.to_string())
     }
 }
 
 pub struct PubkeyHexParser;
 
-impl ArgParser<SecpKey> for PubkeyHexParser {
-    fn parse(&self, input: &str) -> Result<SecpKey, String> {
-        SecpKey::from_pubkey_str(input)
+impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
+    fn parse(&self, input: &str) -> Result<secp256k1::PublicKey, String> {
+        let data = HexParser.parse(input)?;
+        secp256k1::PublicKey::from_slice(&data)
+            .map_err(|err| format!("Invalid secp256k1 public key format, error: {}", err))
     }
 }
 
@@ -241,7 +285,10 @@ pub struct AddressParser;
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
-        Address::from_input(NetworkType::TestNet, input)
+        let prefix = input.chars().take(3).collect::<String>();
+        let network = NetworkType::from_prefix(prefix.as_str())
+            .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
+        Address::from_input(network, input)
     }
 }
 
@@ -258,6 +305,7 @@ impl ArgParser<u64> for CapacityParser {
                 .parse::<u64>()
                 .map_err(|err| err.to_string())?;
         if let Some(shannon_str) = parts.get(1) {
+            let shannon_str = shannon_str.trim();
             if shannon_str.len() > 8 {
                 return Err(format!("decimal part too long: {}", shannon_str.len()));
             }
@@ -285,6 +333,32 @@ impl ArgParser<CellOutPoint> for CellOutPointParser {
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
         Ok(CellOutPoint { tx_hash, index })
+    }
+}
+
+pub struct DurationParser;
+
+impl ArgParser<Duration> for DurationParser {
+    fn parse(&self, input: &str) -> Result<Duration, String> {
+        if input.is_empty() {
+            return Err("Missing input".to_owned());
+        }
+        let input_lower = input.to_lowercase();
+        let value_part = &input_lower[0..input_lower.len() - 1];
+        let value: u64 = value_part.parse::<u64>().map_err(|err| err.to_string())?;
+        let unit_part = &input_lower[input_lower.len() - 1..input_lower.len()];
+        let seconds = match unit_part {
+            "s" => value,
+            "m" => value * 60,
+            "h" => value * 3600,
+            "d" => value * 3600 * 24,
+            _ => {
+                return Err(
+                    "Please give an unit, {{s: second, m: minute, h: hour, d: day}}".to_owned(),
+                );
+            }
+        };
+        Ok(Duration::from_secs(seconds))
     }
 }
 

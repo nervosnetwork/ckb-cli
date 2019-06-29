@@ -6,19 +6,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_core::{block::Block, header::Header, service::Request};
-use ckb_sdk::NetworkType;
+use ckb_sdk::{GenesisInfo, NetworkType};
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
-use jsonrpc_client_core::Error as RpcError;
 use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
-use ckb_sdk::rpc::HttpRpcClient;
-use ckb_sdk::{IndexDatabase, LMDB_EXTRA_MAP_SIZE};
-
-// Reopen database every 10000 blocks (for increase map size)
-const REOPEN_DB_BLOCKS: usize = 10000;
+use ckb_sdk::{with_index_db, HttpRpcClient, IndexDatabase};
 
 pub enum IndexRequest {
     UpdateUrl(String),
@@ -107,6 +102,7 @@ impl IndexThreadState {
             _ => false,
         }
     }
+    #[cfg_attr(windows, allow(dead_code))]
     pub fn is_processing(&self) -> bool {
         match self {
             IndexThreadState::Processing(Some(_), _) => true,
@@ -221,8 +217,8 @@ pub fn start_index_thread(
                 }
                 Ok(false) => {}
                 Err(err) => {
-                    state.write().error(err.description().to_owned());
-                    log::info!("rpc call error: {:?}", err);
+                    state.write().error(err.clone());
+                    log::info!("rpc call or db error: {:?}", err);
                     if shutdown_clone.load(Ordering::Relaxed) {
                         break;
                     }
@@ -245,7 +241,7 @@ fn process(
     index_dir: &PathBuf,
     state: &Arc<RwLock<IndexThreadState>>,
     shutdown: &Arc<AtomicBool>,
-) -> Result<bool, RpcError> {
+) -> Result<bool, String> {
     if let Some(exit) = try_recv(&receiver, rpc_url) {
         return Ok(exit);
     }
@@ -254,68 +250,76 @@ fn process(
     let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
     let genesis_block: Block = rpc_client
         .get_block_by_number(BlockNumber(0))
-        .call()?
+        .call()
+        .map_err(|err| err.to_string())?
         .0
         .expect("Can not get genesis block?")
         .into();
-    let mut db = IndexDatabase::from_path(
-        NetworkType::TestNet,
-        genesis_block.header(),
-        index_dir.clone(),
-        LMDB_EXTRA_MAP_SIZE,
-    )
-    .unwrap();
+    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
+    let genesis_hash = genesis_info.header().hash().clone();
 
-    let mut processed_blocks = 0;
-    let mut last_get_tip = Instant::now();
-    let mut tip_header: Header = rpc_client.get_tip_header().call()?.into();
-    if db.last_number().is_none() {
-        db.apply_next_block(genesis_block.clone())
-            .expect("Apply genesis block failed");
-    }
-    db.update_tip(tip_header.clone());
-    state
-        .write()
-        .processing(db.last_header().cloned(), tip_header.number());
-
+    let mut next_get_tip = Instant::now();
+    let mut tip_header = genesis_info.header().clone();
+    let mut last_number = 0;
     loop {
-        if last_get_tip.elapsed() > Duration::from_secs(2) {
-            last_get_tip = Instant::now();
-            tip_header = rpc_client.get_tip_header().call()?.into();
-            db.update_tip(tip_header.clone());
+        if next_get_tip <= Instant::now() {
+            next_get_tip = Instant::now() + Duration::from_secs(1);
+            tip_header = rpc_client
+                .get_tip_header()
+                .call()
+                .map_err(|err| err.to_string())?
+                .into();
             log::debug!("Update to tip {}", tip_header.number());
         }
 
-        while tip_header.number() > db.last_number().unwrap() {
-            if shutdown.load(Ordering::Relaxed) {
-                return Ok(true);
-            }
-            if let Some(exit) = try_recv(&receiver, rpc_url) {
-                return Ok(exit);
-            }
-            let next_block_number = BlockNumber(db.next_number().unwrap());
-            if let Some(next_block) = rpc_client.get_block_by_number(next_block_number).call()?.0 {
-                db.apply_next_block(next_block.into())
-                    .expect("Add block failed");
-                processed_blocks += 1;
+        if tip_header.number() > last_number {
+            let exit_opt = with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
+                let mut db = IndexDatabase::from_db(
+                    backend,
+                    cf,
+                    NetworkType::TestNet,
+                    genesis_info.clone(),
+                    false,
+                )
+                .unwrap();
+                if db.last_number().is_none() {
+                    db.apply_next_block(genesis_block.clone())
+                        .expect("Apply genesis block failed");
+                }
+                db.update_tip(tip_header.clone());
+                while tip_header.number() > db.last_number().unwrap() {
+                    if shutdown.load(Ordering::Relaxed) {
+                        return Ok(Some(true));
+                    }
+                    if let Some(exit) = try_recv(&receiver, rpc_url) {
+                        return Ok(Some(exit));
+                    }
+                    let next_block_number = BlockNumber(db.next_number().unwrap());
+                    if let Some(next_block) = rpc_client
+                        .get_block_by_number(next_block_number)
+                        .call()
+                        .map_err(|err| err.to_string())?
+                        .0
+                    {
+                        db.apply_next_block(next_block.into())
+                            .expect("Add block failed");
+                        state
+                            .write()
+                            .processing(db.last_header().cloned(), tip_header.number());
+                    } else {
+                        log::warn!("fork happening, wait a second");
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+                last_number = db.last_number().unwrap();
                 state
                     .write()
                     .processing(db.last_header().cloned(), tip_header.number());
-                if processed_blocks > REOPEN_DB_BLOCKS {
-                    log::info!("Reopen database");
-                    db = IndexDatabase::from_path(
-                        NetworkType::TestNet,
-                        genesis_block.header(),
-                        index_dir.clone(),
-                        LMDB_EXTRA_MAP_SIZE,
-                    )
-                    .unwrap();
-                    db.update_tip(tip_header.clone());
-                    processed_blocks = 0;
-                }
-            } else {
-                log::warn!("fork happening, wait a second");
-                thread::sleep(Duration::from_secs(1));
+                Ok(None)
+            })
+            .map_err(|err| err.to_string())?;
+            if let Some(exit) = exit_opt {
+                return Ok(exit);
             }
         }
 

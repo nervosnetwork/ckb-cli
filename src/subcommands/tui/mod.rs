@@ -19,8 +19,8 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
-use ckb_core::{header::Header, service::Request};
-use ckb_sdk::{HttpRpcClient, IndexDatabase, NetworkType, LMDB_EXTRA_MAP_SIZE, ONE_CKB};
+use ckb_core::service::Request;
+use ckb_sdk::{with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, NetworkType, ONE_CKB};
 use jsonrpc_types::BlockNumber;
 
 use super::wallet::{IndexController, IndexRequest};
@@ -48,7 +48,7 @@ impl TuiSubCommand {
     }
 
     pub fn start(self) -> Result<String, String> {
-        let genesis_header = {
+        let genesis_info = {
             let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
                 .get_block_by_number(BlockNumber(0))
                 .call()
@@ -62,7 +62,7 @@ impl TuiSubCommand {
                 .0
                 .expect("Can not get genesis block?")
                 .into();
-            genesis_block.header().clone()
+            GenesisInfo::from_block(&genesis_block)?
         };
 
         let stdout = io::stdout()
@@ -144,7 +144,7 @@ impl TuiSubCommand {
                             render_top_capacity(
                                 &self.index_controller,
                                 self.index_dir.clone(),
-                                &genesis_header,
+                                &genesis_info,
                                 content_context,
                             )
                         }
@@ -287,13 +287,15 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     let ibd = chain
         .as_ref()
         .map(|info| info.is_initial_block_download.to_string());
-    let warnings = chain.as_ref().and_then(|info| {
-        if info.warnings.is_empty() {
-            None
-        } else {
-            Some(info.warnings.to_string())
-        }
-    });
+    // TODO: query alert instead
+    let warnings = None;
+    // let warnings = chain.as_ref().and_then(|info| {
+    //     if info.warnings.is_empty() {
+    //         None
+    //     } else {
+    //         Some(info.warnings.to_string())
+    //     }
+    // });
     let tip_info = tip
         .as_ref()
         .map(|block| format!("{} => {}", block.header.number(), block.header.hash()));
@@ -484,7 +486,7 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
 fn render_top_capacity<B: Backend>(
     index: &IndexController,
     index_dir: PathBuf,
-    genesis_header: &Header,
+    genesis_info: &GenesisInfo,
     ctx: RenderContext<B>,
 ) {
     ctx.block.clone().render(ctx.frame, ctx.rect);
@@ -494,14 +496,19 @@ fn render_top_capacity<B: Backend>(
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
     let lines = if index.state().read().is_processing() {
-        match IndexDatabase::from_path(
-            NetworkType::TestNet,
-            genesis_header,
-            index_dir,
-            LMDB_EXTRA_MAP_SIZE,
-        ) {
-            Ok(db) => db
-                .get_top_n(50)
+        let genesis_hash = genesis_info.header().hash().clone();
+        let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
+            let db = IndexDatabase::from_db(
+                backend,
+                cf,
+                NetworkType::TestNet,
+                genesis_info.clone(),
+                false,
+            )?;
+            Ok(db.get_top_n(50))
+        });
+        match capacity_list_result {
+            Ok(capacity_list) => capacity_list
                 .iter()
                 .flat_map(|(lock_hash, address, capacity)| {
                     vec![

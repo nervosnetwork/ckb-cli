@@ -9,3 +9,6 @@ test:
 
 ci: fmt clippy test
 	git diff --exit-code Cargo.lock
+
+prod: ## Build binary with release profile.
+	cargo build --release

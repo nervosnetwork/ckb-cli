@@ -7,22 +7,24 @@ use std::process;
 use std::sync::Arc;
 
 use build_info::Version;
-use ckb_sdk::rpc::RpcClient;
+use ckb_sdk::HttpRpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 
-use subcommands::LocalSubCommand;
-
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, CliSubCommand, IndexThreadState, RpcSubCommand, WalletSubCommand,
+    start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, LocalSubCommand,
+    RpcSubCommand, WalletSubCommand,
 };
-use utils::arg_parser::{ArgParser, UrlParser};
-use utils::config::GlobalConfig;
-use utils::printer::{ColorWhen, OutputFormat};
+use utils::{
+    arg_parser::{ArgParser, UrlParser},
+    config::GlobalConfig,
+    other::get_key_store,
+    printer::{ColorWhen, OutputFormat},
+};
 
 mod interactive;
 mod subcommands;
@@ -80,7 +82,7 @@ fn main() -> Result<(), io::Error> {
 
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
-    let mut rpc_client = RpcClient::from_uri(api_uri.as_str());
+    let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     if let Some(format) = matches.value_of("output-format") {
@@ -97,26 +99,30 @@ fn main() -> Result<(), io::Error> {
         ("rpc", Some(sub_matches)) => {
             RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color)
         }
-        ("local", Some(sub_matches)) => LocalSubCommand::new(
-            &mut rpc_client,
-            None,
-            resource_dir.clone(),
-        )
-        .process(&sub_matches, output_format, color),
-        ("wallet", Some(sub_matches)) => WalletSubCommand::new(
-            &mut rpc_client,
-            None,
-            index_dir.clone(),
-            index_controller.clone(),
-            false,
-        )
-        .process(&sub_matches, output_format, color),
+        ("local", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            LocalSubCommand::new(&mut rpc_client, &mut key_store, None, resource_dir.clone())
+                .process(&sub_matches, output_format, color)
+        }),
+        ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            AccountSubCommand::new(&mut key_store).process(&sub_matches, output_format, color)
+        }),
+        ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            WalletSubCommand::new(
+                &mut rpc_client,
+                &mut key_store,
+                None,
+                index_dir.clone(),
+                index_controller.clone(),
+                false,
+            )
+            .process(&sub_matches, output_format, color)
+        }),
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
                     .and_then(|mut env| env.start())
             {
-                eprintln!("Something error: kind {:?}, message {}", err.kind(), err);
+                eprintln!("Process error: {}", err);
                 index_controller.shutdown();
                 process::exit(1);
             }
@@ -180,6 +186,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
+        .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(WalletSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
@@ -271,6 +278,7 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .about("Exit the interactive interface"),
         )
         .subcommand(RpcSubCommand::subcommand())
+        .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(LocalSubCommand::subcommand())
 }
