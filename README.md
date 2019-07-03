@@ -43,7 +43,9 @@ CKB command line tool
 
 ## Build this project
 ```
-cargo build
+git clone https://github.com/nervosnetwork/ckb-cli.git
+cd ckb-cli
+cargo install --path . -f
 ```
 
 ## Usage
@@ -63,15 +65,15 @@ ckb-cli
 Show available commands
 ``` shell
 # Top level help doc
-./target/debug/ckb-cli --help
+ckb-cli --help
 # RPC help doc
-./target/debug/ckb-cli rpc --help
+ckb-cli rpc --help
 ```
 
 ### Example: Get tip header (yaml output format)
 
 ```
-./target/debug/ckb-cli rpc get_tip_header
+ckb-cli rpc get_tip_header
 ```
 
 **Response:**
@@ -95,7 +97,7 @@ hash: 0x3ec0bbca4eb9f1a56332b9336827e27115589944583d3bdeac37ab27c181e6ef
 
 ### Example: Get live cell (json output format)
 ```
-./target/debug/ckb-cli rpc get_live_cell --hash 0x938ebf9761e6fc1e0cbc0694d0a329a4cf00c5dea290bee0b274f71a3d2ae6de --tx-hash 0x23510d46adf6cfc28d658582d9fdcfb51f4450706bd520e5249973a736585579 --index 0
+ckb-cli rpc get_live_cell --hash 0x938ebf9761e6fc1e0cbc0694d0a329a4cf00c5dea290bee0b274f71a3d2ae6de --tx-hash 0x23510d46adf6cfc28d658582d9fdcfb51f4450706bd520e5249973a736585579 --index 0
 ```
 
 **Response:**
