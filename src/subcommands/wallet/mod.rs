@@ -116,6 +116,11 @@ impl<'a> WalletSubCommand<'a> {
             .takes_value(true)
             .validator(|input| PrivkeyPathParser.validate(input))
             .help("Private key file path (only read first line)");
+        let arg_pubkey = Arg::with_name("pubkey")
+            .long("pubkey")
+            .takes_value(true)
+            .validator(|input| PubkeyHexParser.validate(input))
+            .help("Public key (hex string, compressed format)");
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
@@ -128,11 +133,11 @@ impl<'a> WalletSubCommand<'a> {
             .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true)
             .help("Lock hash");
-        let arg_pubkey = Arg::with_name("pubkey")
-            .long("pubkey")
+        let arg_lock_arg = Arg::with_name("lock-arg")
+            .long("lock-arg")
             .takes_value(true)
-            .validator(|input| PubkeyHexParser.validate(input))
-            .help("Public key (hex string, compressed format)");
+            .validator(|input| FixedHashParser::<H160>::default().validate(input))
+            .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
         SubCommand::with_name("wallet")
             .about("tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
@@ -178,19 +183,16 @@ impl<'a> WalletSubCommand<'a> {
                     ,
                 SubCommand::with_name("key-info")
                     .about("Show public information of a secp256k1 private key (from file) or public key")
-                    .arg(arg_privkey.clone())
-                    .arg(arg_pubkey.clone().required_if("privkey-path", "")),
+                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
+                    .arg(arg_pubkey.clone().required(false))
+                    .arg(arg_address.clone().required(false))
+                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg_lock_hash.clone().required(false))
                     .arg(arg_address.clone().required(false))
                     .arg(arg_pubkey.clone())
-                    .arg(Arg::with_name("lock-arg")
-                         .long("lock-arg")
-                         .takes_value(true)
-                         .validator(|input| FixedHashParser::<H160>::default().validate(input))
-                         .help("Lock argument (account identifier, blake2b(pubkey)[0..20])")
-                    ),
+                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-live-cells")
                     .about("Get live cells by lock script hash")
                     .arg(arg_lock_hash.clone())
@@ -245,6 +247,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
+        fn get_address(m: &ArgMatches) -> Result<Address, String> {
+            let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
+            let pubkey: Option<secp256k1::PublicKey> =
+                PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+            let lock_arg: Option<H160> =
+                FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+            let address = address
+                .or_else(|| {
+                    pubkey.map(|pubkey| {
+                        Address::from_pubkey(AddressFormat::default(), &pubkey.into()).unwrap()
+                    })
+                })
+                .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
+                .ok_or_else(|| "Please give one argument".to_owned())?;
+            Ok(address)
+        }
+
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
@@ -350,24 +369,22 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("key-info", Some(m)) => {
-                let secp_key_opt: Option<secp256k1::SecretKey> =
+                let privkey_opt: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let pubkey = secp_key_opt
-                    .map(|privkey| {
-                        Result::<_, String>::Ok(secp256k1::PublicKey::from_secret_key(
-                            &SECP256K1, &privkey,
-                        ))
-                    })
-                    .unwrap_or_else(|| {
-                        let key: secp256k1::PublicKey =
-                            PubkeyHexParser.from_matches(m, "pubkey")?;
-                        Ok(key)
-                    })?;
-                let pubkey_string =
-                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed");
-                let address = {
-                    let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
-                    Address::from_lock_arg(&pubkey_hash[0..20])?
+                let pubkey_opt: Option<secp256k1::PublicKey> =
+                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                let pubkey_opt = privkey_opt
+                    .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
+                    .or_else(|| pubkey_opt);
+                let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
+                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
+                });
+                let address = match pubkey_opt {
+                    Some(pubkey) => {
+                        let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
+                        Address::from_lock_arg(&pubkey_hash[0..20])?
+                    }
+                    None => get_address(m)?,
                 };
 
                 let genesis_info = self.genesis_info()?;
@@ -384,7 +401,7 @@ args = ["{:#x}"]
                 );
 
                 let resp = json!({
-                    "pubkey": pubkey_string,
+                    "pubkey": pubkey_string_opt,
                     "address": {
                         "testnet": address.to_string(NetworkType::TestNet),
                         "mainnet": address.to_string(NetworkType::MainNet),
@@ -401,23 +418,7 @@ args = ["{:#x}"]
                     lock_hash
                 } else {
                     let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
-                    let address: Option<Address> =
-                        AddressParser.from_matches_opt(m, "address", false)?;
-                    let pubkey: Option<secp256k1::PublicKey> =
-                        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-                    let lock_arg: Option<H160> = FixedHashParser::<H160>::default()
-                        .from_matches_opt(m, "lock-arg", false)?;
-                    let address = address
-                        .or_else(|| {
-                            pubkey.map(|pubkey| {
-                                Address::from_pubkey(AddressFormat::default(), &pubkey.into())
-                                    .unwrap()
-                            })
-                        })
-                        .or_else(|| {
-                            lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap())
-                        })
-                        .ok_or_else(|| "Please give one argument".to_owned())?;
+                    let address = get_address(m)?;
                     address.lock_script(secp_code_hash).hash().clone()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
