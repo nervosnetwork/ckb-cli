@@ -157,7 +157,7 @@ impl InteractiveEnv {
                             eprintln!("{}", err.to_string());
                         }
                     }
-                    rl.add_history_entry(line.as_ref());
+                    rl.add_history_entry(line.as_str());
                 }
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
