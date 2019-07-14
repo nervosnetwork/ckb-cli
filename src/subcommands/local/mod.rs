@@ -56,13 +56,15 @@ impl<'a> LocalSubCommand<'a> {
     }
 
     pub fn subcommand() -> App<'static, 'static> {
-        SubCommand::with_name("local").subcommands(vec![
-            LocalCellSubCommand::subcommand(),
-            LocalCellInputSubCommand::subcommand(),
-            LocalScriptSubCommand::subcommand(),
-            LocalTxSubCommand::subcommand(),
-            SubCommand::with_name("secp-dep"),
-        ])
+        SubCommand::with_name("local")
+            .about("Local transaction management and verify")
+            .subcommands(vec![
+                LocalCellSubCommand::subcommand(),
+                LocalCellInputSubCommand::subcommand(),
+                LocalScriptSubCommand::subcommand(),
+                LocalTxSubCommand::subcommand(),
+                SubCommand::with_name("secp-dep"),
+            ])
     }
 }
 
