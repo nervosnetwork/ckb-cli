@@ -302,7 +302,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let secp_code_hash = genesis_info.secp_code_hash();
                 let (infos, total_capacity): (Vec<LiveCellInfo>, u64) = self.with_db(|db| {
                     let mut total_capacity = 0;
-                    let infos = db.get_live_cell_infos(
+                    let infos = db.get_live_cells_by_lock(
                         from_address
                             .lock_script(secp_code_hash.clone())
                             .hash()
@@ -439,15 +439,18 @@ args = ["{:#x}"]
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
                 let (infos, total_capacity) = self.with_db(|db| {
                     let mut total_capacity = 0;
-                    let infos =
-                        db.get_live_cell_infos(lock_hash.clone(), from_number_opt, |idx, info| {
+                    let infos = db.get_live_cells_by_lock(
+                        lock_hash.clone(),
+                        from_number_opt,
+                        |idx, info| {
                             let stop = idx >= limit || info.number > to_number;
                             let push_info = !stop;
                             if push_info {
                                 total_capacity += info.capacity;
                             }
                             (stop, push_info)
-                        });
+                        },
+                    );
                     (infos, total_capacity)
                 })?;
                 let resp = serde_json::json!({
