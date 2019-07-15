@@ -193,10 +193,43 @@ impl<'a> IndexDatabase<'a> {
     //     self.get_address_inner(&reader, lock_hash)
     // }
 
-    pub fn get_live_cell_infos<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
+    pub fn get_live_cells_by_lock<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
         lock_hash: H256,
         from_number: Option<u64>,
+        terminator: F,
+    ) -> Vec<LiveCellInfo> {
+        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone(), None);
+        let key_start = Key::LockLiveCellIndexPrefix(lock_hash, from_number);
+        self.get_live_cell_infos(key_prefix, key_start, terminator)
+    }
+
+    pub fn get_live_cells_by_type<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
+        &self,
+        type_hash: H256,
+        from_number: Option<u64>,
+        terminator: F,
+    ) -> Vec<LiveCellInfo> {
+        let key_prefix = Key::TypeLiveCellIndexPrefix(type_hash.clone(), None);
+        let key_start = Key::TypeLiveCellIndexPrefix(type_hash, from_number);
+        self.get_live_cell_infos(key_prefix, key_start, terminator)
+    }
+
+    pub fn get_live_cells_by_code<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
+        &self,
+        code_hash: H256,
+        from_number: Option<u64>,
+        terminator: F,
+    ) -> Vec<LiveCellInfo> {
+        let key_prefix = Key::CodeLiveCellIndexPrefix(code_hash.clone(), None);
+        let key_start = Key::CodeLiveCellIndexPrefix(code_hash, from_number);
+        self.get_live_cell_infos(key_prefix, key_start, terminator)
+    }
+
+    pub fn get_live_cell_infos<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
+        &self,
+        key_prefix: Key,
+        key_start: Key,
         mut terminator: F,
     ) -> Vec<LiveCellInfo> {
         fn get_live_cell_info(
@@ -209,8 +242,8 @@ impl<'a> IndexDatabase<'a> {
         }
 
         let reader = RocksReader::new(self.db, self.cf);
-        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone(), None).to_bytes();
-        let key_start = Key::LockLiveCellIndexPrefix(lock_hash, from_number).to_bytes();
+        let key_prefix = key_prefix.to_bytes();
+        let key_start = key_start.to_bytes();
 
         let mut infos = Vec::new();
         for (idx, (key_bytes, value_bytes)) in reader.iter_from(&key_start).enumerate() {
@@ -307,13 +340,15 @@ impl<'a> IndexDatabase<'a> {
                 KeyType::TotalCapacity,
                 KeyType::SecpAddrLock,
                 KeyType::RecentHeader,
+                KeyType::BlockDelta,
                 KeyType::LiveCellMap,
                 KeyType::LiveCellIndex,
                 KeyType::LockScript,
                 KeyType::LockTotalCapacity,
                 KeyType::LockTotalCapacityIndex,
                 KeyType::LockLiveCellIndex,
-                KeyType::BlockDelta,
+                KeyType::TypeLiveCellIndex,
+                KeyType::CodeLiveCellIndex,
             ];
             if self.enable_explorer {
                 types.extend(vec![KeyType::TxMap, KeyType::LockTx, KeyType::GlobalHash]);

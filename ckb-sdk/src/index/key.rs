@@ -26,6 +26,9 @@ pub enum KeyType {
     // >> Save recent headers for rollback a fork and for statistics
     // key => value: {type}:{block-number} => {HeaderInfo}
     RecentHeader = 103,
+    // >> for rollback block when fork happened (keep 1000 blocks?)
+    // key = value: {type}:{block-number} => {BlockDeltaInfo}
+    BlockDelta = 104,
 
     // key => value: {type}:{CellOutPoint} => {LiveCellInfo}
     LiveCellMap = 200,
@@ -44,9 +47,12 @@ pub enum KeyType {
     LockLiveCellIndex = 303,
     // key => value: {type}:{lock-hash}:{block-number}:{tx-index(u32)} => {tx-hash}
     LockTx = 304,
-    // >> for rollback block when fork happen (keep 1000 blocks?)
-    // key = value: {type}:{block-number} => {BlockDeltaInfo}
-    BlockDelta = 400,
+
+    // key => value: {type}:{type-hash}:{block-number}:{CellIndex} => {CellOutPoint}
+    TypeLiveCellIndex = 400,
+
+    // key => value: {type}:{code-hash}:{block-number}:{CellIndex} => {CellOutPoint}
+    CodeLiveCellIndex = 500,
 }
 
 impl KeyType {
@@ -65,6 +71,7 @@ impl KeyType {
             101 => KeyType::TxMap,
             102 => KeyType::SecpAddrLock,
             103 => KeyType::RecentHeader,
+            104 => KeyType::BlockDelta,
 
             200 => KeyType::LiveCellMap,
             201 => KeyType::LiveCellIndex,
@@ -75,7 +82,9 @@ impl KeyType {
             303 => KeyType::LockLiveCellIndex,
             304 => KeyType::LockTx,
 
-            400 => KeyType::BlockDelta,
+            400 => KeyType::TypeLiveCellIndex,
+            500 => KeyType::CodeLiveCellIndex,
+
             value => panic!("Unexpected key type: value={}", value),
         }
     }
@@ -92,6 +101,7 @@ pub enum Key {
     TxMap(H256),
     SecpAddrLock(Address),
     RecentHeader(u64),
+    BlockDelta(u64),
 
     LiveCellMap(CellOutPoint),
     LiveCellIndex(u64, CellIndex),
@@ -102,7 +112,11 @@ pub enum Key {
     LockLiveCellIndexPrefix(H256, Option<u64>),
     LockLiveCellIndex(H256, u64, CellIndex),
     LockTx(H256, u64, u32),
-    BlockDelta(u64),
+
+    TypeLiveCellIndexPrefix(H256, Option<u64>),
+    TypeLiveCellIndex(H256, u64, CellIndex),
+    CodeLiveCellIndexPrefix(H256, Option<u64>),
+    CodeLiveCellIndex(H256, u64, CellIndex),
 }
 
 impl Key {
@@ -129,6 +143,11 @@ impl Key {
             }
             Key::RecentHeader(number) => {
                 let mut bytes = KeyType::RecentHeader.to_bytes();
+                bytes.extend(number.to_be_bytes().to_vec());
+                bytes
+            }
+            Key::BlockDelta(number) => {
+                let mut bytes = KeyType::BlockDelta.to_bytes();
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes
             }
@@ -186,9 +205,38 @@ impl Key {
                 bytes.extend(tx_index.to_be_bytes().to_vec());
                 bytes
             }
-            Key::BlockDelta(number) => {
-                let mut bytes = KeyType::BlockDelta.to_bytes();
+
+            Key::TypeLiveCellIndexPrefix(type_hash, number_opt) => {
+                let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
+                bytes.extend(bincode::serialize(type_hash).unwrap());
+                if let Some(number) = number_opt {
+                    bytes.extend(number.to_be_bytes().to_vec());
+                }
+                bytes
+            }
+            Key::TypeLiveCellIndex(type_hash, number, cell_index) => {
+                let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
+                bytes.extend(bincode::serialize(type_hash).unwrap());
+                // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
+                bytes.extend(cell_index.to_bytes());
+                bytes
+            }
+
+            Key::CodeLiveCellIndexPrefix(code_hash, number_opt) => {
+                let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
+                bytes.extend(bincode::serialize(code_hash).unwrap());
+                if let Some(number) = number_opt {
+                    bytes.extend(number.to_be_bytes().to_vec());
+                }
+                bytes
+            }
+            Key::CodeLiveCellIndex(code_hash, number, cell_index) => {
+                let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
+                bytes.extend(bincode::serialize(code_hash).unwrap());
+                // Must use big endian for sort
+                bytes.extend(number.to_be_bytes().to_vec());
+                bytes.extend(cell_index.to_bytes());
                 bytes
             }
         }
@@ -221,6 +269,12 @@ impl Key {
                 number_bytes.copy_from_slice(&args_bytes[..8]);
                 let number = u64::from_be_bytes(number_bytes);
                 Key::RecentHeader(number)
+            }
+            KeyType::BlockDelta => {
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(args_bytes);
+                let number = u64::from_be_bytes(number_bytes);
+                Key::BlockDelta(number)
             }
             KeyType::LiveCellMap => {
                 let out_point = bincode::deserialize(args_bytes).unwrap();
@@ -274,11 +328,27 @@ impl Key {
                 let tx_index = u32::from_be_bytes(tx_index_bytes);
                 Key::LockTx(lock_hash, number, tx_index)
             }
-            KeyType::BlockDelta => {
+            KeyType::TypeLiveCellIndex => {
+                let type_hash_bytes = &args_bytes[..32];
                 let mut number_bytes = [0u8; 8];
-                number_bytes.copy_from_slice(args_bytes);
+                number_bytes.copy_from_slice(&args_bytes[32..40]);
+                let mut cell_index_bytes = [0u8; 8];
+                cell_index_bytes.copy_from_slice(&args_bytes[40..]);
+                let type_hash = bincode::deserialize(type_hash_bytes).unwrap();
                 let number = u64::from_be_bytes(number_bytes);
-                Key::BlockDelta(number)
+                let cell_index = CellIndex::from_bytes(cell_index_bytes);
+                Key::TypeLiveCellIndex(type_hash, number, cell_index)
+            }
+            KeyType::CodeLiveCellIndex => {
+                let code_hash_bytes = &args_bytes[..32];
+                let mut number_bytes = [0u8; 8];
+                number_bytes.copy_from_slice(&args_bytes[32..40]);
+                let mut cell_index_bytes = [0u8; 8];
+                cell_index_bytes.copy_from_slice(&args_bytes[40..]);
+                let code_hash = bincode::deserialize(code_hash_bytes).unwrap();
+                let number = u64::from_be_bytes(number_bytes);
+                let cell_index = CellIndex::from_bytes(cell_index_bytes);
+                Key::CodeLiveCellIndex(code_hash, number, cell_index)
             }
         }
     }
@@ -293,16 +363,19 @@ impl Key {
             Key::TxMap(..) => KeyType::TxMap,
             Key::SecpAddrLock(..) => KeyType::SecpAddrLock,
             Key::RecentHeader(..) => KeyType::RecentHeader,
+            Key::BlockDelta(..) => KeyType::BlockDelta,
             Key::LiveCellMap(..) => KeyType::LiveCellMap,
             Key::LiveCellIndex(..) => KeyType::LiveCellIndex,
             Key::LockScript(..) => KeyType::LockScript,
             Key::LockTotalCapacity(..) => KeyType::LockTotalCapacity,
             Key::LockTotalCapacityIndex(..) => KeyType::LockTotalCapacityIndex,
-            // Key::LockLiveCell(..) => KeyType::LockLiveCell,
             Key::LockLiveCellIndexPrefix(..) => KeyType::LockLiveCellIndex,
             Key::LockLiveCellIndex(..) => KeyType::LockLiveCellIndex,
             Key::LockTx(..) => KeyType::LockTx,
-            Key::BlockDelta(..) => KeyType::BlockDelta,
+            Key::TypeLiveCellIndexPrefix(..) => KeyType::TypeLiveCellIndex,
+            Key::TypeLiveCellIndex(..) => KeyType::TypeLiveCellIndex,
+            Key::CodeLiveCellIndexPrefix(..) => KeyType::CodeLiveCellIndex,
+            Key::CodeLiveCellIndex(..) => KeyType::CodeLiveCellIndex,
         }
     }
 
@@ -349,6 +422,13 @@ impl Key {
     pub(crate) fn pair_recent_header(value: &HeaderInfo) -> (Vec<u8>, Vec<u8>) {
         (
             Key::RecentHeader(value.header.number()).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+    pub(crate) fn pair_block_delta(value: &BlockDeltaInfo) -> (Vec<u8>, Vec<u8>) {
+        let number = value.number();
+        (
+            Key::BlockDelta(number).to_bytes(),
             bincode::serialize(value).unwrap(),
         )
     }
@@ -411,10 +491,22 @@ impl Key {
         )
     }
 
-    pub(crate) fn pair_block_delta(value: &BlockDeltaInfo) -> (Vec<u8>, Vec<u8>) {
-        let number = value.number();
+    pub(crate) fn pair_type_live_cell_index(
+        (type_hash, number, cell_index): (H256, u64, CellIndex),
+        value: &CellOutPoint,
+    ) -> (Vec<u8>, Vec<u8>) {
         (
-            Key::BlockDelta(number).to_bytes(),
+            Key::TypeLiveCellIndex(type_hash, number, cell_index).to_bytes(),
+            bincode::serialize(value).unwrap(),
+        )
+    }
+
+    pub(crate) fn pair_code_live_cell_index(
+        (code_hash, number, cell_index): (H256, u64, CellIndex),
+        value: &CellOutPoint,
+    ) -> (Vec<u8>, Vec<u8>) {
+        (
+            Key::CodeLiveCellIndex(code_hash, number, cell_index).to_bytes(),
             bincode::serialize(value).unwrap(),
         )
     }
