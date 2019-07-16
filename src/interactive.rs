@@ -305,11 +305,13 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.key_store).process(
-                        &sub_matches,
-                        format,
-                        color,
-                    )?;
+                    let genesis_info = self.genesis_info().ok();
+                    let output = AccountSubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.key_store,
+                        genesis_info,
+                    )
+                    .process(&sub_matches, format, color)?;
                     println!("{}", output);
                     Ok(())
                 }

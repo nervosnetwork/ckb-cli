@@ -104,7 +104,11 @@ fn main() -> Result<(), io::Error> {
                 .process(&sub_matches, output_format, color)
         }),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut key_store).process(&sub_matches, output_format, color)
+            AccountSubCommand::new(&mut rpc_client, &mut key_store, None).process(
+                &sub_matches,
+                output_format,
+                color,
+            )
         }),
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
