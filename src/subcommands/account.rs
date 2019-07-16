@@ -3,11 +3,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use ckb_core::block::Block;
 use ckb_sdk::{
     wallet::{Key, KeyStore, MasterPrivKey},
-    Address, NetworkType,
+    Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
+use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::{H160, H256};
 
 use super::CliSubCommand;
@@ -20,12 +22,37 @@ use crate::utils::{
 };
 
 pub struct AccountSubCommand<'a> {
+    rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
+    genesis_info: Option<GenesisInfo>,
 }
 
 impl<'a> AccountSubCommand<'a> {
-    pub fn new(key_store: &'a mut KeyStore) -> AccountSubCommand<'a> {
-        AccountSubCommand { key_store }
+    pub fn new(
+        rpc_client: &'a mut HttpRpcClient,
+        key_store: &'a mut KeyStore,
+        genesis_info: Option<GenesisInfo>,
+    ) -> AccountSubCommand<'a> {
+        AccountSubCommand {
+            rpc_client,
+            key_store,
+            genesis_info,
+        }
+    }
+
+    fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
+        if self.genesis_info.is_none() {
+            let genesis_block: Block = self
+                .rpc_client
+                .get_block_by_number(BlockNumber(0))
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .expect("Can not get genesis block?")
+                .into();
+            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+        }
+        Ok(self.genesis_info.clone().unwrap())
     }
 
     pub fn subcommand(name: &'static str) -> App<'static, 'static> {
@@ -104,6 +131,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|(address, filepath)| (address.clone(), filepath.clone()))
                     .collect::<Vec<(H160, PathBuf)>>();
                 accounts.sort_by(|a, b| a.1.cmp(&b.1));
+                let genesis_info_opt = self.genesis_info().ok();
                 let resp = accounts
                     .into_iter()
                     .enumerate()
@@ -113,9 +141,13 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let status = timeout
                             .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
+                        let lock_hash_opt = genesis_info_opt
+                            .as_ref()
+                            .map(|info| address.lock_script(info.secp_code_hash().clone()).hash());
                         serde_json::json!({
                             "#": idx,
                             "lock_arg": format!("{:x}", lock_arg),
+                            "lock_hash": lock_hash_opt,
                             "address": {
                                 "mainnet": address.to_string(NetworkType::MainNet),
                                 "testnet": address.to_string(NetworkType::TestNet),
@@ -135,9 +167,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .key_store
                     .new_account(pass.as_bytes())
                     .map_err(|err| err.to_string())?;
+                let genesis_info_opt = self.genesis_info().ok();
                 let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
+                let lock_hash_opt = genesis_info_opt
+                    .as_ref()
+                    .map(|info| address.lock_script(info.secp_code_hash().clone()).hash());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
+                    "lock_hash": lock_hash_opt,
                     "address": {
                         "mainnet": address.to_string(NetworkType::MainNet),
                         "testnet": address.to_string(NetworkType::TestNet),
