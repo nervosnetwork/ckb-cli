@@ -12,6 +12,7 @@ use ckb_sdk::{
     ScriptManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
+use hash::blake2b_256;
 use jsonrpc_types::{CellOutPoint as RpcCellOutPoint, CellOutput as RpcCellOutput};
 use numext_fixed_hash::H256;
 
@@ -122,15 +123,21 @@ impl<'a> CliSubCommand for LocalCellSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
-        let cell_json = |cell, name: &str, alias| {
+        fn cell_json(
+            cell: RpcCellOutput,
+            name: &str,
+            alias: Option<CellOutPoint>,
+        ) -> serde_json::Value {
+            let data_hash: H256 = blake2b_256(cell.data.as_bytes()).into();
             let cell_out_point: RpcCellOutPoint = to_local_cell_out_point(name).into();
             serde_json::json!({
                 "cell": cell,
                 "local_cell_out_point": cell_out_point,
+                "data-hash": data_hash,
                 "name": name,
                 "alias": alias,
             })
-        };
+        }
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let name: String = m.value_of("name").unwrap().to_owned();
