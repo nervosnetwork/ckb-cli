@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use ckb_core::{block::Block, service::Request};
-use ckb_sdk::{Address, AddressFormat, NetworkType};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use crypto::secp::SECP256K1;
 use faster_hex::hex_string;
@@ -27,8 +26,8 @@ use crate::utils::{
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
-    TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    with_index_db, Address, AddressFormat, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
+    NetworkType, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -194,8 +193,22 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg_pubkey.clone())
                     .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-live-cells")
-                    .about("Get live cells by lock script hash")
-                    .arg(arg_lock_hash.clone())
+                    .about("Get live cells by lock/type/code  hash")
+                    .arg(arg_lock_hash.clone().required(false))
+                    .arg(
+                        Arg::with_name("type-hash")
+                            .long("type-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .help("The type script hash")
+                    )
+                    .arg(
+                        Arg::with_name("code-hash")
+                            .long("code-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .help("The type script's code hash")
+                    )
                     .arg(
                         Arg::with_name("limit")
                             .long("limit")
@@ -428,29 +441,44 @@ args = ["{:#x}"]
                 Ok(resp.render(format, color))
             }
             ("get-live-cells", Some(m)) => {
-                let lock_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let lock_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                let type_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "type-hash", false)?;
+                let code_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "code-hash", false)?;
                 let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
                 let from_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "from", false)?;
                 let to_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
 
+                if lock_hash_opt.is_none() && type_hash_opt.is_none() && code_hash_opt.is_none() {
+                    return Err("lock-hash or type-hash or code-hash is required".to_owned());
+                }
+
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
                 let (infos, total_capacity) = self.with_db(|db| {
                     let mut total_capacity = 0;
-                    let infos = db.get_live_cells_by_lock(
-                        lock_hash.clone(),
-                        from_number_opt,
-                        |idx, info| {
-                            let stop = idx >= limit || info.number > to_number;
-                            let push_info = !stop;
-                            if push_info {
-                                total_capacity += info.capacity;
-                            }
-                            (stop, push_info)
-                        },
-                    );
+                    let terminator = |idx, info: &LiveCellInfo| {
+                        let stop = idx >= limit || info.number > to_number;
+                        let push_info = !stop;
+                        if push_info {
+                            total_capacity += info.capacity;
+                        }
+                        (stop, push_info)
+                    };
+                    let infos = if let Some(lock_hash) = lock_hash_opt {
+                        db.get_live_cells_by_lock(lock_hash.clone(), from_number_opt, terminator)
+                    } else if let Some(type_hash) = type_hash_opt {
+                        db.get_live_cells_by_type(type_hash.clone(), from_number_opt, terminator)
+                    } else {
+                        db.get_live_cells_by_code(
+                            code_hash_opt.clone().unwrap(),
+                            from_number_opt,
+                            terminator,
+                        )
+                    };
                     (infos, total_capacity)
                 })?;
                 let resp = serde_json::json!({
