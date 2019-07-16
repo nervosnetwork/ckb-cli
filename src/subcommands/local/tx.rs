@@ -128,6 +128,11 @@ impl<'a> LocalTxSubCommand<'a> {
                 .help("Verify transaction in local"),
             SubCommand::with_name("send")
                 .arg(arg_tx_hash.clone())
+                .arg(
+                    Arg::with_name("no-verify")
+                        .long("no-verify")
+                        .help("Send transaction without local verify"),
+                )
                 .help("Send transaction via rpc"),
             SubCommand::with_name("list").help("List all transaction hash"),
         ])
@@ -292,9 +297,16 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
             ("send", Some(m)) => {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let no_verify = m.is_present("no-verify");
                 let db_path = self.db_path.clone();
                 let tx = with_rocksdb(&db_path, None, |db| {
-                    TransactionManager::new(db).verify(&tx_hash, std::u64::MAX, self.rpc_client)?;
+                    if !no_verify {
+                        TransactionManager::new(db).verify(
+                            &tx_hash,
+                            std::u64::MAX,
+                            self.rpc_client,
+                        )?;
+                    }
                     Ok(TransactionManager::new(db).get(&tx_hash)?)
                 })
                 .map_err(|err| format!("{:?}", err))?;
