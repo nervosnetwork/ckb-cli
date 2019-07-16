@@ -1,5 +1,7 @@
 mod index;
 
+use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
@@ -17,8 +19,8 @@ use serde_json::json;
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PubkeyHexParser,
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PubkeyHexParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -167,6 +169,13 @@ impl<'a> WalletSubCommand<'a> {
                             .help("Hex data store in target cell (optional)"),
                     )
                     .arg(
+                        Arg::with_name("to-data-path")
+                            .long("to-data-path")
+                            .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .help("Data binary file path store in target cell (optional)"),
+                    )
+                    .arg(
                         Arg::with_name("capacity")
                             .long("capacity")
                             .takes_value(true)
@@ -284,10 +293,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_account: Option<H160> = FixedHashParser::<H160>::default()
                     .from_matches_opt(m, "from-account", false)?;
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-                let to_data: Bytes = HexParser
-                    .from_matches_opt(m, "to-data", false)?
-                    .unwrap_or_else(Bytes::new);
+                let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+
+                let to_data = match to_data_opt {
+                    Some(data) => data,
+                    None => {
+                        if let Some(path) = m.value_of("to-data-path") {
+                            let mut content = Vec::new();
+                            let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                            file.read_to_end(&mut content)
+                                .map_err(|err| err.to_string())?;
+                            Bytes::from(content)
+                        } else {
+                            Bytes::new()
+                        }
+                    }
+                };
 
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
