@@ -197,7 +197,10 @@ impl<'a> TransactionManager<'a> {
         };
 
         let script_config = ScriptConfig::default();
-        let verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
+        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
+        verifier.set_debug_printer(|script_hash, message| {
+            println!("script: {:x}, debug: {}", script_hash, message);
+        });
         let cycle = verifier
             .verify(max_cycle)
             .map_err(|err| format!("Verify script error: {:?}", err))?;
