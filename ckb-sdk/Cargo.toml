@@ -31,8 +31,8 @@ uuid = { version = "0.7.4", features = ["v4"] }
 chrono = "0.4.6"
 failure = "0.1.5"
 
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17", features = ["secp", "bech32"] }
