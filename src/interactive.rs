@@ -16,9 +16,12 @@ use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, LocalSubCommand,
     RpcSubCommand, WalletSubCommand,
 };
-use crate::utils::completer::CkbCompleter;
-use crate::utils::config::GlobalConfig;
-use crate::utils::printer::{ColorWhen, OutputFormat, Printable};
+use crate::utils::{
+    completer::CkbCompleter,
+    config::GlobalConfig,
+    other::check_alerts,
+    printer::{ColorWhen, OutputFormat, Printable},
+};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     GenesisInfo, HttpRpcClient,
@@ -296,6 +299,7 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("rpc", Some(sub_matches)) => {
+                    check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client).process(
                         &sub_matches,
                         format,

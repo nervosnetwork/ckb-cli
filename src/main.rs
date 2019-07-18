@@ -22,7 +22,7 @@ use subcommands::{
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::get_key_store,
+    other::{check_alerts, get_key_store},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -83,6 +83,7 @@ fn main() -> Result<(), io::Error> {
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
+    check_alerts(&mut rpc_client);
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     if let Some(format) = matches.value_of("output-format") {
