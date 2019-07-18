@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use ckb_core::script::Script;
+use ckb_core::script::{Script, ScriptHashType};
+use ckb_jsonrpc_types::Script as RpcScript;
 use ckb_sdk::{with_rocksdb, HttpRpcClient, ScriptManager};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_decode;
-use jsonrpc_types::Script as RpcScript;
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
@@ -73,6 +73,15 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
+        fn script_json(script: Script) -> serde_json::Value {
+            let script_hash = script.hash();
+            let rpc_script: RpcScript = script.into();
+            serde_json::json!({
+                "script": rpc_script,
+                "script-hash": script_hash,
+            })
+        }
+
         match matches.subcommand() {
             ("add", Some(m)) => {
                 let code_hash: H256 =
@@ -94,7 +103,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                     })
                     .collect();
                 let args = args_result?;
-                let script = Script::new(args, code_hash);
+                let script = Script::new(args, code_hash, ScriptHashType::Data);
                 let script_hash = script.hash();
                 with_rocksdb(&self.db_path, None, move |db| {
                     ScriptManager::new(db).add(script).map_err(Into::into)
@@ -120,16 +129,16 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                     ScriptManager::new(db).get(&script_hash).map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                let rpc_script: RpcScript = script.into();
-                Ok(rpc_script.render(format, color))
+                Ok(script_json(script).render(format, color))
             }
             ("list", _) => {
                 let scripts = with_rocksdb(&self.db_path, None, |db| {
                     ScriptManager::new(db).list().map_err(Into::into)
                 })
                 .map_err(|err| format!("{:?}", err))?;
-                let rpc_scripts: Vec<RpcScript> = scripts.into_iter().map(Into::into).collect();
-                Ok(rpc_scripts.render(format, color))
+                let json_scripts: Vec<serde_json::Value> =
+                    scripts.into_iter().map(script_json).collect();
+                Ok(json_scripts.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

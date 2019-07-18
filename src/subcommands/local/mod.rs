@@ -11,9 +11,9 @@ pub use tx::LocalTxSubCommand;
 use std::path::PathBuf;
 
 use ckb_core::block::Block;
+use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{wallet::KeyStore, GenesisInfo, HttpRpcClient};
 use clap::{App, ArgMatches, SubCommand};
-use jsonrpc_types::BlockNumber;
 
 use super::CliSubCommand;
 use crate::utils::printer::{OutputFormat, Printable};
@@ -56,13 +56,15 @@ impl<'a> LocalSubCommand<'a> {
     }
 
     pub fn subcommand() -> App<'static, 'static> {
-        SubCommand::with_name("local").subcommands(vec![
-            LocalCellSubCommand::subcommand(),
-            LocalCellInputSubCommand::subcommand(),
-            LocalScriptSubCommand::subcommand(),
-            LocalTxSubCommand::subcommand(),
-            SubCommand::with_name("secp-dep"),
-        ])
+        SubCommand::with_name("local")
+            .about("Local transaction management and verify")
+            .subcommands(vec![
+                LocalCellSubCommand::subcommand(),
+                LocalCellInputSubCommand::subcommand(),
+                LocalScriptSubCommand::subcommand(),
+                LocalTxSubCommand::subcommand(),
+                SubCommand::with_name("secp-dep"),
+            ])
     }
 }
 

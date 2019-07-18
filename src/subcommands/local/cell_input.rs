@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use ckb_core::transaction::{CellInput, CellOutPoint, OutPoint};
+use ckb_jsonrpc_types::{BlockNumber as RpcBlockNumber, CellInput as RpcCellInput};
 use ckb_sdk::{to_local_cell_out_point, with_rocksdb, CellInputManager, HttpRpcClient};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{BlockNumber as RpcBlockNumber, CellInput as RpcCellInput};
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;

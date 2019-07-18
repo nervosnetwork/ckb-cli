@@ -3,9 +3,9 @@ use std::str::FromStr;
 
 use bech32::{convert_bits, Bech32, ToBase32};
 use bytes::Bytes;
-use ckb_core::script::Script as CoreScript;
-use crypto::secp::Pubkey;
-use hash::blake2b_256;
+use ckb_core::script::{Script, ScriptHashType};
+use ckb_crypto::secp::Pubkey;
+use ckb_hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
@@ -106,10 +106,11 @@ impl Address {
         &self.hash
     }
 
-    pub fn lock_script(&self, code_hash: H256) -> CoreScript {
-        CoreScript {
+    pub fn lock_script(&self, code_hash: H256) -> Script {
+        Script {
             args: vec![Bytes::from(self.hash.as_bytes())],
             code_hash,
+            hash_type: ScriptHashType::Data,
         }
     }
 

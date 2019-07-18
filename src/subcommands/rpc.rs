@@ -1,6 +1,6 @@
+use ckb_jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
 use ckb_sdk::HttpRpcClient;
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
 use numext_fixed_hash::H256;
 
 use super::CliSubCommand;
@@ -38,6 +38,12 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_hash.clone().help("Block hash")),
                 SubCommand::with_name("get_block_by_number")
                     .about("Get block content by block number")
+                    .arg(arg_number.clone()),
+                SubCommand::with_name("get_header")
+                    .about("Get block header content by hash")
+                    .arg(arg_hash.clone().help("Block hash")),
+                SubCommand::with_name("get_header_by_number")
+                    .about("Get block header by block number")
                     .arg(arg_number.clone()),
                 SubCommand::with_name("get_block_hash")
                     .about("Get block hash by block number")
@@ -124,6 +130,26 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let resp = self
                     .rpc_client
                     .get_block_by_number(BlockNumber(number))
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(resp.render(format, color))
+            }
+            ("get_header", Some(m)) => {
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+
+                let resp = self
+                    .rpc_client
+                    .get_header(hash)
+                    .call()
+                    .map_err(|err| err.to_string())?;
+                Ok(resp.render(format, color))
+            }
+            ("get_header_by_number", Some(m)) => {
+                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+
+                let resp = self
+                    .rpc_client
+                    .get_header_by_number(BlockNumber(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))

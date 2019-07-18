@@ -5,12 +5,12 @@ use ckb_core::{
     block::Block,
     transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
+use ckb_jsonrpc_types::{BlockNumber, TransactionView};
 use ckb_sdk::{
     wallet::KeyStore, with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient,
     TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{BlockNumber, TransactionView};
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
@@ -114,11 +114,27 @@ impl<'a> LocalTxSubCommand<'a> {
                         .multiple(true)
                         .help("Witness data list"),
                 ),
-            SubCommand::with_name("set-witnesses-by-keys").arg(arg_tx_hash.clone()),
-            SubCommand::with_name("show").arg(arg_tx_hash.clone()),
-            SubCommand::with_name("remove").arg(arg_tx_hash.clone()),
-            SubCommand::with_name("verify").arg(arg_tx_hash.clone()),
-            SubCommand::with_name("list"),
+            SubCommand::with_name("set-witnesses-by-keys")
+                .arg(arg_tx_hash.clone())
+                .help("Set witnesses automatically by unlocked keys in keystore"),
+            SubCommand::with_name("show")
+                .arg(arg_tx_hash.clone())
+                .help("Show transaction detail by tx-hash"),
+            SubCommand::with_name("remove")
+                .arg(arg_tx_hash.clone())
+                .help("Remove transaction"),
+            SubCommand::with_name("verify")
+                .arg(arg_tx_hash.clone())
+                .help("Verify transaction in local"),
+            SubCommand::with_name("send")
+                .arg(arg_tx_hash.clone())
+                .arg(
+                    Arg::with_name("no-verify")
+                        .long("no-verify")
+                        .help("Send transaction without local verify"),
+                )
+                .help("Send transaction via rpc"),
+            SubCommand::with_name("list").help("List all transaction hash"),
         ])
     }
 }
@@ -278,6 +294,29 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 Ok(result.render(format, color))
             }
+            ("send", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let no_verify = m.is_present("no-verify");
+                let db_path = self.db_path.clone();
+                let tx = with_rocksdb(&db_path, None, |db| {
+                    if !no_verify {
+                        TransactionManager::new(db).verify(
+                            &tx_hash,
+                            std::u64::MAX,
+                            self.rpc_client,
+                        )?;
+                    }
+                    Ok(TransactionManager::new(db).get(&tx_hash)?)
+                })
+                .map_err(|err| format!("{:?}", err))?;
+                let resp = self
+                    .rpc_client
+                    .send_transaction((&tx).into())
+                    .call()
+                    .map_err(|err| format!("Send transaction error: {}", err))?;
+                Ok(resp.render(format, color))
+            }
             ("list", Some(_m)) => {
                 let txs = with_rocksdb(&self.db_path, None, |db| {
                     TransactionManager::new(db).list().map_err(Into::into)
@@ -285,10 +324,7 @@ impl<'a> CliSubCommand for LocalTxSubCommand<'a> {
                 .map_err(|err| format!("{:?}", err))?;
                 let txs = txs
                     .into_iter()
-                    .map(|tx| {
-                        let tx_view: TransactionView = (&tx).into();
-                        tx_view
-                    })
+                    .map(|tx| tx.hash().clone())
                     .collect::<Vec<_>>();
                 Ok(txs.render(format, color))
             }

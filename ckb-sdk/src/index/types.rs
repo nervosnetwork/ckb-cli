@@ -30,6 +30,8 @@ pub struct BlockDeltaInfo {
     pub(crate) parent_header: Option<Header>,
     txs: Vec<RichTxInfo>,
     locks: Vec<(H256, LockInfo)>,
+    type_live_cells: Vec<(H256, CellIndex, CellOutPoint)>,
+    code_live_cells: Vec<(H256, CellIndex, CellOutPoint)>,
     old_headers: Vec<u64>,
     old_blocks: Vec<u64>,
     old_chain_capacity: u128,
@@ -87,6 +89,8 @@ impl BlockDeltaInfo {
         let mut cell_removed = 0;
         let mut cell_added = 0;
         let mut locks: HashMap<H256, LockInfo> = HashMap::default();
+        let mut type_live_cells = Vec::new();
+        let mut code_live_cells = Vec::new();
         let txs = block
             .transactions()
             .iter()
@@ -129,6 +133,13 @@ impl BlockDeltaInfo {
                         index: output_index as u32,
                     };
                     let cell_index = CellIndex::new(tx_index as u32, output_index as u32);
+
+                    if let Some(type_script) = output.type_.as_ref() {
+                        let type_hash = type_script.hash();
+                        let code_hash = type_script.code_hash.clone();
+                        type_live_cells.push((type_hash, cell_index, out_point.clone()));
+                        code_live_cells.push((code_hash, cell_index, out_point.clone()));
+                    }
 
                     let live_cell_info = LiveCellInfo {
                         out_point,
@@ -202,6 +213,8 @@ impl BlockDeltaInfo {
             parent_header,
             txs,
             locks: locks.into_iter().collect::<Vec<_>>(),
+            type_live_cells,
+            code_live_cells,
             old_headers,
             old_blocks,
             old_chain_capacity,
@@ -214,9 +227,10 @@ impl BlockDeltaInfo {
         txn: &mut T,
         enable_explorer: bool,
     ) -> ApplyResult {
+        let current_number = self.header_info.header.number();
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
-            self.header_info.header.number(),
+            current_number,
             self.txs.len(),
             self.locks.len(),
         );
@@ -269,6 +283,19 @@ impl BlockDeltaInfo {
             }
         }
 
+        for (type_hash, cell_index, out_point) in &self.type_live_cells {
+            txn.put_pair(Key::pair_type_live_cell_index(
+                (type_hash.clone(), current_number, *cell_index),
+                out_point,
+            ));
+        }
+        for (code_hash, cell_index, out_point) in &self.code_live_cells {
+            txn.put_pair(Key::pair_code_live_cell_index(
+                (code_hash.clone(), current_number, *cell_index),
+                out_point,
+            ));
+        }
+
         for (lock_hash, info) in &self.locks {
             let LockInfo {
                 script_opt,
@@ -319,6 +346,7 @@ impl BlockDeltaInfo {
                 }
             }
         }
+
         // Update total capacity
         txn.put_pair(Key::pair_total_capacity(&self.new_chain_capacity));
 
@@ -340,6 +368,7 @@ impl BlockDeltaInfo {
 
     pub(crate) fn rollback<'r, T: KVTxn<'r>>(&self, txn: &mut T) {
         log::debug!("rollback block: {:?}", self);
+        let current_number = self.header_info.header.number();
 
         let mut delete_lock_txs: HashSet<(H256, u64, u32)> = HashSet::default();
         for tx in &self.txs {
@@ -377,6 +406,17 @@ impl BlockDeltaInfo {
         }
         for (lock_hash, number, tx_index) in delete_lock_txs {
             txn.remove_ok(Key::LockTx(lock_hash, number, tx_index).to_bytes());
+        }
+
+        for (type_hash, cell_index, _) in &self.type_live_cells {
+            txn.remove(
+                Key::TypeLiveCellIndex(type_hash.clone(), current_number, *cell_index).to_bytes(),
+            );
+        }
+        for (code_hash, cell_index, _) in &self.code_live_cells {
+            txn.remove(
+                Key::CodeLiveCellIndex(code_hash.clone(), current_number, *cell_index).to_bytes(),
+            );
         }
 
         for (lock_hash, info) in &self.locks {

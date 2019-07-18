@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use chrono::{Datelike, Timelike, Utc};
-use crypto::secp::SECP256K1;
+use ckb_crypto::secp::SECP256K1;
+use ckb_hash::blake2b_256;
 use faster_hex::hex_decode;
-use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rand::Rng;
 use uuid::Uuid;

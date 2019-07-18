@@ -10,9 +10,9 @@ use ckb_core::{
     transaction::{CellOutPoint, CellOutput, OutPoint, Transaction, TransactionBuilder, Witness},
     Cycle,
 };
+use ckb_hash::blake2b_256;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use fnv::FnvHashSet;
-use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
@@ -197,7 +197,10 @@ impl<'a> TransactionManager<'a> {
         };
 
         let script_config = ScriptConfig::default();
-        let verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
+        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
+        verifier.set_debug_printer(|script_hash, message| {
+            println!("script: {:x}, debug: {}", script_hash, message);
+        });
         let cycle = verifier
             .verify(max_cycle)
             .map_err(|err| format!("Verify script error: {:?}", err))?;
@@ -245,6 +248,7 @@ impl Resource {
                 block_info = Some(BlockInfo {
                     number: header.number(),
                     epoch: header.epoch(),
+                    hash: header.hash().clone(),
                 });
                 required_headers.insert(hash.clone(), header);
                 out_point_blocks.insert(cell_out_point.clone(), hash.clone());

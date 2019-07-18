@@ -6,17 +6,17 @@ use ckb_core::{
     transaction::{CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
     Capacity,
 };
-use crypto::secp::SECP256K1;
-use hash::blake2b_256;
-use jsonrpc_types::Transaction as RpcTransaction;
+use ckb_crypto::secp::SECP256K1;
+use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::Transaction as RpcTransaction;
 use numext_fixed_hash::{h256, H256};
 
 pub const ONE_CKB: u64 = 100_000_000;
-// H256(secp code hash) + H160 (secp pubkey hash) + u64(capacity) = 32 + 20 + 8 = 60
-pub const MIN_SECP_CELL_CAPACITY: u64 = 60 * ONE_CKB;
+// H256(secp code hash) + H160 (secp pubkey hash) + 1 (ScriptHashType) + u64(capacity) = 32 + 20 + 1 + 8 = 61
+pub const MIN_SECP_CELL_CAPACITY: u64 = (32 + 20 + 1 + 8) * ONE_CKB;
 
 const SECP_CODE_HASH: H256 =
-    h256!("0x94334bdda40b69bae067d84937aa6bbccf8acd0df6626d4b9ac70d4612a11933");
+    h256!("0x54811ce986d5c3e57eaafab22cdd080e32209e39590e204a99b32935f835a13c");
 
 #[derive(Debug, Clone)]
 pub struct GenesisInfo {

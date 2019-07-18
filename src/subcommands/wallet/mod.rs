@@ -1,25 +1,26 @@
 mod index;
 
+use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
 use bytes::Bytes;
 use ckb_core::{block::Block, service::Request};
-use ckb_sdk::{Address, AddressFormat, NetworkType};
+use ckb_crypto::secp::SECP256K1;
+use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::BlockNumber;
 use clap::{App, Arg, ArgMatches, SubCommand};
-use crypto::secp::SECP256K1;
 use faster_hex::hex_string;
-use hash::blake2b_256;
-use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::{H160, H256};
 use serde_json::json;
 
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PubkeyHexParser,
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PubkeyHexParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -27,8 +28,8 @@ use crate::utils::{
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
-    TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    with_index_db, Address, AddressFormat, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
+    NetworkType, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -116,6 +117,11 @@ impl<'a> WalletSubCommand<'a> {
             .takes_value(true)
             .validator(|input| PrivkeyPathParser.validate(input))
             .help("Private key file path (only read first line)");
+        let arg_pubkey = Arg::with_name("pubkey")
+            .long("pubkey")
+            .takes_value(true)
+            .validator(|input| PubkeyHexParser.validate(input))
+            .help("Public key (hex string, compressed format)");
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
@@ -128,11 +134,11 @@ impl<'a> WalletSubCommand<'a> {
             .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true)
             .help("Lock hash");
-        let arg_pubkey = Arg::with_name("pubkey")
-            .long("pubkey")
+        let arg_lock_arg = Arg::with_name("lock-arg")
+            .long("lock-arg")
             .takes_value(true)
-            .validator(|input| PubkeyHexParser.validate(input))
-            .help("Public key (hex string, compressed format)");
+            .validator(|input| FixedHashParser::<H160>::default().validate(input))
+            .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
         SubCommand::with_name("wallet")
             .about("tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
@@ -163,6 +169,13 @@ impl<'a> WalletSubCommand<'a> {
                             .help("Hex data store in target cell (optional)"),
                     )
                     .arg(
+                        Arg::with_name("to-data-path")
+                            .long("to-data-path")
+                            .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .help("Data binary file path store in target cell (optional)"),
+                    )
+                    .arg(
                         Arg::with_name("capacity")
                             .long("capacity")
                             .takes_value(true)
@@ -178,22 +191,33 @@ impl<'a> WalletSubCommand<'a> {
                     ,
                 SubCommand::with_name("key-info")
                     .about("Show public information of a secp256k1 private key (from file) or public key")
-                    .arg(arg_privkey.clone())
-                    .arg(arg_pubkey.clone().required_if("privkey-path", "")),
+                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
+                    .arg(arg_pubkey.clone().required(false))
+                    .arg(arg_address.clone().required(false))
+                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg_lock_hash.clone().required(false))
                     .arg(arg_address.clone().required(false))
                     .arg(arg_pubkey.clone())
-                    .arg(Arg::with_name("lock-arg")
-                         .long("lock-arg")
-                         .takes_value(true)
-                         .validator(|input| FixedHashParser::<H160>::default().validate(input))
-                         .help("Lock argument (account identifier, blake2b(pubkey)[0..20])")
-                    ),
+                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-live-cells")
-                    .about("Get live cells by lock script hash")
-                    .arg(arg_lock_hash.clone())
+                    .about("Get live cells by lock/type/code  hash")
+                    .arg(arg_lock_hash.clone().required(false))
+                    .arg(
+                        Arg::with_name("type-hash")
+                            .long("type-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .help("The type script hash")
+                    )
+                    .arg(
+                        Arg::with_name("code-hash")
+                            .long("code-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .help("The type script's code hash")
+                    )
                     .arg(
                         Arg::with_name("limit")
                             .long("limit")
@@ -245,6 +269,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
+        fn get_address(m: &ArgMatches) -> Result<Address, String> {
+            let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
+            let pubkey: Option<secp256k1::PublicKey> =
+                PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+            let lock_arg: Option<H160> =
+                FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+            let address = address
+                .or_else(|| {
+                    pubkey.map(|pubkey| {
+                        Address::from_pubkey(AddressFormat::default(), &pubkey.into()).unwrap()
+                    })
+                })
+                .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
+                .ok_or_else(|| "Please give one argument".to_owned())?;
+            Ok(address)
+        }
+
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
@@ -252,10 +293,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let from_account: Option<H160> = FixedHashParser::<H160>::default()
                     .from_matches_opt(m, "from-account", false)?;
                 let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-                let to_data: Bytes = HexParser
-                    .from_matches_opt(m, "to-data", false)?
-                    .unwrap_or_else(Bytes::new);
+                let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+
+                let to_data = match to_data_opt {
+                    Some(data) => data,
+                    None => {
+                        if let Some(path) = m.value_of("to-data-path") {
+                            let mut content = Vec::new();
+                            let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                            file.read_to_end(&mut content)
+                                .map_err(|err| err.to_string())?;
+                            Bytes::from(content)
+                        } else {
+                            Bytes::new()
+                        }
+                    }
+                };
 
                 if capacity < MIN_SECP_CELL_CAPACITY {
                     return Err(format!(
@@ -283,7 +337,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let secp_code_hash = genesis_info.secp_code_hash();
                 let (infos, total_capacity): (Vec<LiveCellInfo>, u64) = self.with_db(|db| {
                     let mut total_capacity = 0;
-                    let infos = db.get_live_cell_infos(
+                    let infos = db.get_live_cells_by_lock(
                         from_address
                             .lock_script(secp_code_hash.clone())
                             .hash()
@@ -350,24 +404,22 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("key-info", Some(m)) => {
-                let secp_key_opt: Option<secp256k1::SecretKey> =
+                let privkey_opt: Option<secp256k1::SecretKey> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let pubkey = secp_key_opt
-                    .map(|privkey| {
-                        Result::<_, String>::Ok(secp256k1::PublicKey::from_secret_key(
-                            &SECP256K1, &privkey,
-                        ))
-                    })
-                    .unwrap_or_else(|| {
-                        let key: secp256k1::PublicKey =
-                            PubkeyHexParser.from_matches(m, "pubkey")?;
-                        Ok(key)
-                    })?;
-                let pubkey_string =
-                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed");
-                let address = {
-                    let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
-                    Address::from_lock_arg(&pubkey_hash[0..20])?
+                let pubkey_opt: Option<secp256k1::PublicKey> =
+                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                let pubkey_opt = privkey_opt
+                    .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
+                    .or_else(|| pubkey_opt);
+                let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
+                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
+                });
+                let address = match pubkey_opt {
+                    Some(pubkey) => {
+                        let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
+                        Address::from_lock_arg(&pubkey_hash[0..20])?
+                    }
+                    None => get_address(m)?,
                 };
 
                 let genesis_info = self.genesis_info()?;
@@ -384,7 +436,7 @@ args = ["{:#x}"]
                 );
 
                 let resp = json!({
-                    "pubkey": pubkey_string,
+                    "pubkey": pubkey_string_opt,
                     "address": {
                         "testnet": address.to_string(NetworkType::TestNet),
                         "mainnet": address.to_string(NetworkType::MainNet),
@@ -401,23 +453,7 @@ args = ["{:#x}"]
                     lock_hash
                 } else {
                     let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
-                    let address: Option<Address> =
-                        AddressParser.from_matches_opt(m, "address", false)?;
-                    let pubkey: Option<secp256k1::PublicKey> =
-                        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-                    let lock_arg: Option<H160> = FixedHashParser::<H160>::default()
-                        .from_matches_opt(m, "lock-arg", false)?;
-                    let address = address
-                        .or_else(|| {
-                            pubkey.map(|pubkey| {
-                                Address::from_pubkey(AddressFormat::default(), &pubkey.into())
-                                    .unwrap()
-                            })
-                        })
-                        .or_else(|| {
-                            lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap())
-                        })
-                        .ok_or_else(|| "Please give one argument".to_owned())?;
+                    let address = get_address(m)?;
                     address.lock_script(secp_code_hash).hash().clone()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
@@ -427,26 +463,44 @@ args = ["{:#x}"]
                 Ok(resp.render(format, color))
             }
             ("get-live-cells", Some(m)) => {
-                let lock_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "lock-hash")?;
+                let lock_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                let type_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "type-hash", false)?;
+                let code_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "code-hash", false)?;
                 let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
                 let from_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "from", false)?;
                 let to_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
 
+                if lock_hash_opt.is_none() && type_hash_opt.is_none() && code_hash_opt.is_none() {
+                    return Err("lock-hash or type-hash or code-hash is required".to_owned());
+                }
+
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
                 let (infos, total_capacity) = self.with_db(|db| {
                     let mut total_capacity = 0;
-                    let infos =
-                        db.get_live_cell_infos(lock_hash.clone(), from_number_opt, |idx, info| {
-                            let stop = idx >= limit || info.number > to_number;
-                            let push_info = !stop;
-                            if push_info {
-                                total_capacity += info.capacity;
-                            }
-                            (stop, push_info)
-                        });
+                    let terminator = |idx, info: &LiveCellInfo| {
+                        let stop = idx >= limit || info.number > to_number;
+                        let push_info = !stop;
+                        if push_info {
+                            total_capacity += info.capacity;
+                        }
+                        (stop, push_info)
+                    };
+                    let infos = if let Some(lock_hash) = lock_hash_opt {
+                        db.get_live_cells_by_lock(lock_hash.clone(), from_number_opt, terminator)
+                    } else if let Some(type_hash) = type_hash_opt {
+                        db.get_live_cells_by_type(type_hash.clone(), from_number_opt, terminator)
+                    } else {
+                        db.get_live_cells_by_code(
+                            code_hash_opt.clone().unwrap(),
+                            from_number_opt,
+                            terminator,
+                        )
+                    };
                     (infos, total_capacity)
                 })?;
                 let resp = serde_json::json!({

@@ -6,7 +6,7 @@ use std::iter::FromIterator;
 use std::process;
 use std::sync::Arc;
 
-use build_info::Version;
+use ckb_build_info::Version;
 use ckb_sdk::HttpRpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;
@@ -22,7 +22,7 @@ use subcommands::{
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::get_key_store,
+    other::{check_alerts, get_key_store},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -83,6 +83,7 @@ fn main() -> Result<(), io::Error> {
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
+    check_alerts(&mut rpc_client);
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     if let Some(format) = matches.value_of("output-format") {
@@ -104,7 +105,11 @@ fn main() -> Result<(), io::Error> {
                 .process(&sub_matches, output_format, color)
         }),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut key_store).process(&sub_matches, output_format, color)
+            AccountSubCommand::new(&mut rpc_client, &mut key_store, None).process(
+                &sub_matches,
+                output_format,
+                color,
+            )
         }),
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(

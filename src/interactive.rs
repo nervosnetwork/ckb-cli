@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
 use ckb_core::{block::Block, service::Request};
-use jsonrpc_types::BlockNumber;
+use ckb_jsonrpc_types::BlockNumber;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -16,9 +16,12 @@ use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, LocalSubCommand,
     RpcSubCommand, WalletSubCommand,
 };
-use crate::utils::completer::CkbCompleter;
-use crate::utils::config::GlobalConfig;
-use crate::utils::printer::{ColorWhen, OutputFormat, Printable};
+use crate::utils::{
+    completer::CkbCompleter,
+    config::GlobalConfig,
+    other::check_alerts,
+    printer::{ColorWhen, OutputFormat, Printable},
+};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     GenesisInfo, HttpRpcClient,
@@ -157,7 +160,7 @@ impl InteractiveEnv {
                             eprintln!("{}", err.to_string());
                         }
                     }
-                    rl.add_history_entry(line.as_ref());
+                    rl.add_history_entry(line.as_str());
                 }
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
@@ -296,6 +299,7 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("rpc", Some(sub_matches)) => {
+                    check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client).process(
                         &sub_matches,
                         format,
@@ -305,11 +309,13 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.key_store).process(
-                        &sub_matches,
-                        format,
-                        color,
-                    )?;
+                    let genesis_info = self.genesis_info().ok();
+                    let output = AccountSubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.key_store,
+                        genesis_info,
+                    )
+                    .process(&sub_matches, format, color)?;
                     println!("{}", output);
                     Ok(())
                 }

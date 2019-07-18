@@ -1,6 +1,6 @@
 [package]
 name = "ckb-sdk"
-version = "0.15.0"
+version = "0.17.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>"]
 edition = "2018"
 license = "MIT"
@@ -31,8 +31,8 @@ uuid = { version = "0.7.4", features = ["v4"] }
 chrono = "0.4.6"
 failure = "0.1.5"
 
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
-ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z" }
-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.15.z", features = ["secp", "bech32"] }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
