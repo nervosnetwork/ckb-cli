@@ -10,9 +10,9 @@ use ckb_core::{
     transaction::{CellOutPoint, CellOutput, OutPoint, Transaction, TransactionBuilder, Witness},
     Cycle,
 };
+use ckb_hash::blake2b_256;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use fnv::FnvHashSet;
-use hash::blake2b_256;
 use numext_fixed_hash::{H160, H256};
 use rocksdb::{ColumnFamily, IteratorMode, Options, DB};
 use serde_derive::{Deserialize, Serialize};
@@ -245,6 +245,7 @@ impl Resource {
                 block_info = Some(BlockInfo {
                     number: header.number(),
                     epoch: header.epoch(),
+                    hash: header.hash().clone(),
                 });
                 required_headers.insert(hash.clone(), header);
                 out_point_blocks.insert(cell_out_point.clone(), hash.clone());

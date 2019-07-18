@@ -4,9 +4,9 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_core::{header::Header, script::Script};
+use ckb_jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 use ckb_util::RwLock;
 use jsonrpc_client_core::Error as RpcError;
-use jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 
 use super::util::ts_now;
 use ckb_sdk::HttpRpcClient;

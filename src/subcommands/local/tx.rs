@@ -5,12 +5,12 @@ use ckb_core::{
     block::Block,
     transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder, Witness},
 };
+use ckb_jsonrpc_types::{BlockNumber, TransactionView};
 use ckb_sdk::{
     wallet::KeyStore, with_rocksdb, CellInputManager, CellManager, GenesisInfo, HttpRpcClient,
     TransactionManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{BlockNumber, TransactionView};
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;

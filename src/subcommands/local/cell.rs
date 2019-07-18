@@ -7,13 +7,13 @@ use ckb_core::{
     transaction::{CellOutPoint, CellOutput},
     Capacity,
 };
+use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::{CellOutPoint as RpcCellOutPoint, CellOutput as RpcCellOutput};
 use ckb_sdk::{
     to_local_cell_out_point, with_rocksdb, CellAliasManager, CellManager, HttpRpcClient,
     ScriptManager,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use hash::blake2b_256;
-use jsonrpc_types::{CellOutPoint as RpcCellOutPoint, CellOutput as RpcCellOutput};
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;

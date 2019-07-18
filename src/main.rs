@@ -6,7 +6,7 @@ use std::iter::FromIterator;
 use std::process;
 use std::sync::Arc;
 
-use build_info::Version;
+use ckb_build_info::Version;
 use ckb_sdk::HttpRpcClient;
 use ckb_util::RwLock;
 use clap::crate_version;

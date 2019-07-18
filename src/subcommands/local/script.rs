@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use ckb_core::script::Script;
+use ckb_core::script::{Script, ScriptHashType};
+use ckb_jsonrpc_types::Script as RpcScript;
 use ckb_sdk::{with_rocksdb, HttpRpcClient, ScriptManager};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_decode;
-use jsonrpc_types::Script as RpcScript;
 use numext_fixed_hash::H256;
 
 use super::super::CliSubCommand;
@@ -103,7 +103,7 @@ impl<'a> CliSubCommand for LocalScriptSubCommand<'a> {
                     })
                     .collect();
                 let args = args_result?;
-                let script = Script::new(args, code_hash);
+                let script = Script::new(args, code_hash, ScriptHashType::Data);
                 let script_hash = script.hash();
                 with_rocksdb(&self.db_path, None, move |db| {
                     ScriptManager::new(db).add(script).map_err(Into::into)

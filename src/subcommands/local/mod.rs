@@ -11,9 +11,9 @@ pub use tx::LocalTxSubCommand;
 use std::path::PathBuf;
 
 use ckb_core::block::Block;
+use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{wallet::KeyStore, GenesisInfo, HttpRpcClient};
 use clap::{App, ArgMatches, SubCommand};
-use jsonrpc_types::BlockNumber;
 
 use super::CliSubCommand;
 use crate::utils::printer::{OutputFormat, Printable};

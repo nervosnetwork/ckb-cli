@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ckb_core::block::Block;
+use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{
     wallet::{Key, KeyStore, MasterPrivKey},
     Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::BlockNumber;
 use numext_fixed_hash::{H160, H256};
 
 use super::CliSubCommand;

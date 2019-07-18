@@ -1,6 +1,6 @@
+use ckb_jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
 use ckb_sdk::HttpRpcClient;
 use clap::{App, Arg, ArgMatches, SubCommand};
-use jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
 use numext_fixed_hash::H256;
 
 use super::CliSubCommand;

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
 use ckb_core::{block::Block, service::Request};
-use jsonrpc_types::BlockNumber;
+use ckb_jsonrpc_types::BlockNumber;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;

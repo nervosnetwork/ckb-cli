@@ -1,9 +1,9 @@
-use jsonrpc_client_core::{expand_params, jsonrpc_client};
-use jsonrpc_client_http::{HttpHandle, HttpTransport};
-use jsonrpc_types::{
+use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, ChainInfo, EpochNumber,
     EpochView, HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
 };
+use jsonrpc_client_core::{expand_params, jsonrpc_client};
+use jsonrpc_client_http::{HttpHandle, HttpTransport};
 use serde_derive::{Deserialize, Serialize};
 
 use numext_fixed_hash::H256;
