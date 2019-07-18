@@ -285,7 +285,7 @@ source = "git+https://github.com/nervosnetwork/ckb?branch=develop#aefe6ecdb5e4b0
 
 [[package]]
 name = "ckb-cli"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "atty 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -296,7 +296,7 @@ dependencies = [
  "ckb-crypto 0.17.0-pre (git+https://github.com/nervosnetwork/ckb?branch=develop)",
  "ckb-hash 0.17.0-pre (git+https://github.com/nervosnetwork/ckb?branch=develop)",
  "ckb-jsonrpc-types 0.17.0-pre (git+https://github.com/nervosnetwork/ckb?branch=develop)",
- "ckb-sdk 0.15.0",
+ "ckb-sdk 0.17.0",
  "ckb-util 0.17.0-pre (git+https://github.com/nervosnetwork/ckb?branch=develop)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "colored 1.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -488,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "0.15.0"
+version = "0.17.0"
 dependencies = [
  "aes-ctr 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bech32 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
