@@ -19,7 +19,7 @@ use numext_fixed_hash::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use crate::{GenesisInfo, HttpRpcClient, MIN_SECP_CELL_CAPACITY};
+use crate::{GenesisInfo, MIN_SECP_CELL_CAPACITY};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MockDep {
@@ -48,42 +48,31 @@ pub struct MockTransaction {
     pub witnesses: Vec<Witness>,
 }
 
-fn get_live_cell(
-    rpc_client: &mut HttpRpcClient,
-    out_point: OutPoint,
-) -> Result<Option<CellOutput>, String> {
-    rpc_client
-        .get_live_cell(out_point.into())
-        .call()
-        .map(|result| result.cell.map(|cell| cell.into()))
-        .map_err(|err| err.to_string())
-}
-
 impl MockTransaction {
-    pub fn get_input_cell(
+    pub fn get_input_cell<F: FnMut(OutPoint) -> Result<Option<CellOutput>, String>>(
         &self,
         input: &CellInput,
-        rpc_client: &mut HttpRpcClient,
+        mut live_cell_getter: F,
     ) -> Result<Option<CellOutput>, String> {
         for mock_input in &self.mock_inputs {
             if input == &mock_input.input {
                 return Ok(Some(mock_input.cell.clone()));
             }
         }
-        get_live_cell(rpc_client, input.previous_output.clone())
+        live_cell_getter(input.previous_output.clone())
     }
 
-    pub fn get_dep_cell(
+    pub fn get_dep_cell<F: FnMut(OutPoint) -> Result<Option<CellOutput>, String>>(
         &self,
         out_point: &OutPoint,
-        rpc_client: &mut HttpRpcClient,
+        mut live_cell_getter: F,
     ) -> Result<Option<CellOutput>, String> {
         for mock_dep in &self.mock_deps {
             if out_point == &mock_dep.out_point {
                 return Ok(Some(mock_dep.cell.clone()));
             }
         }
-        get_live_cell(rpc_client, out_point.clone())
+        live_cell_getter(out_point.clone())
     }
 
     /// Generate the core transaction
@@ -100,18 +89,25 @@ impl MockTransaction {
 
 pub struct MockTransactionHelper<'a> {
     tx: &'a mut MockTransaction,
-    rpc_client: &'a mut HttpRpcClient,
+    header_getter: Box<dyn FnMut(H256) -> Result<Option<Header>, String>>,
+    live_cell_getter: Box<dyn FnMut(OutPoint) -> Result<Option<CellOutput>, String>>,
     live_cell_cache: HashMap<OutPoint, CellOutput>,
 }
 
 impl<'a> MockTransactionHelper<'a> {
-    pub fn new(
+    pub fn new<C, H>(
         tx: &'a mut MockTransaction,
-        rpc_client: &'a mut HttpRpcClient,
-    ) -> MockTransactionHelper<'a> {
+        header_getter: H,
+        live_cell_getter: C,
+    ) -> MockTransactionHelper<'a>
+    where
+        H: (FnMut(H256) -> Result<Option<Header>, String>) + 'static,
+        C: (FnMut(OutPoint) -> Result<Option<CellOutput>, String>) + 'static,
+    {
         MockTransactionHelper {
             tx,
-            rpc_client,
+            header_getter: Box::new(header_getter),
+            live_cell_getter: Box::new(live_cell_getter),
             live_cell_cache: HashMap::default(),
         }
     }
@@ -122,7 +118,7 @@ impl<'a> MockTransactionHelper<'a> {
             None => {
                 let cell = self
                     .tx
-                    .get_input_cell(input, self.rpc_client)?
+                    .get_input_cell(input, self.live_cell_getter.as_mut())?
                     .ok_or_else(|| format!("input cell not found: {:?}", input))?;
                 self.live_cell_cache
                     .insert(input.previous_output.clone(), cell.clone());
@@ -282,7 +278,12 @@ impl<'a> MockTransactionHelper<'a> {
     /// Verify the transaction by local ScriptVerifier
     pub fn verify(&mut self, max_cycle: Cycle) -> Result<Cycle, String> {
         let tx = self.tx.core_transaction();
-        let resource = Resource::from_both(&tx, self.tx, self.rpc_client)?;
+        let resource = Resource::from_both(
+            &tx,
+            self.tx,
+            self.header_getter.as_mut(),
+            self.live_cell_getter.as_mut(),
+        )?;
         let rtx = {
             let mut seen_inputs = FnvHashSet::default();
             resolve_transaction(&tx, &mut seen_inputs, &resource, &resource)
@@ -322,30 +323,36 @@ struct Resource {
 }
 
 impl Resource {
-    fn from_both(
+    fn from_both<H, C>(
         tx: &Transaction,
         mock_tx: &MockTransaction,
-        rpc_client: &mut HttpRpcClient,
-    ) -> Result<Resource, String> {
+        mut header_getter: H,
+        mut live_cell_getter: C,
+    ) -> Result<Resource, String>
+    where
+        H: FnMut(H256) -> Result<Option<Header>, String>,
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
         let mut out_point_blocks = HashMap::default();
         let mut required_headers = HashMap::default();
         let mut required_cells = HashMap::default();
-        for cell_input in tx.inputs().iter().cloned().chain(
-            tx.deps()
-                .iter()
-                .map(|out_point| CellInput::new(out_point.clone(), 0)),
-        ) {
-            let out_point = &cell_input.previous_output;
+        for (input, is_dep) in tx
+            .inputs()
+            .iter()
+            .cloned()
+            .map(|input| (input, false))
+            .chain(
+                tx.deps()
+                    .iter()
+                    .map(|out_point| (CellInput::new(out_point.clone(), 0), true)),
+            )
+        {
+            let out_point = &input.previous_output;
             let cell_out_point = out_point.cell.clone().unwrap();
             let mut block_info = None;
             if let Some(ref hash) = out_point.block_hash {
-                let block_view = rpc_client
-                    .get_block(hash.clone())
-                    .call()
-                    .unwrap()
-                    .0
-                    .unwrap();
-                let header: Header = block_view.header.inner.into();
+                let header = header_getter(hash.clone())?
+                    .ok_or_else(|| format!("Can not get header: {:x}", hash))?;
                 block_info = Some(BlockInfo {
                     number: header.number(),
                     epoch: header.epoch(),
@@ -355,14 +362,15 @@ impl Resource {
                 out_point_blocks.insert(cell_out_point.clone(), hash.clone());
             }
 
-            let cell_output =
-                if let Some(cell_output) = mock_tx.get_input_cell(&cell_input, rpc_client)? {
-                    cell_output
-                } else {
-                    mock_tx
-                        .get_dep_cell(&cell_input.previous_output, rpc_client)?
-                        .ok_or_else(|| format!("Can not get CellOutput by {:?}", cell_input))?
-                };
+            let cell_output = if is_dep {
+                mock_tx
+                    .get_dep_cell(&input.previous_output, &mut live_cell_getter)?
+                    .ok_or_else(|| format!("Can not get CellOutput by dep={:?}", input))?
+            } else {
+                mock_tx
+                    .get_input_cell(&input, &mut live_cell_getter)?
+                    .ok_or_else(|| format!("Can not get CellOutput by input={:?}", input))?
+            };
             let cell_meta = cell_output_to_meta(cell_out_point.clone(), cell_output, block_info);
             required_cells.insert(cell_out_point, cell_meta);
         }
@@ -455,7 +463,6 @@ mod test {
         let genesis_block: BlockView = serde_json::from_str(GENESIS_JSON).unwrap();
         let genesis_block: Block = genesis_block.into();
         let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
-        let mut rpc_client = HttpRpcClient::from_uri("http://localhost:8114");
 
         let privkey = random_privkey();
         let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
@@ -509,7 +516,11 @@ mod test {
             signature_bytes[64] = recov_id.to_i32() as u8;
             Some(signature_bytes)
         };
-        let mut helper = MockTransactionHelper::new(&mut mock_tx, &mut rpc_client);
+        let mut helper = MockTransactionHelper::new(
+            &mut mock_tx,
+            |hash| Err(format!("Can not call header getter, hash={:?}", hash)),
+            |input| Err(format!("Can not call live cell getter, input={:?}", input)),
+        );
         helper
             .complete_tx(None, &genesis_info, signer)
             .expect("Complete mock tx failed");
