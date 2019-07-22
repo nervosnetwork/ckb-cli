@@ -23,14 +23,14 @@ use crate::{GenesisInfo, HttpRpcClient, MIN_SECP_CELL_CAPACITY};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MockDep {
-    out_point: OutPoint,
-    cell: CellOutput,
+    pub out_point: OutPoint,
+    pub cell: CellOutput,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MockInput {
-    input: CellInput,
-    cell: CellOutput,
+    pub input: CellInput,
+    pub cell: CellOutput,
 }
 
 /// A wrapper transaction with mock inputs and deps
@@ -105,6 +105,17 @@ pub struct MockTransactionHelper<'a> {
 }
 
 impl<'a> MockTransactionHelper<'a> {
+    pub fn new(
+        tx: &'a mut MockTransaction,
+        rpc_client: &'a mut HttpRpcClient,
+    ) -> MockTransactionHelper<'a> {
+        MockTransactionHelper {
+            tx,
+            rpc_client,
+            live_cell_cache: HashMap::default(),
+        }
+    }
+
     fn get_input_cell(&mut self, input: &CellInput) -> Result<CellOutput, String> {
         let cell = match self.live_cell_cache.get(&input.previous_output) {
             Some(cell) => cell.clone(),
@@ -216,6 +227,7 @@ impl<'a> MockTransactionHelper<'a> {
                 insert_dep(script.hash_type.clone(), &script.code_hash)?;
             }
         }
+        self.tx.deps = deps.into_iter().collect::<Vec<_>>();
         Ok(())
     }
 
@@ -252,6 +264,7 @@ impl<'a> MockTransactionHelper<'a> {
                 witnesses[idx] = vec![witness];
             }
         }
+        self.tx.witnesses = witnesses;
         Ok(())
     }
 
