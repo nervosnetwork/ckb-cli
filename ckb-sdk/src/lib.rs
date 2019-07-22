@@ -5,6 +5,7 @@ mod index;
 mod kvdb;
 mod local;
 mod rpc;
+mod transaction;
 mod util;
 
 pub mod wallet;
@@ -21,6 +22,7 @@ pub use index::{
 };
 pub use kvdb::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use rpc::HttpRpcClient;
+pub use transaction::{MockDep, MockInput, MockTransaction, MockTransactionHelper};
 
 pub use local::{
     from_local_cell_out_point, to_local_cell_out_point, CellAliasManager, CellInputManager,
