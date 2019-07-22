@@ -428,10 +428,105 @@ impl DataLoader for Resource {
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ckb_core::block::Block;
+    use ckb_crypto::secp::SECP256K1;
+    use ckb_jsonrpc_types::BlockView;
+    use rand::Rng;
 
-//     #[test]
-//     fn test_verify() {}
-// }
+    // NOTE: Should update when block structure changed
+    const GENESIS_JSON: &str = include_str!("test-data/genesis_block.json");
+
+    fn random_privkey() -> secp256k1::SecretKey {
+        let mut rng = rand::thread_rng();
+        for _ in 0..1000 {
+            let privkey_bytes: [u8; 32] = rng.gen();
+            if let Ok(privkey) = secp256k1::SecretKey::from_slice(&privkey_bytes) {
+                return privkey;
+            }
+        }
+        panic!("Can not find a random private key in 1000 times");
+    }
+
+    #[test]
+    fn test_verify() {
+        let genesis_block: BlockView = serde_json::from_str(GENESIS_JSON).unwrap();
+        let genesis_block: Block = genesis_block.into();
+        let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
+        let mut rpc_client = HttpRpcClient::from_uri("http://localhost:8114");
+
+        let privkey = random_privkey();
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
+        let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+            .expect("Generate hash(H160) from pubkey failed");
+        let lock_script = Script::new(
+            vec![Bytes::from(lock_arg.as_bytes())],
+            genesis_info.secp_code_hash().clone(),
+            ScriptHashType::Data,
+        );
+
+        let mut mock_tx = MockTransaction::default();
+        mock_tx.mock_deps.push(MockDep {
+            out_point: genesis_info.secp_dep(),
+            cell: genesis_block.transactions()[0].outputs()[1].clone(),
+        });
+
+        let tx_hash = H256::from_trimmed_hex_str("ff01").unwrap();
+        let out_point = OutPoint::new_cell(tx_hash, 0);
+        let input = CellInput::new(out_point, 0);
+        mock_tx.mock_inputs.push({
+            let cell = CellOutput {
+                capacity: Capacity::bytes(200).unwrap(),
+                data: Bytes::default(),
+                lock: lock_script.clone(),
+                type_: None,
+            };
+            MockInput {
+                input: input.clone(),
+                cell,
+            }
+        });
+        mock_tx.inputs.push(input);
+        mock_tx.outputs.push(CellOutput {
+            capacity: Capacity::bytes(120).unwrap(),
+            data: Bytes::default(),
+            lock: lock_script,
+            type_: None,
+        });
+
+        let signer = |target_lock_arg: &H160, tx_hash_hash: &H256| {
+            if &lock_arg != target_lock_arg {
+                return None;
+            }
+            let message = secp256k1::Message::from_slice(tx_hash_hash.as_bytes())
+                .expect("Convert to secp256k1 message failed");
+            let signature = SECP256K1.sign_recoverable(&message, &privkey);
+            let (recov_id, data) = signature.serialize_compact();
+            let mut signature_bytes = [0u8; 65];
+            signature_bytes[0..64].copy_from_slice(&data[0..64]);
+            signature_bytes[64] = recov_id.to_i32() as u8;
+            Some(signature_bytes)
+        };
+        let mut helper = MockTransactionHelper::new(&mut mock_tx, &mut rpc_client);
+        helper
+            .complete_tx(None, &genesis_info, signer)
+            .expect("Complete mock tx failed");
+        assert_eq!(helper.tx.deps.len(), 1, "Deps not set");
+        assert_eq!(helper.tx.outputs.len(), 2, "Output change not set");
+        assert_eq!(
+            helper.tx.outputs[1].capacity,
+            Capacity::bytes(80).unwrap(),
+            "Output change wrong capacity",
+        );
+        assert_eq!(
+            helper.tx.inputs.len(),
+            helper.tx.witnesses.len(),
+            "Witnesses not match inputs"
+        );
+        helper
+            .verify(u64::max_value())
+            .expect("Verify mock tx failed");
+    }
+}
