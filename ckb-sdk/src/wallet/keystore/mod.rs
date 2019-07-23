@@ -30,6 +30,17 @@ pub struct KeyStore {
     unlocked_keys: HashMap<H160, TimedKey>,
 }
 
+impl Clone for KeyStore {
+    fn clone(&self) -> KeyStore {
+        KeyStore {
+            keys_dir: self.keys_dir.clone(),
+            storage: self.storage.clone(),
+            files: self.files.clone(),
+            unlocked_keys: HashMap::default(),
+        }
+    }
+}
+
 impl KeyStore {
     pub fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {
         let abs_dir = dir.canonicalize()?;
@@ -246,6 +257,7 @@ impl KeyStore {
 }
 
 /// KeyStore protected by password
+#[derive(Clone)]
 struct PassphraseKeyStore {
     keys_dir_path: PathBuf,
     scrypt_type: ScryptType,

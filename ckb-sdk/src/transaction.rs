@@ -13,6 +13,7 @@ use ckb_core::{
     Capacity, Cycle, Version,
 };
 use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types as json_types;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
 use fnv::FnvHashSet;
 use numext_fixed_hash::{H160, H256};
@@ -34,7 +35,7 @@ pub struct MockInput {
 }
 
 /// A wrapper transaction with mock inputs and deps
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct MockTransaction {
     pub mock_inputs: Vec<MockInput>,
     pub mock_deps: Vec<MockDep>,
@@ -88,37 +89,32 @@ impl MockTransaction {
 }
 
 pub struct MockTransactionHelper<'a> {
-    tx: &'a mut MockTransaction,
-    header_getter: Box<dyn FnMut(H256) -> Result<Option<Header>, String>>,
-    live_cell_getter: Box<dyn FnMut(OutPoint) -> Result<Option<CellOutput>, String>>,
+    pub tx: &'a mut MockTransaction,
     live_cell_cache: HashMap<OutPoint, CellOutput>,
 }
 
 impl<'a> MockTransactionHelper<'a> {
-    pub fn new<C, H>(
-        tx: &'a mut MockTransaction,
-        header_getter: H,
-        live_cell_getter: C,
-    ) -> MockTransactionHelper<'a>
-    where
-        H: (FnMut(H256) -> Result<Option<Header>, String>) + 'static,
-        C: (FnMut(OutPoint) -> Result<Option<CellOutput>, String>) + 'static,
-    {
+    pub fn new(tx: &'a mut MockTransaction) -> MockTransactionHelper<'a> {
         MockTransactionHelper {
             tx,
-            header_getter: Box::new(header_getter),
-            live_cell_getter: Box::new(live_cell_getter),
             live_cell_cache: HashMap::default(),
         }
     }
 
-    fn get_input_cell(&mut self, input: &CellInput) -> Result<CellOutput, String> {
+    fn get_input_cell<C>(
+        &mut self,
+        input: &CellInput,
+        live_cell_getter: C,
+    ) -> Result<CellOutput, String>
+    where
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
         let cell = match self.live_cell_cache.get(&input.previous_output) {
             Some(cell) => cell.clone(),
             None => {
                 let cell = self
                     .tx
-                    .get_input_cell(input, self.live_cell_getter.as_mut())?
+                    .get_input_cell(input, live_cell_getter)?
                     .ok_or_else(|| format!("input cell not found: {:?}", input))?;
                 self.live_cell_cache
                     .insert(input.previous_output.clone(), cell.clone());
@@ -129,11 +125,18 @@ impl<'a> MockTransactionHelper<'a> {
     }
 
     /// Add a change cell output use `target_lock` as output lock script, default the same as first input
-    pub fn add_change_output(&mut self, target_lock: Option<Script>) -> Result<u64, String> {
+    pub fn add_change_output<C>(
+        &mut self,
+        target_lock: Option<Script>,
+        mut live_cell_getter: C,
+    ) -> Result<u64, String>
+    where
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
         let mut input_total: u64 = 0;
         let mut first_input_cell = None;
         for input in self.tx.inputs.clone() {
-            let cell = self.get_input_cell(&input)?;
+            let cell = self.get_input_cell(&input, &mut live_cell_getter)?;
             if first_input_cell.is_none() {
                 first_input_cell = Some(cell.clone());
             }
@@ -168,7 +171,14 @@ impl<'a> MockTransactionHelper<'a> {
     }
 
     /// Fill deps by code hash or type hash (from mock_deps or system secp256k1 cell)
-    pub fn fill_deps(&mut self, genesis_info: &GenesisInfo) -> Result<(), String> {
+    pub fn fill_deps<C>(
+        &mut self,
+        genesis_info: &GenesisInfo,
+        mut live_cell_getter: C,
+    ) -> Result<(), String>
+    where
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
         let mut deps = self.tx.deps.iter().cloned().collect::<HashSet<_>>();
         let data_deps = self
             .tx
@@ -215,7 +225,7 @@ impl<'a> MockTransactionHelper<'a> {
             Ok(())
         };
         for input in self.tx.inputs.clone() {
-            let lock = self.get_input_cell(&input)?.lock;
+            let lock = self.get_input_cell(&input, &mut live_cell_getter)?.lock;
             insert_dep(lock.hash_type, &lock.code_hash)?;
         }
         for output in &self.tx.outputs {
@@ -228,11 +238,16 @@ impl<'a> MockTransactionHelper<'a> {
     }
 
     /// Compute transaction hash and set witnesses for inputs (search by lock scripts)
-    pub fn fill_witnesses<F: Fn(&H160, &H256) -> Option<[u8; 65]>>(
+    pub fn fill_witnesses<S, C>(
         &mut self,
         genesis_info: &GenesisInfo,
-        signer: F,
-    ) -> Result<(), String> {
+        signer: S,
+        mut live_cell_getter: C,
+    ) -> Result<(), String>
+    where
+        S: Fn(&H160, &H256) -> Result<[u8; 65], String>,
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
         let mut witnesses = self.tx.witnesses.clone();
         while witnesses.len() < self.tx.inputs.len() {
             witnesses.push(Vec::new());
@@ -241,7 +256,7 @@ impl<'a> MockTransactionHelper<'a> {
             .expect("Convert to H256 failed");
         let mut witness_cache: HashMap<H160, Bytes> = HashMap::default();
         for (idx, input) in self.tx.inputs.clone().into_iter().enumerate() {
-            let lock = self.get_input_cell(&input)?.lock;
+            let lock = self.get_input_cell(&input, &mut live_cell_getter)?.lock;
             if &lock.code_hash == genesis_info.secp_code_hash()
                 && lock.args.len() == 1
                 && lock.args[0].len() == 20
@@ -251,9 +266,8 @@ impl<'a> MockTransactionHelper<'a> {
                 let witness = if let Some(witness) = witness_cache.get(&lock_arg) {
                     witness.clone()
                 } else {
-                    let witness = signer(&lock_arg, &tx_hash_hash)
-                        .map(|data| Bytes::from(data.as_ref()))
-                        .ok_or_else(|| format!("Build witness for {:x} failed", lock_arg))?;
+                    let witness =
+                        signer(&lock_arg, &tx_hash_hash).map(|data| Bytes::from(data.as_ref()))?;
                     witness_cache.insert(lock_arg, witness.clone());
                     witness
                 };
@@ -264,26 +278,30 @@ impl<'a> MockTransactionHelper<'a> {
         Ok(())
     }
 
-    pub fn complete_tx<F: Fn(&H160, &H256) -> Option<[u8; 65]>>(
+    pub fn complete_tx<S, C>(
         &mut self,
         target_lock: Option<Script>,
         genesis_info: &GenesisInfo,
-        signer: F,
-    ) -> Result<(), String> {
-        self.add_change_output(target_lock)?;
-        self.fill_deps(genesis_info)?;
-        self.fill_witnesses(genesis_info, signer)
+        signer: S,
+        mut live_cell_getter: C,
+    ) -> Result<(), String>
+    where
+        S: Fn(&H160, &H256) -> Result<[u8; 65], String>,
+        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
+    {
+        self.add_change_output(target_lock, &mut live_cell_getter)?;
+        self.fill_deps(genesis_info, &mut live_cell_getter)?;
+        self.fill_witnesses(genesis_info, signer, &mut live_cell_getter)
     }
 
     /// Verify the transaction by local ScriptVerifier
-    pub fn verify(&mut self, max_cycle: Cycle) -> Result<Cycle, String> {
+    pub fn verify<L: MockResourceLoader>(
+        &mut self,
+        max_cycle: Cycle,
+        loader: L,
+    ) -> Result<Cycle, String> {
         let tx = self.tx.core_transaction();
-        let resource = Resource::from_both(
-            &tx,
-            self.tx,
-            self.header_getter.as_mut(),
-            self.live_cell_getter.as_mut(),
-        )?;
+        let resource = Resource::from_both(&tx, self.tx, loader)?;
         let rtx = {
             let mut seen_inputs = FnvHashSet::default();
             resolve_transaction(&tx, &mut seen_inputs, &resource, &resource)
@@ -316,6 +334,11 @@ fn cell_output_to_meta(
     cell_meta_builder.build()
 }
 
+pub trait MockResourceLoader {
+    fn get_header(&mut self, hash: H256) -> Result<Option<Header>, String>;
+    fn get_live_cell(&mut self, out_point: OutPoint) -> Result<Option<CellOutput>, String>;
+}
+
 struct Resource {
     out_point_blocks: HashMap<CellOutPoint, H256>,
     required_cells: HashMap<CellOutPoint, CellMeta>,
@@ -323,16 +346,11 @@ struct Resource {
 }
 
 impl Resource {
-    fn from_both<H, C>(
+    fn from_both<L: MockResourceLoader>(
         tx: &Transaction,
         mock_tx: &MockTransaction,
-        mut header_getter: H,
-        mut live_cell_getter: C,
-    ) -> Result<Resource, String>
-    where
-        H: FnMut(H256) -> Result<Option<Header>, String>,
-        C: FnMut(OutPoint) -> Result<Option<CellOutput>, String>,
-    {
+        mut loader: L,
+    ) -> Result<Resource, String> {
         let mut out_point_blocks = HashMap::default();
         let mut required_headers = HashMap::default();
         let mut required_cells = HashMap::default();
@@ -351,7 +369,8 @@ impl Resource {
             let cell_out_point = out_point.cell.clone().unwrap();
             let mut block_info = None;
             if let Some(ref hash) = out_point.block_hash {
-                let header = header_getter(hash.clone())?
+                let header = loader
+                    .get_header(hash.clone())?
                     .ok_or_else(|| format!("Can not get header: {:x}", hash))?;
                 block_info = Some(BlockInfo {
                     number: header.number(),
@@ -364,11 +383,13 @@ impl Resource {
 
             let cell_output = if is_dep {
                 mock_tx
-                    .get_dep_cell(&input.previous_output, &mut live_cell_getter)?
+                    .get_dep_cell(&input.previous_output, |out_point| {
+                        loader.get_live_cell(out_point)
+                    })?
                     .ok_or_else(|| format!("Can not get CellOutput by dep={:?}", input))?
             } else {
                 mock_tx
-                    .get_input_cell(&input, &mut live_cell_getter)?
+                    .get_input_cell(&input, |out_point| loader.get_live_cell(out_point))?
                     .ok_or_else(|| format!("Can not get CellOutput by input={:?}", input))?
             };
             let cell_meta = cell_output_to_meta(cell_out_point.clone(), cell_output, block_info);
@@ -436,12 +457,96 @@ impl DataLoader for Resource {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ReprMockDep {
+    pub out_point: json_types::OutPoint,
+    pub cell: json_types::CellOutput,
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ReprMockInput {
+    pub input: json_types::CellInput,
+    pub cell: json_types::CellOutput,
+}
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ReprMockTransaction {
+    pub mock_inputs: Vec<ReprMockInput>,
+    pub mock_deps: Vec<ReprMockDep>,
+
+    pub version: Option<json_types::Version>,
+    pub deps: Vec<json_types::OutPoint>,
+    pub inputs: Vec<json_types::CellInput>,
+    pub outputs: Vec<json_types::CellOutput>,
+    pub witnesses: Vec<json_types::Witness>,
+}
+
+impl From<MockDep> for ReprMockDep {
+    fn from(dep: MockDep) -> ReprMockDep {
+        ReprMockDep {
+            out_point: dep.out_point.into(),
+            cell: dep.cell.into(),
+        }
+    }
+}
+impl From<ReprMockDep> for MockDep {
+    fn from(dep: ReprMockDep) -> MockDep {
+        MockDep {
+            out_point: dep.out_point.into(),
+            cell: dep.cell.into(),
+        }
+    }
+}
+
+impl From<MockInput> for ReprMockInput {
+    fn from(input: MockInput) -> ReprMockInput {
+        ReprMockInput {
+            input: input.input.into(),
+            cell: input.cell.into(),
+        }
+    }
+}
+impl From<ReprMockInput> for MockInput {
+    fn from(input: ReprMockInput) -> MockInput {
+        MockInput {
+            input: input.input.into(),
+            cell: input.cell.into(),
+        }
+    }
+}
+
+impl From<MockTransaction> for ReprMockTransaction {
+    fn from(tx: MockTransaction) -> ReprMockTransaction {
+        ReprMockTransaction {
+            mock_inputs: tx.mock_inputs.into_iter().map(Into::into).collect(),
+            mock_deps: tx.mock_deps.into_iter().map(Into::into).collect(),
+            version: tx.version.map(json_types::Version),
+            deps: tx.deps.into_iter().map(Into::into).collect(),
+            inputs: tx.inputs.into_iter().map(Into::into).collect(),
+            outputs: tx.outputs.into_iter().map(Into::into).collect(),
+            witnesses: tx.witnesses.iter().map(Into::into).collect(),
+        }
+    }
+}
+impl From<ReprMockTransaction> for MockTransaction {
+    fn from(tx: ReprMockTransaction) -> MockTransaction {
+        MockTransaction {
+            mock_inputs: tx.mock_inputs.into_iter().map(Into::into).collect(),
+            mock_deps: tx.mock_deps.into_iter().map(Into::into).collect(),
+            version: tx.version.map(|v| v.0),
+            deps: tx.deps.into_iter().map(Into::into).collect(),
+            inputs: tx.inputs.into_iter().map(Into::into).collect(),
+            outputs: tx.outputs.into_iter().map(Into::into).collect(),
+            witnesses: tx.witnesses.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use ckb_core::block::Block;
+    use ckb_core::{block::Block, capacity_bytes};
     use ckb_crypto::secp::SECP256K1;
     use ckb_jsonrpc_types::BlockView;
+    use numext_fixed_hash::h256;
     use rand::Rng;
 
     // NOTE: Should update when block structure changed
@@ -480,12 +585,11 @@ mod test {
             cell: genesis_block.transactions()[0].outputs()[1].clone(),
         });
 
-        let tx_hash = H256::from_trimmed_hex_str("ff01").unwrap();
-        let out_point = OutPoint::new_cell(tx_hash, 0);
+        let out_point = OutPoint::new_cell(h256!("0xff01"), 0);
         let input = CellInput::new(out_point, 0);
         mock_tx.mock_inputs.push({
             let cell = CellOutput {
-                capacity: Capacity::bytes(200).unwrap(),
+                capacity: capacity_bytes!(200),
                 data: Bytes::default(),
                 lock: lock_script.clone(),
                 type_: None,
@@ -497,7 +601,7 @@ mod test {
         });
         mock_tx.inputs.push(input);
         mock_tx.outputs.push(CellOutput {
-            capacity: Capacity::bytes(120).unwrap(),
+            capacity: capacity_bytes!(120),
             data: Bytes::default(),
             lock: lock_script,
             type_: None,
@@ -505,7 +609,7 @@ mod test {
 
         let signer = |target_lock_arg: &H160, tx_hash_hash: &H256| {
             if &lock_arg != target_lock_arg {
-                return None;
+                return Err(String::from("lock arg not match"));
             }
             let message = secp256k1::Message::from_slice(tx_hash_hash.as_bytes())
                 .expect("Convert to secp256k1 message failed");
@@ -514,21 +618,32 @@ mod test {
             let mut signature_bytes = [0u8; 65];
             signature_bytes[0..64].copy_from_slice(&data[0..64]);
             signature_bytes[64] = recov_id.to_i32() as u8;
-            Some(signature_bytes)
+            Ok(signature_bytes)
         };
-        let mut helper = MockTransactionHelper::new(
-            &mut mock_tx,
-            |hash| Err(format!("Can not call header getter, hash={:?}", hash)),
-            |input| Err(format!("Can not call live cell getter, input={:?}", input)),
-        );
+
+        struct Loader;
+        impl MockResourceLoader for Loader {
+            fn get_header(&mut self, hash: H256) -> Result<Option<Header>, String> {
+                Err(format!("Can not call header getter, hash={:?}", hash))
+            }
+            fn get_live_cell(&mut self, out_point: OutPoint) -> Result<Option<CellOutput>, String> {
+                Err(format!(
+                    "Can not call live cell getter, out_point={:?}",
+                    out_point
+                ))
+            }
+        }
+        let mut helper = MockTransactionHelper::new(&mut mock_tx);
         helper
-            .complete_tx(None, &genesis_info, signer)
+            .complete_tx(None, &genesis_info, signer, |out_point| {
+                Loader.get_live_cell(out_point)
+            })
             .expect("Complete mock tx failed");
         assert_eq!(helper.tx.deps.len(), 1, "Deps not set");
         assert_eq!(helper.tx.outputs.len(), 2, "Output change not set");
         assert_eq!(
             helper.tx.outputs[1].capacity,
-            Capacity::bytes(80).unwrap(),
+            capacity_bytes!(80),
             "Output change wrong capacity",
         );
         assert_eq!(
@@ -537,7 +652,7 @@ mod test {
             "Witnesses not match inputs"
         );
         helper
-            .verify(u64::max_value())
+            .verify(u64::max_value(), Loader)
             .expect("Verify mock tx failed");
     }
 }

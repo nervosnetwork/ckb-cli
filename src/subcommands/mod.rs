@@ -1,4 +1,5 @@
 pub mod account;
+pub mod mock_tx;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
@@ -15,6 +16,7 @@ pub use local::{
 };
 
 pub use account::AccountSubCommand;
+pub use mock_tx::MockTxSubCommand;
 pub use rpc::RpcSubCommand;
 pub use wallet::{
     start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,

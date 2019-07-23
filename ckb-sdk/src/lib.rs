@@ -22,7 +22,10 @@ pub use index::{
 };
 pub use kvdb::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use rpc::HttpRpcClient;
-pub use transaction::{MockDep, MockInput, MockTransaction, MockTransactionHelper};
+pub use transaction::{
+    MockDep, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper, ReprMockDep,
+    ReprMockInput, ReprMockTransaction,
+};
 
 pub use local::{
     from_local_cell_out_point, to_local_cell_out_point, CellAliasManager, CellInputManager,
