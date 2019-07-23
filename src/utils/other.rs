@@ -9,6 +9,7 @@ use ckb_sdk::{
     GenesisInfo, HttpRpcClient,
 };
 use colored::Colorize;
+use numext_fixed_hash::{H160, H256};
 use rpassword::prompt_password_stdout;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -33,6 +34,23 @@ pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
         .and_then(|_| {
             KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
         })
+}
+
+pub fn get_singer(
+    key_store: KeyStore,
+) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
+    move |lock_arg: &H160, tx_hash_hash: &H256| {
+        let prompt = format!("Password for [{:x}]", lock_arg);
+        let password = read_password(false, Some(prompt.as_str()))?;
+        let signature = key_store
+            .sign_recoverable_with_password(lock_arg, tx_hash_hash, password.as_bytes())
+            .map_err(|err| err.to_string())?;
+        let (recov_id, data) = signature.serialize_compact();
+        let mut signature_bytes = [0u8; 65];
+        signature_bytes[0..64].copy_from_slice(&data[0..64]);
+        signature_bytes[64] = recov_id.to_i32() as u8;
+        Ok(signature_bytes)
+    }
 }
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {

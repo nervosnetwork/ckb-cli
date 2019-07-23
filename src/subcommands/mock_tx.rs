@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use bytes::Bytes;
@@ -20,7 +20,7 @@ use numext_fixed_hash::{h256, H160, H256};
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
-    other::{get_genesis_info, read_password},
+    other::{get_genesis_info, get_singer},
     printer::{OutputFormat, Printable},
 };
 
@@ -50,6 +50,11 @@ impl<'a> MockTxSubCommand<'a> {
             .required(true)
             .validator(|input| FilePathParser::new(true).validate(input))
             .help("Mock transaction data file (format: json,yaml)");
+        let arg_output_file = Arg::with_name("output-file")
+            .long("output-file")
+            .takes_value(true)
+            .validator(|input| FilePathParser::new(false).validate(input))
+            .help("Completed mock transaction data file (format: json,yaml)");
         let arg_lock_arg = Arg::with_name("lock-arg")
             .long("lock-arg")
             .takes_value(true)
@@ -61,12 +66,21 @@ impl<'a> MockTxSubCommand<'a> {
             .subcommands(vec![
                 SubCommand::with_name("template")
                     .about("Print mock transaction template")
-                    .arg(arg_lock_arg.clone().required(false)),
+                    .arg(arg_lock_arg.clone().required(false))
+                    .arg(arg_output_file.clone().help("Save to a output file")),
+                SubCommand::with_name("complete")
+                    .about("Complete the mock transaction")
+                    .arg(arg_tx_file.clone())
+                    .arg(
+                        arg_output_file
+                            .clone()
+                            .help("Completed mock transaction data file (format: json,yaml)"),
+                    ),
                 SubCommand::with_name("verify")
                     .about("Verify a mock transaction in local")
                     .arg(arg_tx_file.clone()),
                 SubCommand::with_name("send")
-                    .about("Send a transaction if there is no mock data")
+                    .about("Complete then send a transaction")
                     .arg(arg_tx_file.clone()),
             ])
     }
@@ -80,6 +94,56 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         color: bool,
     ) -> Result<String, String> {
         let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
+
+        let mut complete_tx =
+            |m: &ArgMatches, verify: bool| -> Result<(MockTransaction, u64), String> {
+                let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
+                let mut content = String::new();
+                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                file.read_to_string(&mut content)
+                    .map_err(|err| err.to_string())?;
+                let repr_tx: ReprMockTransaction = serde_yaml::from_str(content.as_str())
+                    .map_err(|err| err.to_string())
+                    .or_else(|_| {
+                        serde_json::from_str(content.as_str()).map_err(|err| err.to_string())
+                    })?;
+                let mut mock_tx: MockTransaction = repr_tx.into();
+
+                let signer = get_singer(self.key_store.clone());
+                let mut loader = Loader {
+                    rpc_client: self.rpc_client,
+                };
+                let cycle = {
+                    let mut helper = MockTransactionHelper::new(&mut mock_tx);
+                    helper.complete_tx(None, &genesis_info, &signer, |out_point| {
+                        loader.get_live_cell(out_point)
+                    })?;
+                    if verify {
+                        helper.verify(u64::max_value(), loader)?
+                    } else {
+                        0
+                    }
+                };
+                Ok((mock_tx, cycle))
+            };
+
+        let output_tx = |m: &ArgMatches, mock_tx: &MockTransaction| -> Result<(), String> {
+            let output_opt: Option<PathBuf> =
+                FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
+            let output_color = output_opt.as_ref().map(|_| false).unwrap_or(color);
+            let output_content =
+                ReprMockTransaction::from(mock_tx.clone()).render(format, output_color);
+            if let Some(output) = output_opt {
+                let mut out_file = fs::File::create(output).map_err(|err| err.to_string())?;
+                out_file
+                    .write_all(output_content.as_bytes())
+                    .map_err(|err| err.to_string())?;
+            } else {
+                println!("{}", output_content);
+            }
+            Ok(())
+        };
+
         match matches.subcommand() {
             ("template", Some(m)) => {
                 let lock_arg_opt: Option<H160> =
@@ -129,55 +193,35 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     let mut helper = MockTransactionHelper::new(&mut mock_tx);
                     helper.fill_deps(&genesis_info, |_| unreachable!())?;
                 }
-                let repr_tx: ReprMockTransaction = mock_tx.into();
+                output_tx(m, &mock_tx)?;
 
-                Ok(serde_json::to_value(&repr_tx)
-                    .unwrap()
-                    .render(format, color))
+                Ok(String::new())
+            }
+            ("complete", Some(m)) => {
+                let (mock_tx, _cycle) = complete_tx(m, false)?;
+                output_tx(m, &mock_tx)?;
+                let resp = serde_json::json!({
+                    "tx-hash": mock_tx.core_transaction().hash(),
+                });
+                Ok(resp.render(format, color))
             }
             ("verify", Some(m)) => {
-                let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let mut content = String::new();
-                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                file.read_to_string(&mut content)
-                    .map_err(|err| err.to_string())?;
-                let repr_tx: ReprMockTransaction = serde_yaml::from_str(content.as_str())
-                    .map_err(|err| err.to_string())
-                    .or_else(|_| {
-                        serde_json::from_str(content.as_str()).map_err(|err| err.to_string())
-                    })?;
-                let mut mock_tx: MockTransaction = repr_tx.into();
-
-                let key_store = self.key_store.clone();
-                let signer = |lock_arg: &H160, tx_hash_hash: &H256| {
-                    let prompt = format!("Password for [{:x}]", lock_arg);
-                    let password = read_password(false, Some(prompt.as_str()))?;
-                    let signature = key_store
-                        .sign_recoverable_with_password(lock_arg, tx_hash_hash, password.as_bytes())
-                        .map_err(|err| err.to_string())?;
-                    let (recov_id, data) = signature.serialize_compact();
-                    let mut signature_bytes = [0u8; 65];
-                    signature_bytes[0..64].copy_from_slice(&data[0..64]);
-                    signature_bytes[64] = recov_id.to_i32() as u8;
-                    Ok(signature_bytes)
-                };
-                let mut loader = Loader {
-                    rpc_client: self.rpc_client,
-                };
-                let mut helper = MockTransactionHelper::new(&mut mock_tx);
-                helper.complete_tx(None, &genesis_info, &signer, |out_point| {
-                    loader.get_live_cell(out_point)
-                })?;
-                println!(
-                    "{}",
-                    ReprMockTransaction::from((*helper.tx).clone()).render(format, color)
-                );
-                println!("[tx-hash]: {:x}", helper.tx.core_transaction().hash());
-
-                let cycle = helper.verify(u64::max_value(), loader)?;
-                Ok(format!("cycle: {}", cycle))
+                let (mock_tx, cycle) = complete_tx(m, true)?;
+                let resp = serde_json::json!({
+                    "tx-hash": mock_tx.core_transaction().hash(),
+                    "cycle": cycle,
+                });
+                Ok(resp.render(format, color))
             }
-            ("send", Some(_m)) => Ok(String::from("null")),
+            ("send", Some(m)) => {
+                let (mock_tx, _cycle) = complete_tx(m, true)?;
+                let resp = self
+                    .rpc_client
+                    .send_transaction((&mock_tx.core_transaction()).into())
+                    .call()
+                    .map_err(|err| format!("Send transaction error: {}", err))?;
+                Ok(resp.render(format, color))
+            }
             _ => Err(matches.usage().to_owned()),
         }
     }
