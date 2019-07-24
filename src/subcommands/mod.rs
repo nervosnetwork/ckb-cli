@@ -5,15 +5,8 @@ pub mod rpc;
 pub mod tui;
 pub mod wallet;
 
-pub mod local;
-
 #[cfg(unix)]
 pub use self::tui::TuiSubCommand;
-
-pub use local::{
-    LocalCellInputSubCommand, LocalCellSubCommand, LocalScriptSubCommand, LocalSubCommand,
-    LocalTxSubCommand,
-};
 
 pub use account::AccountSubCommand;
 pub use mock_tx::MockTxSubCommand;

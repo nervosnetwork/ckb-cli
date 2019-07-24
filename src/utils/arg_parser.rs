@@ -56,6 +56,7 @@ pub trait ArgParser<T> {
     }
 }
 
+#[allow(dead_code)]
 pub struct NullParser;
 impl ArgParser<String> for NullParser {
     fn parse(&self, input: &str) -> Result<String, String> {
@@ -63,11 +64,13 @@ impl ArgParser<String> for NullParser {
     }
 }
 
+#[allow(dead_code)]
 pub enum EitherValue<TA, TB> {
     A(TA),
     B(TB),
 }
 
+#[allow(dead_code)]
 pub struct EitherParser<TA, TB, A, B> {
     a: A,
     b: B,
@@ -80,6 +83,7 @@ where
     A: ArgParser<TA>,
     B: ArgParser<TB>,
 {
+    #[allow(dead_code)]
     pub fn new(a: A, b: B) -> Self {
         EitherParser {
             a,
@@ -319,6 +323,7 @@ impl ArgParser<u64> for CapacityParser {
     }
 }
 
+#[allow(dead_code)]
 pub struct CellOutPointParser;
 
 impl ArgParser<CellOutPoint> for CellOutPointParser {

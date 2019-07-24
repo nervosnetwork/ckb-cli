@@ -3,7 +3,6 @@ mod chain;
 mod error;
 mod index;
 mod kvdb;
-mod local;
 mod rpc;
 mod transaction;
 mod util;
@@ -27,15 +26,6 @@ pub use transaction::{
     ReprMockInput, ReprMockTransaction,
 };
 
-pub use local::{
-    from_local_cell_out_point, to_local_cell_out_point, CellAliasManager, CellInputManager,
-    CellManager, ScriptManager, TransactionManager, VerifyResult,
-};
 pub use util::{with_index_db, with_rocksdb};
 
-const ROCKSDB_COL_CELL: &str = "cell";
-const ROCKSDB_COL_CELL_ALIAS: &str = "cell-alias";
-const ROCKSDB_COL_CELL_INPUT: &str = "cell-input";
-const ROCKSDB_COL_SCRIPT: &str = "script";
-const ROCKSDB_COL_TX: &str = "tx";
 const ROCKSDB_COL_INDEX_DB: &str = "index-db";

@@ -13,8 +13,8 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, LocalSubCommand,
-    MockTxSubCommand, RpcSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
+    RpcSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -33,7 +33,6 @@ const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 pub struct InteractiveEnv {
     config: GlobalConfig,
     config_file: PathBuf,
-    resource_dir: PathBuf,
     history_file: PathBuf,
     index_dir: PathBuf,
     parser: clap::App<'static, 'static>,
@@ -56,8 +55,6 @@ impl InteractiveEnv {
         history_file.push("history");
         let mut config_file = ckb_cli_dir.clone();
         config_file.push("config");
-        let mut resource_dir = ckb_cli_dir.clone();
-        resource_dir.push("resource");
         let mut index_dir = ckb_cli_dir.clone();
         index_dir.push("index");
         let mut keystore_dir = ckb_cli_dir.clone();
@@ -82,7 +79,6 @@ impl InteractiveEnv {
         Ok(InteractiveEnv {
             config,
             config_file,
-            resource_dir,
             index_dir,
             history_file,
             parser,
@@ -339,18 +335,6 @@ impl InteractiveEnv {
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         true,
-                    )
-                    .process(&sub_matches, format, color)?;
-                    println!("{}", output);
-                    Ok(())
-                }
-                ("local", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info()?;
-                    let output = LocalSubCommand::new(
-                        &mut self.rpc_client,
-                        &mut self.key_store,
-                        Some(genesis_info),
-                        self.resource_dir.clone(),
                     )
                     .process(&sub_matches, format, color)?;
                     println!("{}", output);
