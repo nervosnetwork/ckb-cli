@@ -2,7 +2,7 @@
 name = "ckb-cli"
 version = "0.17.0"
 license = "MIT"
-authors = ["Linfeng Qian <thewawar@gmail.com>"]
+authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 
 [dependencies]
@@ -14,6 +14,7 @@ ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0
 ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
 ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
 ckb-sdk = { path = "ckb-sdk" }
+ckb-index = { path = "ckb-index" }
 
 jsonrpc-client-core = "0.5.0"
 secp256k1 = {version = "0.12.2" }
@@ -48,4 +49,4 @@ termion = "1.5"
 ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
 
 [workspace]
-members = ["ckb-sdk"]
+members = ["ckb-sdk", "ckb-index"]

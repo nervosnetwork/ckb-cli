@@ -25,11 +25,12 @@ use crate::utils::{
     other::read_password,
     printer::{OutputFormat, Printable},
 };
+use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    with_index_db, Address, AddressFormat, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
-    NetworkType, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    Address, AddressFormat, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
+    MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -365,13 +366,17 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: &to_address,
                     to_capacity: capacity,
                 };
+                let inputs = infos
+                    .iter()
+                    .map(LiveCellInfo::core_input)
+                    .collect::<Vec<_>>();
                 let tx = if let Some(privkey) = from_privkey {
-                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                    tx_args.build(inputs, &genesis_info, |tx_hash| {
                         Ok(build_witness_with_key(&privkey, tx_hash))
                     })?
                 } else {
                     let lock_arg = from_account.as_ref().unwrap();
-                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                    tx_args.build(inputs, &genesis_info, |tx_hash| {
                         let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
                             .expect("Tx hash convert to H256 failed");
                         let signature_result = if self.interactive && !m.is_present("with-password") {

@@ -1,6 +1,6 @@
 use super::types::{BlockDeltaInfo, CellIndex, HashType, HeaderInfo, LiveCellInfo, TxInfo};
-use crate::{Address, NetworkType};
 use ckb_core::{header::Header, script::Script, transaction::CellOutPoint};
+use ckb_sdk::{Address, NetworkType};
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 

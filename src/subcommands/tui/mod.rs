@@ -20,8 +20,9 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_core::service::Request;
+use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
-use ckb_sdk::{with_index_db, GenesisInfo, HttpRpcClient, IndexDatabase, NetworkType, ONE_CKB};
+use ckb_sdk::{GenesisInfo, HttpRpcClient, NetworkType, ONE_CKB};
 
 use super::wallet::{IndexController, IndexRequest};
 use state::{start_rpc_thread, State, SummaryInfo};

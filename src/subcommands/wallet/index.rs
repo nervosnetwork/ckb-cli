@@ -6,14 +6,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_core::{block::Block, header::Header, service::Request};
+use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
+use ckb_sdk::HttpRpcClient;
 use ckb_sdk::{GenesisInfo, NetworkType};
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
 use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
-
-use ckb_sdk::{with_index_db, HttpRpcClient, IndexDatabase};
 
 pub enum IndexRequest {
     UpdateUrl(String),
