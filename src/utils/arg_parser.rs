@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_core::transaction::CellOutPoint;
-use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, ONE_CKB};
+use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, OldAddress, ONE_CKB};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use numext_fixed_hash::{H160, H256};
@@ -290,9 +290,14 @@ pub struct AddressParser;
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
         let prefix = input.chars().take(3).collect::<String>();
+        let result = Address::from_input(input);
+        if let Ok((_network, address)) = result {
+            return Ok(address);
+        }
         let network = NetworkType::from_prefix(prefix.as_str())
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
-        Address::from_input(network, input)
+        let old_address = OldAddress::from_input(network, input)?;
+        Ok(Address::new_default(old_address.hash().clone()))
     }
 }
 
@@ -369,7 +374,7 @@ impl ArgParser<Duration> for DurationParser {
 
 #[cfg(test)]
 mod tests {
-    use numext_fixed_hash::h256;
+    use numext_fixed_hash::{h160, h256};
     use std::net::IpAddr;
 
     use super::*;
@@ -428,18 +433,34 @@ mod tests {
 
     #[test]
     fn test_address() {
+        // Old address, lock-arg: e22f7f385830a75e50ab7fc5fd4c35b134f1e84b
         assert_eq!(
-            AddressParser.parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc"),
-            Address::from_input(
-                NetworkType::TestNet,
-                "ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc"
-            ),
+            AddressParser.parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
+            Ok(Address::new_default(h160!(
+                "0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"
+            )))
         );
+        // New address, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
+        assert_eq!(
+            AddressParser.parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
+            Ok(Address::new_default(h160!(
+                "0x13e41d6F9292555916f17B4882a5477C01270142"
+            )))
+        );
+
+        // Old address
         assert!(AddressParser
             .parse("kt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc")
             .is_err());
         assert!(AddressParser
             .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy")
+            .is_err());
+        // New address
+        assert!(AddressParser
+            .parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqfpqrn323p")
+            .is_err());
+        assert!(AddressParser
+            .parse("kb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p")
             .is_err());
     }
 

@@ -29,7 +29,7 @@ use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    Address, AddressFormat, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
+    Address, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
     MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
@@ -277,11 +277,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             let lock_arg: Option<H160> =
                 FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
             let address = address
-                .or_else(|| {
-                    pubkey.map(|pubkey| {
-                        Address::from_pubkey(AddressFormat::default(), &pubkey.into()).unwrap()
-                    })
-                })
+                .or_else(|| pubkey.map(|pubkey| Address::from_pubkey(&pubkey).unwrap()))
                 .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
                 .ok_or_else(|| "Please give one argument".to_owned())?;
             Ok(address)
