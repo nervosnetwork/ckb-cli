@@ -6,11 +6,14 @@ use ckb_core::block::Block;
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
-    GenesisInfo, HttpRpcClient,
+    Address, GenesisInfo, HttpRpcClient,
 };
+use clap::ArgMatches;
 use colored::Colorize;
 use numext_fixed_hash::{H160, H256};
 use rpassword::prompt_password_stdout;
+
+use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, PubkeyHexParser};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -34,6 +37,19 @@ pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
         .and_then(|_| {
             KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
         })
+}
+
+pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
+    let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
+    let pubkey: Option<secp256k1::PublicKey> =
+        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+    let lock_arg: Option<H160> =
+        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+    let address = address
+        .or_else(|| pubkey.map(|pubkey| Address::from_pubkey(&pubkey).unwrap()))
+        .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
+        .ok_or_else(|| "Please give one argument".to_owned())?;
+    Ok(address)
 }
 
 pub fn get_singer(

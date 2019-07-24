@@ -17,7 +17,7 @@ use subcommands::TuiSubCommand;
 use interactive::InteractiveEnv;
 use subcommands::{
     start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
-    RpcSubCommand, WalletSubCommand,
+    RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::{
     arg_parser::{ArgParser, UrlParser},
@@ -114,6 +114,9 @@ fn main() -> Result<(), io::Error> {
                 color,
             )
         }),
+        ("util", Some(sub_matches)) => {
+            UtilSubCommand::new(&mut rpc_client, None).process(&sub_matches, output_format, color)
+        }
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,
@@ -196,6 +199,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
+        .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(WalletSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
@@ -287,5 +291,6 @@ pub fn build_interactive() -> App<'static, 'static> {
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
+        .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(WalletSubCommand::subcommand())
 }

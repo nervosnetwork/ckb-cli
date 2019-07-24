@@ -192,6 +192,11 @@ mod old_addr {
     }
 
     impl Address {
+        pub fn new_default(hash: H160) -> Address {
+            let format = AddressFormat::P2PH;
+            Address { format, hash }
+        }
+
         pub fn hash(&self) -> &H160 {
             &self.hash
         }

@@ -14,7 +14,6 @@ use ckb_jsonrpc_types::BlockNumber;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 use numext_fixed_hash::{H160, H256};
-use serde_json::json;
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -22,7 +21,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PubkeyHexParser,
     },
-    other::read_password,
+    other::{get_address, read_password},
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
@@ -190,12 +189,6 @@ impl<'a> WalletSubCommand<'a> {
                             .help("Input password to unlock keystore account just for current transfer transaction")
                     )
                     ,
-                SubCommand::with_name("key-info")
-                    .about("Show public information of a secp256k1 private key (from file) or public key")
-                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                    .arg(arg_pubkey.clone().required(false))
-                    .arg(arg_address.clone().required(false))
-                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg_lock_hash.clone().required(false))
@@ -270,19 +263,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
-        fn get_address(m: &ArgMatches) -> Result<Address, String> {
-            let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
-            let pubkey: Option<secp256k1::PublicKey> =
-                PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-            let lock_arg: Option<H160> =
-                FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
-            let address = address
-                .or_else(|| pubkey.map(|pubkey| Address::from_pubkey(&pubkey).unwrap()))
-                .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
-                .ok_or_else(|| "Please give one argument".to_owned())?;
-            Ok(address)
-        }
-
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
@@ -402,49 +382,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .send_transaction(tx)
                     .call()
                     .map_err(|err| format!("Send transaction error: {}", err))?;
-                Ok(resp.render(format, color))
-            }
-            ("key-info", Some(m)) => {
-                let privkey_opt: Option<secp256k1::SecretKey> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-                let pubkey_opt = privkey_opt
-                    .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
-                    .or_else(|| pubkey_opt);
-                let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
-                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
-                });
-                let address = match pubkey_opt {
-                    Some(pubkey) => {
-                        let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
-                        Address::from_lock_arg(&pubkey_hash[0..20])?
-                    }
-                    None => get_address(m)?,
-                };
-
-                let genesis_info = self.genesis_info()?;
-                let secp_code_hash = genesis_info.secp_code_hash();
-                println!(
-                    r#"Put this config in < ckb.toml >:
-
-[block_assembler]
-code_hash = "{:#x}"
-args = ["{:#x}"]
-"#,
-                    secp_code_hash,
-                    address.hash()
-                );
-
-                let resp = json!({
-                    "pubkey": pubkey_string_opt,
-                    "address": {
-                        "testnet": address.to_string(NetworkType::TestNet),
-                        "mainnet": address.to_string(NetworkType::MainNet),
-                    },
-                    "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
-                });
                 Ok(resp.render(format, color))
             }
             ("get-capacity", Some(m)) => {

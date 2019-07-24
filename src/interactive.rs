@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    RpcSubCommand, WalletSubCommand,
+    RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -231,120 +231,129 @@ impl InteractiveEnv {
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
         match self.parser.clone().get_matches_from_safe(args) {
-            Ok(matches) => match matches.subcommand() {
-                ("config", Some(m)) => {
-                    m.value_of("url").and_then(|url| {
-                        let index_sender = self.index_controller.sender();
-                        Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
-                        self.config.set_url(url.to_string());
-                        self.rpc_client = HttpRpcClient::from_uri(self.config.get_url());
-                        self.genesis_info = None;
-                        Some(())
-                    });
-                    if m.is_present("color") {
-                        self.config.switch_color();
-                    }
+            Ok(matches) => {
+                match matches.subcommand() {
+                    ("config", Some(m)) => {
+                        m.value_of("url").and_then(|url| {
+                            let index_sender = self.index_controller.sender();
+                            Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
+                            self.config.set_url(url.to_string());
+                            self.rpc_client = HttpRpcClient::from_uri(self.config.get_url());
+                            self.genesis_info = None;
+                            Some(())
+                        });
+                        if m.is_present("color") {
+                            self.config.switch_color();
+                        }
 
-                    if let Some(format) = m.value_of("output-format") {
-                        let output_format =
-                            OutputFormat::from_str(format).unwrap_or(OutputFormat::Yaml);
-                        self.config.set_output_format(output_format);
-                    }
+                        if let Some(format) = m.value_of("output-format") {
+                            let output_format =
+                                OutputFormat::from_str(format).unwrap_or(OutputFormat::Yaml);
+                            self.config.set_output_format(output_format);
+                        }
 
-                    if m.is_present("debug") {
-                        self.config.switch_debug();
-                    }
+                        if m.is_present("debug") {
+                            self.config.switch_debug();
+                        }
 
-                    if m.is_present("edit_style") {
-                        self.config.switch_edit_style();
-                    }
+                        if m.is_present("edit_style") {
+                            self.config.switch_edit_style();
+                        }
 
-                    if m.is_present("completion_style") {
-                        self.config.switch_completion_style();
-                    }
+                        if m.is_present("completion_style") {
+                            self.config.switch_completion_style();
+                        }
 
-                    self.config.print();
-                    let mut file = fs::File::create(self.config_file.as_path())
-                        .map_err(|err| format!("open config error: {:?}", err))?;
-                    let content = serde_json::to_string_pretty(&json!({
-                        "url": self.config.get_url().to_string(),
-                        "color": self.config.color(),
-                        "debug": self.config.debug(),
-                        "output_format": self.config.output_format().to_string(),
-                        "completion_style": self.config.completion_style(),
-                        "edit_style": self.config.edit_style(),
-                    }))
-                    .unwrap();
-                    file.write_all(content.as_bytes())
-                        .map_err(|err| format!("save config error: {:?}", err))?;
-                    Ok(())
+                        self.config.print();
+                        let mut file = fs::File::create(self.config_file.as_path())
+                            .map_err(|err| format!("open config error: {:?}", err))?;
+                        let content = serde_json::to_string_pretty(&json!({
+                            "url": self.config.get_url().to_string(),
+                            "color": self.config.color(),
+                            "debug": self.config.debug(),
+                            "output_format": self.config.output_format().to_string(),
+                            "completion_style": self.config.completion_style(),
+                            "edit_style": self.config.edit_style(),
+                        }))
+                        .unwrap();
+                        file.write_all(content.as_bytes())
+                            .map_err(|err| format!("save config error: {:?}", err))?;
+                        Ok(())
+                    }
+                    ("set", Some(m)) => {
+                        let key = m.value_of("key").unwrap().to_owned();
+                        let value = m.value_of("value").unwrap().to_owned();
+                        self.config.set(key, serde_json::Value::String(value));
+                        Ok(())
+                    }
+                    ("get", Some(m)) => {
+                        let key = m.value_of("key");
+                        println!("{}", self.config.get(key).render(format, color));
+                        Ok(())
+                    }
+                    ("info", _) => {
+                        self.config.print();
+                        Ok(())
+                    }
+                    ("rpc", Some(sub_matches)) => {
+                        check_alerts(&mut self.rpc_client);
+                        let output = RpcSubCommand::new(&mut self.rpc_client).process(
+                            &sub_matches,
+                            format,
+                            color,
+                        )?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("account", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info().ok();
+                        let output = AccountSubCommand::new(
+                            &mut self.rpc_client,
+                            &mut self.key_store,
+                            genesis_info,
+                        )
+                        .process(&sub_matches, format, color)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("mock-tx", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info().ok();
+                        let output = MockTxSubCommand::new(
+                            &mut self.rpc_client,
+                            &mut self.key_store,
+                            genesis_info,
+                        )
+                        .process(&sub_matches, format, color)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("util", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info().ok();
+                        let output = UtilSubCommand::new(&mut self.rpc_client, genesis_info)
+                            .process(&sub_matches, format, color)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("wallet", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info()?;
+                        let output = WalletSubCommand::new(
+                            &mut self.rpc_client,
+                            &mut self.key_store,
+                            Some(genesis_info),
+                            self.index_dir.clone(),
+                            self.index_controller.clone(),
+                            true,
+                        )
+                        .process(&sub_matches, format, color)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("exit", _) => {
+                        return Ok(true);
+                    }
+                    _ => Ok(()),
                 }
-                ("set", Some(m)) => {
-                    let key = m.value_of("key").unwrap().to_owned();
-                    let value = m.value_of("value").unwrap().to_owned();
-                    self.config.set(key, serde_json::Value::String(value));
-                    Ok(())
-                }
-                ("get", Some(m)) => {
-                    let key = m.value_of("key");
-                    println!("{}", self.config.get(key).render(format, color));
-                    Ok(())
-                }
-                ("info", _) => {
-                    self.config.print();
-                    Ok(())
-                }
-                ("rpc", Some(sub_matches)) => {
-                    check_alerts(&mut self.rpc_client);
-                    let output = RpcSubCommand::new(&mut self.rpc_client).process(
-                        &sub_matches,
-                        format,
-                        color,
-                    )?;
-                    println!("{}", output);
-                    Ok(())
-                }
-                ("account", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info().ok();
-                    let output = AccountSubCommand::new(
-                        &mut self.rpc_client,
-                        &mut self.key_store,
-                        genesis_info,
-                    )
-                    .process(&sub_matches, format, color)?;
-                    println!("{}", output);
-                    Ok(())
-                }
-                ("mock-tx", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info().ok();
-                    let output = MockTxSubCommand::new(
-                        &mut self.rpc_client,
-                        &mut self.key_store,
-                        genesis_info,
-                    )
-                    .process(&sub_matches, format, color)?;
-                    println!("{}", output);
-                    Ok(())
-                }
-                ("wallet", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info()?;
-                    let output = WalletSubCommand::new(
-                        &mut self.rpc_client,
-                        &mut self.key_store,
-                        Some(genesis_info),
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        true,
-                    )
-                    .process(&sub_matches, format, color)?;
-                    println!("{}", output);
-                    Ok(())
-                }
-                ("exit", _) => {
-                    return Ok(true);
-                }
-                _ => Ok(()),
-            },
+            }
             Err(err) => Err(err.to_string()),
         }
         .map(|_| false)

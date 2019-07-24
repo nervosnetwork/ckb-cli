@@ -289,11 +289,11 @@ pub struct AddressParser;
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
-        let prefix = input.chars().take(3).collect::<String>();
-        let result = Address::from_input(input);
-        if let Ok((_network, address)) = result {
+        if let Ok((_network, address)) = Address::from_input(input) {
             return Ok(address);
         }
+
+        let prefix = input.chars().take(3).collect::<String>();
         let network = NetworkType::from_prefix(prefix.as_str())
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
