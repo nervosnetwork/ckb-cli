@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use bytes::Bytes;
-use ckb_core::{block::Block, service::Request};
+use ckb_core::{block::Block, service::Request, transaction::OutPoint};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::BlockNumber;
@@ -312,22 +312,77 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                 let genesis_info = self.genesis_info()?;
                 let secp_code_hash = genesis_info.secp_code_hash();
-                let (infos, total_capacity): (Vec<LiveCellInfo>, u64) = self.with_db(|db| {
-                    let mut total_capacity = 0;
-                    let infos = db.get_live_cells_by_lock(
-                        from_address
-                            .lock_script(secp_code_hash.clone())
-                            .hash()
-                            .clone(),
-                        None,
-                        |_, info| {
-                            total_capacity += info.capacity;
-                            let stop = total_capacity >= capacity;
-                            (stop, true)
-                        },
-                    );
-                    (infos, total_capacity)
-                })?;
+
+                // For check index database is ready
+                self.with_db(|_| ())?;
+                let index_dir = self.index_dir.clone();
+                let genesis_hash = genesis_info.header().hash().clone();
+                let genesis_info_clone = genesis_info.clone();
+                let mut total_capacity = 0;
+                let terminator = |_, info: &LiveCellInfo| {
+                    let out_point = OutPoint {
+                        cell: Some(info.out_point.clone()),
+                        block_hash: None,
+                    };
+                    let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
+                        Ok(resp) => {
+                            if resp.status != "live" {
+                                eprintln!(
+                                    "[ERROR]: Invalid cell({:?}) status: {}",
+                                    info.out_point, resp.status,
+                                );
+                                return (false, false);
+                            }
+                            if let Some(output) = resp.cell {
+                                let free_cell = output.data.is_empty() && output.type_.is_none();
+                                if !free_cell {
+                                    log::info!(
+                                        "Ignore live cell({:?}) which data is not empty or type is not empty.",
+                                        info.out_point
+                                    );
+                                }
+                                free_cell
+                            } else {
+                                eprintln!(
+                                    "[ERROR]: No output found for cell: {:?}",
+                                    info.out_point,
+                                );
+                                return (false, false);
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("[ERROR]: get_live_cell by RPC call failed: {:?}", err);
+                            return (false, false);
+                        }
+                    };
+                    if push_cell {
+                        total_capacity += info.capacity;
+                    }
+                    let stop = total_capacity >= capacity;
+                    (stop, push_cell)
+                };
+                let infos: Vec<LiveCellInfo> =
+                    with_index_db(&index_dir, genesis_hash, |backend, cf| {
+                        let db = IndexDatabase::from_db(
+                            backend,
+                            cf,
+                            NetworkType::TestNet,
+                            genesis_info_clone,
+                            false,
+                        )?;
+
+                        let infos = db.get_live_cells_by_lock(
+                            from_address
+                                .lock_script(secp_code_hash.clone())
+                                .hash()
+                                .clone(),
+                            None,
+                            terminator,
+                        );
+                        Ok(infos)
+                    })
+                    .map_err(|err| err.to_string())?;
+
                 if total_capacity < capacity {
                     return Err(format!(
                         "Capacity not enough: {} => {}",
