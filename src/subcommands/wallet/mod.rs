@@ -7,14 +7,13 @@ use std::thread;
 use std::time::Duration;
 
 use bytes::Bytes;
-use ckb_core::{block::Block, service::Request};
+use ckb_core::{block::Block, service::Request, transaction::OutPoint};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::BlockNumber;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 use numext_fixed_hash::{H160, H256};
-use serde_json::json;
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -22,14 +21,15 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PubkeyHexParser,
     },
-    other::read_password,
+    other::{get_address, read_password},
     printer::{OutputFormat, Printable},
 };
+use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    with_index_db, Address, AddressFormat, GenesisInfo, HttpRpcClient, IndexDatabase, LiveCellInfo,
-    NetworkType, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    Address, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
+    MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -189,12 +189,6 @@ impl<'a> WalletSubCommand<'a> {
                             .help("Input password to unlock keystore account just for current transfer transaction")
                     )
                     ,
-                SubCommand::with_name("key-info")
-                    .about("Show public information of a secp256k1 private key (from file) or public key")
-                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                    .arg(arg_pubkey.clone().required(false))
-                    .arg(arg_address.clone().required(false))
-                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg_lock_hash.clone().required(false))
@@ -269,23 +263,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
-        fn get_address(m: &ArgMatches) -> Result<Address, String> {
-            let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
-            let pubkey: Option<secp256k1::PublicKey> =
-                PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-            let lock_arg: Option<H160> =
-                FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
-            let address = address
-                .or_else(|| {
-                    pubkey.map(|pubkey| {
-                        Address::from_pubkey(AddressFormat::default(), &pubkey.into()).unwrap()
-                    })
-                })
-                .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
-                .ok_or_else(|| "Please give one argument".to_owned())?;
-            Ok(address)
-        }
-
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let from_privkey: Option<secp256k1::SecretKey> =
@@ -335,22 +312,77 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                 let genesis_info = self.genesis_info()?;
                 let secp_code_hash = genesis_info.secp_code_hash();
-                let (infos, total_capacity): (Vec<LiveCellInfo>, u64) = self.with_db(|db| {
-                    let mut total_capacity = 0;
-                    let infos = db.get_live_cells_by_lock(
-                        from_address
-                            .lock_script(secp_code_hash.clone())
-                            .hash()
-                            .clone(),
-                        None,
-                        |_, info| {
-                            total_capacity += info.capacity;
-                            let stop = total_capacity >= capacity;
-                            (stop, true)
-                        },
-                    );
-                    (infos, total_capacity)
-                })?;
+
+                // For check index database is ready
+                self.with_db(|_| ())?;
+                let index_dir = self.index_dir.clone();
+                let genesis_hash = genesis_info.header().hash().clone();
+                let genesis_info_clone = genesis_info.clone();
+                let mut total_capacity = 0;
+                let terminator = |_, info: &LiveCellInfo| {
+                    let out_point = OutPoint {
+                        cell: Some(info.out_point.clone()),
+                        block_hash: None,
+                    };
+                    let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
+                        Ok(resp) => {
+                            if resp.status != "live" {
+                                eprintln!(
+                                    "[ERROR]: Invalid cell({:?}) status: {}",
+                                    info.out_point, resp.status,
+                                );
+                                return (false, false);
+                            }
+                            if let Some(output) = resp.cell {
+                                let free_cell = output.data.is_empty() && output.type_.is_none();
+                                if !free_cell {
+                                    log::info!(
+                                        "Ignore live cell({:?}) which data is not empty or type is not empty.",
+                                        info.out_point
+                                    );
+                                }
+                                free_cell
+                            } else {
+                                eprintln!(
+                                    "[ERROR]: No output found for cell: {:?}",
+                                    info.out_point,
+                                );
+                                return (false, false);
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("[ERROR]: get_live_cell by RPC call failed: {:?}", err);
+                            return (false, false);
+                        }
+                    };
+                    if push_cell {
+                        total_capacity += info.capacity;
+                    }
+                    let stop = total_capacity >= capacity;
+                    (stop, push_cell)
+                };
+                let infos: Vec<LiveCellInfo> =
+                    with_index_db(&index_dir, genesis_hash, |backend, cf| {
+                        let db = IndexDatabase::from_db(
+                            backend,
+                            cf,
+                            NetworkType::TestNet,
+                            genesis_info_clone,
+                            false,
+                        )?;
+
+                        let infos = db.get_live_cells_by_lock(
+                            from_address
+                                .lock_script(secp_code_hash.clone())
+                                .hash()
+                                .clone(),
+                            None,
+                            terminator,
+                        );
+                        Ok(infos)
+                    })
+                    .map_err(|err| err.to_string())?;
+
                 if total_capacity < capacity {
                     return Err(format!(
                         "Capacity not enough: {} => {}",
@@ -365,13 +397,17 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: &to_address,
                     to_capacity: capacity,
                 };
+                let inputs = infos
+                    .iter()
+                    .map(LiveCellInfo::core_input)
+                    .collect::<Vec<_>>();
                 let tx = if let Some(privkey) = from_privkey {
-                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                    tx_args.build(inputs, &genesis_info, |tx_hash| {
                         Ok(build_witness_with_key(&privkey, tx_hash))
                     })?
                 } else {
                     let lock_arg = from_account.as_ref().unwrap();
-                    tx_args.build(infos, &genesis_info, |tx_hash| {
+                    tx_args.build(inputs, &genesis_info, |tx_hash| {
                         let sign_hash = H256::from_slice(&blake2b_256(tx_hash))
                             .expect("Tx hash convert to H256 failed");
                         let signature_result = if self.interactive && !m.is_present("with-password") {
@@ -401,49 +437,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .send_transaction(tx)
                     .call()
                     .map_err(|err| format!("Send transaction error: {}", err))?;
-                Ok(resp.render(format, color))
-            }
-            ("key-info", Some(m)) => {
-                let privkey_opt: Option<secp256k1::SecretKey> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
-                let pubkey_opt = privkey_opt
-                    .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
-                    .or_else(|| pubkey_opt);
-                let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
-                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
-                });
-                let address = match pubkey_opt {
-                    Some(pubkey) => {
-                        let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
-                        Address::from_lock_arg(&pubkey_hash[0..20])?
-                    }
-                    None => get_address(m)?,
-                };
-
-                let genesis_info = self.genesis_info()?;
-                let secp_code_hash = genesis_info.secp_code_hash();
-                println!(
-                    r#"Put this config in < ckb.toml >:
-
-[block_assembler]
-code_hash = "{:#x}"
-args = ["{:#x}"]
-"#,
-                    secp_code_hash,
-                    address.hash()
-                );
-
-                let resp = json!({
-                    "pubkey": pubkey_string_opt,
-                    "address": {
-                        "testnet": address.to_string(NetworkType::TestNet),
-                        "mainnet": address.to_string(NetworkType::MainNet),
-                    },
-                    "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
-                });
                 Ok(resp.render(format, color))
             }
             ("get-capacity", Some(m)) => {

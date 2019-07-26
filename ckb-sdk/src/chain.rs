@@ -1,9 +1,9 @@
-use crate::{Address, LiveCellInfo};
+use crate::Address;
 use bytes::Bytes;
 use ckb_core::{
     block::Block,
     header::Header,
-    transaction::{CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
+    transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
     Capacity,
 };
 use ckb_crypto::secp::SECP256K1;
@@ -103,7 +103,7 @@ pub struct TransferTransactionBuilder<'a> {
 impl<'a> TransferTransactionBuilder<'a> {
     pub fn build<F>(
         &self,
-        input_infos: Vec<LiveCellInfo>,
+        inputs: Vec<CellInput>,
         genesis_info: &GenesisInfo,
         build_witness: F,
     ) -> Result<RpcTransaction, String>
@@ -113,11 +113,6 @@ impl<'a> TransferTransactionBuilder<'a> {
         assert!(self.from_capacity >= self.to_capacity);
         let secp_dep = genesis_info.secp_dep();
         let secp_code_hash = genesis_info.secp_code_hash();
-
-        let inputs = input_infos
-            .iter()
-            .map(LiveCellInfo::core_input)
-            .collect::<Vec<_>>();
 
         // TODO: calculate transaction fee
         // Send to user

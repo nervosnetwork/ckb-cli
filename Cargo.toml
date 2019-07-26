@@ -2,18 +2,19 @@
 name = "ckb-cli"
 version = "0.17.0"
 license = "MIT"
-authors = ["Linfeng Qian <thewawar@gmail.com>"]
+authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 
 [dependencies]
 numext-fixed-hash = "~0.1"
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "develop", features = ["secp", "bech32"] }
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
-ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17", features = ["secp", "bech32"] }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-util = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
 ckb-sdk = { path = "ckb-sdk" }
+ckb-index = { path = "ckb-index" }
 
 jsonrpc-client-core = "0.5.0"
 secp256k1 = {version = "0.12.2" }
@@ -25,6 +26,7 @@ clap = "2.33.0"
 serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 serde_json = "1.0"
+serde_yaml = "0.8.9"
 yaml-rust = "0.4.3"
 dtoa = "0.4"
 ansi_term = "^0.11.0"
@@ -44,7 +46,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "develop" }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
 
 [workspace]
-members = ["ckb-sdk"]
+members = ["ckb-sdk", "ckb-index"]

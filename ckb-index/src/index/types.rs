@@ -10,7 +10,8 @@ use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
-use crate::{Address, KVReader, KVTxn};
+use crate::{KVReader, KVTxn};
+use ckb_sdk::Address;
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
 const KEEP_RECENT_BLOCKS: u64 = 200;

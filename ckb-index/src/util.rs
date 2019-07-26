@@ -5,10 +5,7 @@ use std::time::{Duration, Instant};
 use numext_fixed_hash::H256;
 use rocksdb::{ColumnFamily, Options, DB};
 
-use crate::{
-    Error, ROCKSDB_COL_CELL, ROCKSDB_COL_CELL_ALIAS, ROCKSDB_COL_CELL_INPUT, ROCKSDB_COL_INDEX_DB,
-    ROCKSDB_COL_SCRIPT, ROCKSDB_COL_TX,
-};
+use crate::{Error, ROCKSDB_COL_INDEX_DB};
 
 pub fn with_rocksdb<P, T, F>(path: P, timeout: Option<Duration>, func: F) -> Result<T, Error>
 where
@@ -22,16 +19,7 @@ where
     options.create_if_missing(true);
     options.create_missing_column_families(true);
     options.set_keep_log_file_num(32);
-    let columns = vec![
-        // TODO: remove this later
-        "key",
-        ROCKSDB_COL_CELL,
-        ROCKSDB_COL_CELL_ALIAS,
-        ROCKSDB_COL_CELL_INPUT,
-        ROCKSDB_COL_SCRIPT,
-        ROCKSDB_COL_TX,
-        ROCKSDB_COL_INDEX_DB,
-    ];
+    let columns = vec![ROCKSDB_COL_INDEX_DB];
     loop {
         match DB::open_cf(&options, &path, &columns) {
             Ok(db) => break func(&db),

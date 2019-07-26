@@ -6,10 +6,11 @@ use std::fmt;
 use std::io;
 
 use ckb_core::{block::Block, header::Header, script::Script, transaction::CellOutPoint};
+use ckb_sdk::{Address, GenesisInfo, NetworkType};
 use numext_fixed_hash::H256;
 use rocksdb::{ColumnFamily, DB};
 
-use crate::{Address, GenesisInfo, KVReader, KVTxn, NetworkType, RocksReader, RocksTxn};
+use crate::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
