@@ -1,6 +1,6 @@
 [package]
 name = "ckb-index"
-version = "0.17.0"
+version = "0.18.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -14,5 +14,5 @@ log = "0.4.6"
 rocksdb = { version = "0.12.2", default-features = false }
 failure = "0.1.5"
 
-ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.17" }
+ckb-core = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.18" }
 ckb-sdk = { path = "../ckb-sdk" }
