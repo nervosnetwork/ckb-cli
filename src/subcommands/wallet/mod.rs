@@ -16,13 +16,15 @@ use ckb_types::{
     H160, H256,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 
 use super::CliSubCommand;
 use crate::utils::{
+    arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-        HexParser, PrivkeyPathParser, PubkeyHexParser,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
+        PrivkeyPathParser,
     },
     other::{get_address, read_password},
     printer::{OutputFormat, Printable},
@@ -115,146 +117,41 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     pub fn subcommand() -> App<'static, 'static> {
-        let arg_privkey = Arg::with_name("privkey-path")
-            .long("privkey-path")
-            .takes_value(true)
-            .validator(|input| PrivkeyPathParser.validate(input))
-            .help("Private key file path (only read first line)");
-        let arg_pubkey = Arg::with_name("pubkey")
-            .long("pubkey")
-            .takes_value(true)
-            .validator(|input| PubkeyHexParser.validate(input))
-            .help("Public key (hex string, compressed format)");
-        let arg_address = Arg::with_name("address")
-            .long("address")
-            .takes_value(true)
-            .validator(|input| AddressParser.validate(input))
-            .required(true)
-            .help("Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)");
-        let arg_lock_hash = Arg::with_name("lock-hash")
-            .long("lock-hash")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-            .required(true)
-            .help("Lock hash");
-        let arg_lock_arg = Arg::with_name("lock-arg")
-            .long("lock-arg")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H160>::default().validate(input))
-            .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
         SubCommand::with_name("wallet")
             .about("Tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg_privkey.clone().required_unless("from-account"))
-                    .arg(
-                        Arg::with_name("from-account")
-                            .long("from-account")
-                            .required_unless("privkey-path")
-                            .takes_value(true)
-                            .validator(|input| FixedHashParser::<H160>::default().validate(input))
-                            .help("The account's lock-arg (transfer from this account)")
-                    )
-                    .arg(
-                        Arg::with_name("to-address")
-                            .long("to-address")
-                            .takes_value(true)
-                            .validator(|input| AddressParser.validate(input))
-                            .required(true)
-                            .help("Target address"),
-                    )
-                    .arg(
-                        Arg::with_name("to-data")
-                            .long("to-data")
-                            .takes_value(true)
-                            .validator(|input| HexParser.validate(input))
-                            .help("Hex data store in target cell (optional)"),
-                    )
-                    .arg(
-                        Arg::with_name("to-data-path")
-                            .long("to-data-path")
-                            .takes_value(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("Data binary file path store in target cell (optional)"),
-                    )
-                    .arg(
-                        Arg::with_name("capacity")
-                            .long("capacity")
-                            .takes_value(true)
-                            .validator(|input| CapacityParser.validate(input))
-                            .required(true)
-                            .help("The capacity (unit: CKB, format: 123.335)"),
-                    )
-                    .arg(
-                        Arg::with_name("with-password")
-                            .long("with-password")
-                            .help("Input password to unlock keystore account just for current transfer transaction")
-                    )
-                    ,
+                    .arg(arg::privkey_path().required_unless("from-account"))
+                    .arg(arg::from_account().required_unless("privkey-path"))
+                    .arg(arg::to_address().required(true))
+                    .arg(arg::to_data())
+                    .arg(arg::to_data_path())
+                    .arg(arg::capacity().required(true))
+                    .arg(arg::with_password()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
-                    .arg(arg_lock_hash.clone().required(false))
-                    .arg(arg_address.clone().required(false))
-                    .arg(arg_pubkey.clone())
-                    .arg(arg_lock_arg.clone()),
+                    .arg(arg::lock_hash())
+                    .arg(arg::address())
+                    .arg(arg::pubkey())
+                    .arg(arg::lock_arg()),
                 SubCommand::with_name("get-live-cells")
                     .about("Get live cells by lock/type/code  hash")
-                    .arg(arg_lock_hash.clone().required(false))
-                    .arg(
-                        Arg::with_name("type-hash")
-                            .long("type-hash")
-                            .takes_value(true)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("The type script hash")
-                    )
-                    .arg(
-                        Arg::with_name("code-hash")
-                            .long("code-hash")
-                            .takes_value(true)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("The type script's code hash")
-                    )
-                    .arg(
-                        Arg::with_name("limit")
-                            .long("limit")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<usize>::default().validate(input))
-                            .default_value("15")
-                            .help("Get live cells <= limit")
-                    )
-                    .arg(
-                        Arg::with_name("from")
-                            .long("from")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .help("From block number"),
-                    )
-                    .arg(
-                        Arg::with_name("to")
-                            .long("to")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .help("To block number"),
-                    ),
+                    .arg(arg::lock_hash())
+                    .arg(arg::type_hash())
+                    .arg(arg::code_hash())
+                    .arg(arg::live_cells_limit())
+                    .arg(arg::from_block_number())
+                    .arg(arg::to_block_number()),
                 // Move to index subcommand
                 SubCommand::with_name("get-lock-by-address")
                     .about("Get lock script (include hash) by address")
-                    .arg(arg_address.clone()),
+                    .arg(arg::address().required(true)),
                 // Move to index subcommand
-                SubCommand::with_name("db-metrics")
-                    .about("Show index database metrics"),
+                SubCommand::with_name("db-metrics").about("Show index database metrics"),
                 SubCommand::with_name("top-capacity")
                     .about("Show top n capacity owned by lock script hash")
-                    .arg(
-                        Arg::with_name("number")
-                            .short("n")
-                            .long("number")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .default_value("10")
-                            .help("Get top n capacity addresses"),
-                    ),
+                    .arg(arg::top_n()),
             ])
     }
 }
