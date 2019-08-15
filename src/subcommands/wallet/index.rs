@@ -194,39 +194,50 @@ pub fn start_index_thread(
     let state_clone = Arc::clone(&state);
     let shutdown_clone = Arc::clone(&shutdown);
 
-    thread::spawn(move || {
-        loop {
-            // Wait first request
-            match try_recv(&receiver, &mut rpc_url) {
-                Some(true) => {
-                    state.write().stop();
-                    log::info!("Index database thread stopped");
-                    return;
+    thread::Builder::new()
+        .name("index".to_string())
+        .spawn(move || {
+            loop {
+                // Wait first request
+                match try_recv(&receiver, &mut rpc_url) {
+                    Some(true) => {
+                        state.write().stop();
+                        log::info!("Index database thread stopped");
+                        return;
+                    }
+                    Some(false) => break,
+                    None => thread::sleep(Duration::from_millis(100)),
                 }
-                Some(false) => break,
-                None => thread::sleep(Duration::from_millis(100)),
             }
-        }
 
-        loop {
-            match process(&receiver, &mut rpc_url, &index_dir, &state, &shutdown_clone) {
-                Ok(true) => {
-                    state.write().stop();
-                    log::info!("Index database thread stopped");
-                    break;
-                }
-                Ok(false) => {}
-                Err(err) => {
-                    state.write().error(err.clone());
-                    log::info!("rpc call or db error: {:?}", err);
-                    if shutdown_clone.load(Ordering::Relaxed) {
+            let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+            loop {
+                match process(
+                    &receiver,
+                    &mut rpc_url,
+                    &mut rpc_client,
+                    &index_dir,
+                    &state,
+                    &shutdown_clone,
+                ) {
+                    Ok(true) => {
+                        state.write().stop();
+                        log::info!("Index database thread stopped");
                         break;
                     }
-                    thread::sleep(Duration::from_secs(2));
+                    Ok(false) => {}
+                    Err(err) => {
+                        state.write().error(err.clone());
+                        log::info!("rpc call or db error: {:?}", err);
+                        if shutdown_clone.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        thread::sleep(Duration::from_secs(2));
+                    }
                 }
             }
-        }
-    });
+        })
+        .expect("Spawn index thread failed");
 
     IndexController {
         state: state_clone,
@@ -238,16 +249,20 @@ pub fn start_index_thread(
 fn process(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
     rpc_url: &mut String,
+    rpc_client: &mut HttpRpcClient,
     index_dir: &PathBuf,
     state: &Arc<RwLock<IndexThreadState>>,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<bool, String> {
+    let old_rpc_url = rpc_url.clone();
     if let Some(exit) = try_recv(&receiver, rpc_url) {
         return Ok(exit);
     }
 
     state.write().start_init();
-    let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+    if &old_rpc_url != rpc_url {
+        *rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+    }
     let genesis_block: Block = rpc_client
         .get_block_by_number(BlockNumber(0))
         .call()
