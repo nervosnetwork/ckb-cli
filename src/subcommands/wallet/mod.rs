@@ -122,8 +122,8 @@ impl<'a> WalletSubCommand<'a> {
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg::privkey_path().required_unless("from-account"))
-                    .arg(arg::from_account().required_unless("privkey-path"))
+                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(arg::from_account().required_unless(arg::privkey_path().b.name))
                     .arg(arg::to_address().required(true))
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
