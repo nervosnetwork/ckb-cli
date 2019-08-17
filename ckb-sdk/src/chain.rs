@@ -2,15 +2,16 @@ use crate::Address;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::Transaction as RpcTransaction;
-use ckb_resource::CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL;
+use ckb_resource::{CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL};
 use ckb_types::{
     bytes::Bytes,
-    core::{BlockView, Capacity, DepType, HeaderView, TransactionBuilder},
-    packed::{CellDep, CellInput, CellOutput, OutPoint, Witness},
+    core::{ScriptHashType, BlockView, Capacity, DepType, HeaderView, TransactionBuilder, TransactionView},
+    packed::{CellDep, CellInput, CellOutput, OutPoint, Witness, Script},
     prelude::*,
-    H256,
+    H256, h256,
 };
 use secp256k1::recovery::RecoverableSignature;
+use std::collections::VecDeque;
 
 pub const ONE_CKB: u64 = 100_000_000;
 // H256(secp code hash) + H160 (secp pubkey hash) + 1 (ScriptHashType) + u64(capacity) = 32 + 20 + 1 + 8 = 61
@@ -22,6 +23,8 @@ pub struct GenesisInfo {
     out_points: Vec<Vec<OutPoint>>,
     secp_data_hash: H256,
     secp_type_hash: H256,
+    dao_data_hash: H256,
+    dao_type_hash: H256,
 }
 
 impl GenesisInfo {
@@ -36,6 +39,8 @@ impl GenesisInfo {
 
         let mut secp_data_hash = None;
         let mut secp_type_hash = None;
+        let mut dao_data_hash = None;
+        let mut dao_type_hash = None;
         let out_points = genesis_block
             .transactions()
             .iter()
@@ -97,86 +102,211 @@ impl GenesisInfo {
             .dep_type(DepType::DepGroup.pack())
             .build()
     }
+
+    pub fn dao_dep(&self) -> OutPoint {
+        OutPoint {
+            cell: Some(self.out_points[0][2].clone()),
+            block_hash: None,
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct TransferTransactionBuilder<'a> {
-    pub from_address: &'a Address,
-    pub from_capacity: u64,
-    pub to_data: &'a Bytes,
-    pub to_address: &'a Address,
-    pub to_capacity: u64,
+    from_address: &'a Address,
+    from_capacity: u64,
+    to_data: &'a Bytes,
+    to_address: &'a Address,
+    to_capacity: u64,
+
+    inputs: Vec<CellInput>,
+    outputs: Vec<CellOutput>,
+    exchanges: Vec<CellOutput>,
+    deps: Vec<OutPoint>,
+    witnesses: Vec<VecDeque<Bytes>>,
 }
 
 impl<'a> TransferTransactionBuilder<'a> {
-    pub fn build<F>(
-        &self,
+    pub fn new(
+        from_address: &'a Address,
+        from_capacity: u64,
+        to_data: &'a Bytes,
+        to_address: &'a Address,
+        to_capacity: u64,
         inputs: Vec<CellInput>,
+    ) -> Self {
+        assert!(from_capacity >= to_capacity);
+
+        let mut witnesses = Vec::with_capacity(inputs.len());
+        inputs.iter().for_each(|_| witnesses.push(VecDeque::new()));
+
+        Self {
+            from_address,
+            from_capacity,
+            to_data,
+            to_address,
+            to_capacity,
+            inputs,
+            witnesses,
+
+            outputs: Vec::new(),
+            exchanges: Vec::new(),
+            deps: Vec::new(),
+        }
+    }
+
+    pub fn transfer<F>(
+        &mut self,
         genesis_info: &GenesisInfo,
         build_witness: F,
-    ) -> Result<RpcTransaction, String>
+    ) -> Result<Transaction, String>
     where
-        F: FnOnce(&H256) -> Result<Bytes, String>,
+        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
     {
-        assert!(self.from_capacity >= self.to_capacity);
-        let secp_dep = genesis_info.secp_dep();
-        let secp_type_hash = genesis_info.secp_type_hash();
+        self.deps.extend(vec![genesis_info.secp_dep()]);
+        self.build_outputs(genesis_info);
+        self.build_exchanges(genesis_info);
+        self.build_secp_witnesses(build_witness)?;
+        Ok(self.build_transaction())
+    }
 
-        // TODO: calculate transaction fee
-        // Send to user
-        let mut from_capacity = self.from_capacity;
-        let mut outputs = vec![CellOutput::new_builder()
-            .capacity(Capacity::shannons(self.to_capacity).pack())
-            .lock(self.to_address.lock_script(secp_type_hash.clone()))
-            .build()];
-        let mut outputs_data = vec![self.to_data.clone().pack()];
-        from_capacity -= self.to_capacity;
+    pub fn deposit_dao<F>(
+        &mut self,
+        genesis_info: &GenesisInfo,
+        build_witness: F,
+    ) -> Result<Transaction, String>
+    where
+        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+    {
+        self.deps
+            .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
+        self.build_outputs(genesis_info);
+        self.build_exchanges(genesis_info);
+        self.build_dao_type(genesis_info);
+        self.build_secp_witnesses(build_witness)?;
+        Ok(self.build_transaction())
+    }
 
-        if from_capacity > MIN_SECP_CELL_CAPACITY {
-            // The rest send back to sender
-            outputs.push(
-                CellOutput::new_builder()
-                    .capacity(Capacity::shannons(from_capacity).pack())
-                    .lock(self.from_address.lock_script(secp_type_hash.clone()))
-                    .build(),
-            );
-            outputs_data.push(Default::default());
+    pub fn withdraw_dao<F>(
+        &mut self,
+        withdraw_header_hash: H256,
+        genesis_info: &GenesisInfo,
+        build_witness: F,
+    ) -> Result<Transaction, String>
+    where
+        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+    {
+        self.deps.extend(vec![
+            genesis_info.secp_dep(),
+            genesis_info.dao_dep(),
+            OutPoint::new_block_hash(withdraw_header_hash),
+        ]);
+        self.build_outputs(genesis_info);
+        self.build_exchanges(genesis_info);
+        self.build_dao_witnesses();
+        self.build_secp_witnesses(build_witness)?;
+        Ok(self.build_transaction())
+    }
+
+    fn build_secp_witnesses<F>(&mut self, build_witness: F) -> Result<(), String>
+    where
+        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+    {
+        // The finalized witness is blake2b([tx_hash, witnesses[1], witnesses[2], ...)
+        let transaction = self.build_transaction();
+        let mut secp_witness_args: Vec<&[u8]> = Vec::new();
+        secp_witness_args.push(transaction.hash().as_ref());
+        let witness = &self.witnesses[0];
+        for wit in witness.iter() {
+            secp_witness_args.push(wit.as_ref());
+        }
+        let secp_witness = build_witness(&secp_witness_args)?;
+
+        // Clone the secp witness and put in the first witness for every inputs
+        for witness in self.witnesses.iter_mut() {
+            witness.push_front(secp_witness.clone());
         }
 
-        let core_tx = TransactionBuilder::default()
-            .inputs(inputs.clone())
-            .outputs(outputs.clone())
-            .outputs_data(outputs_data.clone())
-            .cell_dep(secp_dep.clone())
-            .build();
+        Ok(())
+    }
 
-        let witness: Witness = vec![build_witness(&core_tx.hash().unpack())?.pack()].pack();
-        let witnesses = inputs
-            .iter()
-            .map(|_| witness.clone().pack())
-            .collect::<Vec<_>>();
-        Ok(TransactionBuilder::default()
-            .inputs(inputs)
-            .outputs(outputs)
-            .outputs_data(outputs_data)
-            .cell_dep(secp_dep)
-            .witnesses(witnesses)
+    fn build_dao_witnesses(&mut self) {
+        // NOTE: We assume all the inputs are deposited-dao cells
+        for witness in self.witnesses.iter_mut() {
+            let dao_i = 2u64; // point to a header-only withdraw out point
+            let dao_witness = Bytes::from(dao_i.to_le_bytes().to_vec());
+            witness.push_back(dao_witness);
+        }
+    }
+
+    fn build_outputs(&mut self, genesis_info: &GenesisInfo) {
+        self.outputs.push(CellOutput {
+            capacity: Capacity::shannons(self.to_capacity),
+            data: self.to_data.clone(),
+            lock: self
+                .to_address
+                .lock_script(genesis_info.secp_code_hash().to_owned()),
+            type_: None,
+        });
+    }
+
+    // Exchange back to sender if the rest is enough to pay for a cell
+    fn build_exchanges(&mut self, genesis_info: &GenesisInfo) {
+        let rest_capacity = self.from_capacity - self.to_capacity;
+        if rest_capacity >= MIN_SECP_CELL_CAPACITY {
+            // The rest send back to sender
+            self.exchanges.push(CellOutput {
+                capacity: Capacity::shannons(rest_capacity),
+                data: Bytes::default(),
+                lock: self
+                    .from_address
+                    .lock_script(genesis_info.secp_code_hash().to_owned()),
+                type_: None,
+            });
+        }
+    }
+
+    fn build_dao_type(&mut self, genesis_info: &GenesisInfo) {
+        for output in self.outputs.iter_mut() {
+            output.type_ = Some(Script {
+                args: Vec::new(),
+                hash_type: ScriptHashType::Data,
+                code_hash: genesis_info.dao_code_hash().to_owned(),
+            });
+        }
+    }
+
+    fn build_transaction(&self) -> Transaction {
+        TransactionBuilder::default()
+            .inputs(self.inputs.clone())
+            .outputs(self.outputs.clone())
+            .outputs(self.exchanges.clone())
+            .deps(self.deps.clone())
+            .witnesses(self.witnesses.clone())
             .build()
-            .data()
-            .into())
     }
 }
 
-pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, tx_hash: &H256) -> Bytes {
-    let message = secp256k1::Message::from_slice(&blake2b_256(tx_hash))
+pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, args: &[&[u8]]) -> Bytes {
+    let message = secp256k1::Message::from_slice(&blake2b_args(args))
         .expect("Convert to secp256k1 message failed");
     serialize_signature(&SECP256K1.sign_recoverable(&message, privkey))
 }
 
-pub fn serialize_signature(signature: &RecoverableSignature) -> Bytes {
+pub fn serialize_signature(signature: &secp256k1::RecoverableSignature) -> Bytes {
     let (recov_id, data) = signature.serialize_compact();
     let mut signature_bytes = [0u8; 65];
     signature_bytes[0..64].copy_from_slice(&data[0..64]);
     signature_bytes[64] = recov_id.to_i32() as u8;
     Bytes::from(signature_bytes.to_vec())
+}
+
+pub fn blake2b_args(args: &[&[u8]]) -> [u8; 32] {
+    let mut blake2b = new_blake2b();
+    for arg in args.iter() {
+        blake2b.update(arg);
+    }
+    let mut digest = [0u8; 32];
+    blake2b.finalize(&mut digest);
+    digest
 }
