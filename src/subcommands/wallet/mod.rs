@@ -14,8 +14,9 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
+use ckb_types::packed::CellInput;
 use clap::{App, Arg, ArgMatches, SubCommand};
-use ckb_jsonrpc_types::{BlockNumber, HeaderView, TransactionView, TransactionWithStatus};
+use ckb_jsonrpc_types::{CellWithStatus, BlockNumber, HeaderView, TransactionView, TransactionWithStatus};
 use clap::{App, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 
@@ -190,38 +191,9 @@ impl<'a> WalletSubCommand<'a> {
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-
-        let to_data = match to_data_opt {
-            Some(data) => data,
-            None => {
-                if let Some(path) = m.value_of("to-data-path") {
-                    let mut content = Vec::new();
-                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                    file.read_to_end(&mut content)
-                        .map_err(|err| err.to_string())?;
-                    Bytes::from(content)
-                } else {
-                    Bytes::new()
-                }
-            }
-        };
-
-        if capacity < MIN_SECP_CELL_CAPACITY {
-            return Err(format!(
-                "Capacity can not less than {} shannons",
-                MIN_SECP_CELL_CAPACITY
-            ));
-        }
-        if capacity < MIN_SECP_CELL_CAPACITY + (to_data.len() as u64 * ONE_CKB) {
-            return Err(format!(
-                "Capacity can not hold {} bytes of data",
-                to_data.len()
-            ));
-        }
-
+        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -229,7 +201,9 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let with_password = m.is_present("with-password");
 
+        check_capacity(capacity, to_data.len())?;
         let genesis_info = self.genesis_info()?;
         let secp_code_hash = genesis_info.secp_code_hash();
 
@@ -244,39 +218,17 @@ impl<'a> WalletSubCommand<'a> {
                 cell: Some(info.out_point.clone()),
                 block_hash: None,
             };
-            let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
-                Ok(resp) => {
-                    if resp.status != "live" {
-                        eprintln!(
-                            "[ERROR]: Invalid cell({:?}) status: {}",
-                            info.out_point, resp.status,
-                        );
-                        return (false, false);
-                    }
-                    if let Some(output) = resp.cell {
-                        let free_cell = output.data.is_empty() && output.type_.is_none();
-                        if !free_cell {
-                            log::info!(
-                                "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                                info.out_point
-                            );
-                        }
-                        free_cell
-                    } else {
-                        eprintln!("[ERROR]: No output found for cell: {:?}", info.out_point,);
-                        return (false, false);
-                    }
-                }
-                Err(err) => {
-                    eprintln!("[ERROR]: get_live_cell by RPC call failed: {:?}", err);
-                    return (false, false);
-                }
-            };
-            if push_cell {
+            let resp: CellWithStatus = self
+                .rpc_client
+                .get_live_cell(out_point.into())
+                .call()
+                .expect("get_live_cell by RPC call failed");
+            if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
+                (total_capacity >= capacity, true)
+            } else {
+                (false, false)
             }
-            let stop = total_capacity >= capacity;
-            (stop, push_cell)
         };
         let infos: Vec<LiveCellInfo> = with_index_db(&index_dir, genesis_hash, |backend, cf| {
             let db = IndexDatabase::from_db(
@@ -286,16 +238,14 @@ impl<'a> WalletSubCommand<'a> {
                 genesis_info_clone,
                 false,
             )?;
-
-            let infos = db.get_live_cells_by_lock(
+            Ok(db.get_live_cells_by_lock(
                 from_address
                     .lock_script(secp_code_hash.clone())
                     .hash()
                     .clone(),
                 None,
                 terminator,
-            );
-            Ok(infos)
+            ))
         })
         .map_err(|err| err.to_string())?;
 
@@ -306,54 +256,29 @@ impl<'a> WalletSubCommand<'a> {
                 total_capacity,
             ));
         }
+        let inputs = infos
+            .iter()
+            .map(LiveCellInfo::core_input)
+            .collect::<Vec<_>>();
         let mut tx_args = TransferTransactionBuilder::new(
             &from_address,
             total_capacity,
             &to_data,
             &to_address,
             capacity,
+            inputs,
         );
-        let inputs = infos
-            .iter()
-            .map(LiveCellInfo::core_input)
-            .collect::<Vec<_>>();
-        let tx = if let Some(ref privkey) = from_privkey {
-            tx_args.transfer(inputs, &genesis_info, |args| {
+        let transaction = if let Some(ref privkey) = from_privkey {
+            tx_args.transfer(&genesis_info, |args| {
                 Ok(build_witness_with_key(privkey, args))
-            })?
+            })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
-            tx_args.transfer(inputs, &genesis_info, |args| {
-                let sign_hash = H256::from_slice(&blake2b_args(args))
-                    .expect("converting digest of [u8; 32] to H256 should be ok");
-                let signature_result = if self.interactive && !m.is_present("with-password") {
-                    self.key_store
-                        .sign_recoverable(lock_arg, &sign_hash)
-                        .map_err(|err| {
-                            match err {
-                                KeyStoreError::AccountLocked(lock_arg) => {
-                                    format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
-                                }
-                                err => err.to_string(),
-                            }
-                        })
-                } else {
-                    let password = read_password(false, None)?;
-                    self.key_store
-                        .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
-                        .map_err(|err| err.to_string())
-                };
-                signature_result.map(|signature| serialize_signature(&signature))
-            })?
-        };
-        let tx_view: TransactionView = (&Into::<Transaction>::into(tx.clone())).into();
-        println!("[Send Transaction]:\n{}", tx_view.render(format, color));
-        let resp = self
-            .rpc_client
-            .send_transaction((&tx).into())
-            .call()
-            .map_err(|err| format!("Send transaction error: {}", err))?;
-        Ok(resp.render(format, color))
+            tx_args.transfer(&genesis_info, |args| {
+                self.build_witness_with_keystore(lock_arg, args, with_password)
+            })
+        }?;
+        self.send_transaction(transaction, format, color)
     }
 
     pub fn deposit_dao(
@@ -366,38 +291,9 @@ impl<'a> WalletSubCommand<'a> {
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-
-        let to_data = match to_data_opt {
-            Some(data) => data,
-            None => {
-                if let Some(path) = m.value_of("to-data-path") {
-                    let mut content = Vec::new();
-                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                    file.read_to_end(&mut content)
-                        .map_err(|err| err.to_string())?;
-                    Bytes::from(content)
-                } else {
-                    Bytes::new()
-                }
-            }
-        };
-
-        if capacity < MIN_SECP_CELL_CAPACITY {
-            return Err(format!(
-                "Capacity can not less than {} shannons",
-                MIN_SECP_CELL_CAPACITY
-            ));
-        }
-        if capacity < MIN_SECP_CELL_CAPACITY + (to_data.len() as u64 * ONE_CKB) {
-            return Err(format!(
-                "Capacity can not hold {} bytes of data",
-                to_data.len()
-            ));
-        }
-
+        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -405,7 +301,9 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let with_password = m.is_present("with-password");
 
+        check_capacity(capacity, to_data.len())?;
         let genesis_info = self.genesis_info()?;
         let secp_code_hash = genesis_info.secp_code_hash();
 
@@ -420,39 +318,17 @@ impl<'a> WalletSubCommand<'a> {
                 cell: Some(info.out_point.clone()),
                 block_hash: None,
             };
-            let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
-                Ok(resp) => {
-                    if resp.status != "live" {
-                        eprintln!(
-                            "[ERROR]: Invalid cell({:?}) status: {}",
-                            info.out_point, resp.status,
-                        );
-                        return (false, false);
-                    }
-                    if let Some(output) = resp.cell {
-                        let free_cell = output.data.is_empty() && output.type_.is_none();
-                        if !free_cell {
-                            log::info!(
-                                "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                                info.out_point
-                            );
-                        }
-                        free_cell
-                    } else {
-                        eprintln!("[ERROR]: No output found for cell: {:?}", info.out_point,);
-                        return (false, false);
-                    }
-                }
-                Err(err) => {
-                    eprintln!("[ERROR]: get_live_cell by RPC call failed: {:?}", err);
-                    return (false, false);
-                }
-            };
-            if push_cell {
+            let resp: CellWithStatus = self
+                .rpc_client
+                .get_live_cell(out_point.into())
+                .call()
+                .expect("get_live_cell by RPC call failed");
+            if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
+                (total_capacity >= capacity, true)
+            } else {
+                (false, false)
             }
-            let stop = total_capacity >= capacity;
-            (stop, push_cell)
         };
         let infos: Vec<LiveCellInfo> = with_index_db(&index_dir, genesis_hash, |backend, cf| {
             let db = IndexDatabase::from_db(
@@ -463,15 +339,14 @@ impl<'a> WalletSubCommand<'a> {
                 false,
             )?;
 
-            let infos = db.get_live_cells_by_lock(
+            Ok(db.get_live_cells_by_lock(
                 from_address
                     .lock_script(secp_code_hash.clone())
                     .hash()
                     .clone(),
                 None,
                 terminator,
-            );
-            Ok(infos)
+            ))
         })
         .map_err(|err| err.to_string())?;
 
@@ -482,54 +357,30 @@ impl<'a> WalletSubCommand<'a> {
                 total_capacity,
             ));
         }
+
+        let inputs = infos
+            .iter()
+            .map(LiveCellInfo::core_input)
+            .collect::<Vec<_>>();
         let mut tx_args = TransferTransactionBuilder::new(
             &from_address,
             total_capacity,
             &to_data,
             &to_address,
             capacity,
+            inputs,
         );
-        let inputs = infos
-            .iter()
-            .map(LiveCellInfo::core_input)
-            .collect::<Vec<_>>();
-        let tx = if let Some(ref privkey) = from_privkey {
-            tx_args.deposit_dao(inputs, &genesis_info, |args| {
+        let transaction = if let Some(ref privkey) = from_privkey {
+            tx_args.deposit_dao(&genesis_info, |args| {
                 Ok(build_witness_with_key(privkey, args))
-            })?
+            })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
-            tx_args.deposit_dao(inputs, &genesis_info, |args| {
-                let sign_hash = H256::from_slice(&blake2b_args(args))
-                    .expect("Tx hash convert to H256 failed");
-                let signature_result = if self.interactive && !m.is_present("with-password") {
-                    self.key_store
-                        .sign_recoverable(lock_arg, &sign_hash)
-                        .map_err(|err| {
-                            match err {
-                                KeyStoreError::AccountLocked(lock_arg) => {
-                                    format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
-                                }
-                                err => err.to_string(),
-                            }
-                        })
-                } else {
-                    let password = read_password(false, None)?;
-                    self.key_store
-                        .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
-                        .map_err(|err| err.to_string())
-                };
-                signature_result.map(|signature| serialize_signature(&signature))
-            })?
-        };
-        let tx_view: TransactionView = (&Into::<Transaction>::into(tx.clone())).into();
-        println!("[Send Transaction]:\n{}", tx_view.render(format, color));
-        let resp = self
-            .rpc_client
-            .send_transaction((&tx).into())
-            .call()
-            .map_err(|err| format!("Send transaction error: {}", err))?;
-        Ok(resp.render(format, color))
+            tx_args.deposit_dao(&genesis_info, |args| {
+                self.build_witness_with_keystore(lock_arg, args, with_password)
+            })
+        }?;
+        self.send_transaction(transaction, format, color)
     }
 
     pub fn withdraw_dao(
@@ -542,38 +393,9 @@ impl<'a> WalletSubCommand<'a> {
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-
-        let to_data = match to_data_opt {
-            Some(data) => data,
-            None => {
-                if let Some(path) = m.value_of("to-data-path") {
-                    let mut content = Vec::new();
-                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                    file.read_to_end(&mut content)
-                        .map_err(|err| err.to_string())?;
-                    Bytes::from(content)
-                } else {
-                    Bytes::new()
-                }
-            }
-        };
-
-        if capacity < MIN_SECP_CELL_CAPACITY {
-            return Err(format!(
-                "Capacity can not less than {} shannons",
-                MIN_SECP_CELL_CAPACITY
-            ));
-        }
-        if capacity < MIN_SECP_CELL_CAPACITY + (to_data.len() as u64 * ONE_CKB) {
-            return Err(format!(
-                "Capacity can not hold {} bytes of data",
-                to_data.len()
-            ));
-        }
-
+        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -581,7 +403,9 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let with_password = m.is_present("with-password");
 
+        check_capacity(capacity, to_data.len())?;
         let genesis_info = self.genesis_info()?;
         let secp_code_hash = genesis_info.secp_code_hash();
 
@@ -596,43 +420,17 @@ impl<'a> WalletSubCommand<'a> {
                 cell: Some(info.out_point.clone()),
                 block_hash: None,
             };
-            let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
-                Ok(resp) => {
-                    if resp.status != "live" {
-                        eprintln!(
-                            "[ERROR]: Invalid cell({:?}) status: {}",
-                            info.out_point, resp.status,
-                        );
-                        return (false, false);
-                    }
-
-                    if let Some(output) = resp.cell {
-                        let deposited_cell = output
-                            .type_
-                            .map(|script| script.code_hash == DAO_CODE_HASH)
-                            .unwrap_or(false);
-                        if !deposited_cell {
-                            log::info!(
-                                "Ignore live cell({:?}) which type is not matched with NervosDAO type script.",
-                                info.out_point
-                            );
-                        }
-                        deposited_cell
-                    } else {
-                        eprintln!("[ERROR]: No output found for cell: {:?}", info.out_point,);
-                        return (false, false);
-                    }
-                }
-                Err(err) => {
-                    eprintln!("[ERROR]: get_live_cell by RPC call failed: {:?}", err);
-                    return (false, false);
-                }
-            };
-            if push_cell {
+            let resp: CellWithStatus = self
+                .rpc_client
+                .get_live_cell(out_point.into())
+                .call()
+                .expect("get_live_cell by RPC call failed");
+            if is_live_cell(&resp) && is_dao_cell(&resp) {
                 total_capacity += info.capacity;
+                (total_capacity >= capacity, true)
+            } else {
+                (false, false)
             }
-            let stop = total_capacity >= capacity;
-            (stop, push_cell)
         };
         let infos: Vec<LiveCellInfo> = with_index_db(&index_dir, genesis_hash, |backend, cf| {
             let db = IndexDatabase::from_db(
@@ -642,16 +440,14 @@ impl<'a> WalletSubCommand<'a> {
                 genesis_info_clone,
                 false,
             )?;
-
-            let infos = db.get_live_cells_by_lock(
+            Ok(db.get_live_cells_by_lock(
                 from_address
                     .lock_script(secp_code_hash.clone())
                     .hash()
                     .clone(),
                 None,
                 terminator,
-            );
-            Ok(infos)
+            ))
         })
         .map_err(|err| err.to_string())?;
 
@@ -662,82 +458,73 @@ impl<'a> WalletSubCommand<'a> {
                 total_capacity,
             ));
         }
+
+        let inputs = build_dao_inputs(&mut self.rpc_client, infos)?;
+        let withdraw_header_hash = build_dao_withdraw_hash(&mut self.rpc_client)?;
         let mut tx_args = TransferTransactionBuilder::new(
             &from_address,
             total_capacity,
             &to_data,
             &to_address,
             capacity,
+            inputs,
         );
-        let tip_header: HeaderView = self
-            .rpc_client
-            .get_tip_header()
-            .call()
-            .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-        let inputs = {
-            let mut inputs = Vec::with_capacity(infos.len());
-            for info in infos.iter() {
-                let previous_tx_hash = info.out_point.tx_hash.to_owned();
-                let previous_tx: TransactionWithStatus = self
-                    .rpc_client
-                    .get_transaction(previous_tx_hash.to_owned())
-                    .call()
-                    .map_err(|err| format!("Send get_transaction error: {}", err))?
-                    .0
-                    .expect("transaction of a live cell exist");
-
-                let mut live_cell_info = LiveCellInfo::core_input(info);
-                // NOTE: We assume here tip_number > input.number + DAO_MATURITY(10)
-                live_cell_info.since = tip_header.inner.number.0;
-                live_cell_info.previous_output.block_hash = previous_tx.tx_status.block_hash;
-                inputs.push(live_cell_info);
-            }
-            inputs
-        };
-        let withdraw_header_hash = {
-            const DAO_MATURITY: u64 = 10;
-            self.rpc_client
-                .get_header_by_number(BlockNumber(tip_header.inner.number.0 - DAO_MATURITY))
-                .call()
-                .map_err(|err| format!("Send get_tip_header error: {}", err))?
-                .0
-                .expect("old block exist")
-                .hash
-        };
-
-        let tx = if let Some(ref privkey) = from_privkey {
-            tx_args.withdraw_dao(inputs, withdraw_header_hash, &genesis_info, |args| {
+        let transaction = if let Some(ref privkey) = from_privkey {
+            tx_args.withdraw_dao(withdraw_header_hash, &genesis_info, |args| {
                 Ok(build_witness_with_key(privkey, args))
-            })?
+            })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
-            tx_args.withdraw_dao(inputs, withdraw_header_hash, &genesis_info, |args| {
-                let sign_hash = H256::from_slice(&blake2b_args(args)).expect("Tx hash convert to H256 failed");
-                let signature_result = if self.interactive && !m.is_present("with-password") {
-                    self.key_store
-                        .sign_recoverable(lock_arg, &sign_hash)
-                        .map_err(|err| {
-                            match err {
-                                KeyStoreError::AccountLocked(lock_arg) => {
-                                    format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
-                                }
-                                err => err.to_string(),
+            tx_args.withdraw_dao(withdraw_header_hash, &genesis_info, |args| {
+                self.build_witness_with_keystore(lock_arg, args, with_password)
+            })
+        }?;
+        self.send_transaction(transaction, format, color)
+    }
+
+    fn build_witness_with_keystore(
+        &mut self,
+        lock_arg: &H160,
+        args: &[&[u8]],
+        with_password: bool,
+    ) -> Result<Bytes, String> {
+        let sign_hash = H256::from_slice(&blake2b_args(args))
+            .expect("converting digest of [u8; 32] to H256 should be ok");
+        let signature_result = if self.interactive && !with_password {
+            self.key_store
+                    .sign_recoverable(lock_arg, &sign_hash)
+                    .map_err(|err| {
+                        match err {
+                            KeyStoreError::AccountLocked(lock_arg) => {
+                                format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
                             }
-                        })
-                } else {
-                    let password = read_password(false, None)?;
-                    self.key_store
-                        .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
-                        .map_err(|err| err.to_string())
-                };
-                signature_result.map(|signature| serialize_signature(&signature))
-            })?
+                            err => err.to_string(),
+                        }
+                    })
+        } else {
+            let password = read_password(false, None)?;
+            self.key_store
+                .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
+                .map_err(|err| err.to_string())
         };
-        let tx_view: TransactionView = (&Into::<Transaction>::into(tx.clone())).into();
-        println!("[Send Transaction]:\n{}", tx_view.render(format, color));
+        signature_result.map(|signature| serialize_signature(&signature))
+    }
+
+    fn send_transaction(
+        &mut self,
+        transaction: Transaction,
+        format: OutputFormat,
+        color: bool,
+    ) -> Result<String, String> {
+        // let transaction_view: TransactionView = (&transaction).into();
+        // println!(
+        //     "[Send Transaction]:\n{}",
+        //     transaction_view.render(format, color)
+        // );
+
         let resp = self
             .rpc_client
-            .send_transaction((&tx).into())
+            .send_transaction((&transaction).into())
             .call()
             .map_err(|err| format!("Send transaction error: {}", err))?;
         Ok(resp.render(format, color))
@@ -869,6 +656,132 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
+        }
+    }
+}
+
+fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
+    if capacity < MIN_SECP_CELL_CAPACITY {
+        return Err(format!(
+            "Capacity can not less than {} shannons",
+            MIN_SECP_CELL_CAPACITY
+        ));
+    }
+    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+        return Err(format!(
+            "Capacity can not hold {} bytes of data",
+            to_data_len
+        ));
+    }
+    Ok(())
+}
+
+fn is_live_cell(cell: &CellWithStatus) -> bool {
+    if cell.status != "live" {
+        eprintln!(
+            "[ERROR]: Not live cell({:?}) status: {}",
+            cell.cell, cell.status
+        );
+        return false;
+    }
+
+    if cell.cell.is_none() {
+        eprintln!("[ERROR]: No output found for cell: {:?}", cell.cell);
+        return false;
+    }
+
+    true
+}
+
+fn is_secp_cell(cell: &CellWithStatus) -> bool {
+    if let Some(ref output) = cell.cell {
+        if output.data.is_empty() && output.type_.is_none() {
+            return true;
+        } else {
+            log::info!(
+                "Ignore live cell({:?}) which data is not empty or type is not empty.",
+                output
+            );
+        }
+    }
+
+    false
+}
+
+fn is_dao_cell(cell: &CellWithStatus) -> bool {
+    if let Some(ref output) = cell.cell {
+        return output
+            .type_
+            .as_ref()
+            .map(|script| script.code_hash == DAO_CODE_HASH)
+            .unwrap_or(false);
+    }
+
+    false
+}
+
+fn build_dao_inputs(
+    rpc_client: &mut HttpRpcClient,
+    infos: Vec<LiveCellInfo>,
+) -> Result<Vec<CellInput>, String> {
+    // NOTE: We assume here tip_number > input.number + DAO_MATURITY(10)
+    let dao_minimal_since = {
+        let tip_header: HeaderView = rpc_client
+            .get_tip_header()
+            .call()
+            .map_err(|err| format!("Send get_tip_header error: {}", err))?;
+        tip_header.inner.number.0
+    };
+
+    let mut inputs = Vec::with_capacity(infos.len());
+    for info in infos.iter() {
+        let previous_tx_hash = info.out_point.tx_hash.to_owned();
+        let previous_tx: TransactionWithStatus = rpc_client
+            .get_transaction(previous_tx_hash.to_owned())
+            .call()
+            .map_err(|err| format!("Send get_transaction error: {}", err))?
+            .0
+            .expect("transaction of a live cell exist");
+        let mut live_cell_info = LiveCellInfo::core_input(info);
+        live_cell_info.since = dao_minimal_since;
+        live_cell_info.previous_output.block_hash = previous_tx.tx_status.block_hash;
+        inputs.push(live_cell_info);
+    }
+    Ok(inputs)
+}
+
+fn build_dao_withdraw_hash(rpc_client: &mut HttpRpcClient) -> Result<H256, String> {
+    const DAO_MATURITY: u64 = 10;
+
+    let tip_header: HeaderView = rpc_client
+        .get_tip_header()
+        .call()
+        .map_err(|err| format!("Send get_tip_header error: {}", err))?;
+    let dao_withdraw_number = tip_header.inner.number.0 - DAO_MATURITY;
+    let dao_withdraw_hash = rpc_client
+        .get_header_by_number(BlockNumber(dao_withdraw_number))
+        .call()
+        .map_err(|err| format!("Send get_header_by_number error: {}", err))?
+        .0
+        .expect("old block exist")
+        .hash;
+    Ok(dao_withdraw_hash)
+}
+
+fn to_data(m: &ArgMatches) -> Result<Bytes, String> {
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    match to_data_opt {
+        Some(data) => Ok(data),
+        None => {
+            if let Some(path) = m.value_of("to-data-path") {
+                let mut content = Vec::new();
+                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                file.read_to_end(&mut content)
+                    .map_err(|err| err.to_string())?;
+                Ok(Bytes::from(content))
+            } else {
+                Ok(Bytes::new())
+            }
         }
     }
 }
