@@ -192,8 +192,6 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -201,6 +199,8 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+        let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
@@ -292,8 +292,6 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -301,6 +299,10 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let to_address: Address = AddressParser
+            .from_matches_opt(m, "to-address", false)?
+            .unwrap_or(from_address.clone());
+        let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
@@ -394,8 +396,6 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data = to_data(m)?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -403,6 +403,10 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
         };
+        let to_address: Address = AddressParser
+            .from_matches_opt(m, "to-address", false)?
+            .unwrap_or(from_address.clone());
+        let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
