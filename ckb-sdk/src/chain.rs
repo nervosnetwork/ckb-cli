@@ -161,7 +161,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<Transaction, String>
     where
-        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
     {
         self.deps.extend(vec![genesis_info.secp_dep()]);
         self.build_outputs(genesis_info);
@@ -176,7 +176,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<Transaction, String>
     where
-        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
     {
         self.deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
@@ -194,7 +194,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<Transaction, String>
     where
-        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
     {
         self.deps.extend(vec![
             genesis_info.secp_dep(),
@@ -208,23 +208,19 @@ impl<'a> TransferTransactionBuilder<'a> {
         Ok(self.build_transaction())
     }
 
-    fn build_secp_witnesses<F>(&mut self, build_witness: F) -> Result<(), String>
+    fn build_secp_witnesses<F>(&mut self, mut build_witness: F) -> Result<(), String>
     where
-        F: FnOnce(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
     {
-        // The finalized witness is blake2b([tx_hash, witnesses[1], witnesses[2], ...)
         let transaction = self.build_transaction();
-        let mut secp_witness_args: Vec<&[u8]> = Vec::new();
-        secp_witness_args.push(transaction.hash().as_ref());
-        let witness = &self.witnesses[0];
-        for wit in witness.iter() {
-            secp_witness_args.push(wit.as_ref());
-        }
-        let secp_witness = build_witness(&secp_witness_args)?;
 
-        // Clone the secp witness and put in the first witness for every inputs
+        // The finalized witness is blake2b([tx_hash, witness[1], witness[2], ...)
         for witness in self.witnesses.iter_mut() {
-            witness.push_front(secp_witness.clone());
+            let mut secp_witness_args = vec![transaction.hash().as_ref()];
+            secp_witness_args.extend(witness.iter().map(|wit| wit.as_ref()));
+
+            let secp_witness = build_witness(&secp_witness_args)?;
+            witness.push_front(secp_witness);
         }
 
         Ok(())
