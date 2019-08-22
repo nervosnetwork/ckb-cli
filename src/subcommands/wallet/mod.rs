@@ -275,8 +275,13 @@ impl<'a> WalletSubCommand<'a> {
             })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
+            let password = if with_password {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
             tx_args.transfer(&genesis_info, |args| {
-                self.build_witness_with_keystore(lock_arg, args, with_password)
+                self.build_witness_with_keystore(lock_arg, args, &password)
             })
         }?;
         self.send_transaction(transaction, format, color)
@@ -379,8 +384,13 @@ impl<'a> WalletSubCommand<'a> {
             })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
+            let password = if with_password {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
             tx_args.deposit_dao(&genesis_info, |args| {
-                self.build_witness_with_keystore(lock_arg, args, with_password)
+                self.build_witness_with_keystore(lock_arg, args, &password)
             })
         }?;
         self.send_transaction(transaction, format, color)
@@ -480,8 +490,13 @@ impl<'a> WalletSubCommand<'a> {
             })
         } else {
             let lock_arg = from_account.as_ref().unwrap();
+            let password = if with_password {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
             tx_args.withdraw_dao(withdraw_header_hash, &genesis_info, |args| {
-                self.build_witness_with_keystore(lock_arg, args, with_password)
+                self.build_witness_with_keystore(lock_arg, args, &password)
             })
         }?;
         self.send_transaction(transaction, format, color)
@@ -491,11 +506,11 @@ impl<'a> WalletSubCommand<'a> {
         &mut self,
         lock_arg: &H160,
         args: &[&[u8]],
-        with_password: bool,
+        password: &Option<String>,
     ) -> Result<Bytes, String> {
         let sign_hash = H256::from_slice(&blake2b_args(args))
             .expect("converting digest of [u8; 32] to H256 should be ok");
-        let signature_result = if self.interactive && !with_password {
+        let signature_result = if self.interactive && password.is_none() {
             self.key_store
                     .sign_recoverable(lock_arg, &sign_hash)
                     .map_err(|err| {
@@ -506,11 +521,12 @@ impl<'a> WalletSubCommand<'a> {
                             err => err.to_string(),
                         }
                     })
-        } else {
-            let password = read_password(false, None)?;
+        } else if let Some(password) = password {
             self.key_store
                 .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
                 .map_err(|err| err.to_string())
+        } else {
+            return Err("Password required to unlock the keystore".to_owned());
         };
         signature_result.map(|signature| serialize_signature(&signature))
     }

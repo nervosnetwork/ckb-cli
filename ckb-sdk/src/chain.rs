@@ -121,7 +121,7 @@ pub struct TransferTransactionBuilder<'a> {
 
     inputs: Vec<CellInput>,
     outputs: Vec<CellOutput>,
-    exchanges: Vec<CellOutput>,
+    changes: Vec<CellOutput>,
     deps: Vec<OutPoint>,
     witnesses: Vec<VecDeque<Bytes>>,
 }
@@ -150,7 +150,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             witnesses,
 
             outputs: Vec::new(),
-            exchanges: Vec::new(),
+            changes: Vec::new(),
             deps: Vec::new(),
         }
     }
@@ -165,7 +165,7 @@ impl<'a> TransferTransactionBuilder<'a> {
     {
         self.deps.extend(vec![genesis_info.secp_dep()]);
         self.build_outputs(genesis_info);
-        self.build_exchanges(genesis_info);
+        self.build_changes(genesis_info);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
     }
@@ -181,7 +181,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         self.deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
         self.build_outputs(genesis_info);
-        self.build_exchanges(genesis_info);
+        self.build_changes(genesis_info);
         self.build_dao_type(genesis_info);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -202,7 +202,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             OutPoint::new_block_hash(withdraw_header_hash),
         ]);
         self.build_outputs(genesis_info);
-        self.build_exchanges(genesis_info);
+        self.build_changes(genesis_info);
         self.build_dao_witnesses();
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -247,11 +247,11 @@ impl<'a> TransferTransactionBuilder<'a> {
     }
 
     // Exchange back to sender if the rest is enough to pay for a cell
-    fn build_exchanges(&mut self, genesis_info: &GenesisInfo) {
+    fn build_changes(&mut self, genesis_info: &GenesisInfo) {
         let rest_capacity = self.from_capacity - self.to_capacity;
         if rest_capacity >= MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
-            self.exchanges.push(CellOutput {
+            self.changes.push(CellOutput {
                 capacity: Capacity::shannons(rest_capacity),
                 data: Bytes::default(),
                 lock: self
@@ -276,7 +276,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         TransactionBuilder::default()
             .inputs(self.inputs.clone())
             .outputs(self.outputs.clone())
-            .outputs(self.exchanges.clone())
+            .outputs(self.changes.clone())
             .deps(self.deps.clone())
             .witnesses(self.witnesses.clone())
             .build()
