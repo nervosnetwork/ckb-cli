@@ -42,6 +42,7 @@ pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
 };
+use std::collections::HashSet;
 
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -149,14 +150,14 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
                     .arg(arg::with_password()),
-                SubCommand::with_name("get-dao-capacity")
-                    .about("Get deposited capacity in NervosDAO by lock script hash or address or lock arg or pubkey")
+                SubCommand::with_name("get-capacity")
+                    .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg::lock_hash())
                     .arg(arg::address())
                     .arg(arg::pubkey())
                     .arg(arg::lock_arg()),
-                SubCommand::with_name("get-capacity")
-                    .about("Get capacity by lock script hash or address or lock arg or pubkey")
+                SubCommand::with_name("get-dao-capacity")
+                    .about("Get NervosDAO deposited capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg::lock_hash())
                     .arg(arg::address())
                     .arg(arg::pubkey())
@@ -301,7 +302,7 @@ impl<'a> WalletSubCommand<'a> {
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
-            .unwrap_or(from_address.clone());
+            .unwrap_or_else(|| from_address.clone());
         let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
@@ -405,7 +406,7 @@ impl<'a> WalletSubCommand<'a> {
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
-            .unwrap_or(from_address.clone());
+            .unwrap_or_else(|| from_address.clone());
         let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
@@ -557,6 +558,35 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     address.lock_script(secp_type_hash).calc_script_hash()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
+                let resp = serde_json::json!({
+                    "capacity": capacity,
+                });
+                Ok(resp.render(format, color))
+            }
+            ("get-dao-capacity", Some(m)) => {
+                let lock_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                let lock_hash = if let Some(lock_hash) = lock_hash_opt {
+                    lock_hash
+                } else {
+                    let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
+                    let address = get_address(m)?;
+                    address.lock_script(secp_code_hash).hash().clone()
+                };
+                let capacity = self.with_db(|db| {
+                    let infos_by_lock = db
+                        .get_live_cells_by_lock(lock_hash, Some(0), |_, _| (false, true))
+                        .into_iter()
+                        .collect::<HashSet<_>>();
+                    let infos_by_code = db
+                        .get_live_cells_by_code(DAO_CODE_HASH, Some(0), |_, _| (false, true))
+                        .into_iter()
+                        .collect::<HashSet<_>>();
+                    infos_by_lock
+                        .intersection(&infos_by_code)
+                        .map(|info| info.capacity)
+                        .sum::<u64>()
+                })?;
                 let resp = serde_json::json!({
                     "capacity": capacity,
                 });
