@@ -128,12 +128,12 @@ impl Key {
             Key::TotalCapacity => KeyType::TotalCapacity.to_bytes(),
             Key::GlobalHash(hash) => {
                 let mut bytes = KeyType::GlobalHash.to_bytes();
-                bytes.extend(bincode::serialize(hash).unwrap());
+                bytes.extend(hash.to_vec());
                 bytes
             }
             Key::TxMap(tx_hash) => {
                 let mut bytes = KeyType::TxMap.to_bytes();
-                bytes.extend(bincode::serialize(tx_hash).unwrap());
+                bytes.extend(tx_hash.to_vec());
                 bytes
             }
             Key::SecpAddrLock(address) => {
@@ -165,12 +165,12 @@ impl Key {
             }
             Key::LockScript(lock_hash) => {
                 let mut bytes = KeyType::LockScript.to_bytes();
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 bytes
             }
             Key::LockTotalCapacity(lock_hash) => {
                 let mut bytes = KeyType::LockTotalCapacity.to_bytes();
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 bytes
             }
             Key::LockTotalCapacityIndex(capacity, lock_hash) => {
@@ -178,12 +178,12 @@ impl Key {
                 let capacity = std::u64::MAX - capacity;
                 let mut bytes = KeyType::LockTotalCapacityIndex.to_bytes();
                 bytes.extend(capacity.to_be_bytes().to_vec());
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 bytes
             }
             Key::LockLiveCellIndexPrefix(lock_hash, number_opt) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -191,7 +191,7 @@ impl Key {
             }
             Key::LockLiveCellIndex(lock_hash, number, cell_index) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -199,7 +199,7 @@ impl Key {
             }
             Key::LockTx(lock_hash, number, tx_index) => {
                 let mut bytes = KeyType::LockTx.to_bytes();
-                bytes.extend(bincode::serialize(lock_hash).unwrap());
+                bytes.extend(lock_hash.to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(tx_index.to_be_bytes().to_vec());
@@ -208,7 +208,7 @@ impl Key {
 
             Key::TypeLiveCellIndexPrefix(type_hash, number_opt) => {
                 let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(type_hash).unwrap());
+                bytes.extend(type_hash.to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -216,7 +216,7 @@ impl Key {
             }
             Key::TypeLiveCellIndex(type_hash, number, cell_index) => {
                 let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(type_hash).unwrap());
+                bytes.extend(type_hash.to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -225,7 +225,7 @@ impl Key {
 
             Key::CodeLiveCellIndexPrefix(code_hash, number_opt) => {
                 let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(code_hash).unwrap());
+                bytes.extend(code_hash.to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -233,7 +233,7 @@ impl Key {
             }
             Key::CodeLiveCellIndex(code_hash, number, cell_index) => {
                 let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
-                bytes.extend(bincode::serialize(code_hash).unwrap());
+                bytes.extend(code_hash.to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -252,11 +252,11 @@ impl Key {
             KeyType::LastHeader => Key::LastHeader,
             KeyType::TotalCapacity => Key::TotalCapacity,
             KeyType::GlobalHash => {
-                let hash = bincode::deserialize(args_bytes).unwrap();
+                let hash = H256::from_slice(args_bytes).unwrap();
                 Key::GlobalHash(hash)
             }
             KeyType::TxMap => {
-                let tx_hash = bincode::deserialize(args_bytes).unwrap();
+                let tx_hash = H256::from_slice(args_bytes).unwrap();
                 Key::TxMap(tx_hash)
             }
             KeyType::SecpAddrLock => {
@@ -290,11 +290,11 @@ impl Key {
                 Key::LiveCellIndex(number, cell_index)
             }
             KeyType::LockScript => {
-                let lock_hash = bincode::deserialize(args_bytes).unwrap();
+                let lock_hash = H256::from_slice(args_bytes).unwrap();
                 Key::LockScript(lock_hash)
             }
             KeyType::LockTotalCapacity => {
-                let lock_hash = bincode::deserialize(args_bytes).unwrap();
+                let lock_hash = H256::from_slice(args_bytes).unwrap();
                 Key::LockTotalCapacity(lock_hash)
             }
             KeyType::LockTotalCapacityIndex => {
@@ -303,7 +303,7 @@ impl Key {
                 let lock_hash_bytes = &args_bytes[8..];
                 // NOTE: large capacity stay front
                 let capacity = std::u64::MAX - u64::from_be_bytes(capacity_bytes);
-                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                let lock_hash = H256::from_slice(lock_hash_bytes).unwrap();
                 Key::LockTotalCapacityIndex(capacity, lock_hash)
             }
             KeyType::LockLiveCellIndex => {
@@ -312,7 +312,7 @@ impl Key {
                 number_bytes.copy_from_slice(&args_bytes[32..40]);
                 let mut cell_index_bytes = [0u8; 8];
                 cell_index_bytes.copy_from_slice(&args_bytes[40..]);
-                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                let lock_hash = H256::from_slice(lock_hash_bytes).unwrap();
                 let number = u64::from_be_bytes(number_bytes);
                 let cell_index = CellIndex::from_bytes(cell_index_bytes);
                 Key::LockLiveCellIndex(lock_hash, number, cell_index)
@@ -323,7 +323,7 @@ impl Key {
                 let mut tx_index_bytes = [0u8; 4];
                 number_bytes.copy_from_slice(&args_bytes[32..40]);
                 tx_index_bytes.copy_from_slice(&args_bytes[40..]);
-                let lock_hash = bincode::deserialize(lock_hash_bytes).unwrap();
+                let lock_hash = H256::from_slice(lock_hash_bytes).unwrap();
                 let number = u64::from_be_bytes(number_bytes);
                 let tx_index = u32::from_be_bytes(tx_index_bytes);
                 Key::LockTx(lock_hash, number, tx_index)
@@ -334,7 +334,7 @@ impl Key {
                 number_bytes.copy_from_slice(&args_bytes[32..40]);
                 let mut cell_index_bytes = [0u8; 8];
                 cell_index_bytes.copy_from_slice(&args_bytes[40..]);
-                let type_hash = bincode::deserialize(type_hash_bytes).unwrap();
+                let type_hash = H256::from_slice(type_hash_bytes).unwrap();
                 let number = u64::from_be_bytes(number_bytes);
                 let cell_index = CellIndex::from_bytes(cell_index_bytes);
                 Key::TypeLiveCellIndex(type_hash, number, cell_index)
@@ -345,7 +345,7 @@ impl Key {
                 number_bytes.copy_from_slice(&args_bytes[32..40]);
                 let mut cell_index_bytes = [0u8; 8];
                 cell_index_bytes.copy_from_slice(&args_bytes[40..]);
-                let code_hash = bincode::deserialize(code_hash_bytes).unwrap();
+                let code_hash = H256::from_slice(code_hash_bytes).unwrap();
                 let number = u64::from_be_bytes(number_bytes);
                 let cell_index = CellIndex::from_bytes(cell_index_bytes);
                 Key::CodeLiveCellIndex(code_hash, number, cell_index)
