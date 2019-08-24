@@ -2,20 +2,17 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use bytes::Bytes;
-use ckb_core::{
-    capacity_bytes,
-    header::Header,
-    script::{Script, ScriptHashType},
-    transaction::{CellInput, CellOutput, OutPoint},
-    Capacity,
+use ckb_types::{
+    core::{Capacity, capacity_bytes, ScriptHashType},
+    packed::{Header, Script, CellInput, CellOutput, OutPoint},
+    h256, H160, H256,
+    bytes::Bytes,
 };
 use ckb_sdk::{
     wallet::KeyStore, GenesisInfo, HttpRpcClient, MockDep, MockInput, MockResourceLoader,
     MockTransaction, MockTransactionHelper, ReprMockTransaction,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
-use numext_fixed_hash::{h256, H160, H256};
 
 use super::CliSubCommand;
 use crate::utils::{

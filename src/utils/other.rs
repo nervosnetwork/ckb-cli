@@ -2,15 +2,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ckb_core::block::Block;
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     Address, GenesisInfo, HttpRpcClient,
 };
+use ckb_types::{core::BlockView, H160};
 use clap::ArgMatches;
 use colored::Colorize;
-use numext_fixed_hash::{H160, H256};
 use rpassword::prompt_password_stdout;
 
 use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, PubkeyHexParser};
@@ -52,6 +51,7 @@ pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
     Ok(address)
 }
 
+/*
 pub fn get_singer(
     key_store: KeyStore,
 ) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
@@ -68,6 +68,7 @@ pub fn get_singer(
         Ok(signature_bytes)
     }
 }
+*/
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
     if let Some(alerts) = rpc_client
@@ -107,7 +108,7 @@ pub fn get_genesis_info(
     rpc_client: &mut HttpRpcClient,
 ) -> Result<GenesisInfo, String> {
     if genesis_info.is_none() {
-        let genesis_block: Block = rpc_client
+        let genesis_block: BlockView = rpc_client
             .get_block_by_number(BlockNumber(0))
             .call()
             .map_err(|err| err.to_string())?

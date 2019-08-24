@@ -2,7 +2,7 @@ use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use numext_fixed_hash::H256;
+use ckb_types::H256;
 use rocksdb::{ColumnFamily, Options, DB};
 
 use crate::{Error, ROCKSDB_COL_INDEX_DB};

@@ -1,22 +1,25 @@
-use bytes::Bytes;
-use ckb_core::{
-    cell::{
-        resolve_transaction, BlockInfo, CellMeta, CellMetaBuilder, CellProvider, CellStatus,
-        HeaderProvider, HeaderStatus,
-    },
-    extras::BlockExt,
-    header::Header,
-    script::{Script, ScriptHashType},
-    transaction::{
-        CellInput, CellOutPoint, CellOutput, OutPoint, Transaction, TransactionBuilder, Witness,
-    },
-    Capacity, Cycle, Version,
-};
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
 use ckb_script::{DataLoader, ScriptConfig, TransactionScriptsVerifier};
+use ckb_types::{
+    prelude::*,
+    bytes::Bytes,
+    core::{
+        cell::{
+            resolve_transaction, HeaderChecker, CellStatus, CellProvider,
+            CellMeta, CellMetaBuilder,
+        },
+        BlockExt, Capacity, Cycle, HeaderView, ScriptHashType, TransactionBuilder, TransactionView,
+        Version,
+        TransactionInfo,
+    },
+    packed::{
+        Byte32, CellInput, CellOutput,
+        Header, OutPoint, Script, Transaction, Witness,
+    },
+    H160, H256,
+};
 use fnv::FnvHashSet;
-use numext_fixed_hash::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -77,7 +80,7 @@ impl MockTransaction {
     }
 
     /// Generate the core transaction
-    pub fn core_transaction(&self) -> Transaction {
+    pub fn core_transaction(&self) -> TransactionView {
         TransactionBuilder::default()
             .version(self.version.unwrap_or_default())
             .inputs(self.inputs.clone())
@@ -320,16 +323,16 @@ impl<'a> MockTransactionHelper<'a> {
 }
 
 fn cell_output_to_meta(
-    cell_out_point: CellOutPoint,
+    out_point: OutPoint,
     cell_output: CellOutput,
-    block_info: Option<BlockInfo>,
+    tx_info: Option<TransactionInfo>,
 ) -> CellMeta {
     let data_hash = cell_output.data_hash();
     let mut cell_meta_builder = CellMetaBuilder::from_cell_output(cell_output)
-        .out_point(cell_out_point.clone())
+        .out_point(out_point.clone())
         .data_hash(data_hash);
-    if let Some(block_info) = block_info {
-        cell_meta_builder = cell_meta_builder.block_info(block_info);
+    if let Some(tx_info) = tx_info {
+        cell_meta_builder = cell_meta_builder.transaction_info(tx_info);
     }
     cell_meta_builder.build()
 }
@@ -340,8 +343,8 @@ pub trait MockResourceLoader {
 }
 
 struct Resource {
-    out_point_blocks: HashMap<CellOutPoint, H256>,
-    required_cells: HashMap<CellOutPoint, CellMeta>,
+    out_point_blocks: HashMap<OutPoint, H256>,
+    required_cells: HashMap<OutPoint, (CellMeta, Bytes)>,
     required_headers: HashMap<H256, Header>,
 }
 
@@ -366,19 +369,21 @@ impl Resource {
             )
         {
             let out_point = &input.previous_output;
-            let cell_out_point = out_point.cell.clone().unwrap();
-            let mut block_info = None;
+            let out_point = out_point.cell.clone().unwrap();
+            let mut tx_info = None;
             if let Some(ref hash) = out_point.block_hash {
                 let header = loader
                     .get_header(hash.clone())?
                     .ok_or_else(|| format!("Can not get header: {:x}", hash))?;
-                block_info = Some(BlockInfo {
-                    number: header.number(),
-                    epoch: header.epoch(),
-                    hash: header.hash().clone(),
+                tx_info = Some(Transaction {
+                    block_number: header.number(),
+                    block_epoch: header.epoch(),
+                    block_hash: header.hash().clone(),
+                    // Because we can not get the index
+                    index: usize::max_value(),
                 });
                 required_headers.insert(hash.clone(), header);
-                out_point_blocks.insert(cell_out_point.clone(), hash.clone());
+                out_point_blocks.insert(out_point.clone(), hash.clone());
             }
 
             let cell_output = if is_dep {
@@ -392,8 +397,8 @@ impl Resource {
                     .get_input_cell(&input, |out_point| loader.get_live_cell(out_point))?
                     .ok_or_else(|| format!("Can not get CellOutput by input={:?}", input))?
             };
-            let cell_meta = cell_output_to_meta(cell_out_point.clone(), cell_output, block_info);
-            required_cells.insert(cell_out_point, cell_meta);
+            let cell_meta = cell_output_to_meta(out_point.clone(), cell_output, tx_info);
+            required_cells.insert(out_point, cell_meta);
         }
         Ok(Resource {
             out_point_blocks,
@@ -403,35 +408,14 @@ impl Resource {
     }
 }
 
-impl<'a> HeaderProvider for Resource {
-    fn header(&self, out_point: &OutPoint) -> HeaderStatus {
-        out_point
-            .block_hash
-            .as_ref()
-            .map(|block_hash| {
-                if let Some(block_hash) = out_point.block_hash.as_ref() {
-                    let cell_out_point = out_point.cell.as_ref().unwrap();
-                    if let Some(saved_block_hash) = self.out_point_blocks.get(cell_out_point) {
-                        if block_hash != saved_block_hash {
-                            return HeaderStatus::InclusionFaliure;
-                        }
-                    }
-                }
-                self.required_headers
-                    .get(block_hash)
-                    .cloned()
-                    .map(|header| {
-                        // TODO: query index db ensure cell_out_point match the block_hash
-                        HeaderStatus::live_header(header)
-                    })
-                    .unwrap_or(HeaderStatus::Unknown)
-            })
-            .unwrap_or(HeaderStatus::Unspecified)
+impl<'a> HeaderChecker for Resource {
+    fn is_valid(&self, block_hash: &Byte32) -> bool {
+        self.required_headers.contains_key(block_hash)
     }
 }
 
 impl CellProvider for Resource {
-    fn cell(&self, out_point: &OutPoint) -> CellStatus {
+    fn cell(&self, out_point: &OutPoint, with_data: bool) -> CellStatus {
         self.required_cells
             .get(out_point.cell.as_ref().unwrap())
             .cloned()
@@ -442,18 +426,21 @@ impl CellProvider for Resource {
 
 impl DataLoader for Resource {
     // load CellOutput
-    fn lazy_load_cell_output(&self, cell: &CellMeta) -> CellOutput {
+    fn load_cell_data(&self, cell: &CellMeta) -> Option<Bytes> {
         cell.cell_output.clone().unwrap_or_else(|| {
             self.required_cells
                 .get(&cell.out_point)
-                .and_then(|cell_meta| cell_meta.cell_output.clone())
-                .unwrap()
+                .and_then(|cell_meta| cell_meta.mem_cell_data.clone())
         })
     }
     // load BlockExt
-    fn get_block_ext(&self, _block_hash: &H256) -> Option<BlockExt> {
+    fn get_block_ext(&self, _block_hash: &Byte32) -> Option<BlockExt> {
         // TODO: visit this later
         None
+    }
+
+    fn get_header(&self, block_hash: &Byte32) -> Option<HeaderView> {
+        self.required_headers.get(block_hash.unpack()).cloned()
     }
 }
 
@@ -543,10 +530,13 @@ impl From<ReprMockTransaction> for MockTransaction {
 #[cfg(test)]
 mod test {
     use super::*;
-    use ckb_core::{block::Block, capacity_bytes};
     use ckb_crypto::secp::SECP256K1;
     use ckb_jsonrpc_types::BlockView;
-    use numext_fixed_hash::h256;
+    use ckb_types::{
+        core::{capacity_bytes, Capacity},
+        h256,
+        packed::Block,
+    };
     use rand::Rng;
 
     // NOTE: Should update when block structure changed

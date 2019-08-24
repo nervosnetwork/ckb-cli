@@ -3,14 +3,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ckb_core::block::Block;
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{
     wallet::{Key, KeyStore, MasterPrivKey},
     Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
+use ckb_types::{core::BlockView, H160, H256};
 use clap::{App, Arg, ArgMatches, SubCommand};
-use numext_fixed_hash::{H160, H256};
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -42,7 +41,7 @@ impl<'a> AccountSubCommand<'a> {
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
         if self.genesis_info.is_none() {
-            let genesis_block: Block = self
+            let genesis_block: BlockView = self
                 .rpc_client
                 .get_block_by_number(BlockNumber(0))
                 .call()
@@ -141,9 +140,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let status = timeout
                             .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
-                        let lock_hash_opt = genesis_info_opt
-                            .as_ref()
-                            .map(|info| address.lock_script(info.secp_code_hash().clone()).hash());
+                        let lock_hash_opt = genesis_info_opt.as_ref().map(|info| {
+                            address
+                                .lock_script(info.secp_type_hash().clone())
+                                .calc_script_hash()
+                        });
                         serde_json::json!({
                             "#": idx,
                             "lock_arg": format!("{:x}", lock_arg),
@@ -169,9 +170,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map_err(|err| err.to_string())?;
                 let genesis_info_opt = self.genesis_info().ok();
                 let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
-                let lock_hash_opt = genesis_info_opt
-                    .as_ref()
-                    .map(|info| address.lock_script(info.secp_code_hash().clone()).hash());
+                let lock_hash_opt = genesis_info_opt.as_ref().map(|info| {
+                    address
+                        .lock_script(info.secp_type_hash().clone())
+                        .calc_script_hash()
+                });
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
                     "lock_hash": lock_hash_opt,

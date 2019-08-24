@@ -5,14 +5,17 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ckb_core::{block::Block, header::Header, service::Request};
 use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::HttpRpcClient;
 use ckb_sdk::{GenesisInfo, NetworkType};
+use ckb_types::{
+    core::{service::Request, BlockView, HeaderView},
+    prelude::*,
+    H256,
+};
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
-use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 pub enum IndexRequest {
@@ -39,12 +42,12 @@ pub struct SimpleBlockInfo {
     hash: H256,
 }
 
-impl From<Header> for SimpleBlockInfo {
-    fn from(header: Header) -> SimpleBlockInfo {
+impl From<HeaderView> for SimpleBlockInfo {
+    fn from(header: HeaderView) -> SimpleBlockInfo {
         SimpleBlockInfo {
             number: header.number(),
             epoch: header.epoch(),
-            hash: header.hash().clone(),
+            hash: header.hash().unpack(),
         }
     }
 }
@@ -66,7 +69,7 @@ impl IndexThreadState {
     fn start_init(&mut self) {
         *self = IndexThreadState::StartInit;
     }
-    fn processing(&mut self, header: Option<Header>, tip_number: u64) {
+    fn processing(&mut self, header: Option<HeaderView>, tip_number: u64) {
         let block_info = header.map(Into::into);
         *self = IndexThreadState::Processing(block_info, tip_number);
     }
@@ -263,7 +266,7 @@ fn process(
     if &old_rpc_url != rpc_url {
         *rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
     }
-    let genesis_block: Block = rpc_client
+    let genesis_block: BlockView = rpc_client
         .get_block_by_number(BlockNumber(0))
         .call()
         .map_err(|err| err.to_string())?
@@ -271,7 +274,7 @@ fn process(
         .expect("Can not get genesis block?")
         .into();
     let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
-    let genesis_hash = genesis_info.header().hash().clone();
+    let genesis_hash: H256 = genesis_info.header().hash().unpack();
 
     let mut next_get_tip = Instant::now();
     let mut tip_header = genesis_info.header().clone();

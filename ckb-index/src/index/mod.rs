@@ -5,9 +5,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
 
-use ckb_core::{block::Block, header::Header, script::Script, transaction::CellOutPoint};
 use ckb_sdk::{Address, GenesisInfo, NetworkType};
-use numext_fixed_hash::H256;
+use ckb_types::{
+    bytes::Bytes,
+    core::{BlockView, HeaderView},
+    packed::{Header, OutPoint, Script},
+    prelude::*,
+    H256,
+};
 use rocksdb::{ColumnFamily, DB};
 
 use crate::{KVReader, KVTxn, RocksReader, RocksTxn};
@@ -23,9 +28,9 @@ pub struct IndexDatabase<'a> {
     cf: ColumnFamily<'a>,
     // network: NetworkType,
     genesis_info: GenesisInfo,
-    last_header: Option<Header>,
-    tip_header: Header,
-    init_block_buf: Vec<Block>,
+    last_header: Option<HeaderView>,
+    tip_header: HeaderView,
+    init_block_buf: Vec<BlockView>,
     // Disable record tx info by default
     enable_explorer: bool,
 }
@@ -45,10 +50,10 @@ impl<'a> IndexDatabase<'a> {
             let reader = RocksReader::new(db, cf);
             let genesis_hash_opt = reader
                 .get(&Key::GenesisHash.to_bytes())
-                .map(|bytes| bincode::deserialize(&bytes).unwrap());
+                .map(|bytes| H256::from_slice(&bytes).unwrap());
             let network_opt = reader
                 .get(&Key::Network.to_bytes())
-                .map(|bytes| bincode::deserialize(&bytes).unwrap());
+                .map(|bytes| NetworkType::from_u8(bytes[0]).unwrap());
             (genesis_hash_opt, network_opt)
         };
         if let Some(genesis_hash) = genesis_hash_opt {
@@ -58,24 +63,24 @@ impl<'a> IndexDatabase<'a> {
                     network, network_opt
                 )));
             }
-            if &genesis_hash != genesis_header.hash() {
+            let hash: H256 = genesis_header.hash().unpack();
+            if genesis_hash != hash {
                 return Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",
-                    genesis_hash,
-                    genesis_header.hash(),
+                    genesis_hash, hash,
                 )));
             }
         } else {
             log::info!("genesis not found, init db");
             let mut writer = RocksTxn::new(db, cf);
             writer.put_pair(Key::pair_network(network));
-            writer.put_pair(Key::pair_genesis_hash(genesis_header.hash()));
+            writer.put_pair(Key::pair_genesis_hash(&genesis_header.hash().unpack()));
             writer.commit();
         }
 
         let last_header = RocksReader::new(db, cf)
             .get(&Key::LastHeader.to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap());
+            .map(|bytes| Header::new_unchecked(bytes.into()).into_view());
         Ok(IndexDatabase {
             db,
             cf,
@@ -88,25 +93,26 @@ impl<'a> IndexDatabase<'a> {
         })
     }
 
-    pub fn apply_next_block(&mut self, block: Block) -> Result<(), IndexError> {
+    pub fn apply_next_block(&mut self, block: BlockView) -> Result<(), IndexError> {
         let number = block.header().number();
+        let block_hash: H256 = block.header().hash().unpack();
         if let Some(last_header) = self.last_header.clone() {
             if number != last_header.number() + 1 {
                 return Err(IndexError::InvalidBlockNumber(number));
             }
-            if block.header().parent_hash() != last_header.hash() {
+            if block.header().parent_hash() != last_header.hash().unpack() {
                 if number == 1 {
-                    return Err(IndexError::IllegalBlock(block.header().hash().clone()));
+                    return Err(IndexError::IllegalBlock(block_hash));
                 }
 
-                log::warn!("Rollback because of block: {:#x}", block.header().hash());
+                log::warn!("Rollback because of block: {:#x}", block_hash);
                 self.init_block_buf.clear();
                 // Reload last header
                 let last_block_delta: BlockDeltaInfo = {
                     let reader = RocksReader::new(self.db, self.cf);
-                    let last_header: Header = reader
+                    let last_header: HeaderView = reader
                         .get(&Key::LastHeader.to_bytes())
-                        .map(|bytes| bincode::deserialize(&bytes).unwrap())
+                        .map(|bytes| Header::new_unchecked(bytes.into()).into_view())
                         .unwrap();
                     reader
                         .get(&Key::BlockDelta(last_header.number()).to_bytes())
@@ -116,7 +122,7 @@ impl<'a> IndexDatabase<'a> {
                 let mut txn = RocksTxn::new(self.db, self.cf);
                 last_block_delta.rollback(&mut txn);
                 txn.commit();
-                self.last_header = last_block_delta.parent_header;
+                self.last_header = last_block_delta.parent_header();
                 return Ok(());
             }
             if number > self.tip_header.number() {
@@ -125,11 +131,11 @@ impl<'a> IndexDatabase<'a> {
             self.apply_block_unchecked(block);
             Ok(())
         } else if number == 0 {
-            if block.header().hash() != self.genesis_info.header().hash() {
+            let genesis_hash = self.genesis_info.header().hash().unpack();
+            if block_hash != genesis_hash {
                 Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",
-                    block.header().hash(),
-                    self.genesis_info.header().hash(),
+                    block_hash, genesis_hash,
                 )))
             } else {
                 self.apply_block_unchecked(block);
@@ -140,16 +146,16 @@ impl<'a> IndexDatabase<'a> {
         }
     }
 
-    pub fn update_tip(&mut self, header: Header) {
+    pub fn update_tip(&mut self, header: HeaderView) {
         self.tip_header = header
     }
 
-    pub fn last_header(&self) -> Option<&Header> {
+    pub fn last_header(&self) -> Option<&HeaderView> {
         self.last_header.as_ref()
     }
 
     pub fn last_number(&self) -> Option<u64> {
-        self.last_header.as_ref().map(Header::number)
+        self.last_header.as_ref().map(HeaderView::number)
     }
 
     pub fn next_number(&self) -> Option<u64> {
@@ -160,11 +166,11 @@ impl<'a> IndexDatabase<'a> {
         reader
             .get(&Key::LockScript(lock_hash).to_bytes())
             .and_then(|bytes| {
-                let script: Script = bincode::deserialize(&bytes).unwrap();
-                script
-                    .args
-                    .get(0)
-                    .and_then(|arg| Address::from_lock_arg(&arg).ok())
+                let script = Script::new_unchecked(bytes.into());
+                script.args().get(0).and_then(|arg| {
+                    let arg: Bytes = arg.unpack();
+                    Address::from_lock_arg(&arg).ok()
+                })
             })
     }
 
@@ -172,21 +178,25 @@ impl<'a> IndexDatabase<'a> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
             .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+            .map(|bytes| {
+                let mut data = [0u8; 8];
+                data.copy_from_slice(&bytes[..8]);
+                u64::from_le_bytes(data)
+            })
     }
 
     pub fn get_lock_hash_by_address(&self, address: Address) -> Option<H256> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
             .get(&Key::SecpAddrLock(address).to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+            .map(|bytes| H256::from_slice(&bytes).unwrap())
     }
 
     pub fn get_lock_script_by_hash(&self, lock_hash: H256) -> Option<Script> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
             .get(&Key::LockScript(lock_hash).to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+            .map(|bytes| Script::new_unchecked(bytes.into()))
     }
 
     // pub fn get_address(&self, lock_hash: H256) -> Option<Address> {
@@ -233,10 +243,7 @@ impl<'a> IndexDatabase<'a> {
         key_start: Key,
         mut terminator: F,
     ) -> Vec<LiveCellInfo> {
-        fn get_live_cell_info(
-            reader: &RocksReader,
-            out_point: CellOutPoint,
-        ) -> Option<LiveCellInfo> {
+        fn get_live_cell_info(reader: &RocksReader, out_point: OutPoint) -> Option<LiveCellInfo> {
             reader
                 .get(&Key::LiveCellMap(out_point).to_bytes())
                 .map(|bytes| bincode::deserialize(&bytes).unwrap())
@@ -252,7 +259,7 @@ impl<'a> IndexDatabase<'a> {
                 log::debug!("Reach the end of this lock");
                 break;
             }
-            let out_point: CellOutPoint = bincode::deserialize(&value_bytes).unwrap();
+            let out_point = OutPoint::new_unchecked(value_bytes.into());
             let live_cell_info = get_live_cell_info(&reader, out_point).unwrap();
             let (stop, push_info) = terminator(idx, &live_cell_info);
             if push_info {
@@ -289,9 +296,10 @@ impl<'a> IndexDatabase<'a> {
         pairs
     }
 
-    fn apply_block_unchecked(&mut self, block: Block) {
+    fn apply_block_unchecked(&mut self, block: BlockView) {
         let header = block.header();
-        log::debug!("Block: {} => {:x}", header.number(), header.hash());
+        let block_hash: H256 = header.hash().unpack();
+        log::debug!("Block: {} => {:x}", header.number(), block_hash);
 
         // TODO: should forbid query when Init
         self.last_header = Some(header.clone());
@@ -308,10 +316,12 @@ impl<'a> IndexDatabase<'a> {
             blocks
         };
 
-        let secp_code_hash = self.genesis_info.secp_code_hash();
+        let secp_data_hash = self.genesis_info.secp_type_hash();
+        let secp_type_hash = self.genesis_info.secp_type_hash();
         let mut txn = RocksTxn::new(self.db, self.cf);
         for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_block(&block, &txn, secp_code_hash);
+            let block_delta_info =
+                BlockDeltaInfo::from_block(&block, &txn, secp_data_hash, secp_type_hash);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
             let result = block_delta_info.apply(&mut txn, self.enable_explorer);

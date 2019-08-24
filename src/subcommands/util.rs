@@ -1,9 +1,9 @@
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
+use ckb_types::H160;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
-use numext_fixed_hash::H160;
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -92,15 +92,16 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let old_address = OldAddress::new_default(address.hash().clone());
 
                 let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
-                let secp_code_hash = genesis_info.secp_code_hash();
+                let secp_type_hash = genesis_info.secp_type_hash();
                 println!(
                     r#"Put this config in < ckb.toml >:
 
 [block_assembler]
 code_hash = "{:#x}"
+hash_type = "type"
 args = ["{:#x}"]
 "#,
-                    secp_code_hash,
+                    secp_type_hash,
                     address.hash()
                 );
 
@@ -113,7 +114,7 @@ args = ["{:#x}"]
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.to_string(NetworkType::TestNet),
                     "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": address.lock_script(secp_code_hash.clone()).hash(),
+                    "lock_hash": address.lock_script(secp_type_hash.clone()).calc_script_hash(),
                 });
                 Ok(resp.render(format, color))
             }

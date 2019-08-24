@@ -1,7 +1,7 @@
 use std::io;
 
+use ckb_types::H160;
 use failure::Fail;
-use numext_fixed_hash::H160;
 
 #[derive(Debug, Fail, Eq, PartialEq)]
 pub enum Error {

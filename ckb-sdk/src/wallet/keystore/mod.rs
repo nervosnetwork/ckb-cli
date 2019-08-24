@@ -13,9 +13,10 @@ use std::time::{Duration, Instant};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
+use ckb_types::{H160, H256};
 use faster_hex::hex_decode;
-use numext_fixed_hash::{H160, H256};
 use rand::Rng;
+use secp256k1::recovery::RecoverableSignature;
 use uuid::Uuid;
 
 pub use error::Error;
@@ -164,7 +165,7 @@ impl KeyStore {
         &mut self,
         address: &H160,
         hash: &H256,
-    ) -> Result<secp256k1::RecoverableSignature, Error> {
+    ) -> Result<RecoverableSignature, Error> {
         Ok(self
             .get_timed_key(address)?
             .master_privkey()
@@ -185,7 +186,7 @@ impl KeyStore {
         address: &H160,
         hash: &H256,
         password: &[u8],
-    ) -> Result<secp256k1::RecoverableSignature, Error> {
+    ) -> Result<RecoverableSignature, Error> {
         let filepath = self.get_filepath(address)?;
         let key = self.storage.get_key(address, &filepath, password)?;
         Ok(key.master_privkey.sign_recoverable(hash))
@@ -524,7 +525,7 @@ impl MasterPrivKey {
         SECP256K1.sign(&message, &self.secp_secret_key)
     }
 
-    pub fn sign_recoverable(&self, hash: &H256) -> secp256k1::RecoverableSignature {
+    pub fn sign_recoverable(&self, hash: &H256) -> RecoverableSignature {
         let message = secp256k1::Message::from_slice(&hash[..]).expect("Convert to message failed");
         SECP256K1.sign_recoverable(&message, &self.secp_secret_key)
     }

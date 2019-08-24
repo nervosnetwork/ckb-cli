@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ckb_core::{header::Header, script::Script};
 use ckb_jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
+use ckb_types::{core::HeaderView, packed::Script, prelude::*, H256};
 use ckb_util::RwLock;
 use jsonrpc_client_core::Error as RpcError;
 
@@ -32,7 +32,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
         let local_node_info = rpc_client.local_node_info().call()?;
         let tx_pool_info = rpc_client.tx_pool_info().call()?;
         let peers = rpc_client.get_peers().call()?;
-        let tip_header: Header = rpc_client.get_tip_header().call()?.into();
+        let tip_header: HeaderView = rpc_client.get_tip_header().call()?.into();
         let new_block = {
             if state
                 .read()
@@ -42,7 +42,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
                 .unwrap_or(true)
             {
                 rpc_client
-                    .get_block(tip_header.hash().clone())
+                    .get_block(tip_header.hash().unpack())
                     .call()
                     .unwrap()
                     .0
@@ -60,8 +60,9 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
 
             // Handle fork
             if let Some(last_block) = state_mut.blocks.values().rev().next() {
-                let last_hash = last_block.header.hash();
-                if tip_header.parent_hash() != last_hash && tip_header.hash() != last_hash {
+                let last_hash: H256 = last_block.header.hash().unpack();
+                let tip_hash: H256 = tip_header.hash().unpack();
+                if tip_header.parent_hash() != last_hash && tip_hash != last_hash {
                     state_mut.blocks.clear();
                 }
             }
@@ -109,7 +110,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
 pub struct State {
     // FIXME: should handle fork (see: ckb-monitor)
     pub(crate) blocks: BTreeMap<u64, BlockInfo>,
-    pub(crate) tip_header: Option<Header>,
+    pub(crate) tip_header: Option<HeaderView>,
     pub(crate) peers: Vec<Node>,
     pub(crate) chain: Option<ChainInfo>,
     pub(crate) local_node: Option<Node>,
@@ -143,7 +144,7 @@ pub struct SummaryInfo {
 
 #[derive(Clone, Debug)]
 pub struct BlockInfo {
-    pub(crate) header: Header,
+    pub(crate) header: HeaderView,
     pub(crate) got_at: u64,
     pub(crate) uncle_count: usize,
     pub(crate) commit_tx_count: usize,

@@ -1,33 +1,32 @@
 use crate::Address;
-use bytes::Bytes;
-use ckb_core::{
-    block::Block,
-    header::Header,
-    transaction::{CellInput, CellOutPoint, CellOutput, OutPoint, TransactionBuilder},
-    Capacity,
-};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::Transaction as RpcTransaction;
-use numext_fixed_hash::{h256, H256};
+use ckb_resource::CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL;
+use ckb_types::{
+    bytes::Bytes,
+    core::{BlockView, Capacity, DepType, HeaderView, TransactionBuilder},
+    packed::{CellDep, CellInput, CellOutput, OutPoint, Witness},
+    prelude::*,
+    H256,
+};
+use secp256k1::recovery::RecoverableSignature;
 
 pub const ONE_CKB: u64 = 100_000_000;
 // H256(secp code hash) + H160 (secp pubkey hash) + 1 (ScriptHashType) + u64(capacity) = 32 + 20 + 1 + 8 = 61
 pub const MIN_SECP_CELL_CAPACITY: u64 = (32 + 20 + 1 + 8) * ONE_CKB;
 
-const SECP_CODE_HASH: H256 =
-    h256!("0x54811ce986d5c3e57eaafab22cdd080e32209e39590e204a99b32935f835a13c");
-
 #[derive(Debug, Clone)]
 pub struct GenesisInfo {
-    header: Header,
-    out_points: Vec<Vec<CellOutPoint>>,
-    secp_code_hash: H256,
+    header: HeaderView,
+    out_points: Vec<Vec<OutPoint>>,
+    secp_data_hash: H256,
+    secp_type_hash: H256,
 }
 
 impl GenesisInfo {
-    pub fn from_block(genesis_block: &Block) -> Result<GenesisInfo, String> {
-        let header = genesis_block.header().clone();
+    pub fn from_block(genesis_block: &BlockView) -> Result<GenesisInfo, String> {
+        let header = genesis_block.header();
         if header.number() != 0 {
             return Err(format!(
                 "Convert to GenesisInfo failed, block number {} > 0",
@@ -35,59 +34,68 @@ impl GenesisInfo {
             ));
         }
 
-        let mut secp_code_hash = None;
+        let mut secp_data_hash = None;
+        let mut secp_type_hash = None;
         let out_points = genesis_block
             .transactions()
             .iter()
             .enumerate()
             .map(|(tx_index, tx)| {
                 tx.outputs()
-                    .iter()
+                    .into_iter()
+                    .zip(tx.outputs_data().into_iter())
                     .enumerate()
-                    .map(|(index, output)| {
+                    .map(|(index, (output, data))| {
                         if tx_index == 0 && index == 1 {
-                            let code_hash = H256::from_slice(&blake2b_256(&output.data))
-                                .expect("Convert to H256 error");
-                            if code_hash != SECP_CODE_HASH {
+                            secp_type_hash = output
+                                .type_()
+                                .to_opt()
+                                .map(|script| script.calc_script_hash());
+                            let data_hash = CellOutput::calc_data_hash(&data.raw_data());
+                            if data_hash != CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL {
                                 log::error!(
                                     "System secp script code hash error! found: {}, expected: {}",
-                                    code_hash,
-                                    SECP_CODE_HASH,
+                                    data_hash,
+                                    CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL,
                                 );
                             }
-                            secp_code_hash = Some(code_hash);
+                            secp_data_hash = Some(data_hash);
                         }
-                        CellOutPoint {
-                            tx_hash: tx.hash().clone(),
-                            index: index as u32,
-                        }
+                        OutPoint::new(tx.hash().unpack(), index as u32)
                     })
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
-        secp_code_hash
-            .map(|secp_code_hash| GenesisInfo {
-                header,
-                out_points,
-                secp_code_hash,
-            })
-            .ok_or_else(|| "No code hash(secp) found in txs[0][1]".to_owned())
+        let secp_data_hash =
+            secp_data_hash.ok_or_else(|| "No data hash(secp) found in txs[0][1]".to_owned())?;
+        let secp_type_hash =
+            secp_type_hash.ok_or_else(|| "No type hash(secp) found in txs[0][1]".to_owned())?;
+        Ok(GenesisInfo {
+            header,
+            out_points,
+            secp_data_hash,
+            secp_type_hash,
+        })
     }
 
-    pub fn header(&self) -> &Header {
+    pub fn header(&self) -> &HeaderView {
         &self.header
     }
 
-    pub fn secp_code_hash(&self) -> &H256 {
-        &self.secp_code_hash
+    pub fn secp_data_hash(&self) -> &H256 {
+        &self.secp_data_hash
     }
 
-    pub fn secp_dep(&self) -> OutPoint {
-        OutPoint {
-            cell: Some(self.out_points[0][1].clone()),
-            block_hash: None,
-        }
+    pub fn secp_type_hash(&self) -> &H256 {
+        &self.secp_type_hash
+    }
+
+    pub fn secp_dep(&self) -> CellDep {
+        CellDep::new_builder()
+            .out_point(self.out_points[1][0].clone())
+            .dep_type(DepType::DepGroup.pack())
+            .build()
     }
 }
 
@@ -112,43 +120,49 @@ impl<'a> TransferTransactionBuilder<'a> {
     {
         assert!(self.from_capacity >= self.to_capacity);
         let secp_dep = genesis_info.secp_dep();
-        let secp_code_hash = genesis_info.secp_code_hash();
+        let secp_type_hash = genesis_info.secp_type_hash();
 
         // TODO: calculate transaction fee
         // Send to user
         let mut from_capacity = self.from_capacity;
-        let mut outputs = vec![CellOutput {
-            capacity: Capacity::shannons(self.to_capacity),
-            data: self.to_data.clone(),
-            lock: self.to_address.lock_script(secp_code_hash.clone()),
-            type_: None,
-        }];
+        let mut outputs = vec![CellOutput::new_builder()
+            .capacity(Capacity::shannons(self.to_capacity).pack())
+            .lock(self.to_address.lock_script(secp_type_hash.clone()))
+            .build()];
+        let mut outputs_data = vec![self.to_data.clone().pack()];
         from_capacity -= self.to_capacity;
 
         if from_capacity > MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
-            outputs.push(CellOutput {
-                capacity: Capacity::shannons(from_capacity),
-                data: Bytes::default(),
-                lock: self.from_address.lock_script(secp_code_hash.clone()),
-                type_: None,
-            });
+            outputs.push(
+                CellOutput::new_builder()
+                    .capacity(Capacity::shannons(from_capacity).pack())
+                    .lock(self.from_address.lock_script(secp_type_hash.clone()))
+                    .build(),
+            );
+            outputs_data.push(Default::default());
         }
 
         let core_tx = TransactionBuilder::default()
             .inputs(inputs.clone())
             .outputs(outputs.clone())
-            .dep(secp_dep.clone())
+            .outputs_data(outputs_data.clone())
+            .cell_dep(secp_dep.clone())
             .build();
 
-        let witness = vec![build_witness(core_tx.hash())?];
-        let witnesses = inputs.iter().map(|_| witness.clone()).collect::<Vec<_>>();
-        Ok((&TransactionBuilder::default()
+        let witness: Witness = vec![build_witness(&core_tx.hash().unpack())?.pack()].pack();
+        let witnesses = inputs
+            .iter()
+            .map(|_| witness.clone().pack())
+            .collect::<Vec<_>>();
+        Ok(TransactionBuilder::default()
             .inputs(inputs)
             .outputs(outputs)
-            .dep(secp_dep)
+            .outputs_data(outputs_data)
+            .cell_dep(secp_dep)
             .witnesses(witnesses)
-            .build())
+            .build()
+            .data()
             .into())
     }
 }
@@ -159,7 +173,7 @@ pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, tx_hash: &H256) ->
     serialize_signature(&SECP256K1.sign_recoverable(&message, privkey))
 }
 
-pub fn serialize_signature(signature: &secp256k1::RecoverableSignature) -> Bytes {
+pub fn serialize_signature(signature: &RecoverableSignature) -> Bytes {
     let (recov_id, data) = signature.serialize_compact();
     let mut signature_bytes = [0u8; 65];
     signature_bytes[0..64].copy_from_slice(&data[0..64]);

@@ -6,14 +6,17 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use bytes::Bytes;
-use ckb_core::{block::Block, service::Request, transaction::OutPoint};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::BlockNumber;
+use ckb_types::{
+    bytes::Bytes,
+    core::{service::Request, BlockView},
+    prelude::*,
+    H160, H256,
+};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
-use numext_fixed_hash::{H160, H256};
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -66,7 +69,7 @@ impl<'a> WalletSubCommand<'a> {
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
         if self.genesis_info.is_none() {
-            let genesis_block: Block = self
+            let genesis_block: BlockView = self
                 .rpc_client
                 .get_block_by_number(BlockNumber(0))
                 .call()
@@ -102,7 +105,7 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         let genesis_info = self.genesis_info()?;
-        let genesis_hash = genesis_info.header().hash().clone();
+        let genesis_hash: H256 = genesis_info.header().hash().unpack();
         with_index_db(&self.index_dir, genesis_hash, |backend, cf| {
             let db =
                 IndexDatabase::from_db(backend, cf, NetworkType::TestNet, genesis_info, false)?;
@@ -311,41 +314,42 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 };
 
                 let genesis_info = self.genesis_info()?;
-                let secp_code_hash = genesis_info.secp_code_hash();
+                let secp_type_hash = genesis_info.secp_type_hash();
 
                 // For check index database is ready
                 self.with_db(|_| ())?;
                 let index_dir = self.index_dir.clone();
-                let genesis_hash = genesis_info.header().hash().clone();
+                let genesis_hash: H256 = genesis_info.header().hash().unpack();
                 let genesis_info_clone = genesis_info.clone();
                 let mut total_capacity = 0;
                 let terminator = |_, info: &LiveCellInfo| {
-                    let out_point = OutPoint {
-                        cell: Some(info.out_point.clone()),
-                        block_hash: None,
-                    };
-                    let push_cell = match self.rpc_client.get_live_cell(out_point.into()).call() {
+                    let push_cell = match self
+                        .rpc_client
+                        .get_live_cell(info.out_point().into())
+                        .call()
+                    {
                         Ok(resp) => {
                             if resp.status != "live" {
                                 eprintln!(
                                     "[ERROR]: Invalid cell({:?}) status: {}",
-                                    info.out_point, resp.status,
+                                    info.out_point(),
+                                    resp.status,
                                 );
                                 return (false, false);
                             }
                             if let Some(output) = resp.cell {
-                                let free_cell = output.data.is_empty() && output.type_.is_none();
+                                let free_cell = info.data_bytes == 0 && output.type_.is_none();
                                 if !free_cell {
                                     log::info!(
                                         "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                                        info.out_point
+                                        info.out_point()
                                     );
                                 }
                                 free_cell
                             } else {
                                 eprintln!(
                                     "[ERROR]: No output found for cell: {:?}",
-                                    info.out_point,
+                                    info.out_point(),
                                 );
                                 return (false, false);
                             }
@@ -373,9 +377,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                         let infos = db.get_live_cells_by_lock(
                             from_address
-                                .lock_script(secp_code_hash.clone())
-                                .hash()
-                                .clone(),
+                                .lock_script(secp_type_hash.clone())
+                                .calc_script_hash(),
                             None,
                             terminator,
                         );
@@ -397,10 +400,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: &to_address,
                     to_capacity: capacity,
                 };
-                let inputs = infos
-                    .iter()
-                    .map(LiveCellInfo::core_input)
-                    .collect::<Vec<_>>();
+                let inputs = infos.iter().map(LiveCellInfo::input).collect::<Vec<_>>();
                 let tx = if let Some(privkey) = from_privkey {
                     tx_args.build(inputs, &genesis_info, |tx_hash| {
                         Ok(build_witness_with_key(&privkey, tx_hash))
@@ -445,9 +445,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let lock_hash = if let Some(lock_hash) = lock_hash_opt {
                     lock_hash
                 } else {
-                    let secp_code_hash = self.genesis_info()?.secp_code_hash().clone();
+                    let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
                     let address = get_address(m)?;
-                    address.lock_script(secp_code_hash).hash().clone()
+                    address.lock_script(secp_type_hash).calc_script_hash()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
                 let resp = serde_json::json!({
@@ -511,14 +511,16 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
                         .map(|lock_script| {
                             let args = lock_script
-                                .args
-                                .iter()
-                                .map(|arg| hex_string(arg).unwrap())
+                                .args()
+                                .into_iter()
+                                .map(|arg| hex_string(&arg.raw_data()).unwrap())
                                 .collect::<Vec<_>>();
+                            let script_hash = lock_script.calc_script_hash();
+                            let code_hash: H256 = lock_script.code_hash().unpack();
                             serde_json::json!({
-                                "hash": lock_script.hash(),
+                                "hash": script_hash,
                                 "script": {
-                                    "code_hash": lock_script.code_hash,
+                                    "code_hash": code_hash,
                                     "args": args,
                                 }
                             })

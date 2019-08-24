@@ -19,10 +19,14 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
-use ckb_core::service::Request;
 use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{GenesisInfo, HttpRpcClient, NetworkType, ONE_CKB};
+use ckb_types::{
+    core::{service::Request, BlockView},
+    prelude::*,
+    H256,
+};
 
 use super::wallet::{IndexController, IndexRequest};
 use state::{start_rpc_thread, State, SummaryInfo};
@@ -50,7 +54,7 @@ impl TuiSubCommand {
 
     pub fn start(self) -> Result<String, String> {
         let genesis_info = {
-            let genesis_block: ckb_core::block::Block = HttpRpcClient::from_uri(&self.url)
+            let genesis_block: BlockView = HttpRpcClient::from_uri(&self.url)
                 .get_block_by_number(BlockNumber(0))
                 .call()
                 .map_err(|err| {
@@ -413,9 +417,10 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
 fn render_blocks<B: Backend>(state: &State, ctx: RenderContext<B>) {
     let blocks = state.blocks.values().rev().flat_map(|block| {
         let header = &block.header;
+        let block_hash: H256 = header.hash().unpack();
         vec![
             Text::styled(
-                format!("{} => {:x}", header.number(), header.hash(),),
+                format!("{} => {:x}", header.number(), block_hash),
                 Style::default().modifier(Modifier::BOLD),
             ),
             Text::raw(format!(
@@ -497,7 +502,7 @@ fn render_top_capacity<B: Backend>(
         .constraints([Constraint::Percentage(100)].as_ref())
         .split(ctx.rect);
     let lines = if index.state().read().is_processing() {
-        let genesis_hash = genesis_info.header().hash().clone();
+        let genesis_hash: H256 = genesis_info.header().hash().unpack();
         let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
             let db = IndexDatabase::from_db(
                 backend,

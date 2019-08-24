@@ -6,11 +6,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use ckb_core::transaction::CellOutPoint;
 use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, OldAddress, ONE_CKB};
+use ckb_types::{packed::OutPoint, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
-use numext_fixed_hash::{H160, H256};
 use url::Url;
 
 pub trait ArgParser<T> {
@@ -329,20 +328,20 @@ impl ArgParser<u64> for CapacityParser {
 }
 
 #[allow(dead_code)]
-pub struct CellOutPointParser;
+pub struct OutPointParser;
 
-impl ArgParser<CellOutPoint> for CellOutPointParser {
-    fn parse(&self, input: &str) -> Result<CellOutPoint, String> {
+impl ArgParser<OutPoint> for OutPointParser {
+    fn parse(&self, input: &str) -> Result<OutPoint, String> {
         let parts = input.split('-').collect::<Vec<_>>();
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid CellOutPoint: {}, format: {{tx-hash}}-{{index}}",
+                "Invalid OutPoint: {}, format: {{tx-hash}}-{{index}}",
                 input
             ));
         }
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
-        Ok(CellOutPoint { tx_hash, index })
+        Ok(OutPoint::new(tx_hash, index))
     }
 }
 
@@ -374,7 +373,7 @@ impl ArgParser<Duration> for DurationParser {
 
 #[cfg(test)]
 mod tests {
-    use numext_fixed_hash::{h160, h256};
+    use ckb_types::{h160, h256};
     use std::net::IpAddr;
 
     use super::*;

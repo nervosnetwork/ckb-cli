@@ -1,5 +1,5 @@
 pub mod account;
-pub mod mock_tx;
+// pub mod mock_tx;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
@@ -10,7 +10,7 @@ pub mod wallet;
 pub use self::tui::TuiSubCommand;
 
 pub use account::AccountSubCommand;
-pub use mock_tx::MockTxSubCommand;
+// pub use mock_tx::MockTxSubCommand;
 pub use rpc::RpcSubCommand;
 pub use util::UtilSubCommand;
 pub use wallet::{
