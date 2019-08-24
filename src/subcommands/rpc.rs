@@ -1,7 +1,7 @@
-use ckb_jsonrpc_types::{BlockNumber, CellOutPoint, EpochNumber, OutPoint, Unsigned};
+use ckb_jsonrpc_types::{BlockNumber, EpochNumber, OutPoint, Unsigned};
 use ckb_sdk::HttpRpcClient;
+use ckb_types::H256;
 use clap::{App, Arg, ArgMatches, SubCommand};
-use numext_fixed_hash::H256;
 
 use super::CliSubCommand;
 use crate::utils::arg_parser::{ArgParser, FixedHashParser, FromStrParser};
@@ -73,7 +73,6 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_number.clone().help("Epoch number")),
                 SubCommand::with_name("get_live_cell")
                     .about("Get live cell (live means unspent)")
-                    .arg(arg_hash.clone().required(false).help("Block hash"))
                     .arg(
                         Arg::with_name("tx-hash")
                             .long("tx-hash")
@@ -198,18 +197,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("get_live_cell", Some(m)) => {
-                let block_hash: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "hash", false)?;
-
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
                 let out_point = OutPoint {
-                    cell: Some(CellOutPoint {
-                        tx_hash,
-                        index: Unsigned(u64::from(index)),
-                    }),
-                    block_hash,
+                    tx_hash,
+                    index: Unsigned(u64::from(index)),
                 };
 
                 let resp = self

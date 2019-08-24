@@ -6,7 +6,7 @@ use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
 use serde_derive::{Deserialize, Serialize};
 
-use numext_fixed_hash::H256;
+use ckb_types::H256;
 
 #[derive(Serialize, Deserialize)]
 pub struct Nodes(pub Vec<Node>);

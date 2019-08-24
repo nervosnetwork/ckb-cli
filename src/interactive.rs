@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
-use ckb_core::{block::Block, service::Request};
 use ckb_jsonrpc_types::BlockNumber;
+use ckb_types::{core::service::Request, core::BlockView};
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -13,8 +13,13 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand,
+    CliSubCommand,
+    IndexController,
+    IndexRequest, // MockTxSubCommand,
+    RpcSubCommand,
+    UtilSubCommand,
+    WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -209,7 +214,7 @@ impl InteractiveEnv {
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
         if self.genesis_info.is_none() {
-            let genesis_block: Block = self
+            let genesis_block: BlockView = self
                 .rpc_client
                 .get_block_by_number(BlockNumber(0))
                 .call()
@@ -316,17 +321,17 @@ impl InteractiveEnv {
                         println!("{}", output);
                         Ok(())
                     }
-                    ("mock-tx", Some(sub_matches)) => {
-                        let genesis_info = self.genesis_info().ok();
-                        let output = MockTxSubCommand::new(
-                            &mut self.rpc_client,
-                            &mut self.key_store,
-                            genesis_info,
-                        )
-                        .process(&sub_matches, format, color)?;
-                        println!("{}", output);
-                        Ok(())
-                    }
+                    // ("mock-tx", Some(sub_matches)) => {
+                    //     let genesis_info = self.genesis_info().ok();
+                    //     let output = MockTxSubCommand::new(
+                    //         &mut self.rpc_client,
+                    //         &mut self.key_store,
+                    //         genesis_info,
+                    //     )
+                    //     .process(&sub_matches, format, color)?;
+                    //     println!("{}", output);
+                    //     Ok(())
+                    // }
                     ("util", Some(sub_matches)) => {
                         let genesis_info = self.genesis_info().ok();
                         let output = UtilSubCommand::new(&mut self.rpc_client, genesis_info)

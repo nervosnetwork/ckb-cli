@@ -2,7 +2,7 @@ mod basic;
 mod chain;
 mod error;
 mod rpc;
-mod transaction;
+// mod transaction;
 
 pub mod wallet;
 
@@ -13,7 +13,7 @@ pub use chain::{
 };
 pub use error::Error;
 pub use rpc::HttpRpcClient;
-pub use transaction::{
-    MockDep, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper, ReprMockDep,
-    ReprMockInput, ReprMockTransaction,
-};
+// pub use transaction::{
+//     MockDep, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper, ReprMockDep,
+//     ReprMockInput, ReprMockTransaction,
+// };

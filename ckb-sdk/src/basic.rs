@@ -2,10 +2,8 @@ use std::fmt;
 use std::str::FromStr;
 
 use bech32::{convert_bits, Bech32, ToBase32};
-use bytes::Bytes;
-use ckb_core::script::{Script, ScriptHashType};
 use ckb_hash::blake2b_256;
-use numext_fixed_hash::{H160, H256};
+use ckb_types::{bytes::Bytes, core::ScriptHashType, packed::Script, prelude::*, H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
 pub use old_addr::{Address as OldAddress, AddressFormat as OldAddressFormat};
@@ -14,12 +12,21 @@ const PREFIX_MAINNET: &str = "ckb";
 const PREFIX_TESTNET: &str = "ckt";
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
+#[repr(u8)]
 pub enum NetworkType {
-    MainNet,
-    TestNet,
+    MainNet = 0,
+    TestNet = 1,
 }
 
 impl NetworkType {
+    pub fn from_u8(v: u8) -> Option<NetworkType> {
+        match v {
+            0 => Some(NetworkType::MainNet),
+            1 => Some(NetworkType::TestNet),
+            _ => None,
+        }
+    }
+
     pub fn from_prefix(value: &str) -> Option<NetworkType> {
         match value {
             PREFIX_MAINNET => Some(NetworkType::MainNet),
@@ -88,12 +95,12 @@ impl Address {
         &self.hash
     }
 
-    pub fn lock_script(&self, code_hash: H256) -> Script {
-        Script {
-            args: vec![Bytes::from(self.hash.as_bytes())],
-            code_hash,
-            hash_type: ScriptHashType::Data,
-        }
+    pub fn lock_script(&self, type_hash: H256) -> Script {
+        Script::new_builder()
+            .args(vec![Bytes::from(self.hash.as_bytes()).pack()].pack())
+            .code_hash(type_hash.pack())
+            .hash_type(ScriptHashType::Type.pack())
+            .build()
     }
 
     pub fn from_pubkey(pubkey: &secp256k1::PublicKey) -> Result<Address, String> {
@@ -144,6 +151,7 @@ mod old_addr {
         ScriptHashType, Serialize, ToBase32, H160, H256,
     };
     use ckb_crypto::secp::Pubkey;
+    use ckb_types::prelude::*;
 
     // \x01 is the P2PH version
     const P2PH_MARK: &[u8] = b"\x01P2PH";
@@ -202,11 +210,11 @@ mod old_addr {
         }
 
         pub fn lock_script(&self, code_hash: H256) -> Script {
-            Script {
-                args: vec![Bytes::from(self.hash.as_bytes())],
-                code_hash,
-                hash_type: ScriptHashType::Data,
-            }
+            Script::new_builder()
+                .args(vec![Bytes::from(self.hash.as_bytes()).pack()].pack())
+                .code_hash(code_hash.pack())
+                .hash_type(ScriptHashType::Data.pack())
+                .build()
         }
 
         pub fn from_pubkey(format: AddressFormat, pubkey: &Pubkey) -> Result<Address, String> {
@@ -258,7 +266,7 @@ mod old_addr {
 #[cfg(test)]
 mod test {
     use super::*;
-    use numext_fixed_hash::h160;
+    use ckb_types::h160;
 
     #[test]
     fn test_address() {

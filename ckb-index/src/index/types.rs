@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use ckb_core::{
-    block::Block,
-    header::Header,
-    script::Script,
-    transaction::{CellInput, CellOutPoint, OutPoint},
+use ckb_types::{
+    bytes::Bytes,
+    core::{BlockView, Capacity, HeaderView},
+    packed::{CellInput, Header, OutPoint, Script},
+    prelude::*,
+    H256,
 };
-use numext_fixed_hash::H256;
 use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
@@ -19,16 +19,28 @@ const KEEP_RECENT_BLOCKS: u64 = 200;
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum HashType {
-    Block,
-    Transaction,
-    Lock,
-    Data,
+    Block = 0,
+    Transaction = 1,
+    Lock = 2,
+    Data = 3,
 }
+
+// impl HashType {
+//     pub(crate) fn from_u8(v: u8) -> Option<HashType> {
+//         match v {
+//             0 => Some(HashType::Block),
+//             1 => Some(HashType::Transaction),
+//             2 => Some(HashType::Lock),
+//             3 => Some(HashType::Data),
+//             _ => None,
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockDeltaInfo {
     pub(crate) header_info: HeaderInfo,
-    pub(crate) parent_header: Option<Header>,
+    pub(crate) parent_header: Option<Bytes>,
     txs: Vec<RichTxInfo>,
     locks: Vec<(H256, LockInfo)>,
     old_headers: Vec<u64>,
@@ -38,19 +50,25 @@ pub struct BlockDeltaInfo {
 }
 
 impl BlockDeltaInfo {
-    pub(crate) fn hash(&self) -> &H256 {
-        self.header_info.header.hash()
+    pub(crate) fn hash(&self) -> H256 {
+        self.header_info.header().hash().unpack()
     }
     pub(crate) fn number(&self) -> u64 {
-        self.header_info.header.number()
+        self.header_info.header().number()
+    }
+    pub(crate) fn parent_header(&self) -> Option<HeaderView> {
+        self.parent_header
+            .as_ref()
+            .map(|bytes| Header::new_unchecked(bytes.clone()).into_view())
     }
 
     pub(crate) fn from_block<'r, T: KVReader<'r>>(
-        block: &Block,
+        block: &BlockView,
         reader: &'r T,
-        secp_code_hash: &H256,
+        _secp_data_hash: &H256,
+        secp_type_hash: &H256,
     ) -> BlockDeltaInfo {
-        let block_header: Header = block.header().clone();
+        let block_header: HeaderView = block.header().clone();
         let block_number = block_header.number();
         let timestamp = block_header.timestamp();
 
@@ -88,6 +106,7 @@ impl BlockDeltaInfo {
         let mut cell_removed = 0;
         let mut cell_added = 0;
         let mut locks: HashMap<H256, LockInfo> = HashMap::default();
+        let mut live_cell_infos: HashMap<OutPoint, LiveCellInfo> = HashMap::default();
         let txs = block
             .transactions()
             .iter()
@@ -98,13 +117,17 @@ impl BlockDeltaInfo {
 
                 for out_point in tx
                     .inputs()
-                    .iter()
-                    .filter_map(|input| input.previous_output.cell.as_ref())
+                    .into_iter()
+                    .map(|input| input.previous_output())
+                    .filter(|input| !input.is_null())
                 {
-                    let live_cell_info: LiveCellInfo = reader
-                        .get(&Key::LiveCellMap(out_point.clone()).to_bytes())
-                        .map(|bytes| bincode::deserialize(&bytes).unwrap())
-                        .unwrap();
+                    let live_cell_info: LiveCellInfo =
+                        live_cell_infos.get(&out_point).cloned().unwrap_or_else(|| {
+                            reader
+                                .get(&Key::LiveCellMap(out_point.clone()).to_bytes())
+                                .map(|bytes| bincode::deserialize(&bytes).unwrap())
+                                .unwrap()
+                        });
                     let lock_hash = live_cell_info.lock_hash.clone();
                     let capacity = live_cell_info.capacity;
                     inputs.push(live_cell_info);
@@ -114,53 +137,70 @@ impl BlockDeltaInfo {
                         .or_insert_with(move || {
                             let lock_capacity: u64 = reader
                                 .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
-                                .map(|bytes| bincode::deserialize(&bytes).unwrap())
+                                .map(|bytes| {
+                                    let mut data = [0u8; 8];
+                                    data.copy_from_slice(&bytes[..8]);
+                                    u64::from_le_bytes(data)
+                                })
                                 .unwrap_or(0);
                             LockInfo::new(lock_capacity)
                         })
                         .add_input(capacity);
                 }
 
-                for (output_index, output) in tx.outputs().iter().enumerate() {
-                    let lock: Script = output.lock.clone();
-                    let lock_hash = lock.hash();
-                    let capacity = output.capacity.as_u64();
-                    let out_point = CellOutPoint {
-                        tx_hash: tx.hash().clone(),
-                        index: output_index as u32,
-                    };
+                for (output_index, (output, data)) in tx
+                    .outputs()
+                    .into_iter()
+                    .zip(tx.outputs_data().into_iter())
+                    .enumerate()
+                {
+                    let lock: Script = output.lock().clone();
+                    let lock_hash = lock.calc_script_hash();
+                    let capacity: Capacity = output.capacity().unpack();
+                    let capacity = capacity.as_u64();
                     let cell_index = CellIndex::new(tx_index as u32, output_index as u32);
 
-                    let type_hashes = output
-                        .type_
-                        .as_ref()
-                        .map(|type_script| (type_script.code_hash.clone(), type_script.hash()));
+                    let type_hashes = output.type_().to_opt().map(|type_script| {
+                        (
+                            type_script.code_hash().unpack(),
+                            type_script.calc_script_hash(),
+                        )
+                    });
 
                     let live_cell_info = LiveCellInfo {
-                        out_point,
+                        tx_hash: tx.hash().unpack(),
+                        tx_index: output_index as u32,
+                        data_bytes: data.raw_data().len() as u64,
                         index: cell_index,
                         lock_hash: lock_hash.clone(),
                         type_hashes,
                         capacity,
                         number: block_number,
                     };
+                    let out_point = OutPoint::new(tx.hash().unpack(), output_index as u32);
+                    live_cell_infos.insert(out_point, live_cell_info.clone());
+                    // FIXME: The live cell may spend in the same block
                     outputs.push(live_cell_info);
 
                     let lock_info = locks.entry(lock_hash.clone()).or_insert_with(|| {
                         let lock_capacity: u64 = reader
                             .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
-                            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+                            .map(|bytes| {
+                                let mut data = [0u8; 8];
+                                data.copy_from_slice(&bytes[..8]);
+                                u64::from_le_bytes(data)
+                            })
                             .unwrap_or(0);
                         LockInfo::new(lock_capacity)
                     });
-                    lock_info.set_script(lock.clone(), secp_code_hash);
+                    lock_info.set_script(lock.clone(), secp_type_hash);
                     lock_info.add_output(capacity);
                 }
 
                 cell_removed += inputs.len();
                 cell_added += outputs.len();
                 RichTxInfo {
-                    tx_hash: tx.hash().clone(),
+                    tx_hash: tx.hash().clone().unpack(),
                     tx_index: tx_index as u32,
                     block_number,
                     block_timestamp: timestamp,
@@ -174,17 +214,21 @@ impl BlockDeltaInfo {
         let locks_new_total: u64 = locks.values().map(|info| info.new_total_capacity).sum();
         let old_chain_capacity: u128 = reader
             .get(&Key::TotalCapacity.to_bytes())
-            .map(|bytes| bincode::deserialize(&bytes).unwrap())
+            .map(|bytes| {
+                let mut data = [0u8; 16];
+                data.copy_from_slice(&bytes[..16]);
+                u128::from_le_bytes(data)
+            })
             .unwrap_or(0);
         let new_chain_capacity: u128 =
             old_chain_capacity - u128::from(locks_old_total) + u128::from(locks_new_total);
 
         let capacity_delta = (new_chain_capacity as i128 - old_chain_capacity as i128) as i64;
         let header_info = HeaderInfo {
-            header: block_header.clone(),
+            header: block_header.data().as_slice().into(),
             txs_size: block.transactions().len() as u32,
-            uncles_size: block.uncles().len() as u32,
-            proposals_size: block.proposals().len() as u32,
+            uncles_size: block.uncles_count() as u32,
+            proposals_size: block.union_proposal_ids().len() as u32,
             new_chain_capacity,
             capacity_delta,
             cell_removed: cell_removed as u32,
@@ -221,7 +265,8 @@ impl BlockDeltaInfo {
         txn: &mut T,
         enable_explorer: bool,
     ) -> ApplyResult {
-        let current_number = self.header_info.header.number();
+        let header = Header::new_unchecked(self.header_info.header.clone()).into_view();
+        let current_number: u64 = header.number();
         log::debug!(
             "apply block: number={}, txs={}, locks={}",
             current_number,
@@ -236,7 +281,8 @@ impl BlockDeltaInfo {
             }
 
             for LiveCellInfo {
-                out_point,
+                tx_hash,
+                tx_index,
                 lock_hash,
                 type_hashes,
                 number,
@@ -244,6 +290,7 @@ impl BlockDeltaInfo {
                 ..
             } in &tx.inputs
             {
+                let out_point = OutPoint::new(tx_hash.clone(), *tx_index);
                 if enable_explorer {
                     txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
@@ -265,13 +312,15 @@ impl BlockDeltaInfo {
 
             for live_cell_info in &tx.outputs {
                 let LiveCellInfo {
-                    out_point,
+                    tx_hash,
+                    tx_index,
                     lock_hash,
                     type_hashes,
                     number,
                     index,
                     ..
                 } = live_cell_info;
+                let out_point = OutPoint::new(tx_hash.clone(), *tx_index);
                 if enable_explorer {
                     txn.put_pair(Key::pair_lock_tx(
                         (lock_hash.clone(), *number, index.tx_index),
@@ -279,19 +328,19 @@ impl BlockDeltaInfo {
                     ));
                 }
                 txn.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
-                txn.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
+                txn.put_pair(Key::pair_live_cell_index((*number, *index), &out_point));
                 txn.put_pair(Key::pair_lock_live_cell_index(
                     (lock_hash.clone(), *number, *index),
-                    out_point,
+                    &out_point,
                 ));
                 if let Some((code_hash, script_hash)) = type_hashes {
                     txn.put_pair(Key::pair_code_live_cell_index(
                         (code_hash.clone(), *number, *index),
-                        out_point,
+                        &out_point,
                     ));
                     txn.put_pair(Key::pair_type_live_cell_index(
                         (script_hash.clone(), *number, *index),
-                        out_point,
+                        &out_point,
                     ));
                 }
             }
@@ -309,7 +358,10 @@ impl BlockDeltaInfo {
                 txn.put_pair(Key::pair_global_hash(lock_hash.clone(), HashType::Lock));
             }
             if let Some(script) = script_opt {
-                txn.put_pair(Key::pair_lock_script(lock_hash.clone(), script));
+                txn.put_pair(Key::pair_lock_script(
+                    lock_hash.clone(),
+                    &Script::new_unchecked(script.clone()),
+                ));
             }
             if let Some(address) = address_opt {
                 txn.put_pair(Key::pair_secp_addr_lock(address.clone(), &lock_hash));
@@ -362,7 +414,9 @@ impl BlockDeltaInfo {
             txn.remove(Key::BlockDelta(*old_number).to_bytes());
         }
         // Update last header
-        txn.put_pair(Key::pair_last_header(&self.header_info.header));
+        txn.put_pair(Key::pair_last_header(&Header::new_unchecked(
+            self.header_info.header.clone(),
+        )));
 
         self.header_info.clone().into()
     }
@@ -375,41 +429,45 @@ impl BlockDeltaInfo {
             txn.remove_ok(Key::TxMap(tx.tx_hash.clone()).to_bytes());
             for live_cell_info in &tx.inputs {
                 let LiveCellInfo {
-                    out_point,
+                    tx_hash,
+                    tx_index,
                     lock_hash,
                     type_hashes,
                     number,
                     index,
                     ..
                 } = live_cell_info;
+                let out_point = OutPoint::new(tx_hash.clone(), *tx_index);
                 delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
                 txn.put_pair(Key::pair_live_cell_map(out_point.clone(), live_cell_info));
-                txn.put_pair(Key::pair_live_cell_index((*number, *index), out_point));
+                txn.put_pair(Key::pair_live_cell_index((*number, *index), &out_point));
                 txn.put_pair(Key::pair_lock_live_cell_index(
                     (lock_hash.clone(), *number, *index),
-                    out_point,
+                    &out_point,
                 ));
                 if let Some((code_hash, script_hash)) = type_hashes {
                     txn.put_pair(Key::pair_code_live_cell_index(
                         (code_hash.clone(), *number, *index),
-                        out_point,
+                        &out_point,
                     ));
                     txn.put_pair(Key::pair_type_live_cell_index(
                         (script_hash.clone(), *number, *index),
-                        out_point,
+                        &out_point,
                     ));
                 }
             }
 
             for live_cell_info in &tx.outputs {
                 let LiveCellInfo {
-                    out_point,
+                    tx_hash,
+                    tx_index,
                     lock_hash,
                     type_hashes,
                     number,
                     index,
                     ..
                 } = live_cell_info;
+                let out_point = OutPoint::new(tx_hash.clone(), *tx_index);
                 delete_lock_txs.insert((lock_hash.clone(), *number, index.tx_index));
                 txn.remove(Key::LiveCellMap(out_point.clone()).to_bytes());
                 txn.remove(Key::LiveCellIndex(*number, *index).to_bytes());
@@ -474,13 +532,15 @@ impl BlockDeltaInfo {
         // Remove recent block
         txn.remove(Key::BlockDelta(self.number()).to_bytes());
         // Update last header
-        txn.put_pair(Key::pair_last_header(self.parent_header.as_ref().unwrap()));
+        txn.put_pair(Key::pair_last_header(&Header::new_unchecked(
+            self.parent_header.clone().unwrap(),
+        )));
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockInfo {
-    script_opt: Option<Script>,
+    script_opt: Option<Bytes>,
     address_opt: Option<Address>,
     old_total_capacity: u64,
     new_total_capacity: u64,
@@ -500,11 +560,12 @@ impl LockInfo {
         }
     }
 
-    fn set_script(&mut self, script: Script, secp_code_hash: &H256) {
-        let address_opt = if &script.code_hash == secp_code_hash {
-            if script.args.len() == 1 {
-                let lock_arg = &script.args[0];
-                match Address::from_lock_arg(&lock_arg) {
+    fn set_script(&mut self, script: Script, secp_type_hash: &H256) {
+        let type_hash: H256 = script.calc_script_hash();
+        let address_opt = if &type_hash == secp_type_hash {
+            if script.args().len() == 1 {
+                let lock_arg = &script.args().get(0).unwrap();
+                match Address::from_lock_arg(lock_arg.as_slice()) {
                     Ok(address) => Some(address),
                     Err(err) => {
                         log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
@@ -518,7 +579,7 @@ impl LockInfo {
         } else {
             None
         };
-        self.script_opt = Some(script);
+        self.script_opt = Some(script.as_slice().into());
         self.address_opt = address_opt;
     }
 
@@ -544,7 +605,9 @@ pub(crate) struct ApplyResult {
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct LiveCellInfo {
-    pub out_point: CellOutPoint,
+    pub tx_hash: H256,
+    pub tx_index: u32,
+    pub data_bytes: u64,
     pub lock_hash: H256,
     // Type script's code_hash and script_hash
     pub type_hashes: Option<(H256, H256)>,
@@ -557,14 +620,11 @@ pub struct LiveCellInfo {
 }
 
 impl LiveCellInfo {
-    pub fn core_input(&self) -> CellInput {
-        CellInput {
-            previous_output: OutPoint {
-                cell: Some(self.out_point.clone()),
-                block_hash: None,
-            },
-            since: 0,
-        }
+    pub fn out_point(&self) -> OutPoint {
+        OutPoint::new(self.tx_hash.clone(), self.tx_index)
+    }
+    pub fn input(&self) -> CellInput {
+        CellInput::new(self.out_point(), 0)
     }
 }
 
@@ -607,7 +667,7 @@ impl CellIndex {
 
 #[derive(Debug, Eq, PartialEq, Clone, Serialize, Deserialize)]
 pub struct HeaderInfo {
-    pub header: Header,
+    pub header: Bytes,
     pub txs_size: u32,
     pub uncles_size: u32,
     pub proposals_size: u32,
@@ -615,6 +675,12 @@ pub struct HeaderInfo {
     pub capacity_delta: i64,
     pub cell_removed: u32,
     pub cell_added: u32,
+}
+
+impl HeaderInfo {
+    pub fn header(&self) -> HeaderView {
+        Header::new_unchecked(self.header.clone()).into_view()
+    }
 }
 
 impl From<HeaderInfo> for ApplyResult {
@@ -650,12 +716,12 @@ impl RichTxInfo {
             inputs: self
                 .inputs
                 .iter()
-                .map(|info| info.out_point.clone())
+                .map(|info| info.out_point().as_slice().into())
                 .collect::<Vec<_>>(),
             outputs: self
                 .outputs
                 .iter()
-                .map(|info| info.out_point.clone())
+                .map(|info| info.out_point().as_slice().into())
                 .collect::<Vec<_>>(),
         }
     }
@@ -668,6 +734,21 @@ pub struct TxInfo {
     pub tx_index: u32,
     pub block_number: u64,
     pub block_timestamp: u64,
-    pub inputs: Vec<CellOutPoint>,
-    pub outputs: Vec<CellOutPoint>,
+    pub inputs: Vec<Bytes>,
+    pub outputs: Vec<Bytes>,
+}
+
+impl TxInfo {
+    pub fn inputs(&self) -> Vec<OutPoint> {
+        self.inputs
+            .iter()
+            .map(|data| OutPoint::new_unchecked(data.clone()))
+            .collect::<Vec<_>>()
+    }
+    pub fn outputs(&self) -> Vec<OutPoint> {
+        self.inputs
+            .iter()
+            .map(|data| OutPoint::new_unchecked(data.clone()))
+            .collect::<Vec<_>>()
+    }
 }
