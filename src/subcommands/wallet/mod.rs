@@ -143,7 +143,7 @@ impl<'a> WalletSubCommand<'a> {
             .validator(|input| FixedHashParser::<H160>::default().validate(input))
             .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
         SubCommand::with_name("wallet")
-            .about("tranfer / query balance(with local index) / key utils")
+            .about("Tranfer / query balance(with local index) / key utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
