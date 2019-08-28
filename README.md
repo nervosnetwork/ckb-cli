@@ -23,7 +23,6 @@ CKB command line tool
 >> wallet: Tranfer / query balance(with local index) / key utils
 
     transfer               Transfer capacity to an address (can have data)
-    key-info               Show public information of a secp256k1 private key (from file) or public key
     get-capacity           Get capacity by lock script hash or address or lock arg or pubkey
     get-live-cells         Get live cells by lock script hash
     get-lock-by-address    Get lock script (include hash) by address
@@ -38,6 +37,10 @@ CKB command line tool
     unlock    Unlock an account
     update    Update password of an account
     export    Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)
+
+>> util: Utilities
+
+    key-info    Show public information of a secp256k1 private key (from file) or public key
 
 ```
 
