@@ -69,12 +69,12 @@ impl<'a> AccountSubCommand<'a> {
             .takes_value(true)
             .help("Extended private key path (include master private key and chain code)");
         SubCommand::with_name(name)
-            .about("Management accounts")
+            .about("Manage accounts")
             .subcommands(vec![
                 SubCommand::with_name("list").about("List all accounts"),
-                SubCommand::with_name("new").about("Creates a new account and prints related information."),
+                SubCommand::with_name("new").about("Create a new account and print related information."),
                 SubCommand::with_name("import")
-                    .about("Imports an unencrypted private key from <privkey-path> and creates a new account.")
+                    .about("Import an unencrypted private key from <privkey-path> and create a new account.")
                     .arg(
                         arg_privkey_path
                             .clone()

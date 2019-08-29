@@ -20,24 +20,27 @@ CKB command line tool
     tx_pool_info              Get transaction pool information
     get_blockchain_info       Get chain information
 
->> wallet: tranfer / query balance(with local index) / key utils
+>> wallet: Tranfer / query balance(with local index) / key utils
 
     transfer               Transfer capacity to an address (can have data)
-    key-info               Show public information of a secp256k1 private key (from file) or public key
     get-capacity           Get capacity by lock script hash or address or lock arg or pubkey
     get-live-cells         Get live cells by lock script hash
     get-lock-by-address    Get lock script (include hash) by address
     db-metrics             Show index database metrics
     top-capacity           Show top n capacity owned by lock script hash
-    
->> account: Account management
+
+>> account: Manage accounts
 
     list      List all accounts
-    new       Creates a new account and prints related information.
-    import    Imports an unencrypted private key from <privkey-path> and creates a new account.
+    new       Create a new account and print related information.
+    import    Import an unencrypted private key from <privkey-path> and create a new account.
     unlock    Unlock an account
     update    Update password of an account
     export    Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)
+
+>> util: Utilities
+
+    key-info    Show public information of a secp256k1 private key (from file) or public key
 
 ```
 
