@@ -2,8 +2,8 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
+use ckb_types::{H160, H256};
 use clap::Arg;
-use numext_fixed_hash::{H160, H256};
 
 pub fn privkey_path<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("privkey-path")

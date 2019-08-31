@@ -316,6 +316,7 @@ dependencies = [
  "ckb-hash 0.19.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.19)",
  "ckb-index 0.19.0",
  "ckb-jsonrpc-types 0.19.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.19)",
+ "ckb-resource 0.19.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.19)",
  "ckb-sdk 0.19.0",
  "ckb-types 0.19.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.19)",
  "ckb-util 0.19.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.19)",
