@@ -39,6 +39,8 @@ url = "1.7.2"
 log = "0.4.6"
 chrono = "0.4"
 rpassword = "3.0.2"
+ipnetwork = "0.14"
+multiaddr = { package = "parity-multiaddr", version = "0.4.0" }
 
 [target.'cfg(unix)'.dependencies]
 tui = "0.6.0"
