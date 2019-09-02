@@ -22,7 +22,7 @@ impl Error for EmitError {
         }
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }
@@ -45,7 +45,7 @@ impl From<fmt::Error> for EmitError {
 // Copy from:
 //   https://github.com/chyh1990/yaml-rust/blob/1d29d211e9214f2fe0efaf9379efd998fafdb2de/src/emitter.rs#L40
 pub struct YamlEmitter<'a> {
-    writer: &'a mut fmt::Write,
+    writer: &'a mut dyn fmt::Write,
     color: bool,
     best_indent: usize,
     compact: bool,
@@ -57,7 +57,7 @@ pub struct YamlEmitter<'a> {
 pub type EmitResult = Result<(), EmitError>;
 
 // from serialize::json
-fn escape_str(wr: &mut fmt::Write, v: &str, color: bool) -> Result<(), fmt::Error> {
+fn escape_str(wr: &mut dyn fmt::Write, v: &str, color: bool) -> Result<(), fmt::Error> {
     wr.write_str("\"")?;
 
     let mut start = 0;
@@ -120,7 +120,7 @@ fn escape_str(wr: &mut fmt::Write, v: &str, color: bool) -> Result<(), fmt::Erro
 }
 
 impl<'a> YamlEmitter<'a> {
-    pub fn new(writer: &'a mut fmt::Write, color: bool) -> YamlEmitter {
+    pub fn new(writer: &'a mut dyn fmt::Write, color: bool) -> YamlEmitter {
         YamlEmitter {
             writer,
             color,
@@ -337,12 +337,12 @@ fn need_quotes(string: &str) -> bool {
             | '\"'
             | '\''
             | '\\'
-            | '\0'...'\x06'
+            | '\0'..='\x06'
             | '\t'
             | '\n'
             | '\r'
-            | '\x0e'...'\x1a'
-            | '\x1c'...'\x1f' => true,
+            | '\x0e'..='\x1a'
+            | '\x1c'..='\x1f' => true,
             _ => false,
         })
         || [

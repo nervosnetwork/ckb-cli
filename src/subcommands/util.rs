@@ -1,13 +1,19 @@
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
-use ckb_types::H160;
+use ckb_types::{packed, prelude::*, H160};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
+use std::fs;
+use std::path::PathBuf;
 
 use super::CliSubCommand;
 use crate::utils::{
-    arg_parser::{AddressParser, ArgParser, FixedHashParser, PrivkeyPathParser, PubkeyHexParser},
+    arg_parser::{
+        AddressParser, ArgParser, FilePathParser, FixedHashParser, HexParser, PrivkeyPathParser,
+        PubkeyHexParser,
+    },
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
 };
@@ -50,16 +56,51 @@ impl<'a> UtilSubCommand<'a> {
             .takes_value(true)
             .validator(|input| FixedHashParser::<H160>::default().validate(input))
             .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
+
+        let json_path_arg = Arg::with_name("json-path")
+            .long("json-path")
+            .takes_value(true)
+            .required(true)
+            .validator(|input| FilePathParser::new(true).validate(input));
+        let binary_hex_arg = Arg::with_name("binary-hex")
+            .long("binary-hex")
+            .takes_value(true)
+            .required(true)
+            .validator(|input| HexParser.validate(input));
+        let serialize_output_type_arg = Arg::with_name("output-type")
+            .long("output-type")
+            .takes_value(true)
+            .default_value("binary")
+            .possible_values(&["binary", "hash"])
+            .help("Serialize output type");
         SubCommand::with_name(name)
             .about("Utilities")
-            .subcommands(vec![SubCommand::with_name("key-info")
-                .about(
-                    "Show public information of a secp256k1 private key (from file) or public key",
-                )
-                .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                .arg(arg_pubkey.clone().required(false))
-                .arg(arg_address.clone().required(false))
-                .arg(arg_lock_arg.clone())])
+            .subcommands(vec![
+                SubCommand::with_name("key-info")
+                    .about(
+                        "Show public information of a secp256k1 private key (from file) or public key",
+                    )
+                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
+                    .arg(arg_pubkey.clone().required(false))
+                    .arg(arg_address.clone().required(false))
+                    .arg(arg_lock_arg.clone()),
+                SubCommand::with_name("serialize-tx")
+                    .about("Serialize a transaction from json file to hex binary or hash")
+                    .arg(json_path_arg.clone()
+                         .help("Transaction content (json format, without witnesses/hash, see rpc get_transaction)"))
+                    .arg(serialize_output_type_arg.clone()),
+                SubCommand::with_name("deserialize-tx")
+                    .about("Deserialize a transaction from binary hex to json")
+                    .arg(binary_hex_arg.clone().help("Transaction binary hex")),
+                SubCommand::with_name("serialize-script")
+                    .about("Serialize a script from json file to hex binary or hash")
+                    .arg(json_path_arg.clone()
+                         .help("Script content (json format, see rpc get_transaction)"))
+                    .arg(serialize_output_type_arg.clone()),
+                SubCommand::with_name("deserialize-script")
+                    .about("Deserialize a script from hex binary to json")
+                    .arg(binary_hex_arg.clone().help("Script binary hex")),
+            ])
     }
 }
 
@@ -117,6 +158,49 @@ args = ["{:#x}"]
                     "lock_hash": address.lock_script(secp_type_hash.clone()).calc_script_hash(),
                 });
                 Ok(resp.render(format, color))
+            }
+            ("serialize-tx", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let rpc_tx: RpcTransaction =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let tx: packed::Transaction = rpc_tx.into();
+                let output = match m.value_of("output-type") {
+                    Some("binary") => hex_string(tx.raw().as_slice()).unwrap(),
+                    Some("hash") => format!("{:#x}", tx.calc_tx_hash()),
+                    _ => panic!("Invalid output type"),
+                };
+                Ok(output)
+            }
+            ("deserialize-tx", Some(m)) => {
+                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let raw_tx =
+                    packed::RawTransaction::from_slice(&binary).map_err(|err| err.to_string())?;
+                let rpc_tx: RpcTransaction = packed::Transaction::new_builder()
+                    .raw(raw_tx)
+                    .build()
+                    .into();
+                Ok(rpc_tx.render(format, color))
+            }
+            ("serialize-script", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let rpc_script: RpcScript =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let script: packed::Script = rpc_script.into();
+                let output = match m.value_of("output-type") {
+                    Some("binary") => hex_string(script.as_slice()).unwrap(),
+                    Some("hash") => format!("{:#x}", script.calc_script_hash()),
+                    _ => panic!("Invalid output type"),
+                };
+                Ok(output)
+            }
+            ("deserialize-script", Some(m)) => {
+                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let rpc_script: RpcScript = packed::Script::from_slice(&binary)
+                    .map_err(|err| err.to_string())?
+                    .into();
+                Ok(rpc_script.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }
