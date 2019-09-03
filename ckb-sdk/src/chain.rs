@@ -315,8 +315,8 @@ impl<'a> TransferTransactionBuilder<'a> {
             .cloned()
             .map(|(output, output_data)| {
                 let type_ = Script::new_builder()
-                    .hash_type(ScriptHashType::Data.pack())
-                    .code_hash(genesis_info.dao_data_hash().pack())
+                    .hash_type(ScriptHashType::Type.pack())
+                    .code_hash(genesis_info.dao_type_hash().pack())
                     .build();
                 let type_opt = ScriptOpt::new_builder().set(Some(type_)).build();
                 let new_output = output.as_builder().type_(type_opt).build();

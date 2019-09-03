@@ -9,8 +9,7 @@ use std::time::Duration;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
-use ckb_resource::CODE_HASH_DAO;
-use ckb_types::packed::CellInput;
+use ckb_types::packed::{CellInput, Script};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, TransactionView},
@@ -424,7 +423,7 @@ impl<'a> WalletSubCommand<'a> {
                 .get_live_cell(out_point.into())
                 .call()
                 .expect("get_live_cell by RPC call failed");
-            if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_data_hash()) {
+            if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {
                 total_capacity += info.capacity;
                 (total_capacity >= capacity, true)
             } else {
@@ -571,12 +570,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("get-dao-capacity", Some(m)) => {
+                let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
+                let dao_type_hash = self.genesis_info()?.dao_type_hash().clone();
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
                 let lock_hash = if let Some(lock_hash) = lock_hash_opt {
                     lock_hash
                 } else {
-                    let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
                     let address = get_address(m)?;
                     address.lock_script(secp_type_hash).calc_script_hash()
                 };
@@ -586,7 +586,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .into_iter()
                         .collect::<HashSet<_>>();
                     let infos_by_code = db
-                        .get_live_cells_by_code(CODE_HASH_DAO, Some(0), |_, _| (false, true))
+                        .get_live_cells_by_code(dao_type_hash, Some(0), |_, _| (false, true))
                         .into_iter()
                         .collect::<HashSet<_>>();
                     infos_by_lock
@@ -750,12 +750,15 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
     false
 }
 
-fn is_dao_cell(cell: &CellWithStatus, dao_data_hash: &H256) -> bool {
+fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &H256) -> bool {
     if let Some(ref output) = cell.cell {
         return output
             .type_
             .as_ref()
-            .map(|script| &script.code_hash == dao_data_hash)
+            .map(|script| {
+                let type_hash = Into::<Script>::into(script.to_owned()).calc_script_hash();
+                &type_hash == dao_type_hash
+            })
             .unwrap_or(false);
     }
 
