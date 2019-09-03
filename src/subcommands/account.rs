@@ -8,7 +8,7 @@ use ckb_sdk::{
     wallet::{Key, KeyStore, MasterPrivKey},
     Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
-use ckb_types::{core::BlockView, H160, H256};
+use ckb_types::{core::BlockView, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::CliSubCommand;
@@ -135,15 +135,16 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .into_iter()
                     .enumerate()
                     .map(|(idx, (lock_arg, filepath))| {
-                        let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
+                        let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
                         let timeout = self.key_store.get_lock_timeout(&lock_arg);
                         let status = timeout
                             .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
-                        let lock_hash_opt = genesis_info_opt.as_ref().map(|info| {
+                        let lock_hash_opt: Option<H256> = genesis_info_opt.as_ref().map(|info| {
                             address
                                 .lock_script(info.secp_type_hash().clone())
                                 .calc_script_hash()
+                                .unpack()
                         });
                         serde_json::json!({
                             "#": idx,
@@ -169,11 +170,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .new_account(pass.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let genesis_info_opt = self.genesis_info().ok();
-                let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
-                let lock_hash_opt = genesis_info_opt.as_ref().map(|info| {
+                let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
+                let lock_hash_opt: Option<H256> = genesis_info_opt.as_ref().map(|info| {
                     address
                         .lock_script(info.secp_type_hash().clone())
                         .calc_script_hash()
+                        .unpack()
                 });
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
@@ -201,7 +203,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         .import_key(&key, password.as_bytes())
                         .map_err(|err| err.to_string())?
                 };
-                let address = Address::from_lock_arg(&lock_arg[..]).unwrap();
+                let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {

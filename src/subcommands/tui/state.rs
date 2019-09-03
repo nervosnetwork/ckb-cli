@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
-use ckb_types::{core::HeaderView, packed::Script, prelude::*, H256};
+use ckb_types::{core::HeaderView, packed::Script, prelude::*};
 use ckb_util::RwLock;
 use jsonrpc_client_core::Error as RpcError;
 
@@ -60,8 +60,8 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
 
             // Handle fork
             if let Some(last_block) = state_mut.blocks.values().rev().next() {
-                let last_hash: H256 = last_block.header.hash().unpack();
-                let tip_hash: H256 = tip_header.hash().unpack();
+                let last_hash = last_block.header.hash();
+                let tip_hash = tip_header.hash();
                 if tip_header.parent_hash() != last_hash && tip_hash != last_hash {
                     state_mut.blocks.clear();
                 }

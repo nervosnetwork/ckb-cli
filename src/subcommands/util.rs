@@ -2,7 +2,7 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
-use ckb_types::{packed, prelude::*, H160};
+use ckb_types::{packed, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 use std::fs;
@@ -146,6 +146,10 @@ args = ["{:#x}"]
                     address.hash()
                 );
 
+                let lock_hash: H256 = address
+                    .lock_script(secp_type_hash.clone())
+                    .calc_script_hash()
+                    .unpack();
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
@@ -155,7 +159,7 @@ args = ["{:#x}"]
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.to_string(NetworkType::TestNet),
                     "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": address.lock_script(secp_type_hash.clone()).calc_script_hash(),
+                    "lock_hash": lock_hash,
                 });
                 Ok(resp.render(format, color))
             }

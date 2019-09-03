@@ -521,12 +521,14 @@ impl MasterPrivKey {
     }
 
     pub fn sign(&self, hash: &H256) -> secp256k1::Signature {
-        let message = secp256k1::Message::from_slice(&hash[..]).expect("Convert to message failed");
+        let message =
+            secp256k1::Message::from_slice(hash.as_bytes()).expect("Convert to message failed");
         SECP256K1.sign(&message, &self.secp_secret_key)
     }
 
     pub fn sign_recoverable(&self, hash: &H256) -> RecoverableSignature {
-        let message = secp256k1::Message::from_slice(&hash[..]).expect("Convert to message failed");
+        let message =
+            secp256k1::Message::from_slice(hash.as_bytes()).expect("Convert to message failed");
         SECP256K1.sign_recoverable(&message, &self.secp_secret_key)
     }
 

@@ -3,7 +3,13 @@ use std::str::FromStr;
 
 use bech32::{convert_bits, Bech32, ToBase32};
 use ckb_hash::blake2b_256;
-use ckb_types::{bytes::Bytes, core::ScriptHashType, packed::Script, prelude::*, H160, H256};
+use ckb_types::{
+    bytes::Bytes,
+    core::ScriptHashType,
+    packed::{Byte32, Script},
+    prelude::*,
+    H160, H256,
+};
 use serde_derive::{Deserialize, Serialize};
 
 pub use old_addr::{Address as OldAddress, AddressFormat as OldAddressFormat};
@@ -95,10 +101,10 @@ impl Address {
         &self.hash
     }
 
-    pub fn lock_script(&self, type_hash: H256) -> Script {
+    pub fn lock_script(&self, type_hash: Byte32) -> Script {
         Script::new_builder()
             .args(vec![Bytes::from(self.hash.as_bytes()).pack()].pack())
-            .code_hash(type_hash.pack())
+            .code_hash(type_hash)
             .hash_type(ScriptHashType::Type.pack())
             .build()
     }
@@ -138,7 +144,7 @@ impl Address {
         let mut data = [0; 22];
         data[0] = self.ty as u8;
         data[1] = self.index as u8;
-        data[2..22].copy_from_slice(self.hash.as_fixed_bytes());
+        data[2..22].copy_from_slice(self.hash.as_bytes());
         let value = Bech32::new(hrp.to_string(), data.to_base32())
             .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
@@ -255,7 +261,7 @@ mod old_addr {
             let mut data = [0; 25];
             let format_data = self.format.to_bytes().expect("Invalid address format");
             data[0..5].copy_from_slice(&format_data[0..5]);
-            data[5..25].copy_from_slice(self.hash.as_fixed_bytes());
+            data[5..25].copy_from_slice(self.hash.as_bytes());
             let value = Bech32::new(hrp.to_string(), data.to_base32())
                 .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
             format!("{}", value)

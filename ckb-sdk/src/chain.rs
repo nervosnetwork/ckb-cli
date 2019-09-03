@@ -2,14 +2,13 @@ use crate::Address;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::new_blake2b;
 use ckb_resource::{CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL};
-use ckb_types::packed::{Byte32, ScriptOpt};
 use ckb_types::{
     bytes::Bytes,
     core::{
         BlockView, Capacity, DepType, HeaderView, ScriptHashType, TransactionBuilder,
         TransactionView,
     },
-    packed::{CellDep, CellInput, CellOutput, OutPoint, Script, Witness},
+    packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, Witness},
     prelude::*,
     H256,
 };
@@ -30,10 +29,10 @@ const DAO_OUTPUT_INDEX: usize = 2;
 pub struct GenesisInfo {
     header: HeaderView,
     out_points: Vec<Vec<OutPoint>>,
-    secp_data_hash: H256,
-    secp_type_hash: H256,
-    dao_data_hash: H256,
-    dao_type_hash: H256,
+    secp_data_hash: Byte32,
+    secp_type_hash: Byte32,
+    dao_data_hash: Byte32,
+    dao_type_hash: Byte32,
 }
 
 impl GenesisInfo {
@@ -66,7 +65,7 @@ impl GenesisInfo {
                                 .to_opt()
                                 .map(|script| script.calc_script_hash());
                             let data_hash = CellOutput::calc_data_hash(&data.raw_data());
-                            if data_hash != CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL {
+                            if data_hash != CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL.pack() {
                                 log::error!(
                                     "System secp script code hash error! found: {}, expected: {}",
                                     data_hash,
@@ -81,7 +80,7 @@ impl GenesisInfo {
                                 .to_opt()
                                 .map(|script| script.calc_script_hash());
                             let data_hash = CellOutput::calc_data_hash(&data.raw_data());
-                            if data_hash != CODE_HASH_DAO {
+                            if data_hash != CODE_HASH_DAO.pack() {
                                 log::error!(
                                     "System dao script code hash error! found: {}, expected: {}",
                                     data_hash,
@@ -90,7 +89,7 @@ impl GenesisInfo {
                             }
                             dao_data_hash = Some(data_hash);
                         }
-                        OutPoint::new(tx.hash().unpack(), index as u32)
+                        OutPoint::new(tx.hash(), index as u32)
                     })
                     .collect::<Vec<_>>()
             })
@@ -118,19 +117,19 @@ impl GenesisInfo {
         &self.header
     }
 
-    pub fn secp_data_hash(&self) -> &H256 {
+    pub fn secp_data_hash(&self) -> &Byte32 {
         &self.secp_data_hash
     }
 
-    pub fn secp_type_hash(&self) -> &H256 {
+    pub fn secp_type_hash(&self) -> &Byte32 {
         &self.secp_type_hash
     }
 
-    pub fn dao_data_hash(&self) -> &H256 {
+    pub fn dao_data_hash(&self) -> &Byte32 {
         &self.dao_data_hash
     }
 
-    pub fn dao_type_hash(&self) -> &H256 {
+    pub fn dao_type_hash(&self) -> &Byte32 {
         &self.dao_type_hash
     }
 
@@ -316,7 +315,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             .map(|(output, output_data)| {
                 let type_ = Script::new_builder()
                     .hash_type(ScriptHashType::Type.pack())
-                    .code_hash(genesis_info.dao_type_hash().pack())
+                    .code_hash(genesis_info.dao_type_hash().clone())
                     .build();
                 let type_opt = ScriptOpt::new_builder().set(Some(type_)).build();
                 let new_output = output.as_builder().type_(type_opt).build();
