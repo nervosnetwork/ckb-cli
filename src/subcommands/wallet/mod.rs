@@ -12,7 +12,7 @@ use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWith
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, TransactionView},
-    packed::{Byte32, CellInput, Script},
+    packed::{Byte32, CellInput},
     prelude::*,
     H160, H256,
 };
@@ -527,11 +527,11 @@ impl<'a> WalletSubCommand<'a> {
         format: OutputFormat,
         color: bool,
     ) -> Result<String, String> {
-        let transaction_view: ckb_jsonrpc_types::TransactionView = transaction.clone().into();
-        println!(
-            "[Send Transaction]:\n{}",
-            transaction_view.render(format, color)
-        );
+        //        let transaction_view: ckb_jsonrpc_types::TransactionView = transaction.clone().into();
+        //        println!(
+        //            "[Send Transaction]:\n{}",
+        //            transaction_view.render(format, color)
+        //        );
 
         let resp = self
             .rpc_client
@@ -763,12 +763,9 @@ fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &Byte32) -> bool {
         return output
             .type_
             .as_ref()
-            .map(|script| {
-                let type_hash = Into::<Script>::into(script.to_owned()).calc_script_hash();
-                &type_hash == dao_type_hash
-            })
+            .map(|script| &script.code_hash.pack() == dao_type_hash)
             .unwrap_or(false);
-    }
+    };
 
     false
 }
