@@ -316,7 +316,7 @@ impl<'a> IndexDatabase<'a> {
             blocks
         };
 
-        let secp_data_hash = self.genesis_info.secp_type_hash();
+        let secp_data_hash = self.genesis_info.secp_data_hash();
         let secp_type_hash = self.genesis_info.secp_type_hash();
         let mut txn = RocksTxn::new(self.db, self.cf);
         for block in blocks {
