@@ -7,7 +7,7 @@ use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     Address, GenesisInfo, HttpRpcClient,
 };
-use ckb_types::{core::BlockView, H160};
+use ckb_types::{core::BlockView, H160, H256};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
@@ -51,7 +51,6 @@ pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
     Ok(address)
 }
 
-/*
 pub fn get_singer(
     key_store: KeyStore,
 ) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
@@ -68,7 +67,6 @@ pub fn get_singer(
         Ok(signature_bytes)
     }
 }
-*/
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
     if let Some(alerts) = rpc_client

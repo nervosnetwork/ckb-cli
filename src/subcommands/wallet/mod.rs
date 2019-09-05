@@ -710,13 +710,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 }
 
 fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
-    if capacity < MIN_SECP_CELL_CAPACITY {
+    if capacity < *MIN_SECP_CELL_CAPACITY {
         return Err(format!(
             "Capacity can not less than {} shannons",
-            MIN_SECP_CELL_CAPACITY
+            *MIN_SECP_CELL_CAPACITY
         ));
     }
-    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+    if capacity < *MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
         return Err(format!(
             "Capacity can not hold {} bytes of data",
             to_data_len
