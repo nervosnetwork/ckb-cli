@@ -278,7 +278,7 @@ fn process(
 
     let mut next_get_tip = Instant::now();
     let mut tip_header = genesis_info.header().clone();
-    let mut last_number = 0;
+    let mut next_number = 0;
     loop {
         if next_get_tip <= Instant::now() {
             next_get_tip = Instant::now() + Duration::from_secs(1);
@@ -290,7 +290,7 @@ fn process(
             log::debug!("Update to tip {}", tip_header.number());
         }
 
-        if tip_header.number() > last_number {
+        if tip_header.number() >= next_number {
             let exit_opt = with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
                 let mut db = IndexDatabase::from_db(
                     backend,
@@ -329,7 +329,7 @@ fn process(
                         thread::sleep(Duration::from_secs(1));
                     }
                 }
-                last_number = db.last_number().unwrap();
+                next_number = db.last_number().unwrap() + 1;
                 state
                     .write()
                     .processing(db.last_header().cloned(), tip_header.number());
