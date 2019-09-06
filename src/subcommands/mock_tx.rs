@@ -2,15 +2,19 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use ckb_types::{
-    core::{Capacity, capacity_bytes, ScriptHashType},
-    packed::{Header, Script, CellInput, CellOutput, OutPoint},
-    h256, H160, H256,
-    bytes::Bytes,
-};
 use ckb_sdk::{
-    wallet::KeyStore, GenesisInfo, HttpRpcClient, MockDep, MockInput, MockResourceLoader,
-    MockTransaction, MockTransactionHelper, ReprMockTransaction,
+    wallet::KeyStore, GenesisInfo, HttpRpcClient, MockCellDep, MockInfo, MockInput,
+    MockResourceLoader, MockTransaction, MockTransactionHelper, ReprMockTransaction,
+};
+use ckb_types::{
+    bytes::Bytes,
+    core::{
+        capacity_bytes, Capacity, HeaderBuilder, HeaderView, ScriptHashType, TransactionBuilder,
+    },
+    h256,
+    packed::{CellDep, CellInput, CellOutput, OutPoint, Script},
+    prelude::*,
+    H160, H256,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
 
@@ -46,12 +50,12 @@ impl<'a> MockTxSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .help("Mock transaction data file (format: json,yaml)");
+            .help("Mock transaction data file (format: json)");
         let arg_output_file = Arg::with_name("output-file")
             .long("output-file")
             .takes_value(true)
             .validator(|input| FilePathParser::new(false).validate(input))
-            .help("Completed mock transaction data file (format: json,yaml)");
+            .help("Completed mock transaction data file (format: json)");
         let arg_lock_arg = Arg::with_name("lock-arg")
             .long("lock-arg")
             .takes_value(true)
@@ -71,7 +75,7 @@ impl<'a> MockTxSubCommand<'a> {
                     .arg(
                         arg_output_file
                             .clone()
-                            .help("Completed mock transaction data file (format: json,yaml)"),
+                            .help("Completed mock transaction data file (format: json)"),
                     ),
                 SubCommand::with_name("verify")
                     .about("Verify a mock transaction in local")
@@ -129,7 +133,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
             let output_color = output_opt.as_ref().map(|_| false).unwrap_or(color);
             let output_content =
-                ReprMockTransaction::from(mock_tx.clone()).render(format, output_color);
+                ReprMockTransaction::from(mock_tx.clone()).render(OutputFormat::Json, output_color);
             if let Some(output) = output_opt {
                 let mut out_file = fs::File::create(output).map_err(|err| err.to_string())?;
                 out_file
@@ -145,47 +149,53 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
             ("template", Some(m)) => {
                 let lock_arg_opt: Option<H160> =
                     FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
-                let lock_arg = lock_arg_opt.unwrap_or_else(H160::zero);
-                let secp_code_hash = genesis_info.secp_code_hash();
+                let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
+                let secp_type_hash = genesis_info.secp_type_hash();
                 let sample_script = || {
-                    Script::new(
-                        vec![Bytes::from(lock_arg.as_ref())],
-                        secp_code_hash.clone(),
-                        ScriptHashType::Data,
-                    )
+                    Script::new_builder()
+                        .code_hash(secp_type_hash.clone())
+                        .hash_type(ScriptHashType::Type.pack())
+                        .args(vec![Bytes::from(lock_arg.as_ref()).pack()].pack())
+                        .build()
                 };
-                let mock_dep = MockDep {
-                    out_point: OutPoint::new_cell(h256!("0xff01"), 0),
-                    cell: CellOutput {
-                        capacity: capacity_bytes!(600),
-                        data: Bytes::default(),
-                        lock: sample_script(),
-                        type_: None,
-                    },
+                let mock_cell_dep = MockCellDep {
+                    cell_dep: CellDep::new_builder()
+                        .out_point(OutPoint::new(h256!("0xff01").pack(), 0))
+                        .build(),
+                    output: CellOutput::new_builder()
+                        .capacity(capacity_bytes!(600).pack())
+                        .lock(sample_script())
+                        .build(),
+                    data: Bytes::from("1234"),
                 };
-                let input = CellInput::new(OutPoint::new_cell(h256!("0xff02"), 0), 0);
+                let input = CellInput::new(OutPoint::new(h256!("0xff02").pack(), 0), 0);
                 let mock_input = MockInput {
                     input: input.clone(),
-                    cell: CellOutput {
-                        capacity: capacity_bytes!(300),
-                        data: Bytes::default(),
-                        lock: sample_script(),
-                        type_: None,
-                    },
+                    output: CellOutput::new_builder()
+                        .capacity(capacity_bytes!(300).pack())
+                        .lock(sample_script())
+                        .build(),
+                    data: Bytes::from("abcd"),
                 };
-                let output = CellOutput {
-                    capacity: capacity_bytes!(120),
-                    data: Bytes::default(),
-                    lock: sample_script(),
-                    type_: Some(sample_script()),
-                };
+                let output = CellOutput::new_builder()
+                    .capacity(capacity_bytes!(120).pack())
+                    .lock(sample_script())
+                    .type_(Some(sample_script()).pack())
+                    .build();
 
-                let mut mock_tx = MockTransaction::default();
-                mock_tx.mock_deps = vec![mock_dep];
-                mock_tx.mock_inputs = vec![mock_input];
-                mock_tx.inputs = vec![input];
-                mock_tx.outputs = vec![output];
-                mock_tx.witnesses = vec![vec![Bytes::from("abc")]];
+                let mock_info = MockInfo {
+                    inputs: vec![mock_input],
+                    cell_deps: vec![mock_cell_dep],
+                    header_deps: vec![HeaderBuilder::default().build()],
+                };
+                let tx = TransactionBuilder::default()
+                    .input(input)
+                    .output(output)
+                    .output_data(Default::default())
+                    .witness(vec![Bytes::from("abc").pack()].pack())
+                    .build()
+                    .data();
+                let mut mock_tx = MockTransaction { mock_info, tx };
                 {
                     let mut helper = MockTransactionHelper::new(&mut mock_tx);
                     helper.fill_deps(&genesis_info, |_| unreachable!())?;
@@ -197,15 +207,17 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
             ("complete", Some(m)) => {
                 let (mock_tx, _cycle) = complete_tx(m, false)?;
                 output_tx(m, &mock_tx)?;
+                let tx_hash: H256 = mock_tx.core_transaction().hash().unpack();
                 let resp = serde_json::json!({
-                    "tx-hash": mock_tx.core_transaction().hash(),
+                    "tx-hash": tx_hash,
                 });
                 Ok(resp.render(format, color))
             }
             ("verify", Some(m)) => {
                 let (mock_tx, cycle) = complete_tx(m, true)?;
+                let tx_hash: H256 = mock_tx.core_transaction().hash().unpack();
                 let resp = serde_json::json!({
-                    "tx-hash": mock_tx.core_transaction().hash(),
+                    "tx-hash": tx_hash,
                     "cycle": cycle,
                 });
                 Ok(resp.render(format, color))
@@ -214,7 +226,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let (mock_tx, _cycle) = complete_tx(m, true)?;
                 let resp = self
                     .rpc_client
-                    .send_transaction((&mock_tx.core_transaction()).into())
+                    .send_transaction(mock_tx.core_transaction().data().into())
                     .call()
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
@@ -229,18 +241,42 @@ struct Loader<'a> {
 }
 
 impl<'a> MockResourceLoader for Loader<'a> {
-    fn get_header(&mut self, hash: H256) -> Result<Option<Header>, String> {
+    fn get_header(&mut self, hash: H256) -> Result<Option<HeaderView>, String> {
         self.rpc_client
             .get_header(hash)
             .call()
             .map(|header_opt| header_opt.0.map(Into::into))
             .map_err(|err| err.to_string())
     }
-    fn get_live_cell(&mut self, out_point: OutPoint) -> Result<Option<CellOutput>, String> {
-        self.rpc_client
-            .get_live_cell(out_point.into())
+
+    fn get_live_cell(
+        &mut self,
+        out_point: OutPoint,
+    ) -> Result<Option<(CellOutput, Bytes)>, String> {
+        let output: Option<CellOutput> = self
+            .rpc_client
+            .get_live_cell(out_point.clone().into())
             .call()
             .map(|resp| resp.cell.map(Into::into))
-            .map_err(|err| err.to_string())
+            .map_err(|err| err.to_string())?;
+        if let Some(output) = output {
+            Ok(self
+                .rpc_client
+                .get_transaction(out_point.tx_hash().unpack())
+                .call()
+                .map_err(|err| err.to_string())?
+                .0
+                .and_then(|tx_with_status| {
+                    let output_index: u32 = out_point.index().unpack();
+                    tx_with_status
+                        .transaction
+                        .inner
+                        .outputs_data
+                        .get(output_index as usize)
+                        .map(|data| (output, data.clone().into_bytes()))
+                }))
+        } else {
+            Ok(None)
+        }
     }
 }

@@ -13,13 +13,8 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand,
-    CliSubCommand,
-    IndexController,
-    IndexRequest, // MockTxSubCommand,
-    RpcSubCommand,
-    UtilSubCommand,
-    WalletSubCommand,
+    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
+    RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -321,17 +316,17 @@ impl InteractiveEnv {
                         println!("{}", output);
                         Ok(())
                     }
-                    // ("mock-tx", Some(sub_matches)) => {
-                    //     let genesis_info = self.genesis_info().ok();
-                    //     let output = MockTxSubCommand::new(
-                    //         &mut self.rpc_client,
-                    //         &mut self.key_store,
-                    //         genesis_info,
-                    //     )
-                    //     .process(&sub_matches, format, color)?;
-                    //     println!("{}", output);
-                    //     Ok(())
-                    // }
+                    ("mock-tx", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info().ok();
+                        let output = MockTxSubCommand::new(
+                            &mut self.rpc_client,
+                            &mut self.key_store,
+                            genesis_info,
+                        )
+                        .process(&sub_matches, format, color)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
                     ("util", Some(sub_matches)) => {
                         let genesis_info = self.genesis_info().ok();
                         let output = UtilSubCommand::new(&mut self.rpc_client, genesis_info)

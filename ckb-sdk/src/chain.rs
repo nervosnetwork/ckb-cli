@@ -10,14 +10,28 @@ use ckb_types::{
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, Witness},
     prelude::*,
-    H256,
+    H160, H256,
 };
 use secp256k1::recovery::RecoverableSignature;
 use std::collections::VecDeque;
 
 pub const ONE_CKB: u64 = 100_000_000;
-// H256(secp code hash) + H160 (secp pubkey hash) + 1 (ScriptHashType) + u64(capacity) = 32 + 20 + 1 + 8 = 61
-pub const MIN_SECP_CELL_CAPACITY: u64 = (32 + 20 + 1 + 8) * ONE_CKB;
+
+lazy_static::lazy_static! {
+    pub static ref MIN_SECP_CELL_CAPACITY: u64 = {
+        CellOutput::new_builder()
+            .lock(
+                Script::new_builder()
+                    .args(vec![H160::default().as_bytes().pack()].pack())
+                    .build()
+            )
+            .build()
+            .occupied_capacity(Capacity::zero())
+            .unwrap()
+            .as_u64()
+    };
+}
+
 const SECP_TRANSACTION_INDEX: usize = 0;
 const SECP_OUTPUT_INDEX: usize = 1;
 const SECP_GROUP_TRANSACTION_INDEX: usize = 1;
@@ -293,7 +307,7 @@ impl<'a> TransferTransactionBuilder<'a> {
     // Exchange back to sender if the rest is enough to pay for a cell
     fn build_changes(&mut self, genesis_info: &GenesisInfo) {
         let rest_capacity = self.from_capacity - self.to_capacity;
-        if rest_capacity >= MIN_SECP_CELL_CAPACITY {
+        if rest_capacity >= *MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
             let change = CellOutput::new_builder()
                 .capacity(Capacity::shannons(rest_capacity).pack())
