@@ -9,10 +9,10 @@ use std::time::Duration;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
-use ckb_types::packed::{CellInput, Script};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, TransactionView},
+    packed::{Byte32, CellInput, Script},
     prelude::*,
     H160, H256,
 };
@@ -196,7 +196,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
+            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
         };
         let to_address: Address = AddressParser.from_matches(m, "to-address")?;
         let to_data = to_data(m)?;
@@ -295,7 +295,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
+            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
@@ -398,7 +398,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(&from_account.as_ref().unwrap()[..])?
+            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
@@ -557,7 +557,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
                 let lock_hash = if let Some(lock_hash) = lock_hash_opt {
-                    lock_hash
+                    lock_hash.pack()
                 } else {
                     let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
                     let address = get_address(m)?;
@@ -575,7 +575,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
                 let lock_hash = if let Some(lock_hash) = lock_hash_opt {
-                    lock_hash
+                    lock_hash.pack()
                 } else {
                     let address = get_address(m)?;
                     address.lock_script(secp_type_hash).calc_script_hash()
@@ -628,12 +628,20 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         (stop, push_info)
                     };
                     let infos = if let Some(lock_hash) = lock_hash_opt {
-                        db.get_live_cells_by_lock(lock_hash.clone(), from_number_opt, terminator)
+                        db.get_live_cells_by_lock(
+                            lock_hash.clone().pack(),
+                            from_number_opt,
+                            terminator,
+                        )
                     } else if let Some(type_hash) = type_hash_opt {
-                        db.get_live_cells_by_type(type_hash.clone(), from_number_opt, terminator)
+                        db.get_live_cells_by_type(
+                            type_hash.clone().pack(),
+                            from_number_opt,
+                            terminator,
+                        )
                     } else {
                         db.get_live_cells_by_code(
-                            code_hash_opt.clone().unwrap(),
+                            code_hash_opt.clone().unwrap().pack(),
                             from_number_opt,
                             terminator,
                         )
@@ -659,7 +667,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 .into_iter()
                                 .map(|arg| hex_string(&arg.raw_data()).unwrap())
                                 .collect::<Vec<_>>();
-                            let script_hash = lock_script.calc_script_hash();
+                            let script_hash: H256 = lock_script.calc_script_hash().unpack();
                             let code_hash: H256 = lock_script.code_hash().unpack();
                             serde_json::json!({
                                 "hash": script_hash,
@@ -702,13 +710,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 }
 
 fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
-    if capacity < MIN_SECP_CELL_CAPACITY {
+    if capacity < *MIN_SECP_CELL_CAPACITY {
         return Err(format!(
             "Capacity can not less than {} shannons",
-            MIN_SECP_CELL_CAPACITY
+            *MIN_SECP_CELL_CAPACITY
         ));
     }
-    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+    if capacity < *MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
         return Err(format!(
             "Capacity can not hold {} bytes of data",
             to_data_len
@@ -750,7 +758,7 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
     false
 }
 
-fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &H256) -> bool {
+fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &Byte32) -> bool {
     if let Some(ref output) = cell.cell {
         return output
             .type_

@@ -131,12 +131,12 @@ impl Key {
             Key::TotalCapacity => KeyType::TotalCapacity.to_bytes(),
             Key::GlobalHash(hash) => {
                 let mut bytes = KeyType::GlobalHash.to_bytes();
-                bytes.extend(hash.to_vec());
+                bytes.extend(hash.as_bytes().to_vec());
                 bytes
             }
             Key::TxMap(tx_hash) => {
                 let mut bytes = KeyType::TxMap.to_bytes();
-                bytes.extend(tx_hash.to_vec());
+                bytes.extend(tx_hash.as_bytes().to_vec());
                 bytes
             }
             Key::SecpAddrLock(address) => {
@@ -168,12 +168,12 @@ impl Key {
             }
             Key::LockScript(lock_hash) => {
                 let mut bytes = KeyType::LockScript.to_bytes();
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 bytes
             }
             Key::LockTotalCapacity(lock_hash) => {
                 let mut bytes = KeyType::LockTotalCapacity.to_bytes();
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 bytes
             }
             Key::LockTotalCapacityIndex(capacity, lock_hash) => {
@@ -181,12 +181,12 @@ impl Key {
                 let capacity = std::u64::MAX - capacity;
                 let mut bytes = KeyType::LockTotalCapacityIndex.to_bytes();
                 bytes.extend(capacity.to_be_bytes().to_vec());
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 bytes
             }
             Key::LockLiveCellIndexPrefix(lock_hash, number_opt) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -194,7 +194,7 @@ impl Key {
             }
             Key::LockLiveCellIndex(lock_hash, number, cell_index) => {
                 let mut bytes = KeyType::LockLiveCellIndex.to_bytes();
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -202,7 +202,7 @@ impl Key {
             }
             Key::LockTx(lock_hash, number, tx_index) => {
                 let mut bytes = KeyType::LockTx.to_bytes();
-                bytes.extend(lock_hash.to_vec());
+                bytes.extend(lock_hash.as_bytes().to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(tx_index.to_be_bytes().to_vec());
@@ -211,7 +211,7 @@ impl Key {
 
             Key::TypeLiveCellIndexPrefix(type_hash, number_opt) => {
                 let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
-                bytes.extend(type_hash.to_vec());
+                bytes.extend(type_hash.as_bytes().to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -219,7 +219,7 @@ impl Key {
             }
             Key::TypeLiveCellIndex(type_hash, number, cell_index) => {
                 let mut bytes = KeyType::TypeLiveCellIndex.to_bytes();
-                bytes.extend(type_hash.to_vec());
+                bytes.extend(type_hash.as_bytes().to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -228,7 +228,7 @@ impl Key {
 
             Key::CodeLiveCellIndexPrefix(code_hash, number_opt) => {
                 let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
-                bytes.extend(code_hash.to_vec());
+                bytes.extend(code_hash.as_bytes().to_vec());
                 if let Some(number) = number_opt {
                     bytes.extend(number.to_be_bytes().to_vec());
                 }
@@ -236,7 +236,7 @@ impl Key {
             }
             Key::CodeLiveCellIndex(code_hash, number, cell_index) => {
                 let mut bytes = KeyType::CodeLiveCellIndex.to_bytes();
-                bytes.extend(code_hash.to_vec());
+                bytes.extend(code_hash.as_bytes().to_vec());
                 // Must use big endian for sort
                 bytes.extend(number.to_be_bytes().to_vec());
                 bytes.extend(cell_index.to_bytes());
@@ -383,7 +383,7 @@ impl Key {
     }
 
     pub(crate) fn pair_genesis_hash(value: &H256) -> (Vec<u8>, Vec<u8>) {
-        (Key::GenesisHash.to_bytes(), value.to_vec())
+        (Key::GenesisHash.to_bytes(), value.as_bytes().to_vec())
     }
     pub(crate) fn pair_network(value: NetworkType) -> (Vec<u8>, Vec<u8>) {
         (Key::Network.to_bytes(), vec![value as u8])
@@ -405,7 +405,10 @@ impl Key {
         )
     }
     pub(crate) fn pair_secp_addr_lock(address: Address, value: &H256) -> (Vec<u8>, Vec<u8>) {
-        (Key::SecpAddrLock(address).to_bytes(), value.to_vec())
+        (
+            Key::SecpAddrLock(address).to_bytes(),
+            value.as_bytes().to_vec(),
+        )
     }
     pub(crate) fn pair_recent_header(value: &HeaderInfo) -> (Vec<u8>, Vec<u8>) {
         (
@@ -475,7 +478,7 @@ impl Key {
     ) -> (Vec<u8>, Vec<u8>) {
         (
             Key::LockTx(lock_hash, number, tx_index).to_bytes(),
-            value.to_vec(),
+            value.as_bytes().to_vec(),
         )
     }
 

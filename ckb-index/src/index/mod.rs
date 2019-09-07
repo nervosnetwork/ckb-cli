@@ -9,9 +9,8 @@ use ckb_sdk::{Address, GenesisInfo, NetworkType};
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, HeaderView},
-    packed::{Header, OutPoint, Script},
+    packed::{Byte32, Header, OutPoint, Script},
     prelude::*,
-    H256,
 };
 use rocksdb::{ColumnFamily, DB};
 
@@ -46,11 +45,11 @@ impl<'a> IndexDatabase<'a> {
         let genesis_header = genesis_info.header().clone();
         assert_eq!(genesis_header.number(), 0);
 
-        let (genesis_hash_opt, network_opt): (Option<H256>, Option<NetworkType>) = {
+        let (genesis_hash_opt, network_opt): (Option<Byte32>, Option<NetworkType>) = {
             let reader = RocksReader::new(db, cf);
             let genesis_hash_opt = reader
                 .get(&Key::GenesisHash.to_bytes())
-                .map(|bytes| H256::from_slice(&bytes).unwrap());
+                .map(|bytes| Byte32::from_slice(&bytes).unwrap());
             let network_opt = reader
                 .get(&Key::Network.to_bytes())
                 .map(|bytes| NetworkType::from_u8(bytes[0]).unwrap());
@@ -63,7 +62,7 @@ impl<'a> IndexDatabase<'a> {
                     network, network_opt
                 )));
             }
-            let hash: H256 = genesis_header.hash().unpack();
+            let hash: Byte32 = genesis_header.hash();
             if genesis_hash != hash {
                 return Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",
@@ -95,12 +94,12 @@ impl<'a> IndexDatabase<'a> {
 
     pub fn apply_next_block(&mut self, block: BlockView) -> Result<(), IndexError> {
         let number = block.header().number();
-        let block_hash: H256 = block.header().hash().unpack();
+        let block_hash = block.header().hash();
         if let Some(last_header) = self.last_header.clone() {
             if number != last_header.number() + 1 {
                 return Err(IndexError::InvalidBlockNumber(number));
             }
-            if block.header().parent_hash() != last_header.hash().unpack() {
+            if block.header().parent_hash() != last_header.hash() {
                 if number == 1 {
                     return Err(IndexError::IllegalBlock(block_hash));
                 }
@@ -131,7 +130,7 @@ impl<'a> IndexDatabase<'a> {
             self.apply_block_unchecked(block);
             Ok(())
         } else if number == 0 {
-            let genesis_hash = self.genesis_info.header().hash().unpack();
+            let genesis_hash = self.genesis_info.header().hash();
             if block_hash != genesis_hash {
                 Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",
@@ -162,9 +161,9 @@ impl<'a> IndexDatabase<'a> {
         self.last_number().map(|number| number + 1)
     }
 
-    fn get_address_inner(&self, reader: &RocksReader, lock_hash: H256) -> Option<Address> {
+    fn get_address_inner(&self, reader: &RocksReader, lock_hash: Byte32) -> Option<Address> {
         reader
-            .get(&Key::LockScript(lock_hash).to_bytes())
+            .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
             .and_then(|bytes| {
                 let script = Script::new_unchecked(bytes.into());
                 script.args().get(0).and_then(|arg| {
@@ -174,10 +173,10 @@ impl<'a> IndexDatabase<'a> {
             })
     }
 
-    pub fn get_capacity(&self, lock_hash: H256) -> Option<u64> {
+    pub fn get_capacity(&self, lock_hash: Byte32) -> Option<u64> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
-            .get(&Key::LockTotalCapacity(lock_hash).to_bytes())
+            .get(&Key::LockTotalCapacity(lock_hash.unpack()).to_bytes())
             .map(|bytes| {
                 let mut data = [0u8; 8];
                 data.copy_from_slice(&bytes[..8]);
@@ -185,55 +184,55 @@ impl<'a> IndexDatabase<'a> {
             })
     }
 
-    pub fn get_lock_hash_by_address(&self, address: Address) -> Option<H256> {
+    pub fn get_lock_hash_by_address(&self, address: Address) -> Option<Byte32> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
             .get(&Key::SecpAddrLock(address).to_bytes())
-            .map(|bytes| H256::from_slice(&bytes).unwrap())
+            .map(|bytes| Byte32::from_slice(&bytes).unwrap())
     }
 
-    pub fn get_lock_script_by_hash(&self, lock_hash: H256) -> Option<Script> {
+    pub fn get_lock_script_by_hash(&self, lock_hash: Byte32) -> Option<Script> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
-            .get(&Key::LockScript(lock_hash).to_bytes())
+            .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
             .map(|bytes| Script::new_unchecked(bytes.into()))
     }
 
-    // pub fn get_address(&self, lock_hash: H256) -> Option<Address> {
+    // pub fn get_address(&self, lock_hash: Byte32) -> Option<Address> {
     //     let reader = env_read.read().unwrap();
     //     self.get_address_inner(&reader, lock_hash)
     // }
 
     pub fn get_live_cells_by_lock<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
-        lock_hash: H256,
+        lock_hash: Byte32,
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone(), None);
-        let key_start = Key::LockLiveCellIndexPrefix(lock_hash, from_number);
+        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone().unpack(), None);
+        let key_start = Key::LockLiveCellIndexPrefix(lock_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }
 
     pub fn get_live_cells_by_type<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
-        type_hash: H256,
+        type_hash: Byte32,
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::TypeLiveCellIndexPrefix(type_hash.clone(), None);
-        let key_start = Key::TypeLiveCellIndexPrefix(type_hash, from_number);
+        let key_prefix = Key::TypeLiveCellIndexPrefix(type_hash.clone().unpack(), None);
+        let key_start = Key::TypeLiveCellIndexPrefix(type_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }
 
     pub fn get_live_cells_by_code<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
-        code_hash: H256,
+        code_hash: Byte32,
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::CodeLiveCellIndexPrefix(code_hash.clone(), None);
-        let key_start = Key::CodeLiveCellIndexPrefix(code_hash, from_number);
+        let key_prefix = Key::CodeLiveCellIndexPrefix(code_hash.clone().unpack(), None);
+        let key_start = Key::CodeLiveCellIndexPrefix(code_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }
 
@@ -273,7 +272,7 @@ impl<'a> IndexDatabase<'a> {
         infos
     }
 
-    pub fn get_top_n(&self, n: usize) -> Vec<(H256, Option<Address>, u64)> {
+    pub fn get_top_n(&self, n: usize) -> Vec<(Byte32, Option<Address>, u64)> {
         let reader = RocksReader::new(self.db, self.cf);
         let key_prefix: Vec<u8> = KeyType::LockTotalCapacityIndex.to_bytes();
 
@@ -284,8 +283,8 @@ impl<'a> IndexDatabase<'a> {
                 break;
             }
             if let Key::LockTotalCapacityIndex(capacity, lock_hash) = Key::from_bytes(&key_bytes) {
-                let address_opt = self.get_address_inner(&reader, lock_hash.clone());
-                pairs.push((lock_hash, address_opt, capacity));
+                let address_opt = self.get_address_inner(&reader, lock_hash.clone().pack());
+                pairs.push((lock_hash.pack(), address_opt, capacity));
             } else {
                 panic!("Got invalid key: {:?}", key_bytes);
             }
@@ -298,7 +297,7 @@ impl<'a> IndexDatabase<'a> {
 
     fn apply_block_unchecked(&mut self, block: BlockView) {
         let header = block.header();
-        let block_hash: H256 = header.hash().unpack();
+        let block_hash = header.hash();
         log::debug!("Block: {} => {:x}", header.number(), block_hash);
 
         // TODO: should forbid query when Init
@@ -386,7 +385,7 @@ impl<'a> IndexDatabase<'a> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IndexError {
     BlockImmature(u64),
-    IllegalBlock(H256),
+    IllegalBlock(Byte32),
     InvalidBlockNumber(u64),
     BlockInvalid(String),
     NotInit,

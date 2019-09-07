@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, OldAddress, ONE_CKB};
-use ckb_types::{packed::OutPoint, H160, H256};
+use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
@@ -109,6 +109,12 @@ where
 #[derive(Debug, Default)]
 pub struct FromStrParser<T: FromStr> {
     _t: PhantomData<T>,
+}
+
+impl<T: FromStr> FromStrParser<T> {
+    pub fn new() -> FromStrParser<T> {
+        FromStrParser { _t: PhantomData }
+    }
 }
 
 impl<T> ArgParser<T> for FromStrParser<T>
@@ -242,7 +248,7 @@ impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
             .map(ToOwned::to_owned)
             .ok_or_else(|| "File is empty".to_string())?;
         let data: H256 = FixedHashParser::<H256>::default().parse(privkey_string.as_str())?;
-        secp256k1::SecretKey::from_slice(&data[..])
+        secp256k1::SecretKey::from_slice(data.as_bytes())
             .map_err(|err| format!("Invalid secp256k1 secret key format, error: {}", err))
     }
 }
@@ -268,8 +274,8 @@ impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
         let line1: H256 = hash_parser.parse(&lines[0])?;
         let line2: H256 = hash_parser.parse(&lines[1])?;
         let mut bytes = [0u8; 64];
-        bytes[0..32].copy_from_slice(&line1[0..32]);
-        bytes[32..64].copy_from_slice(&line2[0..32]);
+        bytes[0..32].copy_from_slice(&line1.as_bytes()[0..32]);
+        bytes[32..64].copy_from_slice(&line2.as_bytes()[0..32]);
         MasterPrivKey::from_bytes(bytes).map_err(|err| err.to_string())
     }
 }
@@ -341,7 +347,7 @@ impl ArgParser<OutPoint> for OutPointParser {
         }
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
-        Ok(OutPoint::new(tx_hash, index))
+        Ok(OutPoint::new(tx_hash.pack(), index))
     }
 }
 
@@ -377,12 +383,6 @@ mod tests {
     use std::net::IpAddr;
 
     use super::*;
-
-    impl<T: FromStr> FromStrParser<T> {
-        pub fn new() -> FromStrParser<T> {
-            FromStrParser { _t: PhantomData }
-        }
-    }
 
     #[test]
     fn test_from_str() {

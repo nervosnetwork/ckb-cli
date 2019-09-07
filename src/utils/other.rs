@@ -7,7 +7,7 @@ use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     Address, GenesisInfo, HttpRpcClient,
 };
-use ckb_types::{core::BlockView, H160};
+use ckb_types::{core::BlockView, H160, H256};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
@@ -46,12 +46,11 @@ pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
         FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
     let address = address
         .or_else(|| pubkey.map(|pubkey| Address::from_pubkey(&pubkey).unwrap()))
-        .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(&lock_arg[..]).unwrap()))
+        .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(lock_arg.as_bytes()).unwrap()))
         .ok_or_else(|| "Please give one argument".to_owned())?;
     Ok(address)
 }
 
-/*
 pub fn get_singer(
     key_store: KeyStore,
 ) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
@@ -68,7 +67,6 @@ pub fn get_singer(
         Ok(signature_bytes)
     }
 }
-*/
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
     if let Some(alerts) = rpc_client
