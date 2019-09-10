@@ -119,7 +119,7 @@ impl<'a> WalletSubCommand<'a> {
 
     pub fn subcommand() -> App<'static, 'static> {
         SubCommand::with_name("wallet")
-            .about("Tranfer / query balance(with local index) / key utils")
+            .about("Transfer / query balance (with local index) / key utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
