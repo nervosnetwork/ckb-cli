@@ -566,6 +566,7 @@ dependencies = [
  "ckb-jsonrpc-types 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
  "ckb-resource 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
  "ckb-script 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "ckb-sdk-types 0.20.0",
  "ckb-types 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "faster-hex 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -582,6 +583,19 @@ dependencies = [
  "serde_json 1.0.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "tiny-keccak 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "ckb-sdk-types"
+version = "0.20.0"
+dependencies = [
+ "ckb-crypto 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "ckb-hash 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "ckb-jsonrpc-types 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "ckb-script 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "ckb-types 0.20.0-pre (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.20)",
+ "serde 1.0.98 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.93 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
