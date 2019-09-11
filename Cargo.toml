@@ -50,4 +50,4 @@ termion = "1.5"
 ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.20" }
 
 [workspace]
-members = ["ckb-sdk", "ckb-index"]
+members = ["ckb-sdk", "ckb-index", "ckb-sdk-types"]
