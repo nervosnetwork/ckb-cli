@@ -3,15 +3,13 @@ mod index;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::thread;
-use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, TransactionView},
+    core::{BlockView, TransactionView},
     packed::{Byte32, CellInput, Script},
     prelude::*,
     H160, H256,
@@ -90,21 +88,7 @@ impl<'a> WalletSubCommand<'a> {
         F: FnOnce(IndexDatabase) -> T,
     {
         if !self.interactive {
-            Request::call(self.index_controller.sender(), IndexRequest::Kick);
-            for _ in 0..600 {
-                let state = self.index_controller.state().read();
-                if state.is_error() || state.is_stopped() {
-                    break;
-                } else if !state.is_synced() {
-                    thread::sleep(Duration::from_millis(100));
-                }
-            }
-            if !self.index_controller.state().read().is_synced() {
-                return Err(format!(
-                    "Index database not synced({}), please try again",
-                    self.index_controller.state().read().to_string(),
-                ));
-            }
+            return Err("ERROR: This is an interactive mode only sub-command".to_string());
         }
 
         let genesis_info = self.genesis_info()?;
@@ -114,7 +98,12 @@ impl<'a> WalletSubCommand<'a> {
                 IndexDatabase::from_db(backend, cf, NetworkType::TestNet, genesis_info, false)?;
             Ok(func(db))
         })
-        .map_err(|err| err.to_string())
+        .map_err(|_err| {
+            format!(
+                "index database may not ready, sync process: {}",
+                self.index_controller.state().read().to_string()
+            )
+        })
     }
 
     pub fn subcommand() -> App<'static, 'static> {
@@ -243,7 +232,12 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
         if total_capacity < capacity {
             return Err(format!(
@@ -345,7 +339,12 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
         if total_capacity < capacity {
             return Err(format!(
@@ -447,7 +446,12 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
         if total_capacity < capacity {
             return Err(format!(
