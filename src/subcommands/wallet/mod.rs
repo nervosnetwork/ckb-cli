@@ -185,6 +185,7 @@ impl<'a> WalletSubCommand<'a> {
         m: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String> {
         let from_privkey: Option<secp256k1::SecretKey> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -276,7 +277,7 @@ impl<'a> WalletSubCommand<'a> {
                 self.build_witness_with_keystore(lock_arg, args, &password)
             })
         }?;
-        self.send_transaction(transaction, format, color)
+        self.send_transaction(transaction, format, color, debug)
     }
 
     pub fn deposit_dao(
@@ -284,6 +285,7 @@ impl<'a> WalletSubCommand<'a> {
         m: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String> {
         let from_privkey: Option<secp256k1::SecretKey> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -379,7 +381,7 @@ impl<'a> WalletSubCommand<'a> {
                 self.build_witness_with_keystore(lock_arg, args, &password)
             })
         }?;
-        self.send_transaction(transaction, format, color)
+        self.send_transaction(transaction, format, color, debug)
     }
 
     pub fn withdraw_dao(
@@ -387,6 +389,7 @@ impl<'a> WalletSubCommand<'a> {
         m: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String> {
         let from_privkey: Option<secp256k1::SecretKey> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -489,7 +492,7 @@ impl<'a> WalletSubCommand<'a> {
                 |args| self.build_witness_with_keystore(lock_arg, args, &password),
             )
         }?;
-        self.send_transaction(transaction, format, color)
+        self.send_transaction(transaction, format, color, debug)
     }
 
     fn build_witness_with_keystore(
@@ -526,12 +529,15 @@ impl<'a> WalletSubCommand<'a> {
         transaction: TransactionView,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String> {
         let transaction_view: ckb_jsonrpc_types::TransactionView = transaction.clone().into();
-        println!(
-            "[Send Transaction]:\n{}",
-            transaction_view.render(format, color)
-        );
+        if debug {
+            println!(
+                "[Send Transaction]:\n{}",
+                transaction_view.render(format, color)
+            );
+        }
 
         let resp = self
             .rpc_client
@@ -548,11 +554,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
-            ("transfer", Some(m)) => self.transfer(m, format, color),
-            ("deposit-dao", Some(m)) => self.deposit_dao(m, format, color),
-            ("withdraw-dao", Some(m)) => self.withdraw_dao(m, format, color),
+            ("transfer", Some(m)) => self.transfer(m, format, color, debug),
+            ("deposit-dao", Some(m)) => self.deposit_dao(m, format, color, debug),
+            ("withdraw-dao", Some(m)) => self.withdraw_dao(m, format, color, debug),
             ("get-capacity", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;

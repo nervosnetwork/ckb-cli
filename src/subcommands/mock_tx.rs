@@ -93,6 +93,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        _debug: bool,
     ) -> Result<String, String> {
         let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
 

@@ -120,6 +120,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        _debug: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("list", _) => {

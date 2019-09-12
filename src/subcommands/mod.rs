@@ -28,5 +28,6 @@ pub trait CliSubCommand {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        debug: bool,
     ) -> Result<String, String>;
 }
