@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{
-    wallet::{Key, KeyStore, MasterPrivKey},
+    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use ckb_types::{core::BlockView, prelude::*, H160, H256};
@@ -14,7 +14,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FixedHashParser, PrivkeyPathParser,
+        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FixedHashParser, FromStrParser,
+        PrivkeyPathParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -109,6 +110,16 @@ impl<'a> AccountSubCommand<'a> {
                             .clone()
                             .required(true)
                             .help("Output extended private key path (PrivKey + ChainCode)")
+                    ),
+                SubCommand::with_name("extended-address")
+                    .about("Extended address (see: BIP-44)")
+                    .arg(arg_lock_arg.clone())
+                    .arg(
+                        Arg::with_name("path")
+                            .long("path")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
+                            .help("The address path")
                     ),
             ])
     }
@@ -264,6 +275,26 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "Success exported account as extended privkey to: \"{}\", please use this file carefully",
                     key_path
                 ))
+            }
+            ("extended-address", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let path: Option<DerivationPath> =
+                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
+
+                let extended_pubkey = self
+                    .key_store
+                    .extended_pubkey(&lock_arg, path.as_ref())
+                    .map_err(|err| err.to_string())?;
+                let address = Address::from_pubkey(&extended_pubkey.public_key)?;
+                let resp = serde_json::json!({
+                    "lock_arg": format!("{:x}", address.hash()),
+                    "address": {
+                        "mainnet": address.to_string(NetworkType::MainNet),
+                        "testnet": address.to_string(NetworkType::TestNet),
+                    },
+                });
+                Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

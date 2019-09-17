@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
@@ -190,6 +191,16 @@ impl KeyStore {
         let filepath = self.get_filepath(address)?;
         let key = self.storage.get_key(address, &filepath, password)?;
         Ok(key.master_privkey.sign_recoverable(hash))
+    }
+    pub fn extended_pubkey(
+        &mut self,
+        address: &H160,
+        path: Option<&DerivationPath>,
+    ) -> Result<ExtendedPubKey, Error> {
+        Ok(self
+            .get_timed_key(address)?
+            .master_privkey()
+            .extended_pubkey(path)?)
     }
 
     // NOTE: assume refresh keystore directory is not a hot action
@@ -530,6 +541,23 @@ impl MasterPrivKey {
         let message =
             secp256k1::Message::from_slice(hash.as_bytes()).expect("Convert to message failed");
         SECP256K1.sign_recoverable(&message, &self.secp_secret_key)
+    }
+
+    pub fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, String> {
+        let sk = ExtendedPrivKey {
+            depth: 0,
+            parent_fingerprint: Default::default(),
+            child_number: ChildNumber::Normal { index: 0 },
+            private_key: self.secp_secret_key,
+            chain_code: ChainCode(self.chain_code),
+        };
+        let sub_sk = if let Some(path) = path {
+            sk.derive_priv(&SECP256K1, path)
+                .map_err(|err| err.to_string())?
+        } else {
+            sk
+        };
+        Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
     }
 
     pub fn address(&self) -> H160 {

@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
-use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
 use ckb_types::{
@@ -34,7 +33,7 @@ use ckb_sdk::{
     blake2b_args, build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
     Address, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
-    MIN_SECP_CELL_CAPACITY, ONE_CKB,
+    MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
