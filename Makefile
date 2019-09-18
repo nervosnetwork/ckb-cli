@@ -10,5 +10,8 @@ test:
 ci: fmt clippy test
 	git diff --exit-code Cargo.lock
 
+integration:
+	bash devtools/ci/integration.sh rc/v0.20
+
 prod: ## Build binary with release profile.
 	cargo build --release
