@@ -1,8 +1,10 @@
 fmt:
 	cargo fmt --all -- --check
+	cd test && cargo fmt --all -- --check
 
 clippy:
 	RUSTFLAGS='-F warnings' cargo clippy --all --tests
+	cd test && RUSTFLAGS='-F warnings' cargo clippy --all
 
 test:
 	RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all

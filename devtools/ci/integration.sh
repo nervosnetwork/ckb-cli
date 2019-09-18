@@ -19,9 +19,9 @@ fi
 
 rm -rf target && ln -snf ${CKB_CLI_DIR}/target target
 make prod
-CKB_BIN_DIR="`pwd`/target/release/ckb"
+CKB_DIR=`pwd`
 
 cd ${CKB_CLI_DIR}
 make prod
 rm -rf test/target && ln -snf ${CKB_CLI_DIR}/target test/target
-cd test && cargo run -- --bin ${CKB_BIN_DIR}
+cd test && cargo run -- --ckb-bin ${CKB_DIR}/target/release/ckb --cli-bin ${CKB_CLI_DIR}/target/release/ckb-cli

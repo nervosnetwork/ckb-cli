@@ -60,6 +60,10 @@ matrix:
     - name: Tests on Linux
       if: 'tag IS NOT present AND (type = pull_request OR branch = master)'
       os: linux
+    - name: PR Integration
+      if: 'tag IS NOT present AND branch != develop AND branch !~ /^rc\// AND (type = pull_request OR repo != nervosnetwork/ckb-cli)'
+      os: linux
+      script: make integration
     - name: Linters
       env: CACHE_NAME=linters
       if: 'tag IS NOT present AND (type = pull_request OR branch = master)'
