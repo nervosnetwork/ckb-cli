@@ -20,7 +20,6 @@ use serde_derive::{Deserialize, Serialize};
 
 pub enum IndexRequest {
     UpdateUrl(String),
-    Kick,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,14 +93,6 @@ impl IndexThreadState {
     pub fn is_error(&self) -> bool {
         match self {
             IndexThreadState::Error(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_synced(&self) -> bool {
-        match self {
-            IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
-                tip_number == number
-            }
             _ => false,
         }
     }
@@ -378,6 +369,5 @@ fn process_request(request: Request<IndexRequest, IndexResponse>, rpc_url: &mut 
             *rpc_url = url;
             responder.send(IndexResponse::Ok).is_err()
         }
-        IndexRequest::Kick => responder.send(IndexResponse::Ok).is_err(),
     }
 }
