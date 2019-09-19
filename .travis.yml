@@ -71,6 +71,10 @@ matrix:
         - make fmt
         - make clippy
         - git diff --exit-code Cargo.lock
+    - name: PR Integration
+      if: 'tag IS NOT present AND (type = pull_request OR branch = master)'
+      os: linux
+      script: make integration
 
     - name: Package for macOS
       if: 'tag IS present AND env(GITHUB_TOKEN) IS present'
