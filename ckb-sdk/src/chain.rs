@@ -170,6 +170,7 @@ pub struct TransferTransactionBuilder<'a> {
     to_data: &'a Bytes,
     to_address: &'a Address,
     to_capacity: u64,
+    tx_fee: u64,
 
     inputs: Vec<CellInput>,
     outputs: Vec<(CellOutput, Bytes)>,
@@ -186,9 +187,10 @@ impl<'a> TransferTransactionBuilder<'a> {
         to_data: &'a Bytes,
         to_address: &'a Address,
         to_capacity: u64,
+        tx_fee: u64,
         inputs: Vec<CellInput>,
     ) -> Self {
-        assert!(from_capacity >= to_capacity);
+        assert!(from_capacity >= (to_capacity + tx_fee));
 
         let mut witnesses = Vec::with_capacity(inputs.len());
         inputs.iter().for_each(|_| witnesses.push(VecDeque::new()));
@@ -199,6 +201,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             to_data,
             to_address,
             to_capacity,
+            tx_fee,
             inputs,
             witnesses,
 
@@ -306,7 +309,7 @@ impl<'a> TransferTransactionBuilder<'a> {
 
     // Exchange back to sender if the rest is enough to pay for a cell
     fn build_changes(&mut self, genesis_info: &GenesisInfo) {
-        let rest_capacity = self.from_capacity - self.to_capacity;
+        let rest_capacity = self.from_capacity - self.to_capacity - self.tx_fee;
         if rest_capacity >= *MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
             let change = CellOutput::new_builder()
