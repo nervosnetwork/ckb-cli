@@ -2,17 +2,18 @@ use std::collections::{BTreeMap, HashMap};
 use std::mem;
 use std::ops::Bound;
 
+use rocksdb::ops::{GetCF, IterateCF, WriteOps};
 use rocksdb::{ColumnFamily, DBIterator, Direction, IteratorMode, WriteBatch, DB};
 
 use super::{KVReader, KVTxn};
 
 pub struct RocksReader<'a> {
-    cf: ColumnFamily<'a>,
+    cf: &'a ColumnFamily,
     db: &'a DB,
 }
 
 impl<'a> RocksReader<'a> {
-    pub fn new(db: &'a DB, cf: ColumnFamily<'a>) -> RocksReader<'a> {
+    pub fn new(db: &'a DB, cf: &'a ColumnFamily) -> RocksReader<'a> {
         RocksReader { db, cf }
     }
 }
@@ -49,14 +50,14 @@ impl<'a> Iterator for ReaderIter<'a> {
 }
 
 pub struct RocksTxn<'a> {
-    cf: ColumnFamily<'a>,
+    cf: &'a ColumnFamily,
     db: &'a DB,
     removed: HashMap<Vec<u8>, bool>,
     inserted: BTreeMap<Vec<u8>, Vec<u8>>,
 }
 
 impl<'a> RocksTxn<'a> {
-    pub fn new(db: &'a DB, cf: ColumnFamily<'a>) -> RocksTxn<'a> {
+    pub fn new(db: &'a DB, cf: &'a ColumnFamily) -> RocksTxn<'a> {
         RocksTxn {
             cf,
             db,
@@ -141,7 +142,7 @@ impl<'a> TxnIter<'a> {
         let mode = IteratorMode::From(key_start, Direction::Forward);
         let iter = txn
             .db
-            .iterator_cf(txn.cf, mode)
+            .iterator_cf(&txn.cf, mode)
             .expect("RocksReader iterator_cf failed");
         let mut reader_iter = ReaderIter { iter };
         let next_mem_pair = txn
@@ -204,7 +205,7 @@ impl<'a> Iterator for TxnIter<'a> {
     }
 }
 
-fn get_cf(db: &DB, cf: ColumnFamily, key: &[u8]) -> Option<Vec<u8>> {
+fn get_cf(db: &DB, cf: &ColumnFamily, key: &[u8]) -> Option<Vec<u8>> {
     db.get_cf(cf, key)
         .expect("RocksReader get_cf failed")
         .map(|value| value.to_vec())

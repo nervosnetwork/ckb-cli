@@ -257,7 +257,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
             .rpc_client
             .get_live_cell(out_point.clone().into())
             .call()
-            .map(|resp| resp.cell.map(Into::into))
+            .map(|resp| resp.cell.map(|info| info.output.into()))
             .map_err(|err| err.to_string())?;
         if let Some(output) = output {
             Ok(self

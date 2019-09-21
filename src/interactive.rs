@@ -211,7 +211,7 @@ impl InteractiveEnv {
         if self.genesis_info.is_none() {
             let genesis_block: BlockView = self
                 .rpc_client
-                .get_block_by_number(BlockNumber(0))
+                .get_block_by_number(BlockNumber::from(0))
                 .call()
                 .map_err(|err| err.to_string())?
                 .0

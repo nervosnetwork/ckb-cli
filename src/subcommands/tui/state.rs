@@ -69,7 +69,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
 
             // Insert tip block
             if let Some(block) = new_block {
-                let number = block.header.inner.number.0;
+                let number = block.header.inner.number.value();
                 state_mut.blocks.insert(number, block.into());
             }
 
@@ -86,7 +86,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
                         break;
                     }
                     if let Some(block) = rpc_client
-                        .get_block_by_number(BlockNumber(first_number - 1))
+                        .get_block_by_number(BlockNumber::from(first_number - 1))
                         .call()?
                         .0
                     {
@@ -123,8 +123,8 @@ impl State {
             tip: self.blocks.values().last().cloned(),
             chain: self.chain.as_ref().map(|info| ChainInfo {
                 chain: info.chain.clone(),
-                median_time: info.median_time.clone(),
-                epoch: info.epoch.clone(),
+                median_time: info.median_time,
+                epoch: info.epoch,
                 difficulty: info.difficulty.clone(),
                 is_initial_block_download: info.is_initial_block_download,
                 alerts: info.alerts.clone(),
@@ -164,7 +164,7 @@ impl From<BlockView> for BlockInfo {
         let cellbase_outputs = cellbase
             .outputs
             .iter()
-            .map(|output| (output.capacity.0.as_u64(), output.lock.clone().into()))
+            .map(|output| (output.capacity.value(), output.lock.clone().into()))
             .collect::<Vec<(u64, Script)>>();
         let mut input_count = 0;
         let mut output_count = 0;

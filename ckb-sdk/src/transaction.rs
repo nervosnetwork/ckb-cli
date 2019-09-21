@@ -1,5 +1,5 @@
 use ckb_hash::blake2b_256;
-use ckb_script::{ScriptConfig, TransactionScriptsVerifier};
+use ckb_script::TransactionScriptsVerifier;
 use ckb_types::{
     bytes::Bytes,
     core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
@@ -273,12 +273,11 @@ impl<'a> MockTransactionHelper<'a> {
         let tx = self.mock_tx.core_transaction();
         let rtx = {
             let mut seen_inputs = FnvHashSet::default();
-            resolve_transaction(&tx, &mut seen_inputs, &resource, &resource)
+            resolve_transaction(tx, &mut seen_inputs, &resource, &resource)
                 .map_err(|err| format!("Resolve transaction error: {:?}", err))?
         };
 
-        let script_config = ScriptConfig::default();
-        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource, &script_config);
+        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource);
         verifier.set_debug_printer(|script_hash, message| {
             println!("script: {:x}, debug: {}", script_hash, message);
         });
