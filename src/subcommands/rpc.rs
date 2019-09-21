@@ -1,4 +1,6 @@
-use ckb_jsonrpc_types::{BlockNumber, EpochNumber, OutPoint, Timestamp, Transaction, Unsigned};
+use ckb_jsonrpc_types::{
+    BlockNumber, EpochNumber, OutPoint, Timestamp, Transaction, Uint32, Uint64,
+};
 use ckb_sdk::HttpRpcClient;
 use ckb_types::H256;
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -120,6 +122,11 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
                             .help("Output index"),
+                    )
+                    .arg(
+                        Arg::with_name("with-data")
+                            .long("with-data")
+                            .help("Get live cell with data")
                     ),
                 SubCommand::with_name("get_tip_block_number").about("Get tip block number"),
                 SubCommand::with_name("get_tip_header").about("Get tip header"),
@@ -246,17 +253,17 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self
                     .rpc_client
-                    .get_block_by_number(BlockNumber(number))
+                    .get_block_by_number(BlockNumber::from(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
             }
             ("get_block_hash", Some(m)) => {
-                let number = FromStrParser::<u64>::default().from_matches(m, "number")?;
+                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 let resp = self
                     .rpc_client
-                    .get_block_hash(BlockNumber(number))
+                    .get_block_hash(BlockNumber::from(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
@@ -280,8 +287,8 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .rpc_client
                     .get_cells_by_lock_hash(
                         lock_hash,
-                        BlockNumber(from_number),
-                        BlockNumber(to_number),
+                        BlockNumber::from(from_number),
+                        BlockNumber::from(to_number),
                     )
                     .call()
                     .map_err(|err| err.to_string())?;
@@ -299,7 +306,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
                 let resp = self
                     .rpc_client
-                    .get_epoch_by_number(EpochNumber(number))
+                    .get_epoch_by_number(EpochNumber::from(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
@@ -319,7 +326,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self
                     .rpc_client
-                    .get_header_by_number(BlockNumber(number))
+                    .get_header_by_number(BlockNumber::from(number))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
@@ -328,14 +335,15 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
+                let with_data = m.is_present("with-data");
                 let out_point = OutPoint {
                     tx_hash,
-                    index: Unsigned(u64::from(index)),
+                    index: Uint32::from(index),
                 };
 
                 let resp = self
                     .rpc_client
-                    .get_live_cell(out_point)
+                    .get_live_cell(out_point, with_data)
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
@@ -386,8 +394,8 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .rpc_client
                     .get_live_cells_by_lock_hash(
                         hash,
-                        Unsigned(page),
-                        Unsigned(u64::from(perpage)),
+                        Uint64::from(page),
+                        Uint64::from(u64::from(perpage)),
                         Some(reverse_order),
                     )
                     .call()
@@ -404,8 +412,8 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .rpc_client
                     .get_transactions_by_lock_hash(
                         hash,
-                        Unsigned(page),
-                        Unsigned(u64::from(perpage)),
+                        Uint64::from(page),
+                        Uint64::from(u64::from(perpage)),
                         Some(reverse_order),
                     )
                     .call()
@@ -419,7 +427,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self
                     .rpc_client
-                    .index_lock_hash(hash, index_from.map(BlockNumber))
+                    .index_lock_hash(hash, index_from.map(BlockNumber::from))
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
@@ -456,7 +464,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let command = m.value_of("command").map(|v| v.to_string()).unwrap();
                 let reason = m.value_of("reason").map(|v| v.to_string());
                 let absolute = Some(false);
-                let ban_time = Some(Timestamp(ban_time.as_secs() * 1000));
+                let ban_time = Some(Timestamp::from(ban_time.as_secs() * 1000));
 
                 self.rpc_client
                     .set_ban(address.to_string(), command, ban_time, absolute, reason)

@@ -3,7 +3,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_types::H256;
-use rocksdb::{ColumnFamily, Options, DB};
+use rocksdb::{
+    ops::{GetColumnFamilys, OpenCF},
+    ColumnFamily, Options, DB,
+};
 
 use crate::{Error, ROCKSDB_COL_INDEX_DB};
 
@@ -42,16 +45,15 @@ where
 pub fn with_index_db<P, T, F>(path: P, genesis_hash: H256, func: F) -> Result<T, Error>
 where
     P: AsRef<Path>,
-    F: FnOnce(&DB, ColumnFamily) -> Result<T, Error>,
+    F: FnOnce(&DB, &ColumnFamily) -> Result<T, Error>,
 {
     let mut directory = path.as_ref().to_path_buf();
     directory.push(format!("{:#x}", genesis_hash));
     std::fs::create_dir_all(&directory)?;
     with_rocksdb(directory, None, |db| {
-        let cf = db.cf_handle(ROCKSDB_COL_INDEX_DB).unwrap_or_else(|| {
-            db.create_cf(ROCKSDB_COL_INDEX_DB, &Options::default())
-                .unwrap_or_else(|_| panic!("Create ColumnFamily {} failed", ROCKSDB_COL_INDEX_DB))
-        });
+        let cf = db
+            .cf_handle(ROCKSDB_COL_INDEX_DB)
+            .expect("Get ColumnFamily failed");
         func(db, cf)
     })
 }

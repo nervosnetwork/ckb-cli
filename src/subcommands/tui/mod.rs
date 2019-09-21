@@ -55,7 +55,7 @@ impl TuiSubCommand {
     pub fn start(self) -> Result<String, String> {
         let genesis_info = {
             let genesis_block: BlockView = HttpRpcClient::from_uri(&self.url)
-                .get_block_by_number(BlockNumber(0))
+                .get_block_by_number(BlockNumber::from(0))
                 .call()
                 .map_err(|err| {
                     format!(
@@ -287,7 +287,7 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     };
 
     let chain_name = chain.as_ref().map(|info| info.chain.to_string());
-    let epoch = chain.as_ref().map(|info| info.epoch.0.to_string());
+    let epoch = chain.as_ref().map(|info| info.epoch.value().to_string());
     let difficulty = chain.as_ref().map(|info| info.difficulty.to_string());
     let ibd = chain
         .as_ref()
@@ -307,7 +307,9 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     let tx_pool_info = tx_pool.map(|info| {
         format!(
             "pending={}, proposed={}, orphan={}",
-            info.pending.0, info.proposed.0, info.orphan.0,
+            info.pending.value(),
+            info.proposed.value(),
+            info.orphan.value(),
         )
     });
     let peers_count = Some(format!("{}", peer_count));

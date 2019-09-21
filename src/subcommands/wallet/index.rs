@@ -258,7 +258,7 @@ fn process(
         *rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
     }
     let genesis_block: BlockView = rpc_client
-        .get_block_by_number(BlockNumber(0))
+        .get_block_by_number(BlockNumber::from(0))
         .call()
         .map_err(|err| err.to_string())?
         .0
@@ -303,7 +303,7 @@ fn process(
                     if let Some(exit) = try_recv(&receiver, rpc_url) {
                         return Ok(Some(exit));
                     }
-                    let next_block_number = BlockNumber(db.next_number().unwrap());
+                    let next_block_number = BlockNumber::from(db.next_number().unwrap());
                     if let Some(next_block) = rpc_client
                         .get_block_by_number(next_block_number)
                         .call()

@@ -24,7 +24,7 @@ use types::BlockDeltaInfo;
 //  [reference]: https://stackoverflow.com/a/33571804
 pub struct IndexDatabase<'a> {
     db: &'a DB,
-    cf: ColumnFamily<'a>,
+    cf: &'a ColumnFamily,
     // network: NetworkType,
     genesis_info: GenesisInfo,
     last_header: Option<HeaderView>,
@@ -37,7 +37,7 @@ pub struct IndexDatabase<'a> {
 impl<'a> IndexDatabase<'a> {
     pub fn from_db(
         db: &'a DB,
-        cf: ColumnFamily<'a>,
+        cf: &'a ColumnFamily,
         network: NetworkType,
         genesis_info: GenesisInfo,
         enable_explorer: bool,

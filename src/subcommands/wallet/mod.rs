@@ -72,7 +72,7 @@ impl<'a> WalletSubCommand<'a> {
         if self.genesis_info.is_none() {
             let genesis_block: BlockView = self
                 .rpc_client
-                .get_block_by_number(BlockNumber(0))
+                .get_block_by_number(BlockNumber::from(0))
                 .call()
                 .map_err(|err| err.to_string())?
                 .0
@@ -209,7 +209,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
@@ -317,7 +317,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
@@ -427,7 +427,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {
@@ -742,13 +742,17 @@ fn is_live_cell(cell: &CellWithStatus) -> bool {
     if cell.status != "live" {
         eprintln!(
             "[ERROR]: Not live cell({:?}) status: {}",
-            cell.cell, cell.status
+            cell.cell.as_ref().map(|info| &info.output),
+            cell.status
         );
         return false;
     }
 
     if cell.cell.is_none() {
-        eprintln!("[ERROR]: No output found for cell: {:?}", cell.cell);
+        eprintln!(
+            "[ERROR]: No output found for cell: {:?}",
+            cell.cell.as_ref().map(|info| &info.output)
+        );
         return false;
     }
 
@@ -756,14 +760,14 @@ fn is_live_cell(cell: &CellWithStatus) -> bool {
 }
 
 fn is_secp_cell(cell: &CellWithStatus) -> bool {
-    if let Some(ref output) = cell.cell {
+    if let Some(ref info) = cell.cell {
         // FIXME Check if output.data.is_empty()
-        if output.type_.is_none() {
+        if info.output.type_.is_none() {
             return true;
         } else {
             log::info!(
                 "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                output
+                info.output
             );
         }
     }
@@ -772,8 +776,9 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
 }
 
 fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &Byte32) -> bool {
-    if let Some(ref output) = cell.cell {
-        return output
+    if let Some(ref info) = cell.cell {
+        return info
+            .output
             .type_
             .as_ref()
             .map(|script| {
@@ -796,7 +801,7 @@ fn build_dao_inputs(
             .get_tip_header()
             .call()
             .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-        tip_header.inner.number.0
+        tip_header.inner.number.value()
     };
 
     let mut inputs = Vec::with_capacity(infos.len());
@@ -832,9 +837,9 @@ fn build_dao_withdraw_hash(rpc_client: &mut HttpRpcClient) -> Result<H256, Strin
         .get_tip_header()
         .call()
         .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-    let dao_withdraw_number = tip_header.inner.number.0 - DAO_MATURITY;
+    let dao_withdraw_number = tip_header.inner.number.value() - DAO_MATURITY;
     let dao_withdraw_hash = rpc_client
-        .get_header_by_number(BlockNumber(dao_withdraw_number))
+        .get_header_by_number(BlockNumber::from(dao_withdraw_number))
         .call()
         .map_err(|err| format!("Send get_header_by_number error: {}", err))?
         .0

@@ -82,7 +82,7 @@ pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
             message,
         } in alerts
         {
-            if notice_until.0
+            if notice_until.value()
                 >= SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
@@ -92,8 +92,8 @@ pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
                 eprintln!(
                     "[{}]: id={}, priority={}, message={}",
                     "alert".yellow().bold(),
-                    id.0.to_string().blue().bold(),
-                    priority.0.to_string().blue().bold(),
+                    id.value().to_string().blue().bold(),
+                    priority.value().to_string().blue().bold(),
                     message.yellow().bold(),
                 )
             }
@@ -107,7 +107,7 @@ pub fn get_genesis_info(
 ) -> Result<GenesisInfo, String> {
     if genesis_info.is_none() {
         let genesis_block: BlockView = rpc_client
-            .get_block_by_number(BlockNumber(0))
+            .get_block_by_number(BlockNumber::from(0))
             .call()
             .map_err(|err| err.to_string())?
             .0

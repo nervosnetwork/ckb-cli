@@ -4,6 +4,7 @@ use ckb_types::{
     bytes::Bytes,
     core::{
         cell::{CellMeta, CellMetaBuilder, CellProvider, CellStatus, HeaderChecker},
+        error::OutPointError,
         BlockExt, DepType, EpochExt, HeaderView, TransactionView,
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Transaction},
@@ -167,8 +168,11 @@ impl Resource {
 }
 
 impl<'a> HeaderChecker for Resource {
-    fn is_valid(&self, block_hash: &Byte32) -> bool {
-        self.required_headers.contains_key(block_hash)
+    fn check_valid(&self, block_hash: &Byte32) -> Result<(), ckb_error::Error> {
+        if !self.required_headers.contains_key(block_hash) {
+            return Err(OutPointError::InvalidHeader(block_hash.clone()).into());
+        }
+        Ok(())
     }
 }
 
