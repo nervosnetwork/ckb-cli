@@ -209,7 +209,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
@@ -317,7 +317,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
@@ -427,7 +427,7 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {

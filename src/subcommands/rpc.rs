@@ -122,6 +122,11 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
                             .help("Output index"),
+                    )
+                    .arg(
+                        Arg::with_name("with-data")
+                            .long("with-data")
+                            .help("Get live cell with data")
                     ),
                 SubCommand::with_name("get_tip_block_number").about("Get tip block number"),
                 SubCommand::with_name("get_tip_header").about("Get tip header"),
@@ -330,6 +335,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
+                let with_data = m.is_present("with-data");
                 let out_point = OutPoint {
                     tx_hash,
                     index: Uint32::from(index),
@@ -337,7 +343,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self
                     .rpc_client
-                    .get_live_cell(out_point)
+                    .get_live_cell(out_point, with_data)
                     .call()
                     .map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))

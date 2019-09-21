@@ -56,7 +56,7 @@ jsonrpc_client!(pub struct RpcClient {
     pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> RpcRequest<OptionEpochView>;
     pub fn get_header(&mut self, hash: H256) -> RpcRequest<OptionHeaderView>;
     pub fn get_header_by_number(&mut self, number: BlockNumber) -> RpcRequest<OptionHeaderView>;
-    pub fn get_live_cell(&mut self, out_point: OutPoint) -> RpcRequest<CellWithStatus>;
+    pub fn get_live_cell(&mut self, out_point: OutPoint, with_data: bool) -> RpcRequest<CellWithStatus>;
     pub fn get_tip_block_number(&mut self) -> RpcRequest<BlockNumber>;
     pub fn get_tip_header(&mut self) -> RpcRequest<HeaderView>;
     pub fn get_transaction(&mut self, hash: H256) -> RpcRequest<OptionTransactionWithStatus>;
