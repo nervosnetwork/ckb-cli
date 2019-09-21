@@ -208,12 +208,12 @@ impl GlobalConfig {
         let output = values
             .iter()
             .map(|(name, value)| {
-                format!(
-                    "[ {:>width$} ]: {}",
-                    name,
-                    Yellow.paint(*value),
-                    width = max_width
-                )
+                let value = if self.color {
+                    Yellow.paint(*value).to_string()
+                } else {
+                    (*value).to_string()
+                };
+                format!("[ {:>width$} ]: {}", name, value, width = max_width)
             })
             .collect::<Vec<String>>()
             .join("\n");

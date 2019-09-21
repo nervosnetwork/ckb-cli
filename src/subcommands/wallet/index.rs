@@ -20,7 +20,6 @@ use serde_derive::{Deserialize, Serialize};
 
 pub enum IndexRequest {
     UpdateUrl(String),
-    Kick,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,14 +93,6 @@ impl IndexThreadState {
     pub fn is_error(&self) -> bool {
         match self {
             IndexThreadState::Error(_) => true,
-            _ => false,
-        }
-    }
-    pub fn is_synced(&self) -> bool {
-        match self {
-            IndexThreadState::Processing(Some(SimpleBlockInfo { number, .. }), tip_number) => {
-                tip_number == number
-            }
             _ => false,
         }
     }
@@ -267,7 +258,7 @@ fn process(
         *rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
     }
     let genesis_block: BlockView = rpc_client
-        .get_block_by_number(BlockNumber(0))
+        .get_block_by_number(BlockNumber::from(0))
         .call()
         .map_err(|err| err.to_string())?
         .0
@@ -312,7 +303,7 @@ fn process(
                     if let Some(exit) = try_recv(&receiver, rpc_url) {
                         return Ok(Some(exit));
                     }
-                    let next_block_number = BlockNumber(db.next_number().unwrap());
+                    let next_block_number = BlockNumber::from(db.next_number().unwrap());
                     if let Some(next_block) = rpc_client
                         .get_block_by_number(next_block_number)
                         .call()
@@ -378,6 +369,5 @@ fn process_request(request: Request<IndexRequest, IndexResponse>, rpc_url: &mut 
             *rpc_url = url;
             responder.send(IndexResponse::Ok).is_err()
         }
-        IndexRequest::Kick => responder.send(IndexResponse::Ok).is_err(),
     }
 }

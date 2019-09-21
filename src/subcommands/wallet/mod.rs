@@ -3,15 +3,13 @@ mod index;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::thread;
-use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, TransactionView},
+    core::{BlockView, TransactionView},
     packed::{Byte32, CellInput, Script},
     prelude::*,
     H160, H256,
@@ -74,7 +72,7 @@ impl<'a> WalletSubCommand<'a> {
         if self.genesis_info.is_none() {
             let genesis_block: BlockView = self
                 .rpc_client
-                .get_block_by_number(BlockNumber(0))
+                .get_block_by_number(BlockNumber::from(0))
                 .call()
                 .map_err(|err| err.to_string())?
                 .0
@@ -90,21 +88,7 @@ impl<'a> WalletSubCommand<'a> {
         F: FnOnce(IndexDatabase) -> T,
     {
         if !self.interactive {
-            Request::call(self.index_controller.sender(), IndexRequest::Kick);
-            for _ in 0..600 {
-                let state = self.index_controller.state().read();
-                if state.is_error() || state.is_stopped() {
-                    break;
-                } else if !state.is_synced() {
-                    thread::sleep(Duration::from_millis(100));
-                }
-            }
-            if !self.index_controller.state().read().is_synced() {
-                return Err(format!(
-                    "Index database not synced({}), please try again",
-                    self.index_controller.state().read().to_string(),
-                ));
-            }
+            return Err("ERROR: This is an interactive mode only sub-command".to_string());
         }
 
         let genesis_info = self.genesis_info()?;
@@ -114,12 +98,17 @@ impl<'a> WalletSubCommand<'a> {
                 IndexDatabase::from_db(backend, cf, NetworkType::TestNet, genesis_info, false)?;
             Ok(func(db))
         })
-        .map_err(|err| err.to_string())
+        .map_err(|_err| {
+            format!(
+                "index database may not ready, sync process: {}",
+                self.index_controller.state().read().to_string()
+            )
+        })
     }
 
     pub fn subcommand() -> App<'static, 'static> {
         SubCommand::with_name("wallet")
-            .about("Tranfer / query balance(with local index) / key utils")
+            .about("Transfer / query balance (with local index) / key utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
@@ -129,6 +118,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
+                    .arg(arg::tx_fee().required(true))
                     .arg(arg::with_password()),
                 SubCommand::with_name("deposit-dao")
                     .about("Deposit capacity into NervosDAO(can have data)")
@@ -138,6 +128,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
+                    .arg(arg::tx_fee().required(true))
                     .arg(arg::with_password()),
                 SubCommand::with_name("withdraw-dao")
                     .about("Withdraw capacity from NervosDAO(can have data)")
@@ -147,6 +138,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
+                    .arg(arg::tx_fee().required(true))
                     .arg(arg::with_password()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
@@ -191,6 +183,7 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -216,12 +209,12 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity, true)
+                (total_capacity >= capacity + tx_fee, true)
             } else {
                 (false, false)
             }
@@ -243,9 +236,14 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
-        if total_capacity < capacity {
+        if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(NetworkType::TestNet),
@@ -259,6 +257,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
+            tx_fee,
             inputs,
         );
         let transaction = if let Some(ref privkey) = from_privkey {
@@ -290,6 +289,7 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -317,12 +317,12 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity, true)
+                (total_capacity >= capacity + tx_fee, true)
             } else {
                 (false, false)
             }
@@ -345,9 +345,14 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
-        if total_capacity < capacity {
+        if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(NetworkType::TestNet),
@@ -362,6 +367,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
+            tx_fee,
             inputs,
         );
         let transaction = if let Some(ref privkey) = from_privkey {
@@ -393,6 +399,7 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -420,12 +427,12 @@ impl<'a> WalletSubCommand<'a> {
             let out_point = info.out_point();
             let resp: CellWithStatus = self
                 .rpc_client
-                .get_live_cell(out_point.into())
+                .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity, true)
+                (total_capacity >= capacity + tx_fee, true)
             } else {
                 (false, false)
             }
@@ -447,9 +454,14 @@ impl<'a> WalletSubCommand<'a> {
                     terminator,
                 ))
             })
-            .map_err(|err| err.to_string())?;
+            .map_err(|_err| {
+                format!(
+                    "index database may not ready, sync process: {}",
+                    self.index_controller.state().read().to_string()
+                )
+            })?;
 
-        if total_capacity < capacity {
+        if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(NetworkType::TestNet),
@@ -466,6 +478,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
+            tx_fee,
             inputs,
         );
         let transaction = if let Some(ref privkey) = from_privkey {
@@ -729,13 +742,17 @@ fn is_live_cell(cell: &CellWithStatus) -> bool {
     if cell.status != "live" {
         eprintln!(
             "[ERROR]: Not live cell({:?}) status: {}",
-            cell.cell, cell.status
+            cell.cell.as_ref().map(|info| &info.output),
+            cell.status
         );
         return false;
     }
 
     if cell.cell.is_none() {
-        eprintln!("[ERROR]: No output found for cell: {:?}", cell.cell);
+        eprintln!(
+            "[ERROR]: No output found for cell: {:?}",
+            cell.cell.as_ref().map(|info| &info.output)
+        );
         return false;
     }
 
@@ -743,14 +760,14 @@ fn is_live_cell(cell: &CellWithStatus) -> bool {
 }
 
 fn is_secp_cell(cell: &CellWithStatus) -> bool {
-    if let Some(ref output) = cell.cell {
+    if let Some(ref info) = cell.cell {
         // FIXME Check if output.data.is_empty()
-        if output.type_.is_none() {
+        if info.output.type_.is_none() {
             return true;
         } else {
             log::info!(
                 "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                output
+                info.output
             );
         }
     }
@@ -759,8 +776,9 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
 }
 
 fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &Byte32) -> bool {
-    if let Some(ref output) = cell.cell {
-        return output
+    if let Some(ref info) = cell.cell {
+        return info
+            .output
             .type_
             .as_ref()
             .map(|script| {
@@ -783,7 +801,7 @@ fn build_dao_inputs(
             .get_tip_header()
             .call()
             .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-        tip_header.inner.number.0
+        tip_header.inner.number.value()
     };
 
     let mut inputs = Vec::with_capacity(infos.len());
@@ -819,9 +837,9 @@ fn build_dao_withdraw_hash(rpc_client: &mut HttpRpcClient) -> Result<H256, Strin
         .get_tip_header()
         .call()
         .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-    let dao_withdraw_number = tip_header.inner.number.0 - DAO_MATURITY;
+    let dao_withdraw_number = tip_header.inner.number.value() - DAO_MATURITY;
     let dao_withdraw_hash = rpc_client
-        .get_header_by_number(BlockNumber(dao_withdraw_number))
+        .get_header_by_number(BlockNumber::from(dao_withdraw_number))
         .call()
         .map_err(|err| format!("Send get_header_by_number error: {}", err))?
         .0

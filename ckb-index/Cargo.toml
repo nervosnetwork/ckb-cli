@@ -1,6 +1,6 @@
 [package]
 name = "ckb-index"
-version = "0.20.0"
+version = "0.21.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -10,8 +10,10 @@ serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 bincode = "1.1.4"
 log = "0.4.6"
-rocksdb = { version = "0.12.2", default-features = false }
 failure = "0.1.5"
-
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.20" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
 ckb-sdk = { path = "../ckb-sdk" }
+
+[dependencies.rocksdb]
+git = "https://github.com/nervosnetwork/rust-rocksdb"
+rev = "14d2991"

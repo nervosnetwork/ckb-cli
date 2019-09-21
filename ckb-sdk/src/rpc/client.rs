@@ -1,7 +1,7 @@
 use ckb_jsonrpc_types::{
-    BannedAddress, BlockNumber, BlockReward, BlockView, CellOutputWithOutPoint, CellTransaction,
+    BannedAddr, BlockNumber, BlockReward, BlockView, CellOutputWithOutPoint, CellTransaction,
     CellWithStatus, ChainInfo, EpochNumber, EpochView, HeaderView, LiveCell, LockHashIndexState,
-    Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus, TxPoolInfo, Unsigned,
+    Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus, TxPoolInfo, Uint64,
 };
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
@@ -34,7 +34,7 @@ pub struct OptionEpochView(pub Option<EpochView>);
 pub struct PeerStates(pub Vec<PeerState>);
 
 #[derive(Serialize, Deserialize)]
-pub struct BannedAddresses(pub Vec<BannedAddress>);
+pub struct BannedAddres(pub Vec<BannedAddr>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionBlockReward(pub Option<BlockReward>);
@@ -56,7 +56,7 @@ jsonrpc_client!(pub struct RpcClient {
     pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> RpcRequest<OptionEpochView>;
     pub fn get_header(&mut self, hash: H256) -> RpcRequest<OptionHeaderView>;
     pub fn get_header_by_number(&mut self, number: BlockNumber) -> RpcRequest<OptionHeaderView>;
-    pub fn get_live_cell(&mut self, out_point: OutPoint) -> RpcRequest<CellWithStatus>;
+    pub fn get_live_cell(&mut self, out_point: OutPoint, with_data: bool) -> RpcRequest<CellWithStatus>;
     pub fn get_tip_block_number(&mut self) -> RpcRequest<BlockNumber>;
     pub fn get_tip_header(&mut self) -> RpcRequest<HeaderView>;
     pub fn get_transaction(&mut self, hash: H256) -> RpcRequest<OptionTransactionWithStatus>;
@@ -66,15 +66,15 @@ jsonrpc_client!(pub struct RpcClient {
     pub fn get_live_cells_by_lock_hash(
         &mut self,
         lock_hash: H256,
-        page: Unsigned,
-        per_page: Unsigned,
+        page: Uint64,
+        per_page: Uint64,
         reverse_order: Option<bool>
     ) -> RpcRequest<LiveCells>;
     pub fn get_transactions_by_lock_hash(
         &mut self,
         lock_hash: H256,
-        page: Unsigned,
-        per_page: Unsigned,
+        page: Uint64,
+        per_page: Uint64,
         reverse_order: Option<bool>
     ) -> RpcRequest<CellTransactions>;
     pub fn index_lock_hash(
@@ -84,7 +84,7 @@ jsonrpc_client!(pub struct RpcClient {
     ) -> RpcRequest<LockHashIndexState>;
 
     // Net
-    pub fn get_banned_addresses(&mut self) -> RpcRequest<BannedAddresses>;
+    pub fn get_banned_addresses(&mut self) -> RpcRequest<BannedAddres>;
     pub fn get_peers(&mut self) -> RpcRequest<Nodes>;
     pub fn local_node_info(&mut self) -> RpcRequest<Node>;
     pub fn set_ban(

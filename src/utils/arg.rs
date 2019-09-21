@@ -87,6 +87,14 @@ pub fn capacity<'a, 'b>() -> Arg<'a, 'b> {
         .help("The capacity (unit: CKB, format: 123.335)")
 }
 
+pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("tx-fee")
+        .long("tx-fee")
+        .takes_value(true)
+        .validator(|input| CapacityParser.validate(input))
+        .help("The transaction fee capacity (unit: CKB, format: 0.335)")
+}
+
 pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("with-password")
         .long("with-password")

@@ -33,8 +33,10 @@ mod utils;
 fn main() -> Result<(), io::Error> {
     env_logger::init();
 
+    #[cfg(unix)]
+    let ansi_support = true;
     #[cfg(not(unix))]
-    let _enabled = ansi_term::enable_ansi_support();
+    let ansi_support = ansi_term::enable_ansi_support().is_ok();
 
     let version = get_version();
     let version_short = version.short();
@@ -71,7 +73,7 @@ fn main() -> Result<(), io::Error> {
             }
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
-        config.set_color(configs["color"].as_bool().unwrap_or(true));
+        config.set_color(ansi_support && configs["color"].as_bool().unwrap_or(true));
         output_format =
             OutputFormat::from_str(&configs["output_format"].as_str().unwrap_or("yaml"))
                 .unwrap_or(OutputFormat::Yaml);
