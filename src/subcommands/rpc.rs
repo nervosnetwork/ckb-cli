@@ -235,6 +235,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        _debug: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
             // [Chain]

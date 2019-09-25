@@ -27,7 +27,7 @@ pub fn address<'a, 'b>() -> Arg<'a, 'b> {
         .takes_value(true)
         .validator(|input| AddressParser.validate(input))
         .help(
-            "Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)",
+            "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
 }
 

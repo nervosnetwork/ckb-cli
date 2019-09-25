@@ -50,7 +50,7 @@ impl<'a> UtilSubCommand<'a> {
             .takes_value(true)
             .validator(|input| AddressParser.validate(input))
             .required(true)
-            .help("Target address (see: https://github.com/nervosnetwork/ckb/wiki/Common-Address-Format)");
+            .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
         let arg_lock_arg = Arg::with_name("lock-arg")
             .long("lock-arg")
             .takes_value(true)
@@ -110,6 +110,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
+        _debug: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {

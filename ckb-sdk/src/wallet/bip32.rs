@@ -25,8 +25,6 @@ use bitcoin_hashes::{hash160, sha512, Hash, HashEngine, Hmac, HmacEngine};
 use byteorder::{BigEndian, ByteOrder};
 use secp256k1::{self, PublicKey, Secp256k1, SecretKey};
 
-use crate::NetworkType;
-
 macro_rules! impl_array_newtype {
     ($thing:ident, $ty:ty, $len:expr) => {
         impl<'a> From<&'a [$ty]> for $thing {
@@ -165,8 +163,6 @@ impl Default for Fingerprint {
 /// Extended private key
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ExtendedPrivKey {
-    /// The network this key is to be used on
-    pub network: NetworkType,
     /// How many derivations this key is from the master (which is 0)
     pub depth: u8,
     /// Fingerprint of the parent key (0 for master)
@@ -182,8 +178,6 @@ pub struct ExtendedPrivKey {
 /// Extended public key
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ExtendedPubKey {
-    /// The network this key is to be used on
-    pub network: NetworkType,
     /// How many derivations this key is from the master (which is 0)
     pub depth: u8,
     /// Fingerprint of the parent key
@@ -513,13 +507,12 @@ impl From<secp256k1::Error> for Error {
 
 impl ExtendedPrivKey {
     /// Construct a new master key from a seed value
-    pub fn new_master(network: NetworkType, seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
+    pub fn new_master(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
         let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(b"Bitcoin seed");
         hmac_engine.input(seed);
         let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
 
         Ok(ExtendedPrivKey {
-            network,
             depth: 0,
             parent_fingerprint: Default::default(),
             child_number: ChildNumber::from_normal_idx(0)?,
@@ -572,7 +565,6 @@ impl ExtendedPrivKey {
         sk.add_assign(&self.private_key[..]).map_err(Error::Ecdsa)?;
 
         Ok(ExtendedPrivKey {
-            network: self.network,
             depth: self.depth + 1,
             parent_fingerprint: self.fingerprint(secp),
             child_number: i,
@@ -599,7 +591,6 @@ impl ExtendedPubKey {
         sk: &ExtendedPrivKey,
     ) -> ExtendedPubKey {
         ExtendedPubKey {
-            network: sk.network,
             depth: sk.depth,
             parent_fingerprint: sk.parent_fingerprint,
             child_number: sk.child_number,
@@ -655,7 +646,6 @@ impl ExtendedPubKey {
         pk.add_exp_assign(secp, &sk[..]).map_err(Error::Ecdsa)?;
 
         Ok(ExtendedPubKey {
-            network: self.network,
             depth: self.depth + 1,
             parent_fingerprint: self.fingerprint(),
             child_number: i,
@@ -683,6 +673,7 @@ impl ExtendedPubKey {
 mod tests {
     use super::*;
 
+    use crate::NetworkType;
     use bitcoin_hashes::{sha256d, Hash};
     use byteorder::{LittleEndian, ReadBytesExt};
     use faster_hex::hex_decode;
@@ -1044,7 +1035,29 @@ mod tests {
         format_iter(fmt, iter)
     }
 
-    impl fmt::Display for ExtendedPrivKey {
+    struct ExtendedPrivKeyWrapper {
+        inner: ExtendedPrivKey,
+        network: NetworkType,
+    }
+
+    struct ExtendedPubKeyWrapper {
+        inner: ExtendedPubKey,
+        network: NetworkType,
+    }
+
+    impl ExtendedPrivKeyWrapper {
+        fn new(inner: ExtendedPrivKey, network: NetworkType) -> ExtendedPrivKeyWrapper {
+            ExtendedPrivKeyWrapper { inner, network }
+        }
+    }
+
+    impl ExtendedPubKeyWrapper {
+        fn new(inner: ExtendedPubKey, network: NetworkType) -> ExtendedPubKeyWrapper {
+            ExtendedPubKeyWrapper { inner, network }
+        }
+    }
+
+    impl fmt::Display for ExtendedPrivKeyWrapper {
         fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
             let mut ret = [0; 78];
             ret[0..4].copy_from_slice(
@@ -1055,22 +1068,22 @@ mod tests {
                     _ => [0x04, 0x35, 0x83, 0x94],
                 }[..],
             );
-            ret[4] = self.depth as u8;
-            ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
+            ret[4] = self.inner.depth as u8;
+            ret[5..9].copy_from_slice(&self.inner.parent_fingerprint[..]);
 
-            BigEndian::write_u32(&mut ret[9..13], u32::from(self.child_number));
+            BigEndian::write_u32(&mut ret[9..13], u32::from(self.inner.child_number));
 
-            ret[13..45].copy_from_slice(&self.chain_code[..]);
+            ret[13..45].copy_from_slice(&self.inner.chain_code[..]);
             ret[45] = 0;
-            ret[46..78].copy_from_slice(&self.private_key[..]);
+            ret[46..78].copy_from_slice(&self.inner.private_key[..]);
             fmt.write_str(&check_encode_slice(&ret[..]))
         }
     }
 
-    impl FromStr for ExtendedPrivKey {
+    impl FromStr for ExtendedPrivKeyWrapper {
         type Err = B58Error;
 
-        fn from_str(inp: &str) -> Result<ExtendedPrivKey, B58Error> {
+        fn from_str(inp: &str) -> Result<ExtendedPrivKeyWrapper, B58Error> {
             let data = from_check(inp)?;
 
             if data.len() != 78 {
@@ -1088,20 +1101,23 @@ mod tests {
             } else {
                 return Err(B58Error::InvalidVersion((&data[0..4]).to_vec()));
             };
-
-            Ok(ExtendedPrivKey {
-                network,
+            let privkey = ExtendedPrivKey {
                 depth: data[4],
                 parent_fingerprint: Fingerprint::from(&data[5..9]),
                 child_number,
                 chain_code: ChainCode::from(&data[13..45]),
                 private_key: secp256k1::SecretKey::from_slice(&data[46..78])
                     .map_err(|e| B58Error::Other(e.to_string()))?,
+            };
+
+            Ok(ExtendedPrivKeyWrapper {
+                inner: privkey,
+                network,
             })
         }
     }
 
-    impl fmt::Display for ExtendedPubKey {
+    impl fmt::Display for ExtendedPubKeyWrapper {
         fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
             let mut ret = [0; 78];
             // NOTE: WARNING!!! this number is just for test from Bitcoin
@@ -1111,21 +1127,21 @@ mod tests {
                     _ => [0x04u8, 0x35, 0x87, 0xCF],
                 }[..],
             );
-            ret[4] = self.depth as u8;
-            ret[5..9].copy_from_slice(&self.parent_fingerprint[..]);
+            ret[4] = self.inner.depth as u8;
+            ret[5..9].copy_from_slice(&self.inner.parent_fingerprint[..]);
 
-            BigEndian::write_u32(&mut ret[9..13], u32::from(self.child_number));
+            BigEndian::write_u32(&mut ret[9..13], u32::from(self.inner.child_number));
 
-            ret[13..45].copy_from_slice(&self.chain_code[..]);
-            ret[45..78].copy_from_slice(&self.public_key.serialize()[..]);
+            ret[13..45].copy_from_slice(&self.inner.chain_code[..]);
+            ret[45..78].copy_from_slice(&self.inner.public_key.serialize()[..]);
             fmt.write_str(&check_encode_slice(&ret[..]))
         }
     }
 
-    impl FromStr for ExtendedPubKey {
+    impl FromStr for ExtendedPubKeyWrapper {
         type Err = B58Error;
 
-        fn from_str(inp: &str) -> Result<ExtendedPubKey, B58Error> {
+        fn from_str(inp: &str) -> Result<ExtendedPubKeyWrapper, B58Error> {
             let data = from_check(inp)?;
 
             if data.len() != 78 {
@@ -1135,21 +1151,27 @@ mod tests {
             let cn_int: u32 = Cursor::new(&data[9..13]).read_u32::<BigEndian>().unwrap();
             let child_number: ChildNumber = ChildNumber::from(cn_int);
 
-            Ok(ExtendedPubKey {
-                // NOTE: WARNING!!! this number is just for test from Bitcoin
-                network: if data[0..4] == [0x04u8, 0x88, 0xB2, 0x1E] {
-                    NetworkType::MainNet
-                } else if data[0..4] == [0x04u8, 0x35, 0x87, 0xCF] {
-                    NetworkType::TestNet
-                } else {
-                    return Err(B58Error::InvalidVersion((&data[0..4]).to_vec()));
-                },
+            // NOTE: WARNING!!! this number is just for test from Bitcoin
+            let network = if data[0..4] == [0x04u8, 0x88, 0xB2, 0x1E] {
+                NetworkType::MainNet
+            } else if data[0..4] == [0x04u8, 0x35, 0x87, 0xCF] {
+                NetworkType::TestNet
+            } else {
+                return Err(B58Error::InvalidVersion((&data[0..4]).to_vec()));
+            };
+
+            let pubkey = ExtendedPubKey {
                 depth: data[4],
                 parent_fingerprint: Fingerprint::from(&data[5..9]),
                 child_number,
                 chain_code: ChainCode::from(&data[13..45]),
                 public_key: PublicKey::from_slice(&data[45..78])
                     .map_err(|e| B58Error::Other(e.to_string()))?,
+            };
+
+            Ok(ExtendedPubKeyWrapper {
+                inner: pubkey,
+                network,
             })
         }
     }
@@ -1162,12 +1184,13 @@ mod tests {
         expected_sk: &str,
         expected_pk: &str,
     ) {
-        let mut sk = ExtendedPrivKey::new_master(network, seed).unwrap();
+        let mut sk = ExtendedPrivKey::new_master(seed).unwrap();
         let mut pk = ExtendedPubKey::from_private(secp, &sk);
 
         // Check derivation convenience method for ExtendedPrivKey
         assert_eq!(
-            &sk.derive_priv(secp, &path).unwrap().to_string()[..],
+            &ExtendedPrivKeyWrapper::new(sk.derive_priv(secp, &path).unwrap(), network).to_string()
+                [..],
             expected_sk
         );
 
@@ -1180,7 +1203,8 @@ mod tests {
             );
         } else {
             assert_eq!(
-                &pk.derive_pub(secp, &path).unwrap().to_string()[..],
+                &ExtendedPubKeyWrapper::new(pk.derive_pub(secp, &path).unwrap(), network)
+                    .to_string()[..],
                 expected_pk
             );
         }
@@ -1205,11 +1229,17 @@ mod tests {
         }
 
         // Check result against expected base58
-        assert_eq!(&sk.to_string()[..], expected_sk);
-        assert_eq!(&pk.to_string()[..], expected_pk);
+        assert_eq!(
+            &ExtendedPrivKeyWrapper::new(sk, network).to_string()[..],
+            expected_sk
+        );
+        assert_eq!(
+            &ExtendedPubKeyWrapper::new(pk, network).to_string()[..],
+            expected_pk
+        );
         // Check decoded base58 against result
-        let decoded_sk = ExtendedPrivKey::from_str(expected_sk);
-        let decoded_pk = ExtendedPubKey::from_str(expected_pk);
+        let decoded_sk = ExtendedPrivKeyWrapper::from_str(expected_sk).map(|wrapper| wrapper.inner);
+        let decoded_pk = ExtendedPubKeyWrapper::from_str(expected_pk).map(|wrapper| wrapper.inner);
         assert_eq!(Ok(sk), decoded_sk);
         assert_eq!(Ok(pk), decoded_pk);
     }

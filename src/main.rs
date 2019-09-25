@@ -88,6 +88,7 @@ fn main() -> Result<(), io::Error> {
     check_alerts(&mut rpc_client);
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
+    let debug = matches.is_present("debug");
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
@@ -100,13 +101,14 @@ fn main() -> Result<(), io::Error> {
         )
         .start(),
         ("rpc", Some(sub_matches)) => {
-            RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color)
+            RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
         }
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             AccountSubCommand::new(&mut rpc_client, &mut key_store, None).process(
                 &sub_matches,
                 output_format,
                 color,
+                debug,
             )
         }),
         ("mock-tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
@@ -114,11 +116,15 @@ fn main() -> Result<(), io::Error> {
                 &sub_matches,
                 output_format,
                 color,
+                debug,
             )
         }),
-        ("util", Some(sub_matches)) => {
-            UtilSubCommand::new(&mut rpc_client, None).process(&sub_matches, output_format, color)
-        }
+        ("util", Some(sub_matches)) => UtilSubCommand::new(&mut rpc_client, None).process(
+            &sub_matches,
+            output_format,
+            color,
+            debug,
+        ),
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,
@@ -128,7 +134,7 @@ fn main() -> Result<(), io::Error> {
                 index_controller.clone(),
                 false,
             )
-            .process(&sub_matches, output_format, color)
+            .process(&sub_matches, output_format, color, debug)
         }),
         _ => {
             if let Err(err) =
