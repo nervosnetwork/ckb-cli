@@ -10,10 +10,15 @@ serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
-ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
+ckb-script = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21", default-features = false }
 ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
 ckb-hash = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
 ckb-error = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21" }
 
 [dev-dependencies]
 ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", branch = "rc/v0.21", features = ["secp"] }
+
+[features]
+default = ["ckb-script/default"]
+asm = ["ckb-script/asm"]
+logging = ["ckb-script/logging"]
