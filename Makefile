@@ -17,3 +17,5 @@ integration:
 
 prod: ## Build binary with release profile.
 	cargo build --release
+
+.PHONY: test clippy fmt integration ci prod
