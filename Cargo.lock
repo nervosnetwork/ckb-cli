@@ -322,7 +322,7 @@ source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.21#efbe9b17afa16
 
 [[package]]
 name = "ckb-cli"
-version = "0.21.0"
+version = "0.21.1"
 dependencies = [
  "ansi_term 0.11.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "atty 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
