@@ -230,6 +230,7 @@ impl InteractiveEnv {
 
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
+        let debug = self.config.debug();
         match self.parser.clone().get_matches_from_safe(args) {
             Ok(matches) => {
                 match matches.subcommand() {
@@ -301,6 +302,7 @@ impl InteractiveEnv {
                             &sub_matches,
                             format,
                             color,
+                            debug,
                         )?;
                         println!("{}", output);
                         Ok(())
@@ -312,7 +314,7 @@ impl InteractiveEnv {
                             &mut self.key_store,
                             genesis_info,
                         )
-                        .process(&sub_matches, format, color)?;
+                        .process(&sub_matches, format, color, debug)?;
                         println!("{}", output);
                         Ok(())
                     }
@@ -323,14 +325,14 @@ impl InteractiveEnv {
                             &mut self.key_store,
                             genesis_info,
                         )
-                        .process(&sub_matches, format, color)?;
+                        .process(&sub_matches, format, color, debug)?;
                         println!("{}", output);
                         Ok(())
                     }
                     ("util", Some(sub_matches)) => {
                         let genesis_info = self.genesis_info().ok();
                         let output = UtilSubCommand::new(&mut self.rpc_client, genesis_info)
-                            .process(&sub_matches, format, color)?;
+                            .process(&sub_matches, format, color, debug)?;
                         println!("{}", output);
                         Ok(())
                     }
@@ -344,7 +346,7 @@ impl InteractiveEnv {
                             self.index_controller.clone(),
                             true,
                         )
-                        .process(&sub_matches, format, color)?;
+                        .process(&sub_matches, format, color, debug)?;
                         println!("{}", output);
                         Ok(())
                     }

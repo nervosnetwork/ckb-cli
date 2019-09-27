@@ -17,3 +17,5 @@ pub use transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper,
     ReprMockCellDep, ReprMockInfo, ReprMockInput, ReprMockTransaction,
 };
+
+pub use ckb_crypto::secp::SECP256K1;
