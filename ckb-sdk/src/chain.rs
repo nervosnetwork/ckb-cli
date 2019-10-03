@@ -8,7 +8,7 @@ use ckb_types::{
         BlockView, Capacity, DepType, HeaderView, ScriptHashType, TransactionBuilder,
         TransactionView,
     },
-    packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, Witness},
+    packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt},
     prelude::*,
     H160, H256,
 };
@@ -22,7 +22,7 @@ lazy_static::lazy_static! {
         CellOutput::new_builder()
             .lock(
                 Script::new_builder()
-                    .args(vec![H160::default().as_bytes().pack()].pack())
+                    .args(H160::default().as_bytes().pack())
                     .build()
             )
             .build()
@@ -344,14 +344,18 @@ impl<'a> TransferTransactionBuilder<'a> {
     fn build_transaction(&self) -> TransactionView {
         let (outputs, outputs_data): (Vec<_>, Vec<_>) = self.outputs.iter().cloned().unzip();
         let (changes, changes_data): (Vec<_>, Vec<_>) = self.changes.iter().cloned().unzip();
-        let witnesses: Vec<Witness> = self
+        let witnesses: Vec<Bytes> = self
             .witnesses
             .iter()
             .cloned()
             .map(|witness| {
-                Witness::new_builder()
-                    .extend(witness.into_iter().map(|w| w.pack()))
-                    .build()
+                witness
+                    .into_iter()
+                    .fold(Vec::new(), |mut data, part| {
+                        data.extend_from_slice(&part);
+                        data
+                    })
+                    .into()
             })
             .collect();
         TransactionBuilder::default()
@@ -362,7 +366,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             .outputs_data(changes_data.iter().map(Pack::pack))
             .cell_deps(self.cell_deps.clone())
             .header_deps(self.header_deps.clone())
-            .witnesses(witnesses)
+            .witnesses(witnesses.pack())
             .build()
     }
 }

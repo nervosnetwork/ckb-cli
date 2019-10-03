@@ -156,7 +156,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     Script::new_builder()
                         .code_hash(secp_type_hash.clone())
                         .hash_type(ScriptHashType::Type.pack())
-                        .args(vec![Bytes::from(lock_arg.as_ref()).pack()].pack())
+                        .args(Bytes::from(lock_arg.as_ref()).pack())
                         .build()
                 };
                 let mock_cell_dep = MockCellDep {
@@ -193,7 +193,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     .input(input)
                     .output(output)
                     .output_data(Default::default())
-                    .witness(vec![Bytes::from("abc").pack()].pack())
+                    .witness(Bytes::from("abc").pack())
                     .build()
                     .data();
                 let mut mock_tx = MockTransaction { mock_info, tx };

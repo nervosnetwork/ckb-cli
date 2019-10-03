@@ -681,11 +681,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     db.get_lock_hash_by_address(address)
                         .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
                         .map(|lock_script| {
-                            let args = lock_script
-                                .args()
-                                .into_iter()
-                                .map(|arg| hex_string(&arg.raw_data()).unwrap())
-                                .collect::<Vec<_>>();
+                            let args = hex_string(&lock_script.args().raw_data()).unwrap();
                             let script_hash: H256 = lock_script.calc_script_hash().unpack();
                             let code_hash: H256 = lock_script.code_hash().unpack();
                             serde_json::json!({

@@ -7,7 +7,6 @@ use std::io;
 
 use ckb_sdk::{Address, GenesisInfo, NetworkType};
 use ckb_types::{
-    bytes::Bytes,
     core::{BlockView, HeaderView},
     packed::{Byte32, Header, OutPoint, Script},
     prelude::*,
@@ -166,10 +165,7 @@ impl<'a> IndexDatabase<'a> {
             .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
             .and_then(|bytes| {
                 let script = Script::new_unchecked(bytes.into());
-                script.args().get(0).and_then(|arg| {
-                    let arg: Bytes = arg.unpack();
-                    Address::from_lock_arg(&arg).ok()
-                })
+                Address::from_lock_arg(&script.args().raw_data()).ok()
             })
     }
 
