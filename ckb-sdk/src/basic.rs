@@ -4,7 +4,6 @@ use std::str::FromStr;
 use bech32::{convert_bits, Bech32, ToBase32};
 use ckb_hash::blake2b_256;
 use ckb_types::{
-    bytes::Bytes,
     core::ScriptHashType,
     packed::{Byte32, Script},
     prelude::*,
@@ -103,7 +102,7 @@ impl Address {
 
     pub fn lock_script(&self, type_hash: Byte32) -> Script {
         Script::new_builder()
-            .args(vec![Bytes::from(self.hash.as_bytes()).pack()].pack())
+            .args(self.hash.as_bytes().pack())
             .code_hash(type_hash)
             .hash_type(ScriptHashType::Type.pack())
             .build()
@@ -153,7 +152,7 @@ impl Address {
 
 mod old_addr {
     use super::{
-        blake2b_256, convert_bits, Bech32, Bytes, Deserialize, FromStr, NetworkType, Script,
+        blake2b_256, convert_bits, Bech32, Deserialize, FromStr, NetworkType, Script,
         ScriptHashType, Serialize, ToBase32, H160, H256,
     };
     use ckb_crypto::secp::Pubkey;
@@ -217,7 +216,7 @@ mod old_addr {
 
         pub fn lock_script(&self, code_hash: H256) -> Script {
             Script::new_builder()
-                .args(vec![Bytes::from(self.hash.as_bytes()).pack()].pack())
+                .args(self.hash.as_bytes().pack())
                 .code_hash(code_hash.pack())
                 .hash_type(ScriptHashType::Data.pack())
                 .build()

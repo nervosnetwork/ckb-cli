@@ -227,7 +227,7 @@ impl BlockDeltaInfo {
         let header_info = HeaderInfo {
             header: block_header.data().as_slice().into(),
             txs_size: block.transactions().len() as u32,
-            uncles_size: block.uncles_count() as u32,
+            uncles_size: block.uncle_hashes().len() as u32,
             proposals_size: block.union_proposal_ids().len() as u32,
             new_chain_capacity,
             capacity_delta,
@@ -564,8 +564,8 @@ impl LockInfo {
         let type_hash = script.calc_script_hash();
         let address_opt = if &type_hash == secp_type_hash {
             if script.args().len() == 1 {
-                let lock_arg = &script.args().get(0).unwrap();
-                match Address::from_lock_arg(lock_arg.as_slice()) {
+                let lock_arg = script.args().raw_data();
+                match Address::from_lock_arg(&lock_arg) {
                     Ok(address) => Some(address),
                     Err(err) => {
                         log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);

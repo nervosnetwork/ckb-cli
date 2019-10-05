@@ -213,7 +213,7 @@ impl<'a> MockTransactionHelper<'a> {
         let tx = self.mock_tx.core_transaction();
         let mut witnesses: Vec<_> = tx.witnesses().into_iter().collect();
         while witnesses.len() < tx.inputs().len() {
-            witnesses.push(Vec::new().pack());
+            witnesses.push(Bytes::new().pack());
         }
         let tx_hash_hash =
             H256::from_slice(&blake2b_256(tx.hash().as_slice())).expect("Convert to H256 failed");
@@ -221,11 +221,10 @@ impl<'a> MockTransactionHelper<'a> {
         for (idx, input) in tx.inputs().into_iter().enumerate() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
             if &lock.code_hash() == genesis_info.secp_type_hash()
-                && lock.args().len() == 1
-                && lock.args().get(0).unwrap().len() == 20
+                && lock.args().raw_data().len() == 20
             {
-                let lock_arg = H160::from_slice(&lock.args().get(0).unwrap().raw_data())
-                    .expect("Convert to H160 failed");
+                let lock_arg =
+                    H160::from_slice(&lock.args().raw_data()).expect("Convert to H160 failed");
                 let witness = if let Some(witness) = witness_cache.get(&lock_arg) {
                     witness.clone()
                 } else {
@@ -234,7 +233,7 @@ impl<'a> MockTransactionHelper<'a> {
                     witness_cache.insert(lock_arg, witness.clone());
                     witness
                 };
-                witnesses[idx] = vec![witness.pack()].pack();
+                witnesses[idx] = witness.pack();
             }
         }
         self.mock_tx.tx = self
@@ -326,7 +325,7 @@ mod test {
         let lock_script = Script::new_builder()
             .code_hash(genesis_info.secp_type_hash().clone())
             .hash_type(ScriptHashType::Type.pack())
-            .args(vec![Bytes::from(lock_arg.as_bytes()).pack()].pack())
+            .args(Bytes::from(lock_arg.as_bytes()).pack())
             .build();
 
         let mut mock_tx = MockTransaction::default();
