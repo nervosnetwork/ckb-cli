@@ -36,16 +36,17 @@ pub struct CapacityResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleBlockInfo {
-    epoch: u64,
+    epoch: (u64, u64, u64),
     number: u64,
     hash: H256,
 }
 
 impl From<HeaderView> for SimpleBlockInfo {
     fn from(header: HeaderView) -> SimpleBlockInfo {
+        let epoch = header.epoch();
         SimpleBlockInfo {
             number: header.number(),
-            epoch: header.epoch(),
+            epoch: (epoch.number(), epoch.index(), epoch.length()),
             hash: header.hash().unpack(),
         }
     }
