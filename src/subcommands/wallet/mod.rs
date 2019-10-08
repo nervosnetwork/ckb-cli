@@ -23,15 +23,15 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser,
     },
-    other::{get_address, read_password},
+    other::{check_address_prefix, get_address, get_network_type, read_password},
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     blake2b_args, build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    Address, GenesisInfo, HttpRpcClient, NetworkType, TransferTransactionBuilder,
-    MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
+    Address, GenesisInfo, HttpRpcClient, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY,
+    ONE_CKB, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -90,11 +90,11 @@ impl<'a> WalletSubCommand<'a> {
             return Err("ERROR: This is an interactive mode only sub-command".to_string());
         }
 
+        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
         with_index_db(&self.index_dir, genesis_hash, |backend, cf| {
-            let db =
-                IndexDatabase::from_db(backend, cf, NetworkType::TestNet, genesis_info, false)?;
+            let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
             Ok(func(db))
         })
         .map_err(|_err| {
@@ -196,9 +196,11 @@ impl<'a> WalletSubCommand<'a> {
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
+        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let secp_type_hash = genesis_info.secp_type_hash();
 
+        check_address_prefix(m.value_of("to-address").unwrap(), network_type)?;
         // For check index database is ready
         self.with_db(|_| ())?;
         let index_dir = self.index_dir.clone();
@@ -221,13 +223,8 @@ impl<'a> WalletSubCommand<'a> {
         };
         let infos: Vec<LiveCellInfo> =
             with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db = IndexDatabase::from_db(
-                    backend,
-                    cf,
-                    NetworkType::TestNet,
-                    genesis_info_clone,
-                    false,
-                )?;
+                let db =
+                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
                 Ok(db.get_live_cells_by_lock(
                     from_address
                         .lock_script(secp_type_hash.clone())
@@ -246,7 +243,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(NetworkType::TestNet),
+                from_address.to_string(network_type),
                 total_capacity,
             ));
         }
@@ -305,9 +302,13 @@ impl<'a> WalletSubCommand<'a> {
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
+        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let secp_type_hash = genesis_info.secp_type_hash();
 
+        if let Some(address) = m.value_of("to-address") {
+            check_address_prefix(address, network_type)?;
+        }
         // For check index database is ready
         self.with_db(|_| ())?;
         let index_dir = self.index_dir.clone();
@@ -330,13 +331,8 @@ impl<'a> WalletSubCommand<'a> {
         };
         let infos: Vec<LiveCellInfo> =
             with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db = IndexDatabase::from_db(
-                    backend,
-                    cf,
-                    NetworkType::TestNet,
-                    genesis_info_clone,
-                    false,
-                )?;
+                let db =
+                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
 
                 Ok(db.get_live_cells_by_lock(
                     from_address
@@ -356,7 +352,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(NetworkType::TestNet),
+                from_address.to_string(network_type),
                 total_capacity,
             ));
         }
@@ -416,9 +412,13 @@ impl<'a> WalletSubCommand<'a> {
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
+        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let secp_type_hash = genesis_info.secp_type_hash();
 
+        if let Some(address) = m.value_of("to-address") {
+            check_address_prefix(address, network_type)?;
+        }
         // For check index database is ready
         self.with_db(|_| ())?;
         let index_dir = self.index_dir.clone();
@@ -441,13 +441,8 @@ impl<'a> WalletSubCommand<'a> {
         };
         let infos: Vec<LiveCellInfo> =
             with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db = IndexDatabase::from_db(
-                    backend,
-                    cf,
-                    NetworkType::TestNet,
-                    genesis_info_clone,
-                    false,
-                )?;
+                let db =
+                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
                 Ok(db.get_live_cells_by_lock(
                     from_address
                         .lock_script(secp_type_hash.clone())
@@ -466,7 +461,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(NetworkType::TestNet),
+                from_address.to_string(network_type),
                 total_capacity,
             ));
         }
@@ -700,13 +695,14 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .value_of("number")
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
+                let network_type = get_network_type(self.rpc_client)?;
                 let resp = self.with_db(|db| {
                     db.get_top_n(n)
                         .into_iter()
                         .map(|(lock_hash, address, capacity)| {
                             serde_json::json!({
                                 "lock_hash": format!("{:#x}", lock_hash),
-                                "address": address.map(|addr| addr.to_string(NetworkType::TestNet)),
+                                "address": address.map(|addr| addr.to_string(network_type)),
                                 "capacity": capacity,
                             })
                         })

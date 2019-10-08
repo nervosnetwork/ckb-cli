@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
-    Address, GenesisInfo, HttpRpcClient,
+    Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use ckb_types::{core::BlockView, H160, H256};
 use clap::ArgMatches;
@@ -118,4 +118,23 @@ pub fn get_genesis_info(
     genesis_info
         .clone()
         .ok_or_else(|| String::from("Can not get genesis info"))
+}
+
+pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
+    let chain_info = rpc_client
+        .get_blockchain_info()
+        .call()
+        .map_err(|err| err.to_string())?;
+    NetworkType::from_raw_str(chain_info.chain.as_str())
+        .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))
+}
+
+pub fn check_address_prefix(address: &str, network_type: NetworkType) -> Result<(), String> {
+    if address.len() < 3 {
+        Err(format!("Invalid address length: {}", address))
+    } else if &address[..3] != network_type.to_prefix() {
+        Err(format!("Invalid address prefix: {}", &address[..3]))
+    } else {
+        Ok(())
+    }
 }
