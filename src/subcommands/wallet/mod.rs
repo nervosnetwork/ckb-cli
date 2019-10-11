@@ -21,7 +21,7 @@ use crate::utils::{
     arg,
     arg_parser::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser,
+        PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{get_address, read_password},
     printer::{OutputFormat, Printable},
@@ -178,14 +178,14 @@ impl<'a> WalletSubCommand<'a> {
         color: bool,
         debug: bool,
     ) -> Result<String, String> {
-        let from_privkey: Option<secp256k1::SecretKey> =
+        let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
+        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
+            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
@@ -260,7 +260,7 @@ impl<'a> WalletSubCommand<'a> {
             tx_fee,
             inputs,
         );
-        let transaction = if let Some(ref privkey) = from_privkey {
+        let transaction = if let Some(privkey) = from_privkey.as_ref() {
             tx_args.transfer(&genesis_info, |args| {
                 Ok(build_witness_with_key(privkey, args))
             })
@@ -285,14 +285,14 @@ impl<'a> WalletSubCommand<'a> {
         color: bool,
         debug: bool,
     ) -> Result<String, String> {
-        let from_privkey: Option<secp256k1::SecretKey> =
+        let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
+        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
+            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
@@ -371,7 +371,7 @@ impl<'a> WalletSubCommand<'a> {
             tx_fee,
             inputs,
         );
-        let transaction = if let Some(ref privkey) = from_privkey {
+        let transaction = if let Some(privkey) = from_privkey.as_ref() {
             tx_args.deposit_dao(&genesis_info, |args| {
                 Ok(build_witness_with_key(privkey, args))
             })
@@ -396,14 +396,14 @@ impl<'a> WalletSubCommand<'a> {
         color: bool,
         debug: bool,
     ) -> Result<String, String> {
-        let from_privkey: Option<secp256k1::SecretKey> =
+        let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &from_privkey);
+        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
+            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
@@ -483,7 +483,7 @@ impl<'a> WalletSubCommand<'a> {
             tx_fee,
             inputs,
         );
-        let transaction = if let Some(ref privkey) = from_privkey {
+        let transaction = if let Some(privkey) = from_privkey.as_ref() {
             tx_args.withdraw_dao(
                 withdraw_header_hash,
                 input_header_hashes,

@@ -12,7 +12,7 @@ use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
         AddressParser, ArgParser, FilePathParser, FixedHashParser, HexParser, PrivkeyPathParser,
-        PubkeyHexParser,
+        PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
@@ -114,7 +114,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
-                let privkey_opt: Option<secp256k1::SecretKey> =
+                let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let pubkey_opt: Option<secp256k1::PublicKey> =
                     PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;

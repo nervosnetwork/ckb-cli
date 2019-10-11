@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use ckb_sdk::{wallet::MasterPrivKey, Address, NetworkType, OldAddress, ONE_CKB};
+use ckb_sdk::{
+    wallet::{zeroize_privkey, MasterPrivKey},
+    Address, NetworkType, OldAddress, ONE_CKB,
+};
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
@@ -233,10 +236,27 @@ impl ArgParser<PathBuf> for DirPathParser {
     }
 }
 
+pub struct PrivkeyWrapper(pub secp256k1::SecretKey);
+
+// For security purpose
+impl Drop for PrivkeyWrapper {
+    fn drop(&mut self) {
+        zeroize_privkey(&mut self.0);
+    }
+}
+
+impl std::ops::Deref for PrivkeyWrapper {
+    type Target = secp256k1::SecretKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub struct PrivkeyPathParser;
 
-impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
-    fn parse(&self, input: &str) -> Result<secp256k1::SecretKey, String> {
+impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
+    fn parse(&self, input: &str) -> Result<PrivkeyWrapper, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
         let mut content = String::new();
         let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
@@ -249,6 +269,7 @@ impl ArgParser<secp256k1::SecretKey> for PrivkeyPathParser {
             .ok_or_else(|| "File is empty".to_string())?;
         let data: H256 = FixedHashParser::<H256>::default().parse(privkey_string.as_str())?;
         secp256k1::SecretKey::from_slice(data.as_bytes())
+            .map(PrivkeyWrapper)
             .map_err(|err| format!("Invalid secp256k1 secret key format, error: {}", err))
     }
 }
