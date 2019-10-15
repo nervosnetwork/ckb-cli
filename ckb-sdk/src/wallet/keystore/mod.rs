@@ -11,6 +11,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::{
+    network::constants::Network as BitcoinNetwork, util::key::PrivateKey as BitcoinPrivateKey,
+};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
@@ -565,6 +568,16 @@ impl MasterPrivKey {
         let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &self.secp_secret_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
+    }
+
+    pub fn to_wif(&self, network: BitcoinNetwork) -> String {
+        let bitcoin_privkey = BitcoinPrivateKey {
+            compressed: true,
+            network,
+            key: self.secp_secret_key,
+        };
+        // FIXME: zero cloned secret key
+        bitcoin_privkey.to_wif()
     }
 }
 

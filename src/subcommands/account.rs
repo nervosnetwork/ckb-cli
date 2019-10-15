@@ -117,13 +117,25 @@ impl<'a> AccountSubCommand<'a> {
                     .about("Update password of an account")
                     .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("export")
-                    .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
+                    .about("Export master private key and chain code as hex plain text (USE AT YOUR OWN RISK!)")
                     .arg(arg_lock_arg.clone())
                     .arg(
                         arg_extended_privkey_path
                             .clone()
                             .required(true)
                             .help("Output extended private key path (PrivKey + ChainCode)")
+                    ),
+                SubCommand::with_name("export-to-bitcoin")
+                    .about("Export master private key to bitcoin wallet import format (WIF) (USE AT YOUR OWN RISK!)")
+                    .arg(arg_lock_arg.clone())
+                    .arg(
+                        Arg::with_name("network")
+                            .long("network")
+                            .takes_value(true)
+                            .required(true)
+                            .possible_values(&["bitcoin", "testnet", "regtest"])
+                            .validator(|input| FromStrParser::<BitcoinNetwork>::new().validate(input))
+                            .help("Bitcoin network type")
                     ),
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
@@ -303,6 +315,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .key_store
                     .export_key(&lock_arg, password.as_bytes())
                     .map_err(|err| err.to_string())?;
+                // FIXME: zero the bytes content
                 let bytes = master_privkey.to_bytes();
                 let privkey = H256::from_slice(&bytes[0..32]).unwrap();
                 let chain_code = H256::from_slice(&bytes[32..64]).unwrap();
@@ -315,6 +328,18 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "Success exported account as extended privkey to: \"{}\", please use this file carefully",
                     key_path
                 ))
+            }
+            ("export-to-bitcoin", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let bitcoin_network: BitcoinNetwork =
+                    FromStrParser::<BitcoinNetwork>::new().from_matches(m, "network")?;
+                let password = read_password(false, None)?;
+
+                self.key_store
+                    .export_key(&lock_arg, password.as_bytes())
+                    .map_err(|err| err.to_string())
+                    .map(|key| key.to_wif(bitcoin_network))
             }
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
