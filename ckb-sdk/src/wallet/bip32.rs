@@ -22,7 +22,7 @@ use std::str::FromStr;
 use std::{error, fmt};
 
 use super::keystore::{zeroize_privkey, zeroize_slice};
-use bitcoin_hashes::{hash160, sha512, Hash, HashEngine, Hmac, HmacEngine};
+use bitcoin::hashes::{hash160, sha512, Hash, HashEngine, Hmac, HmacEngine};
 use byteorder::{BigEndian, ByteOrder};
 use secp256k1::{self, PublicKey, Secp256k1, SecretKey};
 
@@ -683,7 +683,7 @@ mod tests {
     use super::*;
 
     use crate::NetworkType;
-    use bitcoin_hashes::{sha256d, Hash};
+    use bitcoin::hashes::{sha256d, Hash};
     use byteorder::{LittleEndian, ReadBytesExt};
     use faster_hex::hex_decode;
     use std::io::Cursor;

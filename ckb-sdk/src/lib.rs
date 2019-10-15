@@ -19,3 +19,5 @@ pub use transaction::{
 };
 
 pub use ckb_crypto::secp::SECP256K1;
+
+pub extern crate bitcoin;

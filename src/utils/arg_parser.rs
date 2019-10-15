@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_sdk::{
+    bitcoin::util::key::PrivateKey as BitcoinPrivateKey,
     wallet::{zeroize_privkey, MasterPrivKey},
     Address, NetworkType, OldAddress, ONE_CKB,
 };
@@ -301,6 +302,32 @@ impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
     }
 }
 
+pub struct BitcoinPrivateKeyWrapper {
+    inner: BitcoinPrivateKey,
+}
+
+impl BitcoinPrivateKeyWrapper {
+    pub fn secp_privkey(&self) -> &secp256k1::SecretKey {
+        &self.inner.key
+    }
+}
+
+impl Drop for BitcoinPrivateKeyWrapper {
+    fn drop(&mut self) {
+        zeroize_privkey(&mut self.inner.key);
+    }
+}
+
+pub struct WifPrivkeyParser;
+
+impl ArgParser<BitcoinPrivateKeyWrapper> for WifPrivkeyParser {
+    fn parse(&self, input: &str) -> Result<BitcoinPrivateKeyWrapper, String> {
+        BitcoinPrivateKey::from_wif(input)
+            .map_err(|err| err.to_string())
+            .map(|inner| BitcoinPrivateKeyWrapper { inner })
+    }
+}
+
 pub struct PubkeyHexParser;
 
 impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
@@ -449,6 +476,23 @@ mod tests {
         assert!(FixedHashParser::<H256>::default()
             .parse("71d52d9c1c693a4136513d7c62b0a6441b14ced02518650fe673dfcb6c016ccccc")
             .is_err());
+    }
+
+    #[test]
+    fn test_wif_privkey() {
+        assert_eq!(
+            WifPrivkeyParser
+                .parse("cUt1biwGTVH9J2r5fJcaLf3Gf5DF1RwxaDQ3ufpMR5Q5DusSc6jh")
+                .unwrap()
+                .secp_privkey(),
+            &secp256k1::SecretKey::from_slice(
+                HexParser
+                    .parse("d9c435411b7a44329db8684d3afc120dddf2c7d20b4917295d319561c75d8dc1")
+                    .unwrap()
+                    .as_slice()
+            )
+            .unwrap()
+        )
     }
 
     #[test]

@@ -5,8 +5,12 @@ use std::time::Duration;
 
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{
+    bitcoin::{
+        network::constants::Network as BitcoinNetwork, util::address::Address as BitcoinAddress,
+        util::key::PublicKey as BitcoinPublicKey,
+    },
     wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
-    Address, GenesisInfo, HttpRpcClient, NetworkType,
+    Address, GenesisInfo, HttpRpcClient, NetworkType, SECP256K1,
 };
 use ckb_types::{core::BlockView, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -14,8 +18,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        ArgParser, BitcoinPrivateKeyWrapper, DurationParser, ExtendedPrivkeyPathParser,
+        FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper, WifPrivkeyParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -88,6 +92,16 @@ impl<'a> AccountSubCommand<'a> {
                          .required_unless("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
                     ),
+                SubCommand::with_name("import-from-bitcoin")
+                    .about("Import from bitcoin wallet import format (WIF) private key")
+                    .arg(
+                        Arg::with_name("wif-privkey")
+                            .long("wif-privkey")
+                            .takes_value(true)
+                            .validator(|input| WifPrivkeyParser.validate(input))
+                            .required(true)
+                            .help("The WIP private key")
+                    ),
                 SubCommand::with_name("unlock")
                     .about("Unlock an account")
                     .arg(arg_lock_arg.clone())
@@ -149,6 +163,10 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|(idx, (lock_arg, filepath))| {
                         let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
                         let timeout = self.key_store.get_lock_timeout(&lock_arg);
+                        let bitcoin_address_opt =
+                            self.key_store.extended_pubkey(&lock_arg, None).ok().map(
+                                |extended_pubkey| to_bitcoin_addresses(extended_pubkey.public_key),
+                            );
                         let status = timeout
                             .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
@@ -166,6 +184,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "mainnet": address.to_string(NetworkType::MainNet),
                                 "testnet": address.to_string(NetworkType::TestNet),
                             },
+                            "bitcoin-address": bitcoin_address_opt,
                             "path": filepath.to_string_lossy(),
                             "status": status,
                         })
@@ -222,6 +241,27 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "mainnet": address.to_string(NetworkType::MainNet),
                         "testnet": address.to_string(NetworkType::TestNet),
                     },
+                });
+                Ok(resp.render(format, color))
+            }
+            ("import-from-bitcoin", Some(m)) => {
+                let bitcoin_privkey: BitcoinPrivateKeyWrapper =
+                    WifPrivkeyParser.from_matches(m, "wif-privkey")?;
+                let secp_privkey = bitcoin_privkey.secp_privkey();
+                let secp_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, secp_privkey);
+                let password = read_password(true, None)?;
+                let lock_arg = self
+                    .key_store
+                    .import_secp_key(secp_privkey, password.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
+                let resp = serde_json::json!({
+                    "lock_arg": format!("{:x}", lock_arg),
+                    "address": {
+                        "mainnet": address.to_string(NetworkType::MainNet),
+                        "testnet": address.to_string(NetworkType::TestNet),
+                    },
+                    "bitcoin-address": to_bitcoin_addresses(secp_pubkey),
                 });
                 Ok(resp.render(format, color))
             }
@@ -299,4 +339,17 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             _ => Err(matches.usage().to_owned()),
         }
     }
+}
+
+fn to_bitcoin_addresses(pubkey: secp256k1::PublicKey) -> serde_json::Value {
+    let bitcoin_pubkey = BitcoinPublicKey {
+        compressed: true,
+        key: pubkey,
+    };
+    serde_json::json!({
+        "p2pkh-bitcoin": BitcoinAddress::p2pkh(&bitcoin_pubkey, BitcoinNetwork::Bitcoin).to_string(),
+        "p2pkh-testnet": BitcoinAddress::p2pkh(&bitcoin_pubkey, BitcoinNetwork::Testnet).to_string(),
+        "p2wpkh-bitcoin": BitcoinAddress::p2wpkh(&bitcoin_pubkey, BitcoinNetwork::Bitcoin).to_string(),
+        "p2wpkh-testnet": BitcoinAddress::p2wpkh(&bitcoin_pubkey, BitcoinNetwork::Testnet).to_string(),
+    })
 }
