@@ -258,6 +258,26 @@ impl std::ops::Deref for PrivkeyWrapper {
     }
 }
 
+pub struct JsonPathParser {
+    path_parser: FilePathParser,
+}
+
+impl JsonPathParser {
+    pub fn new(should_exists: bool) -> JsonPathParser {
+        JsonPathParser {
+            path_parser: FilePathParser::new(should_exists),
+        }
+    }
+}
+
+impl ArgParser<serde_json::Value> for JsonPathParser {
+    fn parse(&self, input: &str) -> Result<serde_json::Value, String> {
+        let _path = self.path_parser.parse(input)?;
+        let mut file = fs::File::open(input).map_err(|err| err.to_string())?;
+        serde_json::from_reader(&mut file).map_err(|err| err.to_string())
+    }
+}
+
 pub struct PrivkeyPathParser;
 
 impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {

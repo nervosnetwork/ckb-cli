@@ -16,7 +16,8 @@ use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
         ArgParser, BitcoinPrivateKeyWrapper, DurationParser, ExtendedPrivkeyPathParser,
-        FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper, WifPrivkeyParser,
+        FixedHashParser, FromStrParser, JsonPathParser, PrivkeyPathParser, PrivkeyWrapper,
+        WifPrivkeyParser,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -78,15 +79,20 @@ impl<'a> AccountSubCommand<'a> {
                 SubCommand::with_name("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
                     .arg(
+                        Arg::with_name("keystore")
+                            .long("keystore")
+                            .takes_value(true)
+                            .validator(|input| JsonPathParser::new(true).validate(input))
+                            .help("Source keystore json file path")
+                    )
+                    .arg(
                         arg_privkey_path
                             .clone()
-                            .required_unless("extended-privkey-path")
                             .validator(|input| PrivkeyPathParser.validate(input))
                             .help("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
                     )
                     .arg(arg_extended_privkey_path
                          .clone()
-                         .required_unless("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
                     ),
                 SubCommand::with_name("import-from-bitcoin")
@@ -223,16 +229,26 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("import", Some(m)) => {
+                let keystore_data: Option<serde_json::Value> =
+                    JsonPathParser::new(true).from_matches_opt(m, "keystore", false)?;
                 let secp_key: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let password = read_password(true, None)?;
-                let lock_arg = if let Some(secp_key) = secp_key {
+                let lock_arg = if let Some(data) = keystore_data {
+                    let decrypt_password = read_password(false, Some("Decrypt password"))?;
+                    let new_password = read_password(true, None)?;
+                    self.key_store
+                        .import(&data, decrypt_password.as_bytes(), new_password.as_bytes())
+                        .map_err(|err| err.to_string())?
+                } else if let Some(secp_key) = secp_key {
+                    let password = read_password(true, None)?;
                     self.key_store
                         .import_secp_key(&secp_key, password.as_bytes())
                         .map_err(|err| err.to_string())?
                 } else {
-                    let master_privkey: MasterPrivKey =
-                        ExtendedPrivkeyPathParser.from_matches(m, "extended-privkey-path")?;
+                    let password = read_password(true, None)?;
+                    let master_privkey: MasterPrivKey = ExtendedPrivkeyPathParser
+                        .from_matches_opt(m, "extended-privkey-path", false)?
+                        .ok_or_else(|| "Missing source argument")?;
                     let key = Key::new(master_privkey);
                     self.key_store
                         .import_key(&key, password.as_bytes())

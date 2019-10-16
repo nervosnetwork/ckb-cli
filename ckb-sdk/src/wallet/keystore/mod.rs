@@ -235,79 +235,74 @@ impl KeyStore {
         let mut pubkeys = HashMap::default();
         let mut ripemd160_to_blake160 = HashMap::default();
         let mut blake160_to_ripemd160 = HashMap::default();
-        for entry in fs::read_dir(&self.keys_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                let filename = path.file_name().and_then(OsStr::to_str).unwrap();
-                if let Some(blake160_hex) = filename.rsplitn(2, "--").next() {
-                    let mut blake160_bin = [0u8; 20];
-                    if hex_decode(blake160_hex.as_bytes(), &mut blake160_bin).is_ok() {
-                        if let Ok(blake160_out) = H160::from_slice(&blake160_bin) {
-                            let mut file = fs::File::open(&path)?;
-                            let data = serde_json::from_reader(&mut file)
-                                .map_err(|err| Error::ParseJsonFailed(err.to_string()))?;
-                            let (blake160, ripemd160_opt) = match util::get_hex_bin(&data, "pubkey")
-                            {
-                                Ok(pubkey_bin) => {
-                                    let pubkey =
-                                        secp256k1::PublicKey::from_slice(pubkey_bin.as_slice())
-                                            .map_err(|err| err.to_string())?;
-                                    let blake160 = H160::from_slice(
-                                        &blake2b_256(pubkey_bin.as_slice())[0..20],
-                                    )
-                                    .expect("Generate hash(H160) from pubkey failed");
-                                    pubkeys.insert(blake160.clone(), pubkey);
 
-                                    let mut engine = BitcoinHash::engine();
-                                    engine.write_all(pubkey_bin.as_slice()).unwrap();
-                                    let ripemd160 = H160::from_slice(
-                                        &BitcoinHash::from_engine(engine).into_inner(),
-                                    )
-                                    .unwrap();
+        let mut entries = fs::read_dir(&self.keys_dir)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by(|a, b| a.file_name().partial_cmp(&b.file_name()).unwrap());
 
-                                    (blake160, Some(ripemd160))
-                                }
-                                Err(_) => {
-                                    let blake160 = util::get_hex_bin(&data, "blake160")
-                                        .or_else(|_err| util::get_hex_bin(&data, "address"))
-                                        .and_then(|bin| {
-                                            H160::from_slice(bin.as_slice()).map_err(|err| {
-                                                Error::ParseJsonFailed(format!(
-                                                    "Invalid blake160 field: {}",
-                                                    err.to_string()
-                                                ))
-                                            })
-                                        })?;
-                                    let ripemd160_opt = util::get_hex_bin(&data, "ripemd160")
-                                        .ok()
-                                        .map(|bin| {
-                                            H160::from_slice(bin.as_slice()).map_err(|err| {
-                                                Error::ParseJsonFailed(format!(
-                                                    "Invalid ripemd160 field: {}",
-                                                    err.to_string()
-                                                ))
-                                            })
+        for path in entries
+            .into_iter()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_file())
+        {
+            let filename = path.file_name().and_then(OsStr::to_str).unwrap();
+            if let Some(blake160_hex) = filename.rsplitn(2, "--").next() {
+                let mut blake160_bin = [0u8; 20];
+                if hex_decode(blake160_hex.as_bytes(), &mut blake160_bin).is_ok() {
+                    if let Ok(blake160_out) = H160::from_slice(&blake160_bin) {
+                        let mut file = fs::File::open(&path)?;
+                        let data = serde_json::from_reader(&mut file)
+                            .map_err(|err| Error::ParseJsonFailed(err.to_string()))?;
+                        let (blake160, ripemd160_opt) = match util::get_hex_bin(&data, "pubkey") {
+                            Ok(pubkey_bin) => {
+                                let pubkey =
+                                    secp256k1::PublicKey::from_slice(pubkey_bin.as_slice())
+                                        .map_err(|err| err.to_string())?;
+                                let blake160 =
+                                    H160::from_slice(&blake2b_256(pubkey_bin.as_slice())[0..20])
+                                        .expect("Generate hash(H160) from pubkey failed");
+                                pubkeys.insert(blake160.clone(), pubkey);
+
+                                let mut engine = BitcoinHash::engine();
+                                engine.write_all(pubkey_bin.as_slice()).unwrap();
+                                let ripemd160 = H160::from_slice(
+                                    &BitcoinHash::from_engine(engine).into_inner(),
+                                )
+                                .unwrap();
+
+                                (blake160, Some(ripemd160))
+                            }
+                            Err(_) => {
+                                let blake160 =
+                                    util::get_hex_bin(&data, "address").and_then(|bin| {
+                                        H160::from_slice(bin.as_slice()).map_err(|err| {
+                                            Error::ParseJsonFailed(format!(
+                                                "Invalid blake160 field: {}",
+                                                err.to_string()
+                                            ))
                                         })
-                                        .transpose()?;
-                                    (blake160, ripemd160_opt)
-                                }
-                            };
-
-                            if blake160_out != blake160 {
-                                log::warn!(
-                                    "blake160 field({:x}) not match the filename({:x})",
-                                    blake160,
-                                    blake160_out
-                                );
-                                continue;
+                                    })?;
+                                (blake160, None)
                             }
-                            if let Some(ripemd160) = ripemd160_opt {
-                                ripemd160_to_blake160.insert(ripemd160.clone(), blake160.clone());
-                                blake160_to_ripemd160.insert(blake160.clone(), ripemd160.clone());
-                            }
+                        };
 
-                            files.insert(blake160, path.to_path_buf());
+                        if blake160_out != blake160 {
+                            log::warn!(
+                                "blake160 field({:x}) not match the filename({:x})",
+                                blake160,
+                                blake160_out
+                            );
+                            continue;
+                        }
+                        if let Some(ripemd160) = ripemd160_opt {
+                            ripemd160_to_blake160.insert(ripemd160.clone(), blake160.clone());
+                            blake160_to_ripemd160.insert(blake160.clone(), ripemd160.clone());
+                        }
+
+                        if let Some(old_path) = files.insert(blake160, path.to_path_buf()) {
+                            log::warn!(
+                                "Multiple paths with same blake160 hash, old path: {:?}",
+                                old_path
+                            );
                         }
                     }
                 }
