@@ -15,7 +15,7 @@ use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
         ArgParser, DurationParser, ExtendedPrivkeyPathParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser,
+        PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -200,7 +200,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("import", Some(m)) => {
-                let secp_key: Option<secp256k1::SecretKey> =
+                let secp_key: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let password = read_password(true, None)?;
                 let lock_arg = if let Some(secp_key) = secp_key {
