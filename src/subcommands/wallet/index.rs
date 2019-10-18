@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
+use ckb_sdk::GenesisInfo;
 use ckb_sdk::HttpRpcClient;
-use ckb_sdk::{GenesisInfo, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView, HeaderView},
     prelude::*,
@@ -17,6 +17,8 @@ use ckb_types::{
 use ckb_util::RwLock;
 use crossbeam_channel::{Receiver, Sender};
 use serde_derive::{Deserialize, Serialize};
+
+use crate::utils::other::get_network_type;
 
 pub enum IndexRequest {
     UpdateUrl(String),
@@ -265,6 +267,7 @@ fn process(
         .0
         .expect("Can not get genesis block?")
         .into();
+    let network_type = get_network_type(rpc_client)?;
     let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
     let genesis_hash: H256 = genesis_info.header().hash().unpack();
 
@@ -284,14 +287,9 @@ fn process(
 
         if tip_header.number() >= next_number {
             let exit_opt = with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
-                let mut db = IndexDatabase::from_db(
-                    backend,
-                    cf,
-                    NetworkType::TestNet,
-                    genesis_info.clone(),
-                    false,
-                )
-                .unwrap();
+                let mut db =
+                    IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)
+                        .unwrap();
                 if db.last_number().is_none() {
                     db.apply_next_block(genesis_block.clone())
                         .expect("Apply genesis block failed");
