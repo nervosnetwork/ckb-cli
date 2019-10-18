@@ -5,12 +5,9 @@ use std::time::Duration;
 
 use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{
-    bitcoin::{
-        network::constants::Network as BitcoinNetwork, util::address::Address as BitcoinAddress,
-        util::key::PublicKey as BitcoinPublicKey,
-    },
+    bitcoin::network::constants::Network as BitcoinNetwork,
     wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
-    Address, GenesisInfo, HttpRpcClient, NetworkType, SECP256K1,
+    Address, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use ckb_types::{core::BlockView, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches, SubCommand};
@@ -175,10 +172,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|(idx, (lock_arg, filepath))| {
                         let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
                         let timeout = self.key_store.get_lock_timeout(&lock_arg);
-                        let bitcoin_address_opt =
-                            self.key_store.extended_pubkey(&lock_arg, None).ok().map(
-                                |extended_pubkey| to_bitcoin_addresses(extended_pubkey.public_key),
-                            );
                         let status = timeout
                             .map(|timeout| timeout.to_string())
                             .unwrap_or_else(|| "locked".to_owned());
@@ -196,7 +189,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "mainnet": address.to_string(NetworkType::MainNet),
                                 "testnet": address.to_string(NetworkType::TestNet),
                             },
-                            "bitcoin-address": bitcoin_address_opt,
                             "path": filepath.to_string_lossy(),
                             "status": status,
                         })
@@ -260,7 +252,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let bitcoin_privkey: BitcoinPrivateKeyWrapper =
                     WifPrivkeyParser.from_matches(m, "wif-privkey")?;
                 let secp_privkey = bitcoin_privkey.secp_privkey();
-                let secp_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, secp_privkey);
                 let password = read_password(true, None)?;
                 let lock_arg = self
                     .key_store
@@ -273,7 +264,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "mainnet": address.to_string(NetworkType::MainNet),
                         "testnet": address.to_string(NetworkType::TestNet),
                     },
-                    "bitcoin-address": to_bitcoin_addresses(secp_pubkey),
                 });
                 Ok(resp.render(format, color))
             }
@@ -315,7 +305,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .key_store
                     .export_key(&lock_arg, password.as_bytes())
                     .map_err(|err| err.to_string())?;
-                // FIXME: zero the bytes content
                 let bytes = master_privkey.to_bytes();
                 let privkey = H256::from_slice(&bytes[0..32]).unwrap();
                 let chain_code = H256::from_slice(&bytes[32..64]).unwrap();
@@ -364,17 +353,4 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             _ => Err(matches.usage().to_owned()),
         }
     }
-}
-
-fn to_bitcoin_addresses(pubkey: secp256k1::PublicKey) -> serde_json::Value {
-    let bitcoin_pubkey = BitcoinPublicKey {
-        compressed: true,
-        key: pubkey,
-    };
-    serde_json::json!({
-        "p2pkh-bitcoin": BitcoinAddress::p2pkh(&bitcoin_pubkey, BitcoinNetwork::Bitcoin).to_string(),
-        "p2pkh-testnet": BitcoinAddress::p2pkh(&bitcoin_pubkey, BitcoinNetwork::Testnet).to_string(),
-        "p2wpkh-bitcoin": BitcoinAddress::p2wpkh(&bitcoin_pubkey, BitcoinNetwork::Bitcoin).to_string(),
-        "p2wpkh-testnet": BitcoinAddress::p2wpkh(&bitcoin_pubkey, BitcoinNetwork::Testnet).to_string(),
-    })
 }

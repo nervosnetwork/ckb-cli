@@ -7,7 +7,11 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_sdk::{
-    bitcoin::util::key::PrivateKey as BitcoinPrivateKey,
+    bitcoin::{
+        hashes::Hash as HashTrait,
+        util::address::{Address as BitcoinAddress, Payload},
+        util::key::PrivateKey as BitcoinPrivateKey,
+    },
     wallet::{zeroize_privkey, MasterPrivKey},
     Address, NetworkType, OldAddress, ONE_CKB,
 };
@@ -354,6 +358,23 @@ impl ArgParser<Address> for AddressParser {
     }
 }
 
+pub struct BitcoinAddressParser;
+
+impl ArgParser<H160> for BitcoinAddressParser {
+    fn parse(&self, input: &str) -> Result<H160, String> {
+        match BitcoinAddress::from_str(input)
+            .map_err(|err| err.to_string())?
+            .payload
+        {
+            Payload::PubkeyHash(hash) => Ok(H160::from_slice(&hash.into_inner()[..]).unwrap()),
+            Payload::WitnessProgram { ref program, .. } if program.len() == 20 => {
+                Ok(H160::from_slice(program.as_slice()).unwrap())
+            }
+            payload => Err(format!("Invalid address payload: {:?}", payload)),
+        }
+    }
+}
+
 /// Default unit CKB format: xxx.xxxxx
 pub struct CapacityParser;
 
@@ -422,6 +443,21 @@ impl ArgParser<Duration> for DurationParser {
             }
         };
         Ok(Duration::from_secs(seconds))
+    }
+}
+
+pub struct AccountIdParser;
+impl ArgParser<Address> for AccountIdParser {
+    fn parse(&self, input: &str) -> Result<Address, String> {
+        FixedHashParser::<H160>::default()
+            .parse(input)
+            .map(|blake160| Address::from_lock_arg(blake160.as_bytes()).unwrap())
+            .or_else(|_| AddressParser.parse(input))
+            .or_else(|_| {
+                BitcoinAddressParser
+                    .parse(input)
+                    .map(|hash| Address::from_ripemd160(hash.as_bytes()).unwrap())
+            })
     }
 }
 

@@ -20,8 +20,8 @@ use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        AccountIdParser, AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{get_address, read_password},
     printer::{OutputFormat, Printable},
@@ -180,8 +180,8 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String> {
         let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account: Option<H160> =
-            FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
+        let from_account: Option<Address> =
+            AccountIdParser.from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
@@ -189,7 +189,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
+            from_account.ok_or_else(|| "Missing from-account argument")?
         };
         let to_address: Address = AddressParser.from_matches(m, "to-address")?;
         let to_data = to_data(m)?;
@@ -265,7 +265,7 @@ impl<'a> WalletSubCommand<'a> {
                 Ok(build_witness_with_key(privkey, args))
             })
         } else {
-            let lock_arg = from_account.as_ref().unwrap();
+            let lock_arg = from_address.hash();
             let password = if with_password {
                 Some(read_password(false, None)?)
             } else {
@@ -287,8 +287,8 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String> {
         let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account: Option<H160> =
-            FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
+        let from_account: Option<Address> =
+            AccountIdParser.from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
@@ -296,7 +296,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
+            from_account.ok_or_else(|| "Missing from-account argument")?
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
@@ -376,7 +376,7 @@ impl<'a> WalletSubCommand<'a> {
                 Ok(build_witness_with_key(privkey, args))
             })
         } else {
-            let lock_arg = from_account.as_ref().unwrap();
+            let lock_arg = from_address.hash();
             let password = if with_password {
                 Some(read_password(false, None)?)
             } else {
@@ -398,8 +398,8 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String> {
         let from_privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account: Option<H160> =
-            FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
+        let from_account: Option<Address> =
+            AccountIdParser.from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
@@ -407,7 +407,7 @@ impl<'a> WalletSubCommand<'a> {
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
             Address::from_lock_arg(&pubkey_hash[0..20])?
         } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
+            from_account.ok_or_else(|| "Missing from-account argument")?
         };
         let to_address: Address = AddressParser
             .from_matches_opt(m, "to-address", false)?
@@ -491,7 +491,7 @@ impl<'a> WalletSubCommand<'a> {
                 |args| Ok(build_witness_with_key(privkey, args)),
             )
         } else {
-            let lock_arg = from_account.as_ref().unwrap();
+            let lock_arg = from_address.hash();
             let password = if with_password {
                 Some(read_password(false, None)?)
             } else {

@@ -80,6 +80,18 @@ pub enum AddressType {
 pub enum CodeHashIndex {
     // SECP256K1 + blake160
     Default = 0x00,
+    // ripemd160(sha256(pubkey))
+    Bitcion = 0x01,
+}
+
+impl CodeHashIndex {
+    pub fn from_u8(value: u8) -> Option<CodeHashIndex> {
+        match value {
+            0x00 => Some(CodeHashIndex::Default),
+            0x01 => Some(CodeHashIndex::Bitcion),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +110,14 @@ impl Address {
 
     pub fn hash(&self) -> &H160 {
         &self.hash
+    }
+
+    pub fn index(&self) -> CodeHashIndex {
+        self.index
+    }
+
+    pub fn is_bitcoin(&self) -> bool {
+        self.index == CodeHashIndex::Bitcion
     }
 
     pub fn lock_script(&self, type_hash: Byte32) -> Script {
@@ -120,6 +140,15 @@ impl Address {
         Ok(Self::new_default(hash))
     }
 
+    pub fn from_ripemd160(bytes: &[u8]) -> Result<Address, String> {
+        let hash = H160::from_slice(bytes).map_err(|err| err.to_string())?;
+        Ok(Address {
+            ty: AddressType::Default,
+            index: CodeHashIndex::Bitcion,
+            hash,
+        })
+    }
+
     pub fn from_input(input: &str) -> Result<(NetworkType, Address), String> {
         let value = Bech32::from_str(input).map_err(|err| err.to_string())?;
         let network = NetworkType::from_prefix(value.hrp())
@@ -131,11 +160,15 @@ impl Address {
         if data[0] != AddressType::Default as u8 {
             return Err(format!("Invalid address type: {:?}", data[0]));
         }
-        if data[1] != CodeHashIndex::Default as u8 {
-            return Err(format!("Invalid code hash index: {:?}", data[1]));
-        }
+        let index = CodeHashIndex::from_u8(data[1])
+            .ok_or_else(|| format!("Invalid code hash index: {:?}", data[1]))?;
         let hash = H160::from_slice(&data[2..22]).map_err(|err| err.to_string())?;
-        Ok((network, Self::new_default(hash)))
+        let address = Address {
+            ty: AddressType::Default,
+            index,
+            hash,
+        };
+        Ok((network, address))
     }
 
     pub fn to_string(&self, network: NetworkType) -> String {

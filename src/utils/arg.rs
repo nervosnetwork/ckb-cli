@@ -1,6 +1,6 @@
 use crate::utils::arg_parser::{
-    AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-    HexParser, PrivkeyPathParser, PubkeyHexParser,
+    AccountIdParser, AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
+    FromStrParser, HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
 use ckb_types::{H160, H256};
 use clap::Arg;
@@ -51,7 +51,7 @@ pub fn from_account<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("from-account")
         .long("from-account")
         .takes_value(true)
-        .validator(|input| FixedHashParser::<H160>::default().validate(input))
+        .validator(|input| AccountIdParser.validate(input))
         .help("The account's lock-arg (transfer from this account)")
 }
 
