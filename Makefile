@@ -9,7 +9,7 @@ clippy:
 test:
 	RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all
 
-ci: fmt clippy test
+ci: fmt clippy test security-audit
 	git diff --exit-code Cargo.lock
 
 integration:
@@ -18,4 +18,9 @@ integration:
 prod: ## Build binary with release profile.
 	cargo build --release
 
-.PHONY: test clippy fmt integration ci prod
+security-audit: ## Use cargo-audit to audit Cargo.lock for crates with security vulnerabilities.
+	@cargo +nightly install cargo-audit -Z install-upgrade
+	cargo audit
+	# expecting to see "Success No vulnerable packages found"
+
+.PHONY: test clippy fmt integration ci prod security-audit

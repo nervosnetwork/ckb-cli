@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 pub use error::Error;
 pub use passphrase::{CipherParams, Crypto, KdfParams, ScryptParams, ScryptType};
+pub use util::{zeroize_privkey, zeroize_slice};
 
 const KEYSTORE_VERSION: u32 = 3;
 
@@ -564,5 +565,12 @@ impl MasterPrivKey {
         let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &self.secp_secret_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
+    }
+}
+
+impl Drop for MasterPrivKey {
+    fn drop(&mut self) {
+        zeroize_privkey(&mut self.secp_secret_key);
+        zeroize_slice(&mut self.chain_code);
     }
 }

@@ -71,6 +71,11 @@ matrix:
         - make fmt
         - make clippy
         - git diff --exit-code Cargo.lock
+    - name: Security Audit
+      if: 'tag IS NOT present AND (type = pull_request OR branch = master)'
+      os: linux
+      rust: nightly
+      script: make security-audit
     - name: PR Integration
       if: 'tag IS NOT present AND (type = pull_request OR branch = master)'
       os: linux

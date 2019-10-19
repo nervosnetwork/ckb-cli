@@ -21,6 +21,7 @@ use std::io::Write;
 use std::str::FromStr;
 use std::{error, fmt};
 
+use super::keystore::{zeroize_privkey, zeroize_slice};
 use bitcoin_hashes::{hash160, sha512, Hash, HashEngine, Hmac, HmacEngine};
 use byteorder::{BigEndian, ByteOrder};
 use secp256k1::{self, PublicKey, Secp256k1, SecretKey};
@@ -161,7 +162,7 @@ impl Default for Fingerprint {
 }
 
 /// Extended private key
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ExtendedPrivKey {
     /// How many derivations this key is from the master (which is 0)
     pub depth: u8,
@@ -530,7 +531,7 @@ impl ExtendedPrivKey {
         secp: &Secp256k1<C>,
         path: &P,
     ) -> Result<ExtendedPrivKey, Error> {
-        let mut sk: ExtendedPrivKey = *self;
+        let mut sk: ExtendedPrivKey = self.clone();
         for cnum in path.as_ref() {
             sk = sk.ckd_priv(secp, *cnum)?;
         }
@@ -666,6 +667,14 @@ impl ExtendedPubKey {
     /// Returns the first four bytes of the identifier
     pub fn fingerprint(&self) -> Fingerprint {
         Fingerprint::from(&self.identifier()[0..4])
+    }
+}
+
+impl Drop for ExtendedPrivKey {
+    fn drop(&mut self) {
+        zeroize_privkey(&mut self.private_key);
+        zeroize_slice(&mut self.chain_code.0);
+        zeroize_slice(&mut self.parent_fingerprint.0);
     }
 }
 
@@ -1057,6 +1066,18 @@ mod tests {
         }
     }
 
+    impl fmt::Debug for ExtendedPrivKey {
+        fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            fmt.debug_struct("ExtendedPrivKey")
+                .field("depth", &self.depth)
+                .field("parent_fingerprint", &self.parent_fingerprint)
+                .field("child_number", &self.child_number)
+                .field("private_key", &self.private_key)
+                .field("chain_code", &self.chain_code)
+                .finish()
+        }
+    }
+
     impl fmt::Display for ExtendedPrivKeyWrapper {
         fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
             let mut ret = [0; 78];
@@ -1230,7 +1251,7 @@ mod tests {
 
         // Check result against expected base58
         assert_eq!(
-            &ExtendedPrivKeyWrapper::new(sk, network).to_string()[..],
+            &ExtendedPrivKeyWrapper::new(sk.clone(), network).to_string()[..],
             expected_sk
         );
         assert_eq!(

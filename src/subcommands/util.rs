@@ -2,7 +2,12 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
-use ckb_types::{packed, prelude::*, H160, H256};
+use ckb_types::{
+    packed,
+    prelude::*,
+    utilities::{compact_to_difficulty, difficulty_to_compact},
+    H160, H256, U256,
+};
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 use std::fs;
@@ -11,8 +16,8 @@ use std::path::PathBuf;
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, ArgParser, FilePathParser, FixedHashParser, HexParser, PrivkeyPathParser,
-        PubkeyHexParser,
+        AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
+        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
@@ -100,6 +105,42 @@ impl<'a> UtilSubCommand<'a> {
                 SubCommand::with_name("deserialize-script")
                     .about("Deserialize a script from hex binary to json")
                     .arg(binary_hex_arg.clone().help("Script binary hex")),
+                SubCommand::with_name("compact-to-difficulty")
+                    .about("Convert compact target value to difficulty value")
+                    .arg(Arg::with_name("compact-target")
+                         .long("compact-target")
+                         .takes_value(true)
+                         .validator(|input| {
+                             FromStrParser::<u32>::default()
+                                 .validate(input.clone())
+                                 .or_else(|_| {
+                                     let input = if input.starts_with("0x") || input.starts_with("0X") {
+                                         &input[2..]
+                                     } else {
+                                         &input[..]
+                                     };
+                                     u32::from_str_radix(input, 16).map(|_| ()).map_err(|err| err.to_string())
+                                 })
+                         })
+                         .required(true)
+                         .help("The compact target value")
+                    ),
+                SubCommand::with_name("difficulty-to-compact")
+                    .about("Convert difficulty value to compact target value")
+                    .arg(Arg::with_name("difficulty")
+                         .long("difficulty")
+                         .takes_value(true)
+                         .validator(|input| {
+                             let input = if input.starts_with("0x") || input.starts_with("0X") {
+                                 &input[2..]
+                             } else {
+                                 &input[..]
+                             };
+                             U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
+                         })
+                         .required(true)
+                         .help("The difficulty value")
+                    ),
             ])
     }
 }
@@ -114,7 +155,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
-                let privkey_opt: Option<secp256k1::SecretKey> =
+                let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let pubkey_opt: Option<secp256k1::PublicKey> =
                     PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
@@ -206,6 +247,36 @@ args = ["{:#x}"]
                     .map_err(|err| err.to_string())?
                     .into();
                 Ok(rpc_script.render(format, color))
+            }
+            ("compact-to-difficulty", Some(m)) => {
+                let compact_target: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "compact-target")
+                    .or_else(|_| {
+                        let input = m.value_of("compact-target").unwrap();
+                        let input = if input.starts_with("0x") || input.starts_with("0X") {
+                            &input[2..]
+                        } else {
+                            &input[..]
+                        };
+                        u32::from_str_radix(input, 16).map_err(|err| err.to_string())
+                    })?;
+                let resp = serde_json::json!({
+                    "difficulty": format!("{:#x}", compact_to_difficulty(compact_target))
+                });
+                Ok(resp.render(format, color))
+            }
+            ("difficulty-to-compact", Some(m)) => {
+                let input = m.value_of("difficulty").unwrap();
+                let input = if input.starts_with("0x") || input.starts_with("0X") {
+                    &input[2..]
+                } else {
+                    &input[..]
+                };
+                let difficulty = U256::from_hex_str(input).map_err(|err| err.to_string())?;
+                let resp = serde_json::json!({
+                    "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
+                });
+                Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }

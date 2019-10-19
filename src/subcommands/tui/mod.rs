@@ -29,6 +29,7 @@ use ckb_types::{
 };
 
 use super::wallet::{IndexController, IndexRequest};
+use crate::utils::other::get_network_type;
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{human_capacity, ts_now, App, Event, Events, TabsState};
 use widgets::List;
@@ -53,8 +54,10 @@ impl TuiSubCommand {
     }
 
     pub fn start(self) -> Result<String, String> {
-        let genesis_info = {
-            let genesis_block: BlockView = HttpRpcClient::from_uri(&self.url)
+        let (network_type, genesis_info) = {
+            let mut rpc_client = HttpRpcClient::from_uri(&self.url);
+            let network_type = get_network_type(&mut rpc_client)?;
+            let genesis_block: BlockView = rpc_client
                 .get_block_by_number(BlockNumber::from(0))
                 .call()
                 .map_err(|err| {
@@ -67,7 +70,8 @@ impl TuiSubCommand {
                 .0
                 .expect("Can not get genesis block?")
                 .into();
-            GenesisInfo::from_block(&genesis_block)?
+            let genesis_info = GenesisInfo::from_block(&genesis_block)?;
+            (network_type, genesis_info)
         };
 
         let stdout = io::stdout()
@@ -149,6 +153,7 @@ impl TuiSubCommand {
                             render_top_capacity(
                                 &self.index_controller,
                                 self.index_dir.clone(),
+                                network_type,
                                 &genesis_info,
                                 content_context,
                             )
@@ -494,6 +499,7 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
 fn render_top_capacity<B: Backend>(
     index: &IndexController,
     index_dir: PathBuf,
+    network_type: NetworkType,
     genesis_info: &GenesisInfo,
     ctx: RenderContext<B>,
 ) {
@@ -506,13 +512,8 @@ fn render_top_capacity<B: Backend>(
     let lines = if index.state().read().is_processing() {
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
         let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
-            let db = IndexDatabase::from_db(
-                backend,
-                cf,
-                NetworkType::TestNet,
-                genesis_info.clone(),
-                false,
-            )?;
+            let db =
+                IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)?;
             Ok(db.get_top_n(50))
         });
         match capacity_list_result {
@@ -528,7 +529,7 @@ fn render_top_capacity<B: Backend>(
                             "  [address ]: {}",
                             address
                                 .as_ref()
-                                .map(|s| s.to_string(NetworkType::TestNet))
+                                .map(|s| s.to_string(network_type))
                                 .unwrap_or_else(|| "null".to_owned())
                         )),
                         Text::raw(format!(
