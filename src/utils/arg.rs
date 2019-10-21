@@ -95,6 +95,15 @@ pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
         .help("The transaction fee capacity (unit: CKB, format: 0.335)")
 }
 
+pub fn fee_rate<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("fee-rate")
+        .long("fee-rate")
+        .takes_value(true)
+        .validator(|input| FromStrParser::<u64>::default().validate(input))
+        .default_value("1000")
+        .help("The transaction fee rate (unit: Shannons/KB)")
+}
+
 pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("with-password")
         .long("with-password")

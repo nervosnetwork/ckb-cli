@@ -170,7 +170,8 @@ pub struct TransferTransactionBuilder<'a> {
     to_data: &'a Bytes,
     to_address: &'a Address,
     to_capacity: u64,
-    tx_fee: u64,
+    tx_fee: Option<u64>,
+    fee_rate: Option<u64>,
 
     inputs: Vec<CellInput>,
     outputs: Vec<(CellOutput, Bytes)>,
@@ -187,11 +188,10 @@ impl<'a> TransferTransactionBuilder<'a> {
         to_data: &'a Bytes,
         to_address: &'a Address,
         to_capacity: u64,
-        tx_fee: u64,
+        fee: (Option<u64>, Option<u64>),
         inputs: Vec<CellInput>,
     ) -> Self {
-        assert!(from_capacity >= (to_capacity + tx_fee));
-
+        let (tx_fee, fee_rate) = fee;
         let mut witnesses = Vec::with_capacity(inputs.len());
         inputs.iter().for_each(|_| witnesses.push(VecDeque::new()));
 
@@ -202,6 +202,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             to_address,
             to_capacity,
             tx_fee,
+            fee_rate,
             inputs,
             witnesses,
 
@@ -222,7 +223,7 @@ impl<'a> TransferTransactionBuilder<'a> {
     {
         self.cell_deps.extend(vec![genesis_info.secp_dep()]);
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info, false);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
     }
@@ -238,7 +239,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         self.cell_deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info, true);
         self.build_dao_type(genesis_info);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -260,10 +261,47 @@ impl<'a> TransferTransactionBuilder<'a> {
         self.header_deps
             .extend(input_header_hashes.into_iter().map(|h| h.pack()));
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info, true);
         self.build_dao_witnesses();
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
+    }
+
+    pub fn estimate_tx_fee(&self, is_dao: bool) -> u64 {
+        self.tx_fee.unwrap_or_else(|| {
+            let (outputs, outputs_data): (Vec<_>, Vec<_>) = self.outputs.iter().cloned().unzip();
+            let change_cell = CellOutput::new_builder()
+                .capacity(Capacity::bytes(100).unwrap().pack())
+                .lock(self.from_address.lock_script(Default::default()))
+                .build();
+            let change_data = Bytes::default();
+            let witnesses: Vec<Bytes> = self
+                .witnesses
+                .iter()
+                .map(|_| {
+                    // secp signature
+                    let mut data = vec![0u8; 65];
+                    if is_dao {
+                        // dao position argument
+                        data.extend_from_slice(&0u64.to_le_bytes()[..]);
+                    }
+                    Bytes::from(data)
+                })
+                .collect();
+            TransactionBuilder::default()
+                .inputs(self.inputs.clone())
+                .outputs(outputs)
+                .output(change_cell)
+                .outputs_data(outputs_data.iter().map(Pack::pack))
+                .output_data(change_data.pack())
+                .cell_deps(self.cell_deps.clone())
+                .header_deps(self.header_deps.clone())
+                .witnesses(witnesses.pack())
+                .build()
+                .data()
+                .serialized_size_in_block() as u64
+                * self.fee_rate.unwrap()
+        })
     }
 
     fn build_secp_witnesses<F>(&mut self, mut build_witness: F) -> Result<(), String>
@@ -308,8 +346,8 @@ impl<'a> TransferTransactionBuilder<'a> {
     }
 
     // Exchange back to sender if the rest is enough to pay for a cell
-    fn build_changes(&mut self, genesis_info: &GenesisInfo) {
-        let rest_capacity = self.from_capacity - self.to_capacity - self.tx_fee;
+    fn build_changes(&mut self, genesis_info: &GenesisInfo, is_dao: bool) {
+        let rest_capacity = self.from_capacity - self.to_capacity - self.estimate_tx_fee(is_dao);
         if rest_capacity >= *MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
             let change = CellOutput::new_builder()

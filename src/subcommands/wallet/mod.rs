@@ -39,6 +39,9 @@ pub use index::{
 };
 use std::collections::HashSet;
 
+// unit: Shannon
+const DEFAULT_FEE: u64 = 1_000_000;
+
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
@@ -117,7 +120,8 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
-                    .arg(arg::tx_fee().required(true))
+                    .arg(arg::tx_fee())
+                    .arg(arg::fee_rate().conflicts_with("tx-fee"))
                     .arg(arg::with_password()),
                 SubCommand::with_name("deposit-dao")
                     .about("Deposit capacity into NervosDAO(can have data)")
@@ -127,7 +131,8 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
-                    .arg(arg::tx_fee().required(true))
+                    .arg(arg::tx_fee())
+                    .arg(arg::fee_rate().conflicts_with("tx-fee"))
                     .arg(arg::with_password()),
                 SubCommand::with_name("withdraw-dao")
                     .about("Withdraw capacity from NervosDAO(can have data)")
@@ -137,7 +142,8 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
-                    .arg(arg::tx_fee().required(true))
+                    .arg(arg::tx_fee())
+                    .arg(arg::fee_rate().conflicts_with("tx-fee"))
                     .arg(arg::with_password()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
@@ -183,7 +189,9 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
+        let tx_fee_opt: Option<u64> = CapacityParser.from_matches_opt(m, "tx-fee", false)?;
+        let fee_rate_opt: Option<u64> =
+            FromStrParser::<u64>::default().from_matches_opt(m, "fee-rate", false)?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -206,6 +214,7 @@ impl<'a> WalletSubCommand<'a> {
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
+        let pre_tx_fee = tx_fee_opt.unwrap_or(DEFAULT_FEE);
         let mut total_capacity = 0;
         let terminator = |_, info: &LiveCellInfo| {
             let out_point = info.out_point();
@@ -216,7 +225,7 @@ impl<'a> WalletSubCommand<'a> {
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
+                (total_capacity >= capacity + pre_tx_fee, true)
             } else {
                 (false, false)
             }
@@ -240,7 +249,7 @@ impl<'a> WalletSubCommand<'a> {
                 )
             })?;
 
-        if total_capacity < capacity + tx_fee {
+        if total_capacity < capacity + pre_tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(network_type),
@@ -254,7 +263,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
-            tx_fee,
+            (tx_fee_opt, fee_rate_opt),
             inputs,
         );
         let transaction = if let Some(privkey) = from_privkey.as_ref() {
@@ -287,7 +296,9 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
+        let tx_fee_opt: Option<u64> = CapacityParser.from_matches_opt(m, "tx-fee", false)?;
+        let fee_rate_opt: Option<u64> =
+            FromStrParser::<u64>::default().from_matches_opt(m, "fee-rate", false)?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -314,6 +325,7 @@ impl<'a> WalletSubCommand<'a> {
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
+        let pre_tx_fee = tx_fee_opt.unwrap_or(DEFAULT_FEE);
         let mut total_capacity = 0;
         let terminator = |_, info: &LiveCellInfo| {
             let out_point = info.out_point();
@@ -324,7 +336,7 @@ impl<'a> WalletSubCommand<'a> {
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_secp_cell(&resp) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
+                (total_capacity >= capacity + pre_tx_fee, true)
             } else {
                 (false, false)
             }
@@ -349,7 +361,7 @@ impl<'a> WalletSubCommand<'a> {
                 )
             })?;
 
-        if total_capacity < capacity + tx_fee {
+        if total_capacity < capacity + pre_tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(network_type),
@@ -364,7 +376,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
-            tx_fee,
+            (tx_fee_opt, fee_rate_opt),
             inputs,
         );
         let transaction = if let Some(privkey) = from_privkey.as_ref() {
@@ -397,7 +409,9 @@ impl<'a> WalletSubCommand<'a> {
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
+        let tx_fee_opt: Option<u64> = CapacityParser.from_matches_opt(m, "tx-fee", false)?;
+        let fee_rate_opt: Option<u64> =
+            FromStrParser::<u64>::default().from_matches_opt(m, "fee-rate", false)?;
         let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
             let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
@@ -424,6 +438,7 @@ impl<'a> WalletSubCommand<'a> {
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
+        let pre_tx_fee = tx_fee_opt.unwrap_or(DEFAULT_FEE);
         let mut total_capacity = 0;
         let terminator = |_, info: &LiveCellInfo| {
             let out_point = info.out_point();
@@ -434,7 +449,7 @@ impl<'a> WalletSubCommand<'a> {
                 .expect("get_live_cell by RPC call failed");
             if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {
                 total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
+                (total_capacity >= capacity + pre_tx_fee, true)
             } else {
                 (false, false)
             }
@@ -458,7 +473,7 @@ impl<'a> WalletSubCommand<'a> {
                 )
             })?;
 
-        if total_capacity < capacity + tx_fee {
+        if total_capacity < capacity + pre_tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
                 from_address.to_string(network_type),
@@ -475,7 +490,7 @@ impl<'a> WalletSubCommand<'a> {
             &to_data,
             &to_address,
             capacity,
-            tx_fee,
+            (tx_fee_opt, fee_rate_opt),
             inputs,
         );
         let transaction = if let Some(privkey) = from_privkey.as_ref() {
