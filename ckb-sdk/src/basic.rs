@@ -104,7 +104,7 @@ impl Address {
         Script::new_builder()
             .args(self.hash.as_bytes().pack())
             .code_hash(type_hash)
-            .hash_type(ScriptHashType::Type.pack())
+            .hash_type(ScriptHashType::Type.into())
             .build()
     }
 
@@ -218,7 +218,7 @@ mod old_addr {
             Script::new_builder()
                 .args(self.hash.as_bytes().pack())
                 .code_hash(code_hash.pack())
-                .hash_type(ScriptHashType::Data.pack())
+                .hash_type(ScriptHashType::Data.into())
                 .build()
         }
 

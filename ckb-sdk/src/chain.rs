@@ -152,7 +152,7 @@ impl GenesisInfo {
             .out_point(
                 self.out_points[SECP_GROUP_TRANSACTION_INDEX][SECP_GROUP_OUTPUT_INDEX].clone(),
             )
-            .dep_type(DepType::DepGroup.pack())
+            .dep_type(DepType::DepGroup.into())
             .build()
     }
 
@@ -331,7 +331,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             .cloned()
             .map(|(output, output_data)| {
                 let type_ = Script::new_builder()
-                    .hash_type(ScriptHashType::Type.pack())
+                    .hash_type(ScriptHashType::Type.into())
                     .code_hash(genesis_info.dao_type_hash().clone())
                     .build();
                 let type_opt = ScriptOpt::new_builder().set(Some(type_)).build();
