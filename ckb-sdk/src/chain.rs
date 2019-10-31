@@ -8,12 +8,11 @@ use ckb_types::{
         BlockView, Capacity, DepType, HeaderView, ScriptHashType, TransactionBuilder,
         TransactionView,
     },
-    packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt},
+    packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, WitnessArgs},
     prelude::*,
     H160, H256,
 };
 use secp256k1::recovery::RecoverableSignature;
-use std::collections::VecDeque;
 
 pub const ONE_CKB: u64 = 100_000_000;
 
@@ -163,6 +162,7 @@ impl GenesisInfo {
     }
 }
 
+// NOTE: We assume all inputs from same account
 #[derive(Debug)]
 pub struct TransferTransactionBuilder<'a> {
     from_address: &'a Address,
@@ -177,7 +177,7 @@ pub struct TransferTransactionBuilder<'a> {
     changes: Vec<(CellOutput, Bytes)>,
     cell_deps: Vec<CellDep>,
     header_deps: Vec<Byte32>,
-    witnesses: Vec<VecDeque<Bytes>>,
+    witnesses: Vec<Bytes>,
 }
 
 impl<'a> TransferTransactionBuilder<'a> {
@@ -193,7 +193,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         assert!(from_capacity >= (to_capacity + tx_fee));
 
         let mut witnesses = Vec::with_capacity(inputs.len());
-        inputs.iter().for_each(|_| witnesses.push(VecDeque::new()));
+        inputs.iter().for_each(|_| witnesses.push(Bytes::default()));
 
         Self {
             from_address,
@@ -218,7 +218,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<TransactionView, String>
     where
-        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         self.cell_deps.extend(vec![genesis_info.secp_dep()]);
         self.build_outputs(genesis_info);
@@ -233,7 +233,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<TransactionView, String>
     where
-        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         self.cell_deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
@@ -252,7 +252,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         build_witness: F,
     ) -> Result<TransactionView, String>
     where
-        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         self.cell_deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
@@ -266,32 +266,50 @@ impl<'a> TransferTransactionBuilder<'a> {
         Ok(self.build_transaction())
     }
 
+    // NOTE: We assume all inputs from same account
     fn build_secp_witnesses<F>(&mut self, mut build_witness: F) -> Result<(), String>
     where
-        F: FnMut(&Vec<&[u8]>) -> Result<Bytes, String>,
+        F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         let transaction = self.build_transaction();
 
-        // The finalized witness is blake2b([tx_hash, witness[1], witness[2], ...)
-        for witness in self.witnesses.iter_mut() {
-            let first_w = transaction.hash().as_bytes();
-            let mut secp_witness_args = vec![&first_w];
-            secp_witness_args.extend(witness.iter().map(|wit| wit));
+        let init_witness = if self.witnesses[0].is_empty() {
+            WitnessArgs::default()
+        } else {
+            WitnessArgs::from_slice(&self.witnesses[0]).map_err(|err| err.to_string())?
+        };
 
-            let secp_witness =
-                build_witness(&secp_witness_args.into_iter().map(|w| w.as_ref()).collect())?;
-            witness.push_front(secp_witness);
+        let init_witness = init_witness
+            .as_builder()
+            .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+            .build();
+        let mut sign_args = vec![
+            transaction.hash().raw_data().to_vec(),
+            (init_witness.as_bytes().len() as u64)
+                .to_le_bytes()
+                .to_vec(),
+            init_witness.as_bytes().to_vec(),
+        ];
+        for other_witness in self.witnesses.iter().skip(1) {
+            sign_args.push((other_witness.len() as u64).to_le_bytes().to_vec());
+            sign_args.push(other_witness.to_vec());
         }
-
+        let sig = build_witness(&sign_args)?;
+        self.witnesses[0] = init_witness
+            .as_builder()
+            .lock(Some(sig).pack())
+            .build()
+            .as_bytes();
         Ok(())
     }
 
     fn build_dao_witnesses(&mut self) {
         // NOTE: We assume all the inputs are deposited-dao cells
-        for witness in self.witnesses.iter_mut() {
+        for _witness in self.witnesses.iter_mut() {
             let dao_i = 0u64; // point to a header-only withdraw out point
-            let dao_witness = Bytes::from(dao_i.to_le_bytes().to_vec());
-            witness.push_back(dao_witness);
+            let _dao_witness = Bytes::from(dao_i.to_le_bytes().to_vec());
+            // FIXME: update dao witness
+            // witness.push_back(dao_witness);
         }
     }
 
@@ -344,20 +362,6 @@ impl<'a> TransferTransactionBuilder<'a> {
     fn build_transaction(&self) -> TransactionView {
         let (outputs, outputs_data): (Vec<_>, Vec<_>) = self.outputs.iter().cloned().unzip();
         let (changes, changes_data): (Vec<_>, Vec<_>) = self.changes.iter().cloned().unzip();
-        let witnesses: Vec<Bytes> = self
-            .witnesses
-            .iter()
-            .cloned()
-            .map(|witness| {
-                witness
-                    .into_iter()
-                    .fold(Vec::new(), |mut data, part| {
-                        data.extend_from_slice(&part);
-                        data
-                    })
-                    .into()
-            })
-            .collect();
         TransactionBuilder::default()
             .inputs(self.inputs.clone())
             .outputs(outputs)
@@ -366,12 +370,12 @@ impl<'a> TransferTransactionBuilder<'a> {
             .outputs_data(changes_data.iter().map(Pack::pack))
             .cell_deps(self.cell_deps.clone())
             .header_deps(self.header_deps.clone())
-            .witnesses(witnesses.pack())
+            .witnesses(self.witnesses.pack())
             .build()
     }
 }
 
-pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, args: &[&[u8]]) -> Bytes {
+pub fn build_witness_with_key(privkey: &secp256k1::SecretKey, args: &[Vec<u8>]) -> Bytes {
     let message = secp256k1::Message::from_slice(&blake2b_args(args))
         .expect("Convert to secp256k1 message failed");
     serialize_signature(&SECP256K1.sign_recoverable(&message, privkey))
@@ -385,10 +389,10 @@ pub fn serialize_signature(signature: &RecoverableSignature) -> Bytes {
     Bytes::from(signature_bytes.to_vec())
 }
 
-pub fn blake2b_args(args: &[&[u8]]) -> [u8; 32] {
+pub fn blake2b_args(args: &[Vec<u8>]) -> [u8; 32] {
     let mut blake2b = new_blake2b();
     for arg in args.iter() {
-        blake2b.update(arg);
+        blake2b.update(&arg);
     }
     let mut digest = [0u8; 32];
     blake2b.finalize(&mut digest);
