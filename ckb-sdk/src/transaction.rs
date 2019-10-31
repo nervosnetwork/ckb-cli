@@ -1,14 +1,16 @@
-use ckb_hash::blake2b_256;
+use ckb_hash::new_blake2b;
 use ckb_script::TransactionScriptsVerifier;
 use ckb_types::{
     bytes::Bytes,
     core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
-    packed::{Byte32, CellInput, CellOutput, OutPoint, Script},
+    packed::{Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
+use failure::Error as FailureError;
 use fnv::FnvHashSet;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 
 use crate::{GenesisInfo, MIN_SECP_CELL_CAPACITY};
 
@@ -173,11 +175,19 @@ impl<'a> MockTransactionHelper<'a> {
         };
         for input in tx.inputs().into_iter() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
-            insert_dep(lock.hash_type().unpack(), &lock.code_hash())?;
+            let hash_type = lock
+                .hash_type()
+                .try_into()
+                .map_err(|err: FailureError| err.to_string())?;
+            insert_dep(hash_type, &lock.code_hash())?;
         }
         for output in tx.outputs().into_iter() {
             if let Some(script) = output.type_().to_opt() {
-                insert_dep(script.hash_type().unpack(), &script.code_hash())?;
+                let hash_type = script
+                    .hash_type()
+                    .try_into()
+                    .map_err(|err: FailureError| err.to_string())?;
+                insert_dep(hash_type, &script.code_hash())?;
             }
         }
         let new_cell_deps = tx
@@ -215,27 +225,46 @@ impl<'a> MockTransactionHelper<'a> {
         while witnesses.len() < tx.inputs().len() {
             witnesses.push(Bytes::new().pack());
         }
-        let tx_hash_hash =
-            H256::from_slice(&blake2b_256(tx.hash().as_slice())).expect("Convert to H256 failed");
-        let mut witness_cache: HashMap<H160, Bytes> = HashMap::default();
+        let mut input_group: HashMap<H160, Vec<usize>> = HashMap::default();
         for (idx, input) in tx.inputs().into_iter().enumerate() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
             if &lock.code_hash() == genesis_info.secp_type_hash()
+                && lock.hash_type() == ScriptHashType::Type.into()
                 && lock.args().raw_data().len() == 20
             {
                 let lock_arg =
                     H160::from_slice(&lock.args().raw_data()).expect("Convert to H160 failed");
-                let witness = if let Some(witness) = witness_cache.get(&lock_arg) {
-                    witness.clone()
-                } else {
-                    let witness =
-                        signer(&lock_arg, &tx_hash_hash).map(|data| Bytes::from(data.as_ref()))?;
-                    witness_cache.insert(lock_arg, witness.clone());
-                    witness
-                };
-                witnesses[idx] = witness.pack();
+                input_group
+                    .entry(lock_arg)
+                    .or_insert_with(Vec::new)
+                    .push(idx);
             }
         }
+
+        for (lock_arg, idxs) in input_group.into_iter() {
+            let init_witness = WitnessArgs::new_builder()
+                .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                .build();
+            let mut blake2b = new_blake2b();
+            blake2b.update(tx.hash().as_slice());
+            blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
+            blake2b.update(&init_witness.as_bytes());
+            for idx in idxs.iter().skip(1).cloned() {
+                let other_witness = &witnesses[idx];
+                blake2b.update(&(other_witness.len() as u64).to_le_bytes());
+                blake2b.update(other_witness.as_slice());
+            }
+            let mut message = [0u8; 32];
+            blake2b.finalize(&mut message);
+            let message = H256::from(message);
+            let sig = signer(&lock_arg, &message).map(|data| Bytes::from(data.as_ref()))?;
+            witnesses[idxs[0]] = WitnessArgs::new_builder()
+                .lock(Some(sig).pack())
+                .build()
+                .as_bytes()
+                .pack();
+        }
+
         self.mock_tx.tx = self
             .mock_tx
             .tx
@@ -290,6 +319,7 @@ impl<'a> MockTransactionHelper<'a> {
 mod test {
     use super::*;
     use ckb_crypto::secp::SECP256K1;
+    use ckb_hash::blake2b_256;
     use ckb_jsonrpc_types as json_types;
     use ckb_types::{
         core::{capacity_bytes, BlockView, Capacity, HeaderView},
@@ -324,7 +354,7 @@ mod test {
             .expect("Generate hash(H160) from pubkey failed");
         let lock_script = Script::new_builder()
             .code_hash(genesis_info.secp_type_hash().clone())
-            .hash_type(ScriptHashType::Type.pack())
+            .hash_type(ScriptHashType::Type.into())
             .args(Bytes::from(lock_arg.as_bytes()).pack())
             .build();
 
