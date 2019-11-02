@@ -125,7 +125,7 @@ impl Resource {
                 })?
                 .ok_or_else(|| format!("Can not get CellOutput by dep={}", cell_dep))?;
             // Handle dep group
-            if cell_dep.dep_type().unpack() == DepType::DepGroup {
+            if cell_dep.dep_type() == DepType::DepGroup.into() {
                 for sub_out_point in OutPointVec::from_slice(&data)
                     .map_err(|err| format!("Parse dep group data error: {}", err))?
                     .into_iter()

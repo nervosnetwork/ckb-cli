@@ -505,7 +505,7 @@ impl<'a> WalletSubCommand<'a> {
     fn build_witness_with_keystore(
         &mut self,
         lock_arg: &H160,
-        args: &[&[u8]],
+        args: &[Vec<u8>],
         password: &Option<String>,
     ) -> Result<Bytes, String> {
         let sign_hash = H256::from_slice(&blake2b_args(args))
