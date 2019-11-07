@@ -5,11 +5,10 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, HeaderView, TransactionWithStatus};
+use ckb_jsonrpc_types::{BlockNumber, CellWithStatus};
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, TransactionView},
-    packed::{Byte32, CellInput, Script},
     prelude::*,
     H160, H256,
 };
@@ -36,7 +35,6 @@ pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
 };
-use std::collections::HashSet;
 
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -118,34 +116,8 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::capacity().required(true))
                     .arg(arg::tx_fee().required(true))
                     .arg(arg::with_password()),
-                SubCommand::with_name("deposit-dao")
-                    .about("Deposit capacity into NervosDAO(can have data)")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
-                    .arg(arg::from_account().required_unless(arg::privkey_path().b.name))
-                    .arg(arg::to_address())
-                    .arg(arg::to_data())
-                    .arg(arg::to_data_path())
-                    .arg(arg::capacity().required(true))
-                    .arg(arg::tx_fee().required(true))
-                    .arg(arg::with_password()),
-                SubCommand::with_name("withdraw-dao")
-                    .about("Withdraw capacity from NervosDAO(can have data)")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
-                    .arg(arg::from_account().required_unless(arg::privkey_path().b.name))
-                    .arg(arg::to_address())
-                    .arg(arg::to_data())
-                    .arg(arg::to_data_path())
-                    .arg(arg::capacity().required(true))
-                    .arg(arg::tx_fee().required(true))
-                    .arg(arg::with_password()),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
-                    .arg(arg::lock_hash())
-                    .arg(arg::address())
-                    .arg(arg::pubkey())
-                    .arg(arg::lock_arg()),
-                SubCommand::with_name("get-dao-capacity")
-                    .about("Get NervosDAO deposited capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg::lock_hash())
                     .arg(arg::address())
                     .arg(arg::pubkey())
@@ -270,233 +242,6 @@ impl<'a> WalletSubCommand<'a> {
         self.send_transaction(transaction, format, color, debug)
     }
 
-    pub fn deposit_dao(
-        &mut self,
-        m: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
-        let from_privkey: Option<PrivkeyWrapper> =
-            PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account: Option<H160> =
-            FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
-            Address::from_lock_arg(&pubkey_hash[0..20])?
-        } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
-        };
-        let to_address: Address = AddressParser
-            .from_matches_opt(m, "to-address", false)?
-            .unwrap_or_else(|| from_address.clone());
-        let to_data = to_data(m)?;
-        let with_password = m.is_present("with-password");
-
-        check_capacity(capacity, to_data.len())?;
-        let network_type = get_network_type(self.rpc_client)?;
-        let genesis_info = self.genesis_info()?;
-        let secp_type_hash = genesis_info.secp_type_hash();
-
-        if let Some(address) = m.value_of("to-address") {
-            check_address_prefix(address, network_type)?;
-        }
-        // For check index database is ready
-        self.with_db(|_| ())?;
-        let index_dir = self.index_dir.clone();
-        let genesis_hash = genesis_info.header().hash();
-        let genesis_info_clone = genesis_info.clone();
-        let mut total_capacity = 0;
-        let terminator = |_, info: &LiveCellInfo| {
-            let out_point = info.out_point();
-            let resp: CellWithStatus = self
-                .rpc_client
-                .get_live_cell(out_point.into(), true)
-                .call()
-                .expect("get_live_cell by RPC call failed");
-            if is_live_cell(&resp) && is_secp_cell(&resp) {
-                total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
-            } else {
-                (false, false)
-            }
-        };
-        let infos: Vec<LiveCellInfo> =
-            with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db =
-                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
-
-                Ok(db.get_live_cells_by_lock(
-                    from_address
-                        .lock_script(secp_type_hash.clone())
-                        .calc_script_hash(),
-                    None,
-                    terminator,
-                ))
-            })
-            .map_err(|_err| {
-                format!(
-                    "index database may not ready, sync process: {}",
-                    self.index_controller.state().read().to_string()
-                )
-            })?;
-
-        if total_capacity < capacity + tx_fee {
-            return Err(format!(
-                "Capacity not enough: {} => {}",
-                from_address.display_with_prefix(network_type),
-                total_capacity,
-            ));
-        }
-
-        let inputs = infos.iter().map(LiveCellInfo::input).collect::<Vec<_>>();
-        let mut tx_args = TransferTransactionBuilder::new(
-            &from_address,
-            total_capacity,
-            &to_data,
-            &to_address,
-            capacity,
-            tx_fee,
-            inputs,
-        );
-        let transaction = if let Some(privkey) = from_privkey.as_ref() {
-            tx_args.deposit_dao(&genesis_info, |args| {
-                Ok(build_witness_with_key(privkey, args))
-            })
-        } else {
-            let lock_arg = from_account.as_ref().unwrap();
-            let password = if with_password {
-                Some(read_password(false, None)?)
-            } else {
-                None
-            };
-            tx_args.deposit_dao(&genesis_info, |args| {
-                self.build_witness_with_keystore(lock_arg, args, &password)
-            })
-        }?;
-        self.send_transaction(transaction, format, color, debug)
-    }
-
-    pub fn withdraw_dao(
-        &mut self,
-        m: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
-        let from_privkey: Option<PrivkeyWrapper> =
-            PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account: Option<H160> =
-            FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
-            Address::from_lock_arg(&pubkey_hash[0..20])?
-        } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
-        };
-        let to_address: Address = AddressParser
-            .from_matches_opt(m, "to-address", false)?
-            .unwrap_or_else(|| from_address.clone());
-        let to_data = to_data(m)?;
-        let with_password = m.is_present("with-password");
-
-        check_capacity(capacity, to_data.len())?;
-        let network_type = get_network_type(self.rpc_client)?;
-        let genesis_info = self.genesis_info()?;
-        let secp_type_hash = genesis_info.secp_type_hash();
-
-        if let Some(address) = m.value_of("to-address") {
-            check_address_prefix(address, network_type)?;
-        }
-        // For check index database is ready
-        self.with_db(|_| ())?;
-        let index_dir = self.index_dir.clone();
-        let genesis_hash = genesis_info.header().hash();
-        let genesis_info_clone = genesis_info.clone();
-        let mut total_capacity = 0;
-        let terminator = |_, info: &LiveCellInfo| {
-            let out_point = info.out_point();
-            let resp: CellWithStatus = self
-                .rpc_client
-                .get_live_cell(out_point.into(), true)
-                .call()
-                .expect("get_live_cell by RPC call failed");
-            if is_live_cell(&resp) && is_dao_cell(&resp, genesis_info.dao_type_hash()) {
-                total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
-            } else {
-                (false, false)
-            }
-        };
-        let infos: Vec<LiveCellInfo> =
-            with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db =
-                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
-                Ok(db.get_live_cells_by_lock(
-                    from_address
-                        .lock_script(secp_type_hash.clone())
-                        .calc_script_hash(),
-                    None,
-                    terminator,
-                ))
-            })
-            .map_err(|_err| {
-                format!(
-                    "index database may not ready, sync process: {}",
-                    self.index_controller.state().read().to_string()
-                )
-            })?;
-
-        if total_capacity < capacity + tx_fee {
-            return Err(format!(
-                "Capacity not enough: {} => {}",
-                from_address.display_with_prefix(network_type),
-                total_capacity,
-            ));
-        }
-
-        let inputs_and_header_hashes = build_dao_inputs(&mut self.rpc_client, infos)?;
-        let (inputs, input_header_hashes) = inputs_and_header_hashes.into_iter().unzip();
-        let withdraw_header_hash = build_dao_withdraw_hash(&mut self.rpc_client)?;
-        let mut tx_args = TransferTransactionBuilder::new(
-            &from_address,
-            total_capacity,
-            &to_data,
-            &to_address,
-            capacity,
-            tx_fee,
-            inputs,
-        );
-        let transaction = if let Some(privkey) = from_privkey.as_ref() {
-            tx_args.withdraw_dao(
-                withdraw_header_hash,
-                input_header_hashes,
-                &genesis_info,
-                |args| Ok(build_witness_with_key(privkey, args)),
-            )
-        } else {
-            let lock_arg = from_account.as_ref().unwrap();
-            let password = if with_password {
-                Some(read_password(false, None)?)
-            } else {
-                None
-            };
-            tx_args.withdraw_dao(
-                withdraw_header_hash,
-                input_header_hashes,
-                &genesis_info,
-                |args| self.build_witness_with_keystore(lock_arg, args, &password),
-            )
-        }?;
-        self.send_transaction(transaction, format, color, debug)
-    }
-
     fn build_witness_with_keystore(
         &mut self,
         lock_arg: &H160,
@@ -560,8 +305,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => self.transfer(m, format, color, debug),
-            ("deposit-dao", Some(m)) => self.deposit_dao(m, format, color, debug),
-            ("withdraw-dao", Some(m)) => self.withdraw_dao(m, format, color, debug),
             ("get-capacity", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
@@ -573,36 +316,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     address.lock_script(secp_type_hash).calc_script_hash()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
-                let resp = serde_json::json!({
-                    "capacity": capacity,
-                });
-                Ok(resp.render(format, color))
-            }
-            ("get-dao-capacity", Some(m)) => {
-                let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
-                let dao_type_hash = self.genesis_info()?.dao_type_hash().clone();
-                let lock_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
-                let lock_hash = if let Some(lock_hash) = lock_hash_opt {
-                    lock_hash.pack()
-                } else {
-                    let address = get_address(m)?;
-                    address.lock_script(secp_type_hash).calc_script_hash()
-                };
-                let capacity = self.with_db(|db| {
-                    let infos_by_lock = db
-                        .get_live_cells_by_lock(lock_hash, Some(0), |_, _| (false, true))
-                        .into_iter()
-                        .collect::<HashSet<_>>();
-                    let infos_by_code = db
-                        .get_live_cells_by_code(dao_type_hash, Some(0), |_, _| (false, true))
-                        .into_iter()
-                        .collect::<HashSet<_>>();
-                    infos_by_lock
-                        .intersection(&infos_by_code)
-                        .map(|info| info.capacity)
-                        .sum::<u64>()
-                })?;
                 let resp = serde_json::json!({
                     "capacity": capacity,
                 });
@@ -746,79 +459,6 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
     }
 
     false
-}
-
-fn is_dao_cell(cell: &CellWithStatus, dao_type_hash: &Byte32) -> bool {
-    if let Some(ref info) = cell.cell {
-        return info
-            .output
-            .type_
-            .as_ref()
-            .map(|script| {
-                let type_hash = Into::<Script>::into(script.to_owned()).calc_script_hash();
-                &type_hash == dao_type_hash
-            })
-            .unwrap_or(false);
-    }
-
-    false
-}
-
-fn build_dao_inputs(
-    rpc_client: &mut HttpRpcClient,
-    infos: Vec<LiveCellInfo>,
-) -> Result<Vec<(CellInput, H256)>, String> {
-    // NOTE: We assume here tip_number > input.number + DAO_MATURITY(10)
-    let dao_minimal_since = {
-        let tip_header: HeaderView = rpc_client
-            .get_tip_header()
-            .call()
-            .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-        tip_header.inner.number.value()
-    };
-
-    let mut inputs = Vec::with_capacity(infos.len());
-    for info in infos.iter() {
-        let previous_tx_hash = info.tx_hash.to_owned();
-        let previous_tx: TransactionWithStatus = rpc_client
-            .get_transaction(previous_tx_hash)
-            .call()
-            .map_err(|err| format!("Send get_transaction error: {}", err))?
-            .0
-            .expect("transaction of a live cell exist");
-        let input_block_hash = previous_tx
-            .tx_status
-            .block_hash
-            .expect("live cell's block_hash should exist");
-
-        let live_cell_info = {
-            let live_cell_info = LiveCellInfo::input(info);
-            live_cell_info
-                .as_builder()
-                .since(dao_minimal_since.pack())
-                .build()
-        };
-        inputs.push((live_cell_info, input_block_hash));
-    }
-    Ok(inputs)
-}
-
-fn build_dao_withdraw_hash(rpc_client: &mut HttpRpcClient) -> Result<H256, String> {
-    const DAO_MATURITY: u64 = 10;
-
-    let tip_header: HeaderView = rpc_client
-        .get_tip_header()
-        .call()
-        .map_err(|err| format!("Send get_tip_header error: {}", err))?;
-    let dao_withdraw_number = tip_header.inner.number.value() - DAO_MATURITY;
-    let dao_withdraw_hash = rpc_client
-        .get_header_by_number(BlockNumber::from(dao_withdraw_number))
-        .call()
-        .map_err(|err| format!("Send get_header_by_number error: {}", err))?
-        .0
-        .expect("old block exist")
-        .hash;
-    Ok(dao_withdraw_hash)
 }
 
 fn to_data(m: &ArgMatches) -> Result<Bytes, String> {
