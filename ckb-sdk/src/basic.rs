@@ -78,6 +78,8 @@ impl fmt::Display for NetworkType {
 #[repr(u8)]
 pub enum AddressType {
     Default = 0x01,
+    FullPayloadWithDataHash = 0x02,
+    FullPayloadWithTypeHash = 0x04,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]

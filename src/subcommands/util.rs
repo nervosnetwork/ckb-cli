@@ -1,9 +1,10 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
-use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
+use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress};
 use ckb_types::{
-    packed,
+    h256, packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
@@ -22,6 +23,7 @@ use crate::utils::{
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
 };
+use ckb_types::core::{EpochNumber, EpochNumberWithFraction};
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -141,6 +143,22 @@ impl<'a> UtilSubCommand<'a> {
                          .required(true)
                          .help("The difficulty value")
                     ),
+                SubCommand::with_name("single-to-multisig-addr")
+                    .about("Convert address in single signature format to multisig format")
+                    .arg(
+                        Arg::with_name("address")
+                            .long("address")
+                            .required(true)
+                            .takes_value(true)
+                            .help("The address in single signature format")
+                    )
+                    .arg(
+                        Arg::with_name("locktime")
+                            .long("locktime")
+                            .required(true)
+                            .takes_value(true)
+                            .help("The locktime in UTC format")
+                    )
             ])
     }
 }
@@ -279,7 +297,64 @@ message = "0x"
                 });
                 Ok(resp.render(format, color))
             }
+            ("single-to-multisig-addr", Some(m)) => {
+                const FINAL_TESTNET_EPOCH_NUMBER: EpochNumber = 89;
+                const FINAL_TESTNET_END_TIMESTAMP: u64 = 1_573_862_400; // 2019-11-16T00:00:00+0000
+                const FLAG_SINCE_EPOCH_NUMBER: u64 =
+                    0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
+
+                let locktime = m.value_of("locktime").unwrap();
+                let address: Address = AddressParser.from_matches_opt(m, "address", true)?.unwrap();
+
+                #[allow(non_snake_case)]
+                let S: u64 = FINAL_TESTNET_END_TIMESTAMP;
+                #[allow(non_snake_case)]
+                let E: u64 = FINAL_TESTNET_EPOCH_NUMBER;
+                #[allow(non_snake_case)]
+                let T: u64 = to_timestamp(locktime)?;
+                #[allow(non_snake_case)]
+                let since = if T > S && ((T - S) / (4 * 60 * 60)) + 89 >= E {
+                    let P = T - S;
+                    let epoch_number: u64 = (P / (4 * 60 * 60)) + 89 - E;
+                    let epoch_length: u64 = 1800;
+                    let epoch_index: u64 = (P % (4 * 60 * 60)) * epoch_length / (4 * 60 * 60);
+                    let epoch_fraction =
+                        EpochNumberWithFraction::new(epoch_number, epoch_index, epoch_length);
+                    FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value()
+                } else {
+                    let epoch_fraction = EpochNumberWithFraction::new(0, 0, 1);
+                    FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value()
+                };
+
+                // TODO: is it ok hard-code here?
+                let code_hash =
+                    h256!("0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8");
+                let maddr = MultisigAddress::new(code_hash, address.hash().clone(), since)?;
+                assert_eq!(
+                    MultisigAddress::from_input(&maddr.display(NetworkType::MainNet))
+                        .unwrap()
+                        .1,
+                    maddr
+                );
+                let resp = format!(
+                    "{},{},{}",
+                    address.to_string(NetworkType::MainNet),
+                    locktime,
+                    maddr.display(NetworkType::MainNet),
+                );
+                Ok(serde_json::json!(resp).render(format, color))
+            }
             _ => Err(matches.usage().to_owned()),
         }
     }
+}
+
+fn to_timestamp(input: &str) -> Result<u64, String> {
+    let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|err| format!("{:?}", err))?;
+    let date = NaiveDateTime::parse_from_str(
+        &format!("{} 00:00:00", date.to_string()),
+        "%Y-%m-%d  %H:%M:%S",
+    )
+    .map_err(|err| format!("{:?}", err))?;
+    Ok(date.timestamp() as u64)
 }

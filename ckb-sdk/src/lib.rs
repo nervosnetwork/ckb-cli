@@ -1,6 +1,7 @@
 mod basic;
 mod chain;
 mod error;
+mod multisig_addr;
 mod rpc;
 mod transaction;
 
@@ -12,6 +13,7 @@ pub use chain::{
     TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use error::Error;
+pub use multisig_addr::MultisigAddress;
 pub use rpc::HttpRpcClient;
 pub use transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper,
