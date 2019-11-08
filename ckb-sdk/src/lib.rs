@@ -7,7 +7,10 @@ mod transaction;
 
 pub mod wallet;
 
-pub use basic::{Address, NetworkType, OldAddress, OldAddressFormat};
+pub use basic::{
+    Address, AddressType, CodeHashIndex, NetworkType, OldAddress, OldAddressFormat, Since,
+    SinceType,
+};
 pub use chain::{
     blake2b_args, build_witness_with_key, serialize_signature, GenesisInfo,
     TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY, ONE_CKB,

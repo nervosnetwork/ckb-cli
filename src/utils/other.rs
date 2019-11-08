@@ -1,18 +1,19 @@
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
-    Address, GenesisInfo, HttpRpcClient, NetworkType,
+    Address, GenesisInfo, HttpRpcClient, NetworkType, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
-use ckb_types::{core::BlockView, H160, H256};
+use ckb_types::{bytes::Bytes, core::BlockView, H160, H256};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
 
-use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, PubkeyHexParser};
+use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, HexParser, PubkeyHexParser};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -39,7 +40,8 @@ pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
 }
 
 pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
-    let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
+    let address: Option<Address> =
+        AddressParser::new_both().from_matches_opt(m, "address", false)?;
     let pubkey: Option<secp256k1::PublicKey> =
         PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
     let lock_arg: Option<H160> =
@@ -49,6 +51,40 @@ pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
         .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(lock_arg.as_bytes()).unwrap()))
         .ok_or_else(|| "Please give one argument".to_owned())?;
     Ok(address)
+}
+
+pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    match to_data_opt {
+        Some(data) => Ok(data),
+        None => {
+            if let Some(path) = m.value_of("to-data-path") {
+                let mut content = Vec::new();
+                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                file.read_to_end(&mut content)
+                    .map_err(|err| err.to_string())?;
+                Ok(Bytes::from(content))
+            } else {
+                Ok(Bytes::new())
+            }
+        }
+    }
+}
+
+pub fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
+    if capacity < *MIN_SECP_CELL_CAPACITY {
+        return Err(format!(
+            "Capacity can not less than {} shannons",
+            *MIN_SECP_CELL_CAPACITY
+        ));
+    }
+    if capacity < *MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+        return Err(format!(
+            "Capacity can not hold {} bytes of data",
+            to_data_len
+        ));
+    }
+    Ok(())
 }
 
 pub fn get_singer(

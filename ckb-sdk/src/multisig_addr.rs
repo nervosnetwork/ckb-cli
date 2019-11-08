@@ -9,9 +9,9 @@ use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 
 // NOTE: The present implementation only provide 1of1 multisig address
-// in full payload format, with ty == FullPayloadWithTypeHash.
+// in full payload format, with ty == FullType.
 
-const ADDRESS_TYPE: AddressType = AddressType::FullPayloadWithTypeHash;
+const ADDRESS_TYPE: AddressType = AddressType::FullType;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct MultisigAddress {

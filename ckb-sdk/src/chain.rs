@@ -1,7 +1,10 @@
 use crate::Address;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::new_blake2b;
-use ckb_resource::{CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL};
+use ckb_resource::{
+    CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL,
+    CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL,
+};
 use ckb_types::{
     bytes::Bytes,
     core::{
@@ -35,8 +38,14 @@ const SECP_TRANSACTION_INDEX: usize = 0;
 const SECP_OUTPUT_INDEX: usize = 1;
 const SECP_GROUP_TRANSACTION_INDEX: usize = 1;
 const SECP_GROUP_OUTPUT_INDEX: usize = 0;
+
 const DAO_TRANSACTION_INDEX: usize = 0;
 const DAO_OUTPUT_INDEX: usize = 2;
+
+const MULTISIG_TRANSACTION_INDEX: usize = 0;
+const MULTISIG_OUTPUT_INDEX: usize = 4;
+const MULTISIG_GROUP_TRANSACTION_INDEX: usize = 1;
+const MULTISIG_GROUP_OUTPUT_INDEX: usize = 1;
 
 #[derive(Debug, Clone)]
 pub struct GenesisInfo {
@@ -46,6 +55,8 @@ pub struct GenesisInfo {
     secp_type_hash: Byte32,
     dao_data_hash: Byte32,
     dao_type_hash: Byte32,
+    multisig_data_hash: Byte32,
+    multisig_type_hash: Byte32,
 }
 
 impl GenesisInfo {
@@ -62,6 +73,8 @@ impl GenesisInfo {
         let mut secp_type_hash = None;
         let mut dao_data_hash = None;
         let mut dao_type_hash = None;
+        let mut multisig_data_hash = None;
+        let mut multisig_type_hash = None;
         let out_points = genesis_block
             .transactions()
             .iter()
@@ -102,6 +115,21 @@ impl GenesisInfo {
                             }
                             dao_data_hash = Some(data_hash);
                         }
+                        if tx_index == MULTISIG_TRANSACTION_INDEX && index == MULTISIG_OUTPUT_INDEX {
+                            multisig_type_hash = output
+                                .type_()
+                                .to_opt()
+                                .map(|script| script.calc_script_hash());
+                            let data_hash = CellOutput::calc_data_hash(&data.raw_data());
+                            if data_hash != CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL.pack() {
+                                log::error!(
+                                    "System multisig script code hash error! found: {}, expected: {}",
+                                    data_hash,
+                                    CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL,
+                                );
+                            }
+                            multisig_data_hash = Some(data_hash);
+                        }
                         OutPoint::new(tx.hash(), index as u32)
                     })
                     .collect::<Vec<_>>()
@@ -112,6 +140,10 @@ impl GenesisInfo {
             secp_data_hash.ok_or_else(|| "No data hash(secp) found in txs[0][1]".to_owned())?;
         let secp_type_hash =
             secp_type_hash.ok_or_else(|| "No type hash(secp) found in txs[0][1]".to_owned())?;
+        let multisig_data_hash = multisig_data_hash
+            .ok_or_else(|| "No data hash(multisig) found in txs[0][4]".to_owned())?;
+        let multisig_type_hash = multisig_type_hash
+            .ok_or_else(|| "No type hash(multisig) found in txs[0][4]".to_owned())?;
         let dao_data_hash =
             dao_data_hash.ok_or_else(|| "No data hash(dao) found in txs[0][2]".to_owned())?;
         let dao_type_hash =
@@ -123,6 +155,8 @@ impl GenesisInfo {
             secp_type_hash,
             dao_data_hash,
             dao_type_hash,
+            multisig_data_hash,
+            multisig_type_hash,
         })
     }
 
@@ -138,6 +172,14 @@ impl GenesisInfo {
         &self.secp_type_hash
     }
 
+    pub fn multisig_data_hash(&self) -> &Byte32 {
+        &self.multisig_data_hash
+    }
+
+    pub fn multisig_type_hash(&self) -> &Byte32 {
+        &self.multisig_type_hash
+    }
+
     pub fn dao_data_hash(&self) -> &Byte32 {
         &self.dao_data_hash
     }
@@ -150,6 +192,16 @@ impl GenesisInfo {
         CellDep::new_builder()
             .out_point(
                 self.out_points[SECP_GROUP_TRANSACTION_INDEX][SECP_GROUP_OUTPUT_INDEX].clone(),
+            )
+            .dep_type(DepType::DepGroup.into())
+            .build()
+    }
+
+    pub fn multisig_dep(&self) -> CellDep {
+        CellDep::new_builder()
+            .out_point(
+                self.out_points[MULTISIG_GROUP_TRANSACTION_INDEX][MULTISIG_GROUP_OUTPUT_INDEX]
+                    .clone(),
             )
             .dep_type(DepType::DepGroup.into())
             .build()
@@ -319,6 +371,7 @@ impl<'a> TransferTransactionBuilder<'a> {
             .lock(
                 self.to_address
                     .lock_script(genesis_info.secp_type_hash.clone())
+                    .expect("Invalid to address")
                     .to_owned(),
             )
             .build();
@@ -334,7 +387,8 @@ impl<'a> TransferTransactionBuilder<'a> {
                 .capacity(Capacity::shannons(rest_capacity).pack())
                 .lock(
                     self.from_address
-                        .lock_script(genesis_info.secp_type_hash.to_owned()),
+                        .lock_script(genesis_info.secp_type_hash.to_owned())
+                        .expect("Invalid from address"),
                 )
                 .build();
             let change_data = Bytes::default();

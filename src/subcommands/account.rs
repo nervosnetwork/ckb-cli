@@ -155,6 +155,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let lock_hash_opt: Option<H256> = genesis_info_opt.as_ref().map(|info| {
                             address
                                 .lock_script(info.secp_type_hash().clone())
+                                .unwrap()
                                 .calc_script_hash()
                                 .unpack()
                         });
@@ -185,6 +186,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_hash_opt: Option<H256> = genesis_info_opt.as_ref().map(|info| {
                     address
                         .lock_script(info.secp_type_hash().clone())
+                        .unwrap()
                         .calc_script_hash()
                         .unpack()
                 });
@@ -287,7 +289,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map_err(|err| err.to_string())?;
                 let address = Address::from_pubkey(&extended_pubkey.public_key)?;
                 let resp = serde_json::json!({
-                    "lock_arg": format!("{:x}", address.hash()),
+                    "lock_arg": format!("{:x}", H160::from_slice(address.payload().as_ref()).unwrap()),
                     "address": {
                         "mainnet": address.display_with_prefix(NetworkType::MainNet),
                         "testnet": address.display_with_prefix(NetworkType::TestNet),

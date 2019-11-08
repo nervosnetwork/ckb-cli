@@ -113,7 +113,7 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
-                            .help("Tx hash"),
+                            .help("Transaction hash"),
                     )
                     .arg(
                         Arg::with_name("index")
@@ -121,7 +121,7 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
-                            .help("Output index"),
+                            .help("Transaction output index"),
                     )
                     .arg(
                         Arg::with_name("with-data")

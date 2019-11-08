@@ -25,7 +25,7 @@ pub fn address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("address")
         .long("address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| AddressParser::new_sighash().validate(input))
         .help(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
@@ -59,7 +59,7 @@ pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("to-address")
         .long("to-address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| AddressParser::new_sighash().validate(input))
         .help("Target address")
 }
 

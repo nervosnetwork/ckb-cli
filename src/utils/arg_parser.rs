@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use ckb_sdk::{
     wallet::{zeroize_privkey, MasterPrivKey},
-    Address, NetworkType, OldAddress, ONE_CKB,
+    Address, CodeHashIndex, NetworkType, OldAddress, ONE_CKB,
 };
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
@@ -311,11 +311,65 @@ impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
     }
 }
 
-pub struct AddressParser;
+#[derive(Clone, Copy)]
+enum CodeHashIndexOption {
+    Both,
+    // FIXME: xxx
+    // None,
+    Some(CodeHashIndex),
+}
+
+impl Default for CodeHashIndexOption {
+    fn default() -> CodeHashIndexOption {
+        CodeHashIndexOption::Both
+    }
+}
+
+#[derive(Default)]
+pub struct AddressParser {
+    // FIXME: add network check
+    code_hash_index: CodeHashIndexOption,
+}
+
+impl AddressParser {
+    fn new(code_hash_index: CodeHashIndexOption) -> AddressParser {
+        AddressParser { code_hash_index }
+    }
+
+    pub fn new_sighash() -> AddressParser {
+        AddressParser::new(CodeHashIndexOption::Some(CodeHashIndex::Default))
+    }
+
+    pub fn new_multisig() -> AddressParser {
+        AddressParser::new(CodeHashIndexOption::Some(CodeHashIndex::Multisig))
+    }
+
+    pub fn new_both() -> AddressParser {
+        AddressParser::new(CodeHashIndexOption::Both)
+    }
+
+    // FIXME: xxx
+    // pub fn new_none() -> AddressParser {
+    //     AddressParser::new(CodeHashIndexOption::None)
+    // }
+
+    fn valid_code_hash_index(&self, index: Option<CodeHashIndex>) -> bool {
+        match (self.code_hash_index, index) {
+            (CodeHashIndexOption::Both, _) => true,
+            // FIXME: xxx
+            // (CodeHashIndexOption::None, None) => true,
+            (CodeHashIndexOption::Some(value1), Some(value2)) => value1 == value2,
+            _ => false,
+        }
+    }
+}
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
         if let Ok((_network, address)) = Address::from_input(input) {
+            if !self.valid_code_hash_index(address.index()) {
+                return Err(format!("Invalid code hash index: {:?}", address.index()));
+            }
             return Ok(address);
         }
 
@@ -323,7 +377,11 @@ impl ArgParser<Address> for AddressParser {
         let network = NetworkType::from_prefix(prefix.as_str())
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
-        Ok(Address::new_default(old_address.hash().clone()))
+        let address = Address::new_default(old_address.hash().clone());
+        if !self.valid_code_hash_index(address.index()) {
+            return Err(format!("Invalid code hash index: {:?}", address.index()));
+        }
+        Ok(address)
     }
 }
 
@@ -455,31 +513,32 @@ mod tests {
     fn test_address() {
         // Old address, lock-arg: e22f7f385830a75e50ab7fc5fd4c35b134f1e84b
         assert_eq!(
-            AddressParser.parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
+            AddressParser::new_sighash()
+                .parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
             Ok(Address::new_default(h160!(
                 "0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"
             )))
         );
         // New address, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
         assert_eq!(
-            AddressParser.parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
+            AddressParser::new_sighash().parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
             Ok(Address::new_default(h160!(
                 "0x13e41d6F9292555916f17B4882a5477C01270142"
             )))
         );
 
         // Old address
-        assert!(AddressParser
+        assert!(AddressParser::new_sighash()
             .parse("kt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc")
             .is_err());
-        assert!(AddressParser
+        assert!(AddressParser::new_sighash()
             .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy")
             .is_err());
         // New address
-        assert!(AddressParser
+        assert!(AddressParser::new_sighash()
             .parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqfpqrn323p")
             .is_err());
-        assert!(AddressParser
+        assert!(AddressParser::new_sighash()
             .parse("kb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p")
             .is_err());
     }

@@ -2,7 +2,9 @@ use chrono::{NaiveDate, NaiveDateTime};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
-use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress};
+use ckb_sdk::{
+    Address, CodeHashIndex, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress,
+};
 use ckb_types::{
     h256, packed,
     prelude::*,
@@ -55,7 +57,7 @@ impl<'a> UtilSubCommand<'a> {
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
-            .validator(|input| AddressParser.validate(input))
+            .validator(|input| AddressParser::new_both().validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
         let arg_lock_arg = Arg::with_name("lock-arg")
@@ -192,12 +194,17 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                     }
                     None => get_address(m)?,
                 };
-                let old_address = OldAddress::new_default(address.hash().clone());
+                let old_address_string = if address.index() == Some(CodeHashIndex::Default) {
+                    OldAddress::new_default(H160::from_slice(address.payload().as_ref()).unwrap())
+                        .display_with_prefix(NetworkType::TestNet)
+                } else {
+                    "null".to_string()
+                };
 
                 let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
-                let secp_type_hash = genesis_info.secp_type_hash();
-                println!(
-                    r#"Put this config in < ckb.toml >:
+                if address.index() == Some(CodeHashIndex::Default) {
+                    println!(
+                        r#"Put this config in < ckb.toml >:
 
 [block_assembler]
 code_hash = "{:#x}"
@@ -205,14 +212,23 @@ hash_type = "type"
 args = "{:#x}"
 message = "0x"
 "#,
-                    secp_type_hash,
-                    address.hash()
-                );
+                        genesis_info.secp_type_hash(),
+                        H160::from_slice(address.payload().as_ref()).unwrap()
+                    );
+                }
 
-                let lock_hash: H256 = address
-                    .lock_script(secp_type_hash.clone())
-                    .calc_script_hash()
-                    .unpack();
+                let lock_hash_opt = address.index().map(|code_hash_index| {
+                    let code_hash = match code_hash_index {
+                        CodeHashIndex::Default => genesis_info.secp_type_hash().clone(),
+                        CodeHashIndex::Multisig => genesis_info.multisig_type_hash().clone(),
+                    };
+                    let lock_hash: H256 = address
+                        .lock_script(code_hash)
+                        .unwrap()
+                        .calc_script_hash()
+                        .unpack();
+                    format!("{:#x}", lock_hash)
+                });
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
@@ -220,9 +236,9 @@ message = "0x"
                         "mainnet": address.display_with_prefix(NetworkType::MainNet),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
-                    "old-testnet-address": old_address.display_with_prefix(NetworkType::TestNet),
-                    "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": lock_hash,
+                    "old-testnet-address": old_address_string,
+                    "lock_arg": format!("{:x}", H160::from_slice(address.payload().as_ref()).unwrap()),
+                    "lock_hash": lock_hash_opt,
                 });
                 Ok(resp.render(format, color))
             }
@@ -321,7 +337,7 @@ message = "0x"
                     if prefix != NetworkType::MainNet.to_prefix() {
                         return Err("Address is not mainnet address".to_owned());
                     }
-                    AddressParser.parse(input)?
+                    AddressParser::new_sighash().parse(input)?
                 };
 
                 let genesis_timestamp = get_genesis_info(&mut self.genesis_info, self.rpc_client)?
@@ -339,7 +355,8 @@ message = "0x"
 
                 let code_hash =
                     h256!("0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8");
-                let maddr = MultisigAddress::new(code_hash.clone(), address.hash().clone(), since)?;
+                let pubkey_hash = H160::from_slice(&address.payload()).unwrap();
+                let maddr = MultisigAddress::new(code_hash.clone(), pubkey_hash, since)?;
                 assert_eq!(
                     MultisigAddress::from_input(&maddr.display(NetworkType::MainNet))
                         .unwrap()

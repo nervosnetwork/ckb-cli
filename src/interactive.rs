@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    MultisigSubCommand, RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -321,6 +321,17 @@ impl InteractiveEnv {
                     ("mock-tx", Some(sub_matches)) => {
                         let genesis_info = self.genesis_info().ok();
                         let output = MockTxSubCommand::new(
+                            &mut self.rpc_client,
+                            &mut self.key_store,
+                            genesis_info,
+                        )
+                        .process(&sub_matches, format, color, debug)?;
+                        println!("{}", output);
+                        Ok(())
+                    }
+                    ("multisig", Some(sub_matches)) => {
+                        let genesis_info = self.genesis_info().ok();
+                        let output = MultisigSubCommand::new(
                             &mut self.rpc_client,
                             &mut self.key_store,
                             genesis_info,

@@ -1,7 +1,5 @@
 mod index;
 
-use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
 
 use ckb_hash::blake2b_256;
@@ -18,18 +16,20 @@ use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{check_address_prefix, get_address, get_network_type, read_password},
+    other::{
+        check_address_prefix, check_capacity, get_address, get_network_type, get_to_data,
+        read_password,
+    },
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     blake2b_args, build_witness_with_key, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    Address, GenesisInfo, HttpRpcClient, TransferTransactionBuilder, MIN_SECP_CELL_CAPACITY,
-    ONE_CKB, SECP256K1,
+    Address, GenesisInfo, HttpRpcClient, TransferTransactionBuilder, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -104,7 +104,7 @@ impl<'a> WalletSubCommand<'a> {
 
     pub fn subcommand() -> App<'static, 'static> {
         SubCommand::with_name("wallet")
-            .about("Transfer / query balance (with local index) / key utils")
+            .about("Transfer / query balance (with local index) / other utils")
             .subcommands(vec![
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
@@ -158,8 +158,8 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
         };
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
-        let to_data = to_data(m)?;
+        let to_address: Address = AddressParser::new_sighash().from_matches(m, "to-address")?;
+        let to_data = get_to_data(m)?;
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
@@ -195,6 +195,7 @@ impl<'a> WalletSubCommand<'a> {
                 Ok(db.get_live_cells_by_lock(
                     from_address
                         .lock_script(secp_type_hash.clone())
+                        .unwrap()
                         .calc_script_hash(),
                     None,
                     terminator,
@@ -313,7 +314,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 } else {
                     let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
                     let address = get_address(m)?;
-                    address.lock_script(secp_type_hash).calc_script_hash()
+                    address
+                        .lock_script(secp_type_hash)
+                        .unwrap()
+                        .calc_script_hash()
                 };
                 let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
                 let resp = serde_json::json!({
@@ -408,22 +412,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     }
 }
 
-fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
-    if capacity < *MIN_SECP_CELL_CAPACITY {
-        return Err(format!(
-            "Capacity can not less than {} shannons",
-            *MIN_SECP_CELL_CAPACITY
-        ));
-    }
-    if capacity < *MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
-        return Err(format!(
-            "Capacity can not hold {} bytes of data",
-            to_data_len
-        ));
-    }
-    Ok(())
-}
-
 fn is_live_cell(cell: &CellWithStatus) -> bool {
     if cell.status != "live" {
         eprintln!(
@@ -459,22 +447,4 @@ fn is_secp_cell(cell: &CellWithStatus) -> bool {
     }
 
     false
-}
-
-fn to_data(m: &ArgMatches) -> Result<Bytes, String> {
-    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
-    match to_data_opt {
-        Some(data) => Ok(data),
-        None => {
-            if let Some(path) = m.value_of("to-data-path") {
-                let mut content = Vec::new();
-                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                file.read_to_end(&mut content)
-                    .map_err(|err| err.to_string())?;
-                Ok(Bytes::from(content))
-            } else {
-                Ok(Bytes::new())
-            }
-        }
-    }
 }
