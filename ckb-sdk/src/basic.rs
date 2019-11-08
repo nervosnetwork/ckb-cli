@@ -85,6 +85,7 @@ pub enum AddressType {
 pub enum CodeHashIndex {
     // SECP256K1 + blake160
     Default = 0x00,
+    Multisig = 0x01,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +153,52 @@ impl Address {
         let value = Bech32::new(hrp.to_string(), data.to_base32())
             .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
+    }
+
+    pub fn to_multi_1of1_string(&self) -> String {
+        let network = NetworkType::MainNet;
+        let hrp = network.to_prefix();
+        let mut data = [0u8; 26];
+        data[0] = self.ty as u8;
+        data[1] = CodeHashIndex::Multisig as u8;
+        data[2] = 1; // S
+        data[3] = 1; // R
+        data[4] = 1; // M
+        data[5] = 1; // N
+        data[6..26].copy_from_slice(self.hash.as_bytes());
+        let value = Bech32::new(hrp.to_string(), data.to_base32())
+            .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
+        format!("{}", value)
+    }
+
+    pub fn from_multi_1of1_string(input: &str) -> Result<Self, String> {
+        let value = Bech32::from_str(input).map_err(|err| err.to_string())?;
+        let network = NetworkType::from_prefix(value.hrp())
+            .ok_or_else(|| format!("Invalid hrp: {}", value.hrp()))?;
+        if network != NetworkType::MainNet {
+            return Err(format!("Only accept mainnet address"));
+        }
+
+        let data = convert_bits(value.data(), 5, 8, false).unwrap();
+        if data.len() != 26 {
+            return Err(format!(
+                "Invalid input data length {}, expect 26",
+                data.len()
+            ));
+        }
+
+        if data[0] != AddressType::Default as u8 {
+            return Err(format!("Invalid address type: {:?}", data[0]));
+        }
+        if data[1] != CodeHashIndex::Multisig as u8 {
+            return Err(format!("Invalid code hash index: {:?}", data[1]));
+        }
+        if data[2..6] != [1, 1, 1, 1] {
+            return Err(format!("Only accept multisig 1of1 address"));
+        }
+
+        let hash = H160::from_slice(&data[6..26]).map_err(|err| err.to_string())?;
+        Ok(Self::new_default(hash))
     }
 }
 
