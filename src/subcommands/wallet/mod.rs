@@ -14,7 +14,6 @@ use ckb_types::{
     H160, H256,
 };
 use clap::{App, ArgMatches, SubCommand};
-use faster_hex::hex_string;
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -159,10 +158,6 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::live_cells_limit())
                     .arg(arg::from_block_number())
                     .arg(arg::to_block_number()),
-                // Move to index subcommand
-                SubCommand::with_name("get-lock-by-address")
-                    .about("Get lock script (include hash) by address")
-                    .arg(arg::address().required(true)),
                 // Move to index subcommand
                 SubCommand::with_name("db-metrics").about("Show index database metrics"),
                 SubCommand::with_name("top-capacity")
@@ -669,26 +664,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     "total_capacity": total_capacity,
                 });
                 Ok(resp.render(format, color))
-            }
-            ("get-lock-by-address", Some(m)) => {
-                let address: Address = AddressParser.from_matches(m, "address")?;
-                let lock_script = self.with_db(|db| {
-                    db.get_lock_hash_by_address(address)
-                        .and_then(|lock_hash| db.get_lock_script_by_hash(lock_hash))
-                        .map(|lock_script| {
-                            let args = hex_string(&lock_script.args().raw_data()).unwrap();
-                            let script_hash: H256 = lock_script.calc_script_hash().unpack();
-                            let code_hash: H256 = lock_script.code_hash().unpack();
-                            serde_json::json!({
-                                "hash": script_hash,
-                                "script": {
-                                    "code_hash": code_hash,
-                                    "args": args,
-                                }
-                            })
-                        })
-                })?;
-                Ok(lock_script.render(format, color))
             }
             ("top-capacity", Some(m)) => {
                 let n: usize = m

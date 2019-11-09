@@ -560,27 +560,8 @@ impl LockInfo {
         }
     }
 
-    fn set_script(&mut self, script: Script, secp_type_hash: &Byte32) {
-        let type_hash = script.calc_script_hash();
-        let address_opt = if &type_hash == secp_type_hash {
-            if script.args().len() == 1 {
-                let lock_arg = script.args().raw_data();
-                match Address::from_lock_arg(&lock_arg) {
-                    Ok(address) => Some(address),
-                    Err(err) => {
-                        log::info!("Invalid secp arg: {:?} => {}", lock_arg, err);
-                        None
-                    }
-                }
-            } else {
-                log::info!("lock arg should given exact 1");
-                None
-            }
-        } else {
-            None
-        };
+    fn set_script(&mut self, script: Script, _secp_type_hash: &Byte32) {
         self.script_opt = Some(script.as_slice().into());
-        self.address_opt = address_opt;
     }
 
     fn add_input(&mut self, input_capacity: u64) {

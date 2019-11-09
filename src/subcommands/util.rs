@@ -182,7 +182,8 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
 [block_assembler]
 code_hash = "{:#x}"
 hash_type = "type"
-args = ["{:#x}"]
+args = "{:#x}"
+message = "0x"
 "#,
                     secp_type_hash,
                     address.hash()
