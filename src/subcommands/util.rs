@@ -195,11 +195,11 @@ args = ["{:#x}"]
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
-                        "testnet": address.to_string(NetworkType::TestNet),
-                        "mainnet": address.to_string(NetworkType::MainNet),
+                        "testnet": address.display_with_prefix(NetworkType::TestNet),
+                        "mainnet": address.display_with_prefix(NetworkType::MainNet),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
-                    "old-testnet-address": old_address.to_string(NetworkType::TestNet),
+                    "old-testnet-address": old_address.display_with_prefix(NetworkType::TestNet),
                     "lock_arg": format!("{:x}", address.hash()),
                     "lock_hash": lock_hash,
                 });

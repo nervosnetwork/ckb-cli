@@ -529,7 +529,7 @@ fn render_top_capacity<B: Backend>(
                             "  [address ]: {}",
                             address
                                 .as_ref()
-                                .map(|s| s.to_string(network_type))
+                                .map(|s| s.display_with_prefix(network_type))
                                 .unwrap_or_else(|| "null".to_owned())
                         )),
                         Text::raw(format!(

@@ -143,7 +143,7 @@ impl Address {
         Ok((network, Self::new_default(hash)))
     }
 
-    pub fn to_string(&self, network: NetworkType) -> String {
+    pub fn display_with_prefix(&self, network: NetworkType) -> String {
         let hrp = network.to_prefix();
         let mut data = [0; 22];
         data[0] = self.ty as u8;
@@ -152,6 +152,15 @@ impl Address {
         let value = Bech32::new(hrp.to_string(), data.to_base32())
             .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
         format!("{}", value)
+    }
+
+    #[allow(clippy::inherent_to_string)]
+    #[deprecated(
+        since = "0.25.0",
+        note = "Name conflicts with the inherent to_string method. Use display_with_prefix instead."
+    )]
+    pub fn to_string(&self, network: NetworkType) -> String {
+        self.display_with_prefix(network)
     }
 }
 
@@ -260,7 +269,7 @@ mod old_addr {
             Ok(Address { format, hash })
         }
 
-        pub fn to_string(&self, network: NetworkType) -> String {
+        pub fn display_with_prefix(&self, network: NetworkType) -> String {
             let hrp = network.to_prefix();
             let mut data = [0; 25];
             let format_data = self.format.to_bytes().expect("Invalid address format");
@@ -269,6 +278,15 @@ mod old_addr {
             let value = Bech32::new(hrp.to_string(), data.to_base32())
                 .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
             format!("{}", value)
+        }
+
+        #[allow(clippy::inherent_to_string)]
+        #[deprecated(
+            since = "0.25.0",
+            note = "Name conflicts with the inherent to_string method. Use display_with_prefix instead."
+        )]
+        pub fn to_string(&self, network: NetworkType) -> String {
+            self.display_with_prefix(network)
         }
     }
 }
@@ -284,7 +302,7 @@ mod test {
         let hash = h160!("0x13e41d6F9292555916f17B4882a5477C01270142");
         let address = Address::new_default(hash);
         assert_eq!(
-            address.to_string(NetworkType::MainNet),
+            address.display_with_prefix(NetworkType::MainNet),
             "ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"
         );
     }
