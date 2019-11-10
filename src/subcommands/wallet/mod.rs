@@ -238,7 +238,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(network_type),
+                from_address.display_with_prefix(network_type),
                 total_capacity,
             ));
         }
@@ -347,7 +347,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(network_type),
+                from_address.display_with_prefix(network_type),
                 total_capacity,
             ));
         }
@@ -456,7 +456,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address.to_string(network_type),
+                from_address.display_with_prefix(network_type),
                 total_capacity,
             ));
         }
@@ -677,7 +677,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .map(|(lock_hash, address, capacity)| {
                             serde_json::json!({
                                 "lock_hash": format!("{:#x}", lock_hash),
-                                "address": address.map(|addr| addr.to_string(network_type)),
+                                "address": address.map(|addr| addr.display_with_prefix(network_type)),
                                 "capacity": capacity,
                             })
                         })

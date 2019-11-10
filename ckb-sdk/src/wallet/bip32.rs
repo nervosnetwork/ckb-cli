@@ -786,8 +786,7 @@ mod tests {
         }
     }
 
-    static BASE58_CHARS: &'static [u8] =
-        b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    static BASE58_CHARS: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
     static BASE58_DIGITS: [Option<u8>; 128] = [
         None,
