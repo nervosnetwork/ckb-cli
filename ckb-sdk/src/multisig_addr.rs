@@ -2,7 +2,9 @@ use crate::basic::AddressType;
 use crate::NetworkType;
 use bech32::{convert_bits, Bech32, ToBase32};
 use ckb_hash::blake2b_256;
-use ckb_types::{H160, H256};
+use ckb_types::bytes::Bytes;
+use ckb_types::prelude::Pack;
+use ckb_types::{packed, H160, H256};
 use serde_derive::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -20,7 +22,7 @@ pub struct MultisigAddress {
 
 impl MultisigAddress {
     pub fn new(code_hash: H256, pubkey_hash: H160, since: u64) -> Result<Self, String> {
-        let mut multi_script = vec![1u8, 1, 1, 1]; // [S, R, M, N]
+        let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
         multi_script.extend_from_slice(pubkey_hash.0.as_ref());
         let hash =
             H160::from_slice(&blake2b_256(multi_script)[..20]).map_err(|err| err.to_string())?;
@@ -30,6 +32,12 @@ impl MultisigAddress {
             hash,
             since,
         })
+    }
+
+    pub fn lock_arg(&self) -> packed::Bytes {
+        let mut buf = self.hash.0.to_vec();
+        buf.extend(self.since.to_le_bytes().iter());
+        Bytes::from(buf).pack()
     }
 
     pub fn from_input(input: &str) -> Result<(NetworkType, Self), String> {
