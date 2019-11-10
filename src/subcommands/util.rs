@@ -150,6 +150,7 @@ impl<'a> UtilSubCommand<'a> {
                             .long("address")
                             .required(true)
                             .takes_value(true)
+                            .hidden(true)
                             .help("The address in single signature format")
                     )
                     .arg(
@@ -157,6 +158,7 @@ impl<'a> UtilSubCommand<'a> {
                             .long("locktime")
                             .required(true)
                             .takes_value(true)
+                            .hidden(true)
                             .help("The locktime in UTC format")
                     )
             ])
@@ -330,7 +332,7 @@ message = "0x"
                 );
                 let resp = format!(
                     "{},{},{}",
-                    address.to_string(NetworkType::MainNet),
+                    address.display_with_prefix(NetworkType::MainNet),
                     locktime,
                     maddr.display(NetworkType::MainNet),
                 );
