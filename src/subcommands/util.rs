@@ -1,7 +1,7 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
+use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress};
 use ckb_types::{
     h256, packed,
@@ -305,8 +305,24 @@ message = "0x"
                 const EPOCH_LENGTH: u64 = 1800;
                 const EPOCH_PERIOD: u64 = EPOCH_LENGTH * 8 * 1000; // 4h in millis
 
+                let chain_info: ChainInfo = self
+                    .rpc_client
+                    .get_blockchain_info()
+                    .call()
+                    .map_err(|err| format!("RPC get_blockchain_info error: {:?}", err))?;
+                if &chain_info.chain != "ckb" {
+                    return Err("Node is not in mainnet spec".to_owned());
+                }
+
                 let locktime = m.value_of("locktime").unwrap();
-                let address: Address = AddressParser.from_matches_opt(m, "address", true)?.unwrap();
+                let address = {
+                    let input = m.value_of("address").unwrap();
+                    let prefix = input.chars().take(3).collect::<String>();
+                    if prefix != NetworkType::MainNet.to_prefix() {
+                        return Err("Address is not mainnet address".to_owned());
+                    }
+                    AddressParser.parse(input)?
+                };
 
                 let genesis_timestamp = get_genesis_info(&mut self.genesis_info, self.rpc_client)?
                     .header()
