@@ -41,7 +41,6 @@ CKB command line tool
     get-capacity           Get capacity by lock script hash or address or lock arg or pubkey
     get-dao-capacity       Get NervosDAO deposited capacity by lock script hash or address or lock arg or pubkey
     get-live-cells         Get live cells by lock/type/code  hash
-    get-lock-by-address    Get lock script (include hash) by address
     db-metrics             Show index database metrics
     top-capacity           Show top n capacity owned by lock script hash
 
@@ -68,6 +67,18 @@ CKB command line tool
     complete    Complete the mock transaction
     verify      Verify a mock transaction in local
     send        Complete then send a transaction
+    
+>> multisig: Handle multisig transaction
+
+    tx-template               Multisig transaction template
+    clear-field               Remove all field items in transaction
+    add-input                 Add cell input (with secp/multisig lock)
+    add-output                Add cell output
+    add-signature             Add signature
+    tx-info                   Show detail of this multisig transaction (capacity, tx-fee, etc.)
+    sign-tx                   Sign a mutisig transaction
+    send-tx                   Send multisig transaction
+    build-multisig-address    Build multisig address (only support short version, without since)
 ```
 
 ## Build this project
