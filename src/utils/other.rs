@@ -174,3 +174,36 @@ pub fn check_address_prefix(address: &str, network_type: NetworkType) -> Result<
         Ok(())
     }
 }
+
+pub fn human_capacity(capacity: u64) -> String {
+    let ckb_part = capacity / ONE_CKB;
+    let shannon_part = capacity % ONE_CKB;
+    let shannon_part_string = format!("{:0>8}", shannon_part);
+    let mut base = 10;
+    let mut suffix_zero = 7;
+    for i in 0..8 {
+        if shannon_part % base > 0 {
+            suffix_zero = i;
+            break;
+        }
+        base *= 10;
+    }
+    format!("{}.{}", ckb_part, &shannon_part_string[..(8 - suffix_zero)])
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_human_capacity() {
+        assert_eq!("3.0", human_capacity(3 * ONE_CKB));
+        assert_eq!("300.0", human_capacity(300 * ONE_CKB));
+        assert_eq!("3.56", human_capacity(356_000_000));
+        assert_eq!("3.0056", human_capacity(300_560_000));
+        assert_eq!("3.10056", human_capacity(310_056_000));
+        assert_eq!("3.10056123", human_capacity(310_056_123));
+        assert_eq!("0.0056", human_capacity(560_000));
+        assert_eq!("0.10056123", human_capacity(10_056_123));
+    }
+}

@@ -314,8 +314,7 @@ impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
 #[derive(Clone, Copy)]
 enum CodeHashIndexOption {
     Both,
-    // FIXME: xxx
-    // None,
+    None,
     Some(CodeHashIndex),
 }
 
@@ -337,7 +336,7 @@ impl AddressParser {
     }
 
     pub fn new_sighash() -> AddressParser {
-        AddressParser::new(CodeHashIndexOption::Some(CodeHashIndex::Default))
+        AddressParser::new(CodeHashIndexOption::Some(CodeHashIndex::Sighash))
     }
 
     pub fn new_multisig() -> AddressParser {
@@ -348,16 +347,14 @@ impl AddressParser {
         AddressParser::new(CodeHashIndexOption::Both)
     }
 
-    // FIXME: xxx
-    // pub fn new_none() -> AddressParser {
-    //     AddressParser::new(CodeHashIndexOption::None)
-    // }
+    pub fn new_none() -> AddressParser {
+        AddressParser::new(CodeHashIndexOption::None)
+    }
 
     fn valid_code_hash_index(&self, index: Option<CodeHashIndex>) -> bool {
         match (self.code_hash_index, index) {
             (CodeHashIndexOption::Both, _) => true,
-            // FIXME: xxx
-            // (CodeHashIndexOption::None, None) => true,
+            (CodeHashIndexOption::None, None) => true,
             (CodeHashIndexOption::Some(value1), Some(value2)) => value1 == value2,
             _ => false,
         }

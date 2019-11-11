@@ -103,21 +103,21 @@ impl AddressType {
 #[repr(u8)]
 pub enum CodeHashIndex {
     // SECP256K1 + blake160
-    Default = 0x00,
+    Sighash = 0x00,
     // SECP256K1 + multisig
     Multisig = 0x01,
 }
 
 impl Default for CodeHashIndex {
     fn default() -> CodeHashIndex {
-        CodeHashIndex::Default
+        CodeHashIndex::Sighash
     }
 }
 
 impl CodeHashIndex {
     pub fn from_u8(value: u8) -> Result<CodeHashIndex, String> {
         match value {
-            0x00 => Ok(CodeHashIndex::Default),
+            0x00 => Ok(CodeHashIndex::Sighash),
             0x01 => Ok(CodeHashIndex::Multisig),
             _ => Err(format!("Invalid code hash index value: {}", value)),
         }
@@ -135,7 +135,7 @@ pub struct Address {
 impl Address {
     pub fn new_default(hash: H160) -> Address {
         let ty = AddressType::Default;
-        let index = Some(CodeHashIndex::Default);
+        let index = Some(CodeHashIndex::Sighash);
         let payload = hash.as_bytes().into();
         Address { ty, index, payload }
     }
@@ -165,7 +165,7 @@ impl Address {
 
     pub fn code_type(&self) -> ScriptHashType {
         match (self.ty, self.index) {
-            (AddressType::Default, Some(CodeHashIndex::Default)) => ScriptHashType::Type,
+            (AddressType::Default, Some(CodeHashIndex::Sighash)) => ScriptHashType::Type,
             (AddressType::Default, Some(CodeHashIndex::Multisig)) => ScriptHashType::Type,
             (AddressType::FullData, None) => ScriptHashType::Data,
             (AddressType::FullType, None) => ScriptHashType::Type,

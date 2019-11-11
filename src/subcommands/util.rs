@@ -3,9 +3,12 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{
-    Address, CodeHashIndex, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress,
+    Address, AddressType, CodeHashIndex, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType,
+    OldAddress,
 };
 use ckb_types::{
+    bytes::Bytes,
+    core::ScriptHashType,
     h256, packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
@@ -194,17 +197,17 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                     }
                     None => get_address(m)?,
                 };
-                let old_address_string = if address.index() == Some(CodeHashIndex::Default) {
+                let old_address_string = if address.index() == Some(CodeHashIndex::Sighash) {
                     OldAddress::new_default(H160::from_slice(address.payload().as_ref()).unwrap())
                         .display_with_prefix(NetworkType::TestNet)
                 } else {
                     "null".to_string()
                 };
 
-                let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
-                if address.index() == Some(CodeHashIndex::Default) {
-                    println!(
-                        r#"Put this config in < ckb.toml >:
+                if let Some(genesis_info) = self.genesis_info.as_ref() {
+                    if address.index() == Some(CodeHashIndex::Sighash) {
+                        println!(
+                            r#"Put this config in < ckb.toml >:
 
 [block_assembler]
 code_hash = "{:#x}"
@@ -212,23 +215,53 @@ hash_type = "type"
 args = "{:#x}"
 message = "0x"
 "#,
-                        genesis_info.secp_type_hash(),
-                        H160::from_slice(address.payload().as_ref()).unwrap()
-                    );
+                            genesis_info.secp_type_hash(),
+                            H160::from_slice(address.payload().as_ref()).unwrap()
+                        );
+                    }
                 }
 
-                let lock_hash_opt = address.index().map(|code_hash_index| {
-                    let code_hash = match code_hash_index {
-                        CodeHashIndex::Default => genesis_info.secp_type_hash().clone(),
-                        CodeHashIndex::Multisig => genesis_info.multisig_type_hash().clone(),
-                    };
-                    let lock_hash: H256 = address
-                        .lock_script(code_hash)
-                        .unwrap()
-                        .calc_script_hash()
-                        .unpack();
-                    format!("{:#x}", lock_hash)
-                });
+                let lock_arg = address
+                    .index()
+                    .map(|_| address.payload())
+                    .unwrap_or_else(|| Bytes::from(&address.payload()[32..]));
+
+                let lock_hash_opt = self
+                    .genesis_info
+                    .as_ref()
+                    .map(|genesis_info| {
+                        address
+                            .index()
+                            .map(|code_hash_index| {
+                                let code_hash = match code_hash_index {
+                                    CodeHashIndex::Sighash => genesis_info.secp_type_hash().clone(),
+                                    CodeHashIndex::Multisig => {
+                                        genesis_info.multisig_type_hash().clone()
+                                    }
+                                };
+                                (code_hash, ScriptHashType::Type)
+                            })
+                            .unwrap_or_else(|| {
+                                let code_hash =
+                                    packed::Byte32::from_slice(&address.payload()[..32]).unwrap();
+                                let hash_type = if address.ty() == AddressType::FullType {
+                                    ScriptHashType::Type
+                                } else {
+                                    ScriptHashType::Data
+                                };
+                                (code_hash, hash_type)
+                            })
+                    })
+                    .map(|(code_hash, hash_type)| {
+                        let script_hash: H256 = packed::Script::new_builder()
+                            .code_hash(code_hash)
+                            .args(lock_arg.pack())
+                            .hash_type(hash_type.into())
+                            .build()
+                            .calc_script_hash()
+                            .unpack();
+                        format!("{:#x}", script_hash)
+                    });
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
@@ -237,7 +270,7 @@ message = "0x"
                     },
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address_string,
-                    "lock_arg": format!("{:x}", H160::from_slice(address.payload().as_ref()).unwrap()),
+                    "lock_arg": format!("0x{}", hex_string(lock_arg.as_ref()).unwrap()),
                     "lock_hash": lock_hash_opt,
                 });
                 Ok(resp.render(format, color))
