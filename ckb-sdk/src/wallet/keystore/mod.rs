@@ -25,6 +25,7 @@ pub use passphrase::{CipherParams, Crypto, KdfParams, ScryptParams, ScryptType};
 pub use util::{zeroize_privkey, zeroize_slice};
 
 const KEYSTORE_VERSION: u32 = 3;
+const KEYSTORE_ORIGIN: &str = "ckb-cli";
 
 pub struct KeyStore {
     keys_dir: PathBuf,
@@ -475,6 +476,7 @@ impl Key {
         let master_privkey = self.master_privkey.to_bytes();
         let crypto = Crypto::encrypt_key_scrypt(&master_privkey, password, scrypt_type);
         serde_json::json!({
+            "origin": KEYSTORE_ORIGIN,
             "id": id_str,
             "version": KEYSTORE_VERSION,
             "address": address_hex,
