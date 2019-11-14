@@ -146,7 +146,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = accounts
                     .into_iter()
                     .enumerate()
-                    .map(|(idx, (lock_arg, filepath))| {
+                    .map(|(idx, (lock_arg, _filepath))| {
                         let address = Address::from_lock_arg(lock_arg.as_bytes()).unwrap();
                         let timeout = self.key_store.get_lock_timeout(&lock_arg);
                         let status = timeout
@@ -163,10 +163,9 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             "lock_arg": format!("{:x}", lock_arg),
                             "lock_hash": lock_hash_opt,
                             "address": {
-                                "mainnet": address.to_string(NetworkType::MainNet),
-                                "testnet": address.to_string(NetworkType::TestNet),
+                                "mainnet": address.display_with_prefix(NetworkType::MainNet),
+                                "testnet": address.display_with_prefix(NetworkType::TestNet),
                             },
-                            "path": filepath.to_string_lossy(),
                             "status": status,
                         })
                     })
@@ -193,8 +192,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "lock_hash": lock_hash_opt,
                     "address": {
-                        "mainnet": address.to_string(NetworkType::MainNet),
-                        "testnet": address.to_string(NetworkType::TestNet),
+                        "mainnet": address.display_with_prefix(NetworkType::MainNet),
+                        "testnet": address.display_with_prefix(NetworkType::TestNet),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -219,8 +218,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
-                        "mainnet": address.to_string(NetworkType::MainNet),
-                        "testnet": address.to_string(NetworkType::TestNet),
+                        "mainnet": address.display_with_prefix(NetworkType::MainNet),
+                        "testnet": address.display_with_prefix(NetworkType::TestNet),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -290,8 +289,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", address.hash()),
                     "address": {
-                        "mainnet": address.to_string(NetworkType::MainNet),
-                        "testnet": address.to_string(NetworkType::TestNet),
+                        "mainnet": address.display_with_prefix(NetworkType::MainNet),
+                        "testnet": address.display_with_prefix(NetworkType::TestNet),
                     },
                 });
                 Ok(resp.render(format, color))
