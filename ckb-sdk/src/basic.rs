@@ -21,6 +21,7 @@ const PREFIX_TESTNET: &str = "ckt";
 pub enum NetworkType {
     MainNet = 0,
     TestNet = 1,
+    Staging = 254,
     Dev = 255,
 }
 
@@ -29,6 +30,7 @@ impl NetworkType {
         match v {
             0 => Some(NetworkType::MainNet),
             1 => Some(NetworkType::TestNet),
+            254 => Some(NetworkType::Staging),
             255 => Some(NetworkType::Dev),
             _ => None,
         }
@@ -46,6 +48,7 @@ impl NetworkType {
         match self {
             NetworkType::MainNet => PREFIX_MAINNET,
             NetworkType::TestNet => PREFIX_TESTNET,
+            NetworkType::Staging => PREFIX_TESTNET,
             NetworkType::Dev => PREFIX_TESTNET,
         }
     }
@@ -54,6 +57,7 @@ impl NetworkType {
         match value {
             "ckb" => Some(NetworkType::MainNet),
             "ckb_testnet" => Some(NetworkType::TestNet),
+            "ckb_staging" => Some(NetworkType::Staging),
             "ckb_dev" => Some(NetworkType::Dev),
             _ => None,
         }
@@ -63,6 +67,7 @@ impl NetworkType {
         match self {
             NetworkType::MainNet => "ckb",
             NetworkType::TestNet => "ckb_testnet",
+            NetworkType::Staging => "ckb_staging",
             NetworkType::Dev => "ckb_dev",
         }
     }
