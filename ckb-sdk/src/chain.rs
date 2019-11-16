@@ -5,8 +5,8 @@ use ckb_resource::{CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL};
 use ckb_types::{
     bytes::Bytes,
     core::{
-        BlockView, Capacity, DepType, HeaderView, ScriptHashType, TransactionBuilder,
-        TransactionView,
+        BlockView, Capacity, DepType, EpochNumberWithFraction, HeaderView, ScriptHashType,
+        TransactionBuilder, TransactionView,
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, WitnessArgs},
     prelude::*,
@@ -15,6 +15,8 @@ use ckb_types::{
 use secp256k1::recovery::RecoverableSignature;
 
 pub const ONE_CKB: u64 = 100_000_000;
+pub const CELLBASE_MATURITY: EpochNumberWithFraction =
+    EpochNumberWithFraction::new_unchecked(4, 0, 1);
 
 lazy_static::lazy_static! {
     pub static ref MIN_SECP_CELL_CAPACITY: u64 = {
@@ -222,7 +224,7 @@ impl<'a> TransferTransactionBuilder<'a> {
     {
         self.cell_deps.extend(vec![genesis_info.secp_dep()]);
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info)?;
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
     }
@@ -238,7 +240,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         self.cell_deps
             .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info)?;
         self.build_dao_type(genesis_info);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -260,7 +262,7 @@ impl<'a> TransferTransactionBuilder<'a> {
         self.header_deps
             .extend(input_header_hashes.into_iter().map(|h| h.pack()));
         self.build_outputs(genesis_info);
-        self.build_changes(genesis_info);
+        self.build_changes(genesis_info)?;
         self.build_dao_witnesses();
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -326,7 +328,11 @@ impl<'a> TransferTransactionBuilder<'a> {
     }
 
     // Exchange back to sender if the rest is enough to pay for a cell
-    fn build_changes(&mut self, genesis_info: &GenesisInfo) {
+    fn build_changes(&mut self, genesis_info: &GenesisInfo) -> Result<(), String> {
+        if self.tx_fee > ONE_CKB {
+            return Err("Transaction fee can not more than 1.0 CKB".to_string());
+        }
+
         let rest_capacity = self.from_capacity - self.to_capacity - self.tx_fee;
         if rest_capacity >= *MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
@@ -339,6 +345,11 @@ impl<'a> TransferTransactionBuilder<'a> {
                 .build();
             let change_data = Bytes::default();
             self.changes.push((change, change_data));
+            Ok(())
+        } else if self.tx_fee + rest_capacity > ONE_CKB {
+            Err("Transaction fee can not more than 1.0 CKB, please change to-capacity value to adjust".to_string())
+        } else {
+            Ok(())
         }
     }
 

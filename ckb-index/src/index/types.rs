@@ -592,7 +592,7 @@ pub struct LiveCellInfo {
     pub lock_hash: H256,
     // Type script's code_hash and script_hash
     pub type_hashes: Option<(H256, H256)>,
-    // Secp256k1 address
+    // Capacity
     pub capacity: u64,
     // Block number
     pub number: u64,
