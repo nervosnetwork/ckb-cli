@@ -1,9 +1,10 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{Script as RpcScript, Transaction as RpcTransaction};
-use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, NetworkType, OldAddress};
+use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
+use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress};
 use ckb_types::{
-    packed,
+    h256, packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
@@ -22,6 +23,7 @@ use crate::utils::{
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
 };
+use ckb_types::core::EpochNumberWithFraction;
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -141,6 +143,24 @@ impl<'a> UtilSubCommand<'a> {
                          .required(true)
                          .help("The difficulty value")
                     ),
+                SubCommand::with_name("to-multisig-addr")
+                    .about("Convert address in single signature format to multisig format")
+                    .arg(
+                        Arg::with_name("address")
+                            .long("address")
+                            .required(true)
+                            .takes_value(true)
+                            .hidden(true)
+                            .help("The address in single signature format")
+                    )
+                    .arg(
+                        Arg::with_name("locktime")
+                            .long("locktime")
+                            .required(true)
+                            .takes_value(true)
+                            .hidden(true)
+                            .help("The locktime in UTC format")
+                    )
             ])
     }
 }
@@ -151,7 +171,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
         matches: &ArgMatches,
         format: OutputFormat,
         color: bool,
-        _debug: bool,
+        debug: bool,
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
@@ -279,7 +299,83 @@ message = "0x"
                 });
                 Ok(resp.render(format, color))
             }
+            ("to-multisig-addr", Some(m)) => {
+                const FLAG_SINCE_EPOCH_NUMBER: u64 =
+                    0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
+                const EPOCH_LENGTH: u64 = 1800;
+                const EPOCH_PERIOD: u64 = EPOCH_LENGTH * 8 * 1000; // 4h in millis
+
+                let chain_info: ChainInfo = self
+                    .rpc_client
+                    .get_blockchain_info()
+                    .call()
+                    .map_err(|err| format!("RPC get_blockchain_info error: {:?}", err))?;
+                if &chain_info.chain != "ckb" {
+                    return Err("Node is not in mainnet spec".to_owned());
+                }
+
+                let locktime = m.value_of("locktime").unwrap();
+                let address = {
+                    let input = m.value_of("address").unwrap();
+                    let prefix = input.chars().take(3).collect::<String>();
+                    if prefix != NetworkType::MainNet.to_prefix() {
+                        return Err("Address is not mainnet address".to_owned());
+                    }
+                    AddressParser.parse(input)?
+                };
+
+                let genesis_timestamp = get_genesis_info(&mut self.genesis_info, self.rpc_client)?
+                    .header()
+                    .timestamp();
+                let target_timestamp = to_timestamp(locktime)?;
+                let elapsed = target_timestamp.saturating_sub(genesis_timestamp);
+                let epoch_fraction = {
+                    let epoch_number = elapsed / EPOCH_PERIOD;
+                    let epoch_index =
+                        (elapsed - epoch_number * EPOCH_PERIOD) * EPOCH_LENGTH / EPOCH_PERIOD;
+                    EpochNumberWithFraction::new(epoch_number, epoch_index, EPOCH_LENGTH)
+                };
+                let since = FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value();
+
+                let code_hash =
+                    h256!("0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8");
+                let maddr = MultisigAddress::new(code_hash.clone(), address.hash().clone(), since)?;
+                assert_eq!(
+                    MultisigAddress::from_input(&maddr.display(NetworkType::MainNet))
+                        .unwrap()
+                        .1,
+                    maddr
+                );
+                let resp = format!(
+                    "{},{},{}",
+                    address.display_with_prefix(NetworkType::MainNet),
+                    locktime,
+                    maddr.display(NetworkType::MainNet),
+                );
+                if debug {
+                    println!(
+                        "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
+                        NaiveDateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0),
+                        NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
+                        elapsed / 1000,
+                        epoch_fraction,
+                        maddr.lock_arg(),
+                        code_hash,
+                    );
+                }
+                Ok(serde_json::json!(resp).render(format, color))
+            }
             _ => Err(matches.usage().to_owned()),
         }
     }
+}
+
+fn to_timestamp(input: &str) -> Result<u64, String> {
+    let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|err| format!("{:?}", err))?;
+    let date = NaiveDateTime::parse_from_str(
+        &format!("{} 00:00:00", date.to_string()),
+        "%Y-%m-%d  %H:%M:%S",
+    )
+    .map_err(|err| format!("{:?}", err))?;
+    Ok(date.timestamp_millis() as u64)
 }
