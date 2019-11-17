@@ -92,7 +92,7 @@ pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
         .long("tx-fee")
         .takes_value(true)
         .validator(|input| CapacityParser.validate(input))
-        .help("The transaction fee capacity (unit: CKB, format: 0.335)")
+        .help("The transaction fee capacity (unit: CKB, format: 0.0001)")
 }
 
 pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {

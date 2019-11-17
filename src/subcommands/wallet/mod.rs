@@ -28,8 +28,8 @@ use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     blake2b_args, build_witness_with_key, calc_max_mature_number, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    Address, GenesisInfo, HttpRpcClient, TransferTransactionBuilder, CELLBASE_MATURITY,
-    MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
+    Address, GenesisInfo, HttpRpcClient, HumanCapacity, TransferTransactionBuilder,
+    CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -170,10 +170,10 @@ impl<'a> WalletSubCommand<'a> {
         check_address_prefix(m.value_of("to-address").unwrap(), network_type)?;
         // For check index database is ready
         self.with_db(|_| ())?;
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
+        let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let mut total_capacity = 0;
         let terminator = |_, info: &LiveCellInfo| {
             let out_point = info.out_point();
@@ -316,10 +316,32 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     let address = get_address(m)?;
                     address.lock_script(secp_type_hash).calc_script_hash()
                 };
-                let capacity = self.with_db(|db| db.get_capacity(lock_hash))?;
-                let resp = serde_json::json!({
-                    "capacity": capacity,
-                });
+
+                let max_mature_number = get_max_mature_number(self.rpc_client)?;
+                let (total_capacity, immature_capacity) = self.with_db(|db| {
+                    let mut total_capacity = 0;
+                    let mut immature_capacity = 0;
+                    let terminator = |_idx: usize, info: &LiveCellInfo| {
+                        if !is_mature(info, max_mature_number) {
+                            immature_capacity += info.capacity;
+                        }
+                        total_capacity += info.capacity;
+                        (false, false)
+                    };
+                    let _ = db.get_live_cells_by_lock(lock_hash, None, terminator);
+                    (total_capacity, immature_capacity)
+                })?;
+
+                let resp = if immature_capacity > 0 {
+                    serde_json::json!({
+                        "total-capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
+                        "immature-capacity": format!("{:#}", HumanCapacity::from(immature_capacity)),
+                    })
+                } else {
+                    serde_json::json!({
+                        "total-capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
+                    })
+                };
                 Ok(resp.render(format, color))
             }
             ("get-live-cells", Some(m)) => {
@@ -376,13 +398,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     "live_cells": infos.into_iter().map(|info| {
                         let mut value = serde_json::to_value(&info).unwrap();
                         let mature = serde_json::Value::Bool(is_mature(&info, max_mature_number));
-                        value
-                            .as_object_mut()
-                            .unwrap()
-                            .insert("mature".to_string(), mature);
+                        let capacity_string = serde_json::Value::String(format!("{:#}", HumanCapacity::from(info.capacity)));
+                        let map = value.as_object_mut().unwrap();
+                        map.insert("capacity".to_string(), capacity_string);
+                        map.insert("mature".to_string(), mature);
                         value
                     }).collect::<Vec<_>>(),
-                    "total_capacity": total_capacity,
+                    "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
                 });
                 Ok(resp.render(format, color))
             }
@@ -399,7 +421,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             serde_json::json!({
                                 "lock_hash": format!("{:#x}", lock_hash),
                                 "address": address.map(|addr| addr.display_with_prefix(network_type)),
-                                "capacity": capacity,
+                                "capacity": format!("{:#}", HumanCapacity::from(capacity)),
                             })
                         })
                         .collect::<Vec<_>>()
