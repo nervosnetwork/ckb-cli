@@ -26,7 +26,7 @@ use crate::utils::{
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
-    blake2b_args, build_witness_with_key, serialize_signature,
+    blake2b_args, build_witness_with_key, calc_max_mature_number, serialize_signature,
     wallet::{KeyStore, KeyStoreError},
     Address, GenesisInfo, HttpRpcClient, TransferTransactionBuilder, CELLBASE_MATURITY,
     MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
@@ -170,7 +170,7 @@ impl<'a> WalletSubCommand<'a> {
         check_address_prefix(m.value_of("to-address").unwrap(), network_type)?;
         // For check index database is ready
         self.with_db(|_| ())?;
-        let min_immature_number = get_min_immature_number(self.rpc_client)?;
+        let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
@@ -182,7 +182,7 @@ impl<'a> WalletSubCommand<'a> {
                 .get_live_cell(out_point.into(), true)
                 .call()
                 .expect("get_live_cell by RPC call failed");
-            if is_live_cell(&resp) && is_secp_cell(&resp) && is_mature(info, min_immature_number) {
+            if is_live_cell(&resp) && is_secp_cell(&resp) && is_mature(info, max_mature_number) {
                 total_capacity += info.capacity;
                 (total_capacity >= capacity + tx_fee, true)
             } else {
@@ -371,11 +371,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     };
                     (infos, total_capacity)
                 })?;
-                let min_immature_number = get_min_immature_number(self.rpc_client)?;
+                let max_mature_number = get_max_mature_number(self.rpc_client)?;
                 let resp = serde_json::json!({
                     "live_cells": infos.into_iter().map(|info| {
                         let mut value = serde_json::to_value(&info).unwrap();
-                        let mature = serde_json::Value::Bool(is_mature(&info, min_immature_number));
+                        let mature = serde_json::Value::Bool(is_mature(&info, max_mature_number));
                         value
                             .as_object_mut()
                             .unwrap()
@@ -432,8 +432,8 @@ fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
     Ok(())
 }
 
-// Get min immature block number
-fn get_min_immature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
+// Get max mature block number
+fn get_max_mature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
     let tip_epoch = client
         .get_tip_header()
         .call()
@@ -442,36 +442,30 @@ fn get_min_immature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
     let tip_epoch_number = tip_epoch.number();
     if tip_epoch_number < 4 {
         // No cellbase live cell is mature
-        return Ok(0);
+        Ok(0)
+    } else {
+        let max_mature_epoch = client
+            .get_epoch_by_number(EpochNumber::from(tip_epoch_number - 4))
+            .call()
+            .map_err(|err| err.to_string())?
+            .0
+            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
+        let start_number = max_mature_epoch.start_number.value();
+        let length = max_mature_epoch.length.value();
+        Ok(calc_max_mature_number(
+            tip_epoch,
+            Some((start_number, length)),
+            CELLBASE_MATURITY,
+        ))
     }
-    let max_mature_epoch = client
-        .get_epoch_by_number(EpochNumber::from(tip_epoch_number - 3))
-        .call()
-        .map_err(|err| err.to_string())?
-        .0
-        .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-    for index in 0..max_mature_epoch.length.value() {
-        let epoch = EpochNumberWithFraction::new(
-            max_mature_epoch.number.value(),
-            index,
-            max_mature_epoch.length.value(),
-        );
-        if epoch.to_rational() + CELLBASE_MATURITY.to_rational() > tip_epoch.to_rational() {
-            return Ok(max_mature_epoch.start_number.value() + index);
-        }
-    }
-    Err(format!(
-        "Can not found min immature block number in epoch {}",
-        max_mature_epoch.number.value()
-    ))
 }
 
-fn is_mature(info: &LiveCellInfo, min_immature_number: u64) -> bool {
+fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
     // Not cellbase cell
     info.index.tx_index > 0
         // Live cells in genesis are all mature
         || info.number == 0
-        || info.number < min_immature_number
+        || info.number <= max_mature_number
 }
 
 fn is_live_cell(cell: &CellWithStatus) -> bool {

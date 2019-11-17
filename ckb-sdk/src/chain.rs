@@ -10,7 +10,7 @@ use ckb_types::{
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, WitnessArgs},
     prelude::*,
-    H160, H256,
+    H160, H256, U256,
 };
 use secp256k1::recovery::RecoverableSignature;
 
@@ -408,4 +408,67 @@ pub fn blake2b_args(args: &[Vec<u8>]) -> [u8; 32] {
     let mut digest = [0u8; 32];
     blake2b.finalize(&mut digest);
     digest
+}
+
+// Calculate max mature block number
+pub fn calc_max_mature_number(
+    tip_epoch: EpochNumberWithFraction,
+    max_mature_epoch: Option<(u64, u64)>,
+    cellbase_maturity: EpochNumberWithFraction,
+) -> u64 {
+    if tip_epoch.to_rational() < cellbase_maturity.to_rational() {
+        0
+    } else if let Some((start_number, length)) = max_mature_epoch {
+        let epoch_delta = tip_epoch.to_rational() - cellbase_maturity.to_rational();
+        let index_bytes: [u8; 32] = ((epoch_delta.clone() - epoch_delta.into_u256())
+            * U256::from(length))
+        .into_u256()
+        .to_le_bytes();
+        let mut index_bytes_u64 = [0u8; 8];
+        index_bytes_u64.copy_from_slice(&index_bytes[0..8]);
+        u64::from_le_bytes(index_bytes_u64) + start_number
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_calc_max_mature_number() {
+        assert_eq!(
+            calc_max_mature_number(
+                EpochNumberWithFraction::new(3, 86, 1800),
+                Some((0, 3)),
+                CELLBASE_MATURITY,
+            ),
+            0
+        );
+        assert_eq!(
+            calc_max_mature_number(
+                EpochNumberWithFraction::new(4, 86, 1800),
+                Some((0, 1000)),
+                CELLBASE_MATURITY,
+            ),
+            47
+        );
+        assert_eq!(
+            calc_max_mature_number(
+                EpochNumberWithFraction::new(4, 0, 1800),
+                Some((0, 1000)),
+                CELLBASE_MATURITY,
+            ),
+            0
+        );
+        assert_eq!(
+            calc_max_mature_number(
+                EpochNumberWithFraction::new(5, 900, 1800),
+                Some((2000, 1000)),
+                CELLBASE_MATURITY,
+            ),
+            2500
+        );
+    }
 }
