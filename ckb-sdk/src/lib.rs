@@ -9,7 +9,7 @@ pub mod wallet;
 
 pub use basic::{Address, NetworkType, OldAddress, OldAddressFormat};
 pub use chain::{
-    blake2b_args, build_witness_with_key, serialize_signature, GenesisInfo,
+    blake2b_args, build_witness_with_key, calc_max_mature_number, serialize_signature, GenesisInfo,
     TransferTransactionBuilder, CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB,
 };
 pub use error::Error;
