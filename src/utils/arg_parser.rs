@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use ckb_sdk::{
     wallet::{zeroize_privkey, MasterPrivKey},
-    Address, NetworkType, OldAddress, ONE_CKB,
+    Address, HumanCapacity, NetworkType, OldAddress,
 };
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
@@ -330,27 +330,9 @@ impl ArgParser<Address> for AddressParser {
 /// Default unit CKB format: xxx.xxxxx
 pub struct CapacityParser;
 
-impl ArgParser<u64> for CapacityParser {
-    fn parse(&self, input: &str) -> Result<u64, String> {
-        let parts = input.trim().split('.').collect::<Vec<_>>();
-        let mut capacity = ONE_CKB
-            * parts
-                .get(0)
-                .ok_or_else(|| "Missing input".to_owned())?
-                .parse::<u64>()
-                .map_err(|err| err.to_string())?;
-        if let Some(shannon_str) = parts.get(1) {
-            let shannon_str = shannon_str.trim();
-            if shannon_str.len() > 8 {
-                return Err(format!("decimal part too long: {}", shannon_str.len()));
-            }
-            let mut shannon = shannon_str.parse::<u32>().map_err(|err| err.to_string())?;
-            for _ in 0..(8 - shannon_str.len()) {
-                shannon *= 10;
-            }
-            capacity += u64::from(shannon);
-        }
-        Ok(capacity)
+impl ArgParser<HumanCapacity> for CapacityParser {
+    fn parse(&self, input: &str) -> Result<HumanCapacity, String> {
+        HumanCapacity::from_str(input)
     }
 }
 
@@ -482,24 +464,5 @@ mod tests {
         assert!(AddressParser
             .parse("kb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p")
             .is_err());
-    }
-
-    #[test]
-    fn test_capacity() {
-        assert_eq!(CapacityParser.parse("12345"), Ok(12345 * ONE_CKB));
-        assert_eq!(
-            CapacityParser.parse("12345.234"),
-            Ok(12345 * ONE_CKB + 23_400_000)
-        );
-        assert_eq!(
-            CapacityParser.parse("12345.23442222"),
-            Ok(12345 * ONE_CKB + 23_442_222)
-        );
-        assert!(CapacityParser.parse("12345.234422224").is_err());
-        assert!(CapacityParser.parse("abc.234422224").is_err());
-        assert!(CapacityParser.parse("abc.abc").is_err());
-        assert!(CapacityParser.parse("abc").is_err());
-        assert!(CapacityParser.parse("-234").is_err());
-        assert!(CapacityParser.parse("-234.3").is_err());
     }
 }
