@@ -326,12 +326,12 @@ dependencies = [
 [[package]]
 name = "ckb-build-info"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 
 [[package]]
 name = "ckb-chain-spec"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-crypto 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "ckb-dao-utils 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -393,7 +393,7 @@ dependencies = [
 [[package]]
 name = "ckb-crypto"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-fixed-hash 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "failure 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -406,7 +406,7 @@ dependencies = [
 [[package]]
 name = "ckb-dao-utils"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-error 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -418,7 +418,7 @@ dependencies = [
 [[package]]
 name = "ckb-error"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-occupied-capacity 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "enum-display-derive 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -428,7 +428,7 @@ dependencies = [
 [[package]]
 name = "ckb-fixed-hash"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-fixed-hash-core 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "ckb-fixed-hash-hack 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -438,7 +438,7 @@ dependencies = [
 [[package]]
 name = "ckb-fixed-hash-core"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "failure 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "faster-hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -448,7 +448,7 @@ dependencies = [
 [[package]]
 name = "ckb-fixed-hash-hack"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-fixed-hash-core 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "proc-macro-hack 0.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -460,7 +460,7 @@ dependencies = [
 [[package]]
 name = "ckb-hash"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "blake2b-rs 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -482,7 +482,7 @@ dependencies = [
 [[package]]
 name = "ckb-jsonrpc-types"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-types 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "faster-hex 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -495,7 +495,7 @@ dependencies = [
 [[package]]
 name = "ckb-logger"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ansi_term 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace 0.3.37 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -514,7 +514,7 @@ dependencies = [
 [[package]]
 name = "ckb-occupied-capacity"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-occupied-capacity-core 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "ckb-occupied-capacity-macros 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -524,7 +524,7 @@ dependencies = [
 [[package]]
 name = "ckb-occupied-capacity-core"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "serde 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_derive 1.0.102 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -533,7 +533,7 @@ dependencies = [
 [[package]]
 name = "ckb-occupied-capacity-macros"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-occupied-capacity-core 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
  "proc-macro-hack 0.5.9 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -544,7 +544,7 @@ dependencies = [
 [[package]]
 name = "ckb-pow"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-types 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -556,7 +556,7 @@ dependencies = [
 [[package]]
 name = "ckb-rational"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "numext-fixed-uint 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -564,7 +564,7 @@ dependencies = [
 [[package]]
 name = "ckb-resource"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-system-scripts 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-types 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -580,7 +580,7 @@ dependencies = [
 [[package]]
 name = "ckb-script"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "byteorder 1.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-chain-spec 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
@@ -599,7 +599,7 @@ dependencies = [
 [[package]]
 name = "ckb-script-data-loader"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "ckb-types 0.25.2 (git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25)",
 ]
@@ -666,7 +666,7 @@ dependencies = [
 [[package]]
 name = "ckb-types"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "bit-vec 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytes 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -685,7 +685,7 @@ dependencies = [
 [[package]]
 name = "ckb-util"
 version = "0.25.2"
-source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#4ad5a6108969bdb4331e71c35f80deb9efcf6017"
+source = "git+https://github.com/nervosnetwork/ckb?branch=rc/v0.25#5eca07f1058eaa2727719635029aac182404a882"
 dependencies = [
  "linked-hash-map 0.5.1 (git+https://github.com/nervosnetwork/linked-hash-map?rev=df27f21)",
  "parking_lot 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
