@@ -2,6 +2,7 @@ mod chain;
 mod error;
 mod rpc;
 mod transaction;
+mod tx_helper;
 mod types;
 
 pub mod constants;
@@ -17,9 +18,10 @@ pub use transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper,
     ReprMockCellDep, ReprMockInfo, ReprMockInput, ReprMockTransaction,
 };
+pub use tx_helper::{MultisigConfig, TxHelper};
 pub use types::{
     Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
-    OldAddressFormat,
+    OldAddressFormat, Since, SinceType,
 };
 
 pub use ckb_crypto::secp::SECP256K1;
