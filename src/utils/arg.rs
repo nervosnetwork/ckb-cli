@@ -100,12 +100,6 @@ pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
         .help("The transaction fee capacity (unit: CKB, format: 0.0001)")
 }
 
-pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name("with-password")
-        .long("with-password")
-        .help("Input password to unlock keystore account just for current transfer transaction")
-}
-
 pub fn type_hash<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("type-hash")
         .long("type-hash")

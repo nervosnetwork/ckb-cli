@@ -329,7 +329,7 @@ message = "0x"
                     .parse(input)?
                 };
 
-                let genesis_timestamp = get_genesis_info(&mut self.genesis_info, self.rpc_client)?
+                let genesis_timestamp = get_genesis_info(&self.genesis_info, self.rpc_client)?
                     .header()
                     .timestamp();
                 let target_timestamp = to_timestamp(locktime)?;

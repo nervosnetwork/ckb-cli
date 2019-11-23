@@ -8,10 +8,7 @@ mod types;
 pub mod constants;
 pub mod wallet;
 
-pub use chain::{
-    blake2b_args, build_witness_with_key, calc_max_mature_number, serialize_signature, GenesisInfo,
-    TransferTransactionBuilder,
-};
+pub use chain::{calc_max_mature_number, GenesisInfo};
 pub use error::Error;
 pub use rpc::HttpRpcClient;
 pub use transaction::{
