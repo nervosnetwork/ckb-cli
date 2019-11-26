@@ -155,10 +155,10 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let lock_arg_opt: Option<H160> =
                     FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
                 let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
-                let secp_type_hash = genesis_info.secp_type_hash();
+                let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
-                        .code_hash(secp_type_hash.clone())
+                        .code_hash(sighash_type_hash.clone())
                         .hash_type(ScriptHashType::Type.into())
                         .args(Bytes::from(lock_arg.as_ref()).pack())
                         .build()

@@ -22,7 +22,7 @@ use subcommands::{
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::{check_alerts, get_key_store},
+    other::{check_alerts, get_key_store, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -54,7 +54,7 @@ fn main() -> Result<(), io::Error> {
     let mut resource_dir = ckb_cli_dir.clone();
     resource_dir.push("resource");
     let mut index_dir = ckb_cli_dir.clone();
-    index_dir.push("index");
+    index_dir.push(index_dirname());
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
     let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
@@ -104,7 +104,7 @@ fn main() -> Result<(), io::Error> {
             RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
         }
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut rpc_client, &mut key_store, None).process(
+            AccountSubCommand::new(&mut key_store).process(
                 &sub_matches,
                 output_format,
                 color,

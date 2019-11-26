@@ -19,7 +19,7 @@ prod: ## Build binary with release profile.
 	cargo build --release
 
 security-audit: ## Use cargo-audit to audit Cargo.lock for crates with security vulnerabilities.
-	@cargo +nightly install cargo-audit -Z install-upgrade
+	@cargo +nightly install cargo-audit
 	cargo audit
 	# expecting to see "Success No vulnerable packages found"
 

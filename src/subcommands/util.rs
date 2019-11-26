@@ -2,9 +2,14 @@ use chrono::{NaiveDate, NaiveDateTime};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
-use ckb_sdk::{Address, GenesisInfo, HttpRpcClient, MultisigAddress, NetworkType, OldAddress};
+use ckb_sdk::{
+    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, OldAddress,
+};
 use ckb_types::{
-    h256, packed,
+    bytes::Bytes,
+    core::{EpochNumberWithFraction, ScriptHashType},
+    packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
@@ -17,13 +22,12 @@ use std::path::PathBuf;
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
+        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, get_genesis_info},
     printer::{OutputFormat, Printable},
 };
-use ckb_types::core::EpochNumberWithFraction;
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -55,7 +59,7 @@ impl<'a> UtilSubCommand<'a> {
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
-            .validator(|input| AddressParser.validate(input))
+            .validator(|input| AddressParser::default().validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
         let arg_lock_arg = Arg::with_name("lock-arg")
@@ -151,6 +155,12 @@ impl<'a> UtilSubCommand<'a> {
                             .required(true)
                             .takes_value(true)
                             .hidden(true)
+                            .validator(|input| {
+                                AddressParser::default()
+                                    .set_network(NetworkType::Mainnet)
+                                    .set_short(CodeHashIndex::Sighash)
+                                    .validate(input)
+                            })
                             .help("The address in single signature format")
                     )
                     .arg(
@@ -185,17 +195,14 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
                     hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
                 });
-                let address = match pubkey_opt {
-                    Some(pubkey) => {
-                        let pubkey_hash = blake2b_256(&pubkey.serialize()[..]);
-                        Address::from_lock_arg(&pubkey_hash[0..20])?
-                    }
-                    None => get_address(m)?,
-                };
-                let old_address = OldAddress::new_default(address.hash().clone());
 
-                let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
-                let secp_type_hash = genesis_info.secp_type_hash();
+                let address_payload = match pubkey_opt {
+                    Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
+                    None => get_address(None, m)?,
+                };
+                let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
+                let old_address = OldAddress::new_default(lock_arg.clone());
+
                 println!(
                     r#"Put this config in < ckb.toml >:
 
@@ -205,24 +212,22 @@ hash_type = "type"
 args = "{:#x}"
 message = "0x"
 "#,
-                    secp_type_hash,
-                    address.hash()
+                    SIGHASH_TYPE_HASH, lock_arg,
                 );
 
-                let lock_hash: H256 = address
-                    .lock_script(secp_type_hash.clone())
+                let lock_hash: H256 = packed::Script::from(&address_payload)
                     .calc_script_hash()
                     .unpack();
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
-                        "testnet": address.display_with_prefix(NetworkType::TestNet),
-                        "mainnet": address.display_with_prefix(NetworkType::MainNet),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
-                    "old-testnet-address": old_address.display_with_prefix(NetworkType::TestNet),
-                    "lock_arg": format!("{:x}", address.hash()),
-                    "lock_hash": lock_hash,
+                    "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
+                    "lock_arg": format!("{:#x}", lock_arg),
+                    "lock_hash": format!("{:#x}", lock_hash),
                 });
                 Ok(resp.render(format, color))
             }
@@ -317,11 +322,11 @@ message = "0x"
                 let locktime = m.value_of("locktime").unwrap();
                 let address = {
                     let input = m.value_of("address").unwrap();
-                    let prefix = input.chars().take(3).collect::<String>();
-                    if prefix != NetworkType::MainNet.to_prefix() {
-                        return Err("Address is not mainnet address".to_owned());
-                    }
-                    AddressParser.parse(input)?
+                    AddressParser::new(
+                        Some(NetworkType::Mainnet),
+                        Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
+                    )
+                    .parse(input)?
                 };
 
                 let genesis_timestamp = get_genesis_info(&mut self.genesis_info, self.rpc_client)?
@@ -337,21 +342,17 @@ message = "0x"
                 };
                 let since = FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value();
 
-                let code_hash =
-                    h256!("0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8");
-                let maddr = MultisigAddress::new(code_hash.clone(), address.hash().clone(), since)?;
-                assert_eq!(
-                    MultisigAddress::from_input(&maddr.display(NetworkType::MainNet))
-                        .unwrap()
-                        .1,
-                    maddr
-                );
-                let resp = format!(
-                    "{},{},{}",
-                    address.display_with_prefix(NetworkType::MainNet),
-                    locktime,
-                    maddr.display(NetworkType::MainNet),
-                );
+                let args = {
+                    let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
+                    multi_script.extend_from_slice(address.payload().args().as_ref());
+                    let mut data = Bytes::from(&blake2b_256(multi_script)[..20]);
+                    data.extend(since.to_le_bytes().iter());
+                    data
+                };
+                let addr_payload =
+                    AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+                let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload);
+                let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
                     println!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
@@ -359,8 +360,8 @@ message = "0x"
                         NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
                         elapsed / 1000,
                         epoch_fraction,
-                        maddr.lock_arg(),
-                        code_hash,
+                        hex_string(multisig_addr.payload().args().as_ref()).unwrap(),
+                        MULTISIG_TYPE_HASH,
                     );
                 }
                 Ok(serde_json::json!(resp).render(format, color))

@@ -12,7 +12,8 @@ use fnv::FnvHashSet;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
-use crate::{GenesisInfo, MIN_SECP_CELL_CAPACITY};
+use crate::constants::MIN_SECP_CELL_CAPACITY;
+use crate::GenesisInfo;
 
 pub use ckb_sdk_types::transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, ReprMockCellDep,
@@ -90,7 +91,7 @@ impl<'a> MockTransactionHelper<'a> {
                 "input total({}) < output total({})",
                 input_total, output_total
             ))
-        } else if delta < *MIN_SECP_CELL_CAPACITY {
+        } else if delta < MIN_SECP_CELL_CAPACITY {
             Ok(0)
         } else {
             let output_lock = target_lock.unwrap_or_else(|| {
@@ -152,7 +153,7 @@ impl<'a> MockTransactionHelper<'a> {
                     .map(|script| (script.calc_script_hash(), mock.cell_dep.clone()))
             })
             .collect::<HashMap<_, _>>();
-        let secp_type_hash = genesis_info.secp_type_hash();
+        let sighash_type_hash = genesis_info.sighash_type_hash();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
                 (ScriptHashType::Data, data_hash) => {
@@ -161,8 +162,8 @@ impl<'a> MockTransactionHelper<'a> {
                     })?;
                     cell_deps.insert(dep);
                 }
-                (ScriptHashType::Type, code_hash) if code_hash == secp_type_hash => {
-                    cell_deps.insert(genesis_info.secp_dep());
+                (ScriptHashType::Type, code_hash) if code_hash == sighash_type_hash => {
+                    cell_deps.insert(genesis_info.sighash_dep());
                 }
                 (ScriptHashType::Type, type_hash) => {
                     let dep = type_deps.get(type_hash).cloned().ok_or_else(|| {
@@ -228,7 +229,7 @@ impl<'a> MockTransactionHelper<'a> {
         let mut input_group: HashMap<H160, Vec<usize>> = HashMap::default();
         for (idx, input) in tx.inputs().into_iter().enumerate() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
-            if &lock.code_hash() == genesis_info.secp_type_hash()
+            if &lock.code_hash() == genesis_info.sighash_type_hash()
                 && lock.hash_type() == ScriptHashType::Type.into()
                 && lock.args().raw_data().len() == 20
             {
@@ -353,7 +354,7 @@ mod test {
         let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed");
         let lock_script = Script::new_builder()
-            .code_hash(genesis_info.secp_type_hash().clone())
+            .code_hash(genesis_info.sighash_type_hash().clone())
             .hash_type(ScriptHashType::Type.into())
             .args(Bytes::from(lock_arg.as_bytes()).pack())
             .build();
@@ -368,7 +369,7 @@ mod test {
         let (secp_data_output, secp_data_data) = genesis_cellbase.output_with_data(3).unwrap();
         mock_tx.mock_info.cell_deps.extend(vec![
             MockCellDep {
-                cell_dep: genesis_info.secp_dep(),
+                cell_dep: genesis_info.sighash_dep(),
                 output: dep_group_output,
                 data: dep_group_data,
             },

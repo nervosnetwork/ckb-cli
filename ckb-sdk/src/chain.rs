@@ -1,7 +1,11 @@
+use crate::constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB};
 use crate::Address;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::new_blake2b;
-use ckb_resource::{CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL};
+use ckb_resource::{
+    CODE_HASH_DAO, CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL,
+    CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL,
+};
 use ckb_types::{
     bytes::Bytes,
     core::{
@@ -10,42 +14,23 @@ use ckb_types::{
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, ScriptOpt, WitnessArgs},
     prelude::*,
-    H160, H256, U256,
+    H256, U256,
 };
 use secp256k1::recovery::RecoverableSignature;
 
-pub const ONE_CKB: u64 = 100_000_000;
-pub const CELLBASE_MATURITY: EpochNumberWithFraction =
-    EpochNumberWithFraction::new_unchecked(4, 0, 1);
-
-lazy_static::lazy_static! {
-    pub static ref MIN_SECP_CELL_CAPACITY: u64 = {
-        CellOutput::new_builder()
-            .lock(
-                Script::new_builder()
-                    .args(H160::default().as_bytes().pack())
-                    .build()
-            )
-            .build()
-            .occupied_capacity(Capacity::zero())
-            .unwrap()
-            .as_u64()
-    };
-}
-
-const SECP_TRANSACTION_INDEX: usize = 0;
-const SECP_OUTPUT_INDEX: usize = 1;
-const SECP_GROUP_TRANSACTION_INDEX: usize = 1;
-const SECP_GROUP_OUTPUT_INDEX: usize = 0;
-const DAO_TRANSACTION_INDEX: usize = 0;
-const DAO_OUTPUT_INDEX: usize = 2;
+use crate::constants::{
+    DAO_OUTPUT_LOC, MULTISIG_GROUP_OUTPUT_LOC, MULTISIG_OUTPUT_LOC, SIGHASH_GROUP_OUTPUT_LOC,
+    SIGHASH_OUTPUT_LOC,
+};
 
 #[derive(Debug, Clone)]
 pub struct GenesisInfo {
     header: HeaderView,
     out_points: Vec<Vec<OutPoint>>,
-    secp_data_hash: Byte32,
-    secp_type_hash: Byte32,
+    sighash_data_hash: Byte32,
+    sighash_type_hash: Byte32,
+    multisig_data_hash: Byte32,
+    multisig_type_hash: Byte32,
     dao_data_hash: Byte32,
     dao_type_hash: Byte32,
 }
@@ -60,8 +45,10 @@ impl GenesisInfo {
             ));
         }
 
-        let mut secp_data_hash = None;
-        let mut secp_type_hash = None;
+        let mut sighash_data_hash = None;
+        let mut sighash_type_hash = None;
+        let mut multisig_data_hash = None;
+        let mut multisig_type_hash = None;
         let mut dao_data_hash = None;
         let mut dao_type_hash = None;
         let out_points = genesis_block
@@ -74,22 +61,37 @@ impl GenesisInfo {
                     .zip(tx.outputs_data().into_iter())
                     .enumerate()
                     .map(|(index, (output, data))| {
-                        if tx_index == SECP_TRANSACTION_INDEX && index == SECP_OUTPUT_INDEX {
-                            secp_type_hash = output
+                        if tx_index == SIGHASH_OUTPUT_LOC.0 && index == SIGHASH_OUTPUT_LOC.1 {
+                            sighash_type_hash = output
                                 .type_()
                                 .to_opt()
                                 .map(|script| script.calc_script_hash());
                             let data_hash = CellOutput::calc_data_hash(&data.raw_data());
                             if data_hash != CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL.pack() {
                                 log::error!(
-                                    "System secp script code hash error! found: {}, expected: {}",
+                                    "System sighash script code hash error! found: {}, expected: {}",
                                     data_hash,
                                     CODE_HASH_SECP256K1_BLAKE160_SIGHASH_ALL,
                                 );
                             }
-                            secp_data_hash = Some(data_hash);
+                            sighash_data_hash = Some(data_hash);
                         }
-                        if tx_index == DAO_TRANSACTION_INDEX && index == DAO_OUTPUT_INDEX {
+                        if tx_index == MULTISIG_OUTPUT_LOC.0 && index == MULTISIG_OUTPUT_LOC.1 {
+                            multisig_type_hash = output
+                                .type_()
+                                .to_opt()
+                                .map(|script| script.calc_script_hash());
+                            let data_hash = CellOutput::calc_data_hash(&data.raw_data());
+                            if data_hash != CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL.pack() {
+                                log::error!(
+                                    "System multisig script code hash error! found: {}, expected: {}",
+                                    data_hash,
+                                    CODE_HASH_SECP256K1_BLAKE160_MULTISIG_ALL,
+                                );
+                            }
+                            multisig_data_hash = Some(data_hash);
+                        }
+                        if tx_index == DAO_OUTPUT_LOC.0 && index == DAO_OUTPUT_LOC.1 {
                             dao_type_hash = output
                                 .type_()
                                 .to_opt()
@@ -110,10 +112,14 @@ impl GenesisInfo {
             })
             .collect::<Vec<_>>();
 
-        let secp_data_hash =
-            secp_data_hash.ok_or_else(|| "No data hash(secp) found in txs[0][1]".to_owned())?;
-        let secp_type_hash =
-            secp_type_hash.ok_or_else(|| "No type hash(secp) found in txs[0][1]".to_owned())?;
+        let sighash_data_hash = sighash_data_hash
+            .ok_or_else(|| "No data hash(sighash) found in txs[0][1]".to_owned())?;
+        let sighash_type_hash = sighash_type_hash
+            .ok_or_else(|| "No type hash(sighash) found in txs[0][1]".to_owned())?;
+        let multisig_data_hash = multisig_data_hash
+            .ok_or_else(|| "No data hash(multisig) found in txs[0][4]".to_owned())?;
+        let multisig_type_hash = multisig_type_hash
+            .ok_or_else(|| "No type hash(multisig) found in txs[0][4]".to_owned())?;
         let dao_data_hash =
             dao_data_hash.ok_or_else(|| "No data hash(dao) found in txs[0][2]".to_owned())?;
         let dao_type_hash =
@@ -121,8 +127,10 @@ impl GenesisInfo {
         Ok(GenesisInfo {
             header,
             out_points,
-            secp_data_hash,
-            secp_type_hash,
+            sighash_data_hash,
+            sighash_type_hash,
+            multisig_data_hash,
+            multisig_type_hash,
             dao_data_hash,
             dao_type_hash,
         })
@@ -132,12 +140,20 @@ impl GenesisInfo {
         &self.header
     }
 
-    pub fn secp_data_hash(&self) -> &Byte32 {
-        &self.secp_data_hash
+    pub fn sighash_data_hash(&self) -> &Byte32 {
+        &self.sighash_data_hash
     }
 
-    pub fn secp_type_hash(&self) -> &Byte32 {
-        &self.secp_type_hash
+    pub fn sighash_type_hash(&self) -> &Byte32 {
+        &self.sighash_type_hash
+    }
+
+    pub fn multisig_data_hash(&self) -> &Byte32 {
+        &self.multisig_data_hash
+    }
+
+    pub fn multisig_type_hash(&self) -> &Byte32 {
+        &self.multisig_type_hash
     }
 
     pub fn dao_data_hash(&self) -> &Byte32 {
@@ -148,10 +164,19 @@ impl GenesisInfo {
         &self.dao_type_hash
     }
 
-    pub fn secp_dep(&self) -> CellDep {
+    pub fn sighash_dep(&self) -> CellDep {
         CellDep::new_builder()
             .out_point(
-                self.out_points[SECP_GROUP_TRANSACTION_INDEX][SECP_GROUP_OUTPUT_INDEX].clone(),
+                self.out_points[SIGHASH_GROUP_OUTPUT_LOC.0][SIGHASH_GROUP_OUTPUT_LOC.1].clone(),
+            )
+            .dep_type(DepType::DepGroup.into())
+            .build()
+    }
+
+    pub fn multisig_dep(&self) -> CellDep {
+        CellDep::new_builder()
+            .out_point(
+                self.out_points[MULTISIG_GROUP_OUTPUT_LOC.0][MULTISIG_GROUP_OUTPUT_LOC.1].clone(),
             )
             .dep_type(DepType::DepGroup.into())
             .build()
@@ -159,7 +184,7 @@ impl GenesisInfo {
 
     pub fn dao_dep(&self) -> CellDep {
         CellDep::new_builder()
-            .out_point(self.out_points[DAO_TRANSACTION_INDEX][DAO_OUTPUT_INDEX].clone())
+            .out_point(self.out_points[DAO_OUTPUT_LOC.0][DAO_OUTPUT_LOC.1].clone())
             .build()
     }
 }
@@ -222,9 +247,9 @@ impl<'a> TransferTransactionBuilder<'a> {
     where
         F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
-        self.cell_deps.extend(vec![genesis_info.secp_dep()]);
-        self.build_outputs(genesis_info);
-        self.build_changes(genesis_info)?;
+        self.cell_deps.extend(vec![genesis_info.sighash_dep()]);
+        self.build_outputs();
+        self.build_changes()?;
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
     }
@@ -238,9 +263,9 @@ impl<'a> TransferTransactionBuilder<'a> {
         F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         self.cell_deps
-            .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
-        self.build_outputs(genesis_info);
-        self.build_changes(genesis_info)?;
+            .extend(vec![genesis_info.sighash_dep(), genesis_info.dao_dep()]);
+        self.build_outputs();
+        self.build_changes()?;
         self.build_dao_type(genesis_info);
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -257,12 +282,12 @@ impl<'a> TransferTransactionBuilder<'a> {
         F: FnMut(&Vec<Vec<u8>>) -> Result<Bytes, String>,
     {
         self.cell_deps
-            .extend(vec![genesis_info.secp_dep(), genesis_info.dao_dep()]);
+            .extend(vec![genesis_info.sighash_dep(), genesis_info.dao_dep()]);
         self.header_deps.push(withdraw_header_hash.pack());
         self.header_deps
             .extend(input_header_hashes.into_iter().map(|h| h.pack()));
-        self.build_outputs(genesis_info);
-        self.build_changes(genesis_info)?;
+        self.build_outputs();
+        self.build_changes()?;
         self.build_dao_witnesses();
         self.build_secp_witnesses(build_witness)?;
         Ok(self.build_transaction())
@@ -315,33 +340,26 @@ impl<'a> TransferTransactionBuilder<'a> {
         }
     }
 
-    fn build_outputs(&mut self, genesis_info: &GenesisInfo) {
+    fn build_outputs(&mut self) {
         let output = CellOutput::new_builder()
             .capacity(Capacity::shannons(self.to_capacity).pack())
-            .lock(
-                self.to_address
-                    .lock_script(genesis_info.secp_type_hash.clone())
-                    .to_owned(),
-            )
+            .lock(self.to_address.payload().into())
             .build();
         self.outputs.push((output, self.to_data.clone()));
     }
 
     // Exchange back to sender if the rest is enough to pay for a cell
-    fn build_changes(&mut self, genesis_info: &GenesisInfo) -> Result<(), String> {
+    fn build_changes(&mut self) -> Result<(), String> {
         if self.tx_fee > ONE_CKB {
             return Err("Transaction fee can not more than 1.0 CKB".to_string());
         }
 
         let rest_capacity = self.from_capacity - self.to_capacity - self.tx_fee;
-        if rest_capacity >= *MIN_SECP_CELL_CAPACITY {
+        if rest_capacity >= MIN_SECP_CELL_CAPACITY {
             // The rest send back to sender
             let change = CellOutput::new_builder()
                 .capacity(Capacity::shannons(rest_capacity).pack())
-                .lock(
-                    self.from_address
-                        .lock_script(genesis_info.secp_type_hash.to_owned()),
-                )
+                .lock(self.from_address.payload().into())
                 .build();
             let change_data = Bytes::default();
             self.changes.push((change, change_data));
@@ -435,6 +453,7 @@ pub fn calc_max_mature_number(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::constants::CELLBASE_MATURITY;
 
     #[test]
     fn test_calc_max_mature_number() {

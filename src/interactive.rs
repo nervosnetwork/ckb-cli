@@ -19,7 +19,7 @@ use crate::subcommands::{
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
-    other::check_alerts,
+    other::{check_alerts, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
 use ckb_sdk::{
@@ -56,7 +56,7 @@ impl InteractiveEnv {
         let mut config_file = ckb_cli_dir.clone();
         config_file.push("config");
         let mut index_dir = ckb_cli_dir.clone();
-        index_dir.push("index");
+        index_dir.push(index_dirname());
         let mut keystore_dir = ckb_cli_dir.clone();
         keystore_dir.push("keystore");
 
@@ -308,13 +308,12 @@ impl InteractiveEnv {
                         Ok(())
                     }
                     ("account", Some(sub_matches)) => {
-                        let genesis_info = self.genesis_info().ok();
-                        let output = AccountSubCommand::new(
-                            &mut self.rpc_client,
-                            &mut self.key_store,
-                            genesis_info,
-                        )
-                        .process(&sub_matches, format, color, debug)?;
+                        let output = AccountSubCommand::new(&mut self.key_store).process(
+                            &sub_matches,
+                            format,
+                            color,
+                            debug,
+                        )?;
                         println!("{}", output);
                         Ok(())
                     }
