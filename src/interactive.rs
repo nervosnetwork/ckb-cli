@@ -19,7 +19,7 @@ use crate::subcommands::{
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
-    other::{check_alerts, index_dirname},
+    other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
 use ckb_sdk::{
@@ -240,6 +240,8 @@ impl InteractiveEnv {
                             Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                             self.config.set_url(url.to_string());
                             self.rpc_client = HttpRpcClient::from_uri(self.config.get_url());
+                            self.config
+                                .set_network(get_network_type(&mut self.rpc_client).ok());
                             self.genesis_info = None;
                             Some(())
                         });

@@ -197,12 +197,40 @@ impl TxHelper {
         witnesses
     }
 
-    pub fn sign_tx<S, C>(
+    pub fn sign_sighash_inputs<S, C>(
+        &self,
+        mut signer: S,
+        get_live_cell: C,
+    ) -> Result<HashMap<Bytes, Bytes>, String>
+    where
+        S: FnMut(&H160, &H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>,
+        C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
+    {
+        let witnesses = self.init_witnesses();
+        let mut signatures: HashMap<Bytes, Bytes> = Default::default();
+        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
+            if code_hash == MULTISIG_TYPE_HASH.pack() {
+                continue;
+            }
+            let hash160 = H160::from_slice(lock_arg.as_ref()).unwrap();
+            let signature = build_signature(
+                &self.transaction.hash(),
+                &idxs,
+                &witnesses,
+                None,
+                |message: &H256| signer(&hash160, message),
+            )?;
+            signatures.insert(lock_arg, signature);
+        }
+        Ok(signatures)
+    }
+
+    pub fn sign_multisig_inputs<S, C>(
         &self,
         signer_lock_arg: &H160,
         mut signer: S,
         get_live_cell: C,
-    ) -> Result<HashMap<Bytes, HashSet<Bytes>>, String>
+    ) -> Result<HashMap<Bytes, Bytes>, String>
     where
         S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>,
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
@@ -214,11 +242,9 @@ impl TxHelper {
             .collect::<HashMap<_, _>>();
 
         let witnesses = self.init_witnesses();
-        let mut signatures: HashMap<Bytes, HashSet<_>> = Default::default();
+        let mut signatures: HashMap<Bytes, Bytes> = Default::default();
         for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
-            if code_hash == SIGHASH_TYPE_HASH.pack()
-                && lock_arg.as_ref() != signer_lock_arg.as_bytes()
-            {
+            if code_hash == SIGHASH_TYPE_HASH.pack() {
                 continue;
             }
 
@@ -232,19 +258,14 @@ impl TxHelper {
                 continue;
             }
 
-            let multisig_config_opt = if code_hash == MULTISIG_TYPE_HASH.pack() {
-                Some(self.multisig_configs.get(&hash160).unwrap())
-            } else {
-                None
-            };
             let signature = build_signature(
                 &self.transaction.hash(),
                 &idxs,
                 &witnesses,
-                multisig_config_opt,
+                Some(self.multisig_configs.get(&hash160).unwrap()),
                 &mut signer,
             )?;
-            signatures.entry(lock_arg).or_default().insert(signature);
+            signatures.insert(lock_arg, signature);
         }
         Ok(signatures)
     }

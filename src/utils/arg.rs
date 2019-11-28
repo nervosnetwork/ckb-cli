@@ -40,6 +40,38 @@ pub fn lock_hash<'a, 'b>() -> Arg<'a, 'b> {
         .help("Lock hash")
 }
 
+pub fn derive_receiving_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-receiving-address-length")
+        .long("derive-receiving-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived receiving address length")
+}
+
+pub fn derive_change_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address-length")
+        .long("derive-change-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived change address length")
+}
+
+pub fn derive_change_address<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address")
+        .long("derive-change-address")
+        .takes_value(true)
+        .validator(|input| AddressParser::default().validate(input))
+        .help("Manually specify the last change address (search 10000 addresses max, required keystore password, see: BIP-44)")
+}
+
+pub fn derived<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derived")
+        .long("derived")
+        .help("Search derived address space (search 10000 addresses(change/receiving) max, required keystore password, see: BIP-44)")
+}
+
 pub fn lock_arg<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("lock-arg")
         .long("lock-arg")

@@ -35,6 +35,9 @@ pub enum Error {
     #[fail(display = "Invalid secp256k1 secret key")]
     InvalidSecpSecret,
 
+    #[fail(display = "Search derived address failed")]
+    SearchDerivedAddrFailed,
+
     #[fail(display = "IO error: {}", _0)]
     Io(String),
 

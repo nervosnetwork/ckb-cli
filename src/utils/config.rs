@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ansi_term::Colour::Yellow;
+use ckb_sdk::NetworkType;
 use ckb_util::RwLock;
 use regex::{Captures, Regex};
 
@@ -15,6 +16,7 @@ const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
 
 pub struct GlobalConfig {
     url: Option<String>,
+    network: Option<NetworkType>,
     color: bool,
     debug: bool,
     output_format: OutputFormat,
@@ -29,6 +31,7 @@ impl GlobalConfig {
     pub fn new(url: Option<String>, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
         GlobalConfig {
             url,
+            network: None,
             color: true,
             debug: false,
             output_format: OutputFormat::Yaml,
@@ -109,13 +112,19 @@ impl GlobalConfig {
             self.url = Some("http://".to_owned() + &value);
         }
     }
-
     pub fn get_url(&self) -> &str {
         &self
             .url
             .as_ref()
             .map(String::as_str)
             .unwrap_or(DEFAULT_JSONRPC_URL)
+    }
+
+    pub fn set_network(&mut self, network: Option<NetworkType>) {
+        self.network = network;
+    }
+    pub fn network(&self) -> Option<NetworkType> {
+        self.network
     }
 
     pub fn switch_color(&mut self) {
@@ -188,9 +197,14 @@ impl GlobalConfig {
         let index_state = self.index_state.read().to_string();
         let version = crate::get_version();
         let version_long = version.long();
+        let network_string = self
+            .network()
+            .map(|value| format!("{:?}", value))
+            .unwrap_or_else(|| "unknown".to_string());
+        let url_string = format!("{} (network: {})", self.get_url(), network_string);
         let values = [
             ("ckb-cli version", version_long.as_str()),
-            ("url", self.get_url()),
+            ("url", url_string.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),

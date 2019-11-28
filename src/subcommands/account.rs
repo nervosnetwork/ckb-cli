@@ -85,6 +85,41 @@ impl<'a> AccountSubCommand<'a> {
                             .required(true)
                             .help("Output extended private key path (PrivKey + ChainCode)")
                     ),
+                SubCommand::with_name("bip44-addresses")
+                    .about("Extended receiving/change Addresses (see: BIP-44)")
+                    .arg(
+                        Arg::with_name("from-receiving-index")
+                            .long("from-receiving-index")
+                            .takes_value(true)
+                            .default_value("0")
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .help("Start from receiving path index")
+                    )
+                    .arg(
+                        Arg::with_name("receiving-length")
+                            .long("receiving-length")
+                            .takes_value(true)
+                            .default_value("20")
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .help("Receiving addresses length")
+                    )
+                    .arg(
+                        Arg::with_name("from-change-index")
+                            .long("from-change-index")
+                            .takes_value(true)
+                            .default_value("0")
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .help("Start from change path index")
+                    )
+                    .arg(
+                        Arg::with_name("change-length")
+                            .long("change-length")
+                            .takes_value(true)
+                            .default_value("10")
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .help("Change addresses length")
+                    )
+                    .arg(arg_lock_arg.clone()),
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(arg_lock_arg.clone())
@@ -124,11 +159,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
                             .unpack();
-
-                        let timeout = self.key_store.get_lock_timeout(&lock_arg);
-                        let status = timeout
-                            .map(|timeout| timeout.to_string())
-                            .unwrap_or_else(|| "locked".to_owned());
                         serde_json::json!({
                             "#": idx,
                             "lock_arg": format!("{:#x}", lock_arg),
@@ -137,7 +167,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                 "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                             },
-                            "status": status,
                         })
                     })
                     .collect::<Vec<_>>();
@@ -240,15 +269,57 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     key_path
                 ))
             }
+            ("bip44-addresses", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let from_receiving_index: u32 =
+                    FromStrParser::<u32>::default().from_matches(m, "from-receiving-index")?;
+                let receiving_length: u32 =
+                    FromStrParser::<u32>::default().from_matches(m, "receiving-length")?;
+                let from_change_index: u32 =
+                    FromStrParser::<u32>::default().from_matches(m, "from-change-index")?;
+                let change_length: u32 =
+                    FromStrParser::<u32>::default().from_matches(m, "change-length")?;
+
+                let password = read_password(false, None)?;
+                let key_set = self
+                    .key_store
+                    .derived_key_set_by_index_with_password(
+                        &lock_arg,
+                        password.as_bytes(),
+                        from_receiving_index,
+                        receiving_length,
+                        from_change_index,
+                        change_length,
+                    )
+                    .map_err(|err| err.to_string())?;
+                let get_addresses = |set: &[(DerivationPath, H160)]| {
+                    set.iter()
+                        .map(|(path, hash160)| {
+                            let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                            serde_json::json!({
+                                "path": path.to_string(),
+                                "address": Address::new(NetworkType::Mainnet, payload).to_string(),
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let resp = serde_json::json!({
+                    "receiving": get_addresses(&key_set.external),
+                    "change": get_addresses(&key_set.change),
+                });
+                Ok(resp.render(format, color))
+            }
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let path: Option<DerivationPath> =
                     FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
 
+                let password = read_password(false, None)?;
                 let extended_pubkey = self
                     .key_store
-                    .extended_pubkey(&lock_arg, path.as_ref())
+                    .extended_pubkey_with_password(&lock_arg, path.as_ref(), password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
                 let resp = serde_json::json!({
