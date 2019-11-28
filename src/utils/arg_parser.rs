@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use ckb_sdk::{
     wallet::{zeroize_privkey, MasterPrivKey},
-    Address, HumanCapacity, NetworkType, OldAddress,
+    Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
 };
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
@@ -311,19 +311,168 @@ impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
     }
 }
 
-pub struct AddressParser;
+// TODO: put this into ckb-sdk
+pub enum AddressPayloadOption {
+    Short(Option<CodeHashIndex>),
+    #[allow(dead_code)]
+    Full(Option<H256>),
+    #[allow(dead_code)]
+    FullData(Option<H256>),
+    #[allow(dead_code)]
+    FullType(Option<H256>),
+}
+
+impl Default for AddressPayloadOption {
+    fn default() -> AddressPayloadOption {
+        AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))
+    }
+}
+
+pub struct AddressParser {
+    network: Option<NetworkType>,
+    payload: Option<AddressPayloadOption>,
+}
+
+impl AddressParser {
+    pub fn new(
+        network: Option<NetworkType>,
+        payload: Option<AddressPayloadOption>,
+    ) -> AddressParser {
+        AddressParser { network, payload }
+    }
+
+    pub fn set_network(&mut self, network: NetworkType) -> &mut Self {
+        self.network = Some(network);
+        self
+    }
+
+    pub fn set_network_opt(&mut self, network: Option<NetworkType>) -> &mut Self {
+        self.network = network;
+        self
+    }
+
+    pub fn set_short(&mut self, code_hash_index: CodeHashIndex) -> &mut Self {
+        self.payload = Some(AddressPayloadOption::Short(Some(code_hash_index)));
+        self
+    }
+
+    #[allow(dead_code)]
+    pub fn set_full(&mut self, code_hash: H256) -> &mut Self {
+        self.payload = Some(AddressPayloadOption::Full(Some(code_hash)));
+        self
+    }
+    #[allow(dead_code)]
+    pub fn set_full_data(&mut self, code_hash: H256) -> &mut Self {
+        self.payload = Some(AddressPayloadOption::FullData(Some(code_hash)));
+        self
+    }
+    #[allow(dead_code)]
+    pub fn set_full_type(&mut self, code_hash: H256) -> &mut Self {
+        self.payload = Some(AddressPayloadOption::FullType(Some(code_hash)));
+        self
+    }
+}
+
+impl Default for AddressParser {
+    fn default() -> AddressParser {
+        AddressParser {
+            network: None,
+            payload: None,
+        }
+    }
+}
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
-        if let Ok((_network, address)) = Address::from_input(input) {
+        fn check_code_hash(
+            payload: &AddressPayload,
+            code_hash_opt: Option<&H256>,
+        ) -> Result<(), String> {
+            if let Some(code_hash) = code_hash_opt {
+                let payload_code_hash: H256 = payload.code_hash().unpack();
+                if code_hash != &payload_code_hash {
+                    return Err(format!(
+                        "Invalid code hash: {:#x}, expected: {:#x}",
+                        payload_code_hash, code_hash
+                    ));
+                }
+            }
+            Ok(())
+        }
+
+        if let Ok(address) = Address::from_str(input) {
+            if let Some(network) = self.network {
+                if address.network().to_prefix() != network.to_prefix() {
+                    return Err(format!(
+                        "Invalid network: {}, expected: {}",
+                        address.network().to_prefix(),
+                        network.to_prefix(),
+                    ));
+                }
+            }
+            if let Some(payload_option) = self.payload.as_ref() {
+                let payload = address.payload();
+                match payload_option {
+                    AddressPayloadOption::Short(index_opt) => match payload {
+                        AddressPayload::Short { index, .. } => {
+                            if let Some(expected_index) = index_opt {
+                                if index != expected_index {
+                                    return Err(format!(
+                                        "Invalid address code hash index: {:?}, expected: {:?}",
+                                        index, expected_index,
+                                    ));
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(format!(
+                                "Invalid address type: {:?}, expected: {:?}",
+                                payload.ty(),
+                                AddressType::Short,
+                            ));
+                        }
+                    },
+                    AddressPayloadOption::Full(code_hash_opt) => {
+                        if payload.ty() == AddressType::Short {
+                            return Err(format!(
+                                "Unexpected address type: {:?}",
+                                AddressType::Short
+                            ));
+                        }
+                        check_code_hash(payload, code_hash_opt.as_ref())?;
+                    }
+                    AddressPayloadOption::FullData(code_hash_opt) => {
+                        if payload.ty() != AddressType::FullData {
+                            return Err(format!(
+                                "Unexpected address type: {:?}, expected: {:?}",
+                                payload.ty(),
+                                AddressType::FullData
+                            ));
+                        }
+                        check_code_hash(payload, code_hash_opt.as_ref())?;
+                    }
+                    AddressPayloadOption::FullType(code_hash_opt) => {
+                        if payload.ty() != AddressType::FullType {
+                            return Err(format!(
+                                "Unexpected address type: {:?}, expected: {:?}",
+                                payload.ty(),
+                                AddressType::FullType
+                            ));
+                        }
+                        check_code_hash(payload, code_hash_opt.as_ref())?;
+                    }
+                }
+            }
             return Ok(address);
         }
 
+        // Fallback to old format address (TODO: move this logic to upper level)
         let prefix = input.chars().take(3).collect::<String>();
         let network = NetworkType::from_prefix(prefix.as_str())
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
-        Ok(Address::new_default(old_address.hash().clone()))
+        let payload = AddressPayload::from_pubkey_hash(old_address.hash().clone());
+        Ok(Address::new(NetworkType::Testnet, payload))
     }
 }
 
@@ -437,31 +586,39 @@ mod tests {
     fn test_address() {
         // Old address, lock-arg: e22f7f385830a75e50ab7fc5fd4c35b134f1e84b
         assert_eq!(
-            AddressParser.parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
-            Ok(Address::new_default(h160!(
-                "0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"
-            )))
+            AddressParser::default().parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
+            Ok(Address::new(
+                NetworkType::Testnet,
+                AddressPayload::new_short(
+                    CodeHashIndex::Sighash,
+                    h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b")
+                )
+            ))
         );
         // New address, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
         assert_eq!(
-            AddressParser.parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
-            Ok(Address::new_default(h160!(
-                "0x13e41d6F9292555916f17B4882a5477C01270142"
-            )))
+            AddressParser::default().parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
+            Ok(Address::new(
+                NetworkType::Mainnet,
+                AddressPayload::new_short(
+                    CodeHashIndex::Sighash,
+                    h160!("0x13e41d6F9292555916f17B4882a5477C01270142")
+                )
+            ))
         );
 
         // Old address
-        assert!(AddressParser
+        assert!(AddressParser::default()
             .parse("kt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc")
             .is_err());
-        assert!(AddressParser
+        assert!(AddressParser::default()
             .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy")
             .is_err());
         // New address
-        assert!(AddressParser
+        assert!(AddressParser::default()
             .parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqfpqrn323p")
             .is_err());
-        assert!(AddressParser
+        assert!(AddressParser::default()
             .parse("kb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p")
             .is_err());
     }

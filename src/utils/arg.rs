@@ -2,6 +2,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
+use ckb_sdk::CodeHashIndex;
 use ckb_types::{H160, H256};
 use clap::Arg;
 
@@ -25,7 +26,7 @@ pub fn address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("address")
         .long("address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| AddressParser::default().validate(input))
         .help(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
@@ -59,7 +60,11 @@ pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("to-address")
         .long("to-address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| {
+            AddressParser::default()
+                .set_short(CodeHashIndex::Sighash)
+                .validate(input)
+        })
         .help("Target address")
 }
 

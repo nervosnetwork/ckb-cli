@@ -1,5 +1,5 @@
 use super::types::{BlockDeltaInfo, CellIndex, HashType, HeaderInfo, LiveCellInfo, TxInfo};
-use ckb_sdk::{Address, NetworkType};
+use ckb_sdk::NetworkType;
 use ckb_types::{
     packed::{Header, OutPoint, Script},
     prelude::*,
@@ -24,8 +24,6 @@ pub enum KeyType {
     GlobalHash = 100,
     // key => value: {type}:{tx-hash} => {TxInfo}
     TxMap = 101,
-    // key => value: {type}:{Address} => {lock-hash}
-    SecpAddrLock = 102,
     // >> Save recent headers for rollback a fork and for statistics
     // key => value: {type}:{block-number} => {HeaderInfo}
     RecentHeader = 103,
@@ -72,7 +70,6 @@ impl KeyType {
 
             100 => KeyType::GlobalHash,
             101 => KeyType::TxMap,
-            102 => KeyType::SecpAddrLock,
             103 => KeyType::RecentHeader,
             104 => KeyType::BlockDelta,
 
@@ -102,7 +99,6 @@ pub enum Key {
 
     GlobalHash(H256),
     TxMap(H256),
-    SecpAddrLock(Address),
     RecentHeader(u64),
     BlockDelta(u64),
 
@@ -137,11 +133,6 @@ impl Key {
             Key::TxMap(tx_hash) => {
                 let mut bytes = KeyType::TxMap.to_bytes();
                 bytes.extend(tx_hash.as_bytes().to_vec());
-                bytes
-            }
-            Key::SecpAddrLock(address) => {
-                let mut bytes = KeyType::SecpAddrLock.to_bytes();
-                bytes.extend(bincode::serialize(address).unwrap());
                 bytes
             }
             Key::RecentHeader(number) => {
@@ -262,10 +253,6 @@ impl Key {
                 let tx_hash = H256::from_slice(args_bytes).unwrap();
                 Key::TxMap(tx_hash)
             }
-            KeyType::SecpAddrLock => {
-                let address = bincode::deserialize(args_bytes).unwrap();
-                Key::SecpAddrLock(address)
-            }
             KeyType::RecentHeader => {
                 assert_eq!(args_bytes.len(), 8);
                 let mut number_bytes = [0u8; 8];
@@ -364,7 +351,6 @@ impl Key {
             Key::TotalCapacity => KeyType::TotalCapacity,
             Key::GlobalHash(..) => KeyType::GlobalHash,
             Key::TxMap(..) => KeyType::TxMap,
-            Key::SecpAddrLock(..) => KeyType::SecpAddrLock,
             Key::RecentHeader(..) => KeyType::RecentHeader,
             Key::BlockDelta(..) => KeyType::BlockDelta,
             Key::LiveCellMap(..) => KeyType::LiveCellMap,
@@ -386,7 +372,13 @@ impl Key {
         (Key::GenesisHash.to_bytes(), value.as_bytes().to_vec())
     }
     pub(crate) fn pair_network(value: NetworkType) -> (Vec<u8>, Vec<u8>) {
-        (Key::Network.to_bytes(), vec![value as u8])
+        let value_byte = match value {
+            NetworkType::Mainnet => 0,
+            NetworkType::Testnet => 1,
+            NetworkType::Staging => 254,
+            NetworkType::Dev => 255,
+        };
+        (Key::Network.to_bytes(), vec![value_byte])
     }
     pub(crate) fn pair_last_header(value: &Header) -> (Vec<u8>, Vec<u8>) {
         (Key::LastHeader.to_bytes(), value.as_slice().to_vec())
@@ -402,12 +394,6 @@ impl Key {
         (
             Key::TxMap(tx_hash).to_bytes(),
             bincode::serialize(value).unwrap(),
-        )
-    }
-    pub(crate) fn pair_secp_addr_lock(address: Address, value: &H256) -> (Vec<u8>, Vec<u8>) {
-        (
-            Key::SecpAddrLock(address).to_bytes(),
-            value.as_bytes().to_vec(),
         )
     }
     pub(crate) fn pair_recent_header(value: &HeaderInfo) -> (Vec<u8>, Vec<u8>) {

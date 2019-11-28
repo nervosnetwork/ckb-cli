@@ -4,11 +4,11 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, EpochNumber};
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, EpochNumberWithFraction, TransactionView},
+    packed::Script,
     prelude::*,
     H160, H256,
 };
@@ -21,15 +21,17 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{check_address_prefix, get_address, get_network_type, read_password},
+    other::{get_address, get_network_type, read_password},
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
-    blake2b_args, build_witness_with_key, calc_max_mature_number, serialize_signature,
+    blake2b_args, build_witness_with_key, calc_max_mature_number,
+    constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
+    serialize_signature,
     wallet::{KeyStore, KeyStoreError},
-    Address, GenesisInfo, HttpRpcClient, HumanCapacity, TransferTransactionBuilder,
-    CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB, SECP256K1,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
+    TransferTransactionBuilder, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -151,23 +153,26 @@ impl<'a> WalletSubCommand<'a> {
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
         let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let from_address = if let Some(from_privkey) = from_privkey.as_ref() {
+
+        let network_type = get_network_type(self.rpc_client)?;
+        let from_address_payload = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            let pubkey_hash = blake2b_256(&from_pubkey.serialize()[..]);
-            Address::from_lock_arg(&pubkey_hash[0..20])?
+            AddressPayload::from_pubkey(&from_pubkey)
         } else {
-            Address::from_lock_arg(from_account.as_ref().unwrap().as_bytes())?
+            AddressPayload::from_pubkey_hash(from_account.clone().unwrap())
         };
-        let to_address: Address = AddressParser.from_matches(m, "to-address")?;
+        let from_address = Address::new(network_type, from_address_payload.clone());
+
+        let to_address: Address = AddressParser::default()
+            .set_network(network_type)
+            .set_short(CodeHashIndex::Sighash)
+            .from_matches(m, "to-address")?;
         let to_data = to_data(m)?;
         let with_password = m.is_present("with-password");
 
         check_capacity(capacity, to_data.len())?;
-        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
-        let secp_type_hash = genesis_info.secp_type_hash();
 
-        check_address_prefix(m.value_of("to-address").unwrap(), network_type)?;
         // For check index database is ready
         self.with_db(|_| ())?;
         let index_dir = self.index_dir.clone();
@@ -194,9 +199,7 @@ impl<'a> WalletSubCommand<'a> {
                 let db =
                     IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
                 Ok(db.get_live_cells_by_lock(
-                    from_address
-                        .lock_script(secp_type_hash.clone())
-                        .calc_script_hash(),
+                    Script::from(&from_address_payload).calc_script_hash(),
                     None,
                     terminator,
                 ))
@@ -211,8 +214,7 @@ impl<'a> WalletSubCommand<'a> {
         if total_capacity < capacity + tx_fee {
             return Err(format!(
                 "Capacity(mature) not enough: {} => {}",
-                from_address.display_with_prefix(network_type),
-                total_capacity,
+                from_address, total_capacity,
             ));
         }
         let inputs = infos.iter().map(LiveCellInfo::input).collect::<Vec<_>>();
@@ -312,9 +314,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let lock_hash = if let Some(lock_hash) = lock_hash_opt {
                     lock_hash.pack()
                 } else {
-                    let secp_type_hash = self.genesis_info()?.secp_type_hash().clone();
-                    let address = get_address(m)?;
-                    address.lock_script(secp_type_hash).calc_script_hash()
+                    let network_type = get_network_type(self.rpc_client)?;
+                    let address_payload = get_address(Some(network_type), m)?;
+                    Script::from(&address_payload).calc_script_hash()
                 };
 
                 let max_mature_number = get_max_mature_number(self.rpc_client)?;
@@ -334,12 +336,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
                 let resp = if immature_capacity > 0 {
                     serde_json::json!({
-                        "total-capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
-                        "immature-capacity": format!("{:#}", HumanCapacity::from(immature_capacity)),
+                        "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
+                        "immature_capacity": format!("{:#}", HumanCapacity::from(immature_capacity)),
                     })
                 } else {
                     serde_json::json!({
-                        "total-capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
+                        "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
                     })
                 };
                 Ok(resp.render(format, color))
@@ -362,37 +364,50 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 }
 
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-                let (infos, total_capacity) = self.with_db(|db| {
-                    let mut total_capacity = 0;
-                    let terminator = |idx, info: &LiveCellInfo| {
-                        let stop = idx >= limit || info.number > to_number;
-                        let push_info = !stop;
-                        if push_info {
+                let (infos, total_count, total_capacity, current_count, current_capacity) = self
+                    .with_db(|db| {
+                        let mut total_count: u32 = 0;
+                        let mut total_capacity: u64 = 0;
+                        let mut current_count: u32 = 0;
+                        let mut current_capacity: u64 = 0;
+                        let terminator = |idx, info: &LiveCellInfo| {
+                            let stop = idx >= limit || info.number > to_number;
+                            let push_info = !stop;
+                            total_count += 1;
                             total_capacity += info.capacity;
-                        }
-                        (stop, push_info)
-                    };
-                    let infos = if let Some(lock_hash) = lock_hash_opt {
-                        db.get_live_cells_by_lock(
-                            lock_hash.clone().pack(),
-                            from_number_opt,
-                            terminator,
+                            if push_info {
+                                current_count += 1;
+                                current_capacity += info.capacity;
+                            }
+                            (false, push_info)
+                        };
+                        let infos = if let Some(lock_hash) = lock_hash_opt {
+                            db.get_live_cells_by_lock(
+                                lock_hash.clone().pack(),
+                                from_number_opt,
+                                terminator,
+                            )
+                        } else if let Some(type_hash) = type_hash_opt {
+                            db.get_live_cells_by_type(
+                                type_hash.clone().pack(),
+                                from_number_opt,
+                                terminator,
+                            )
+                        } else {
+                            db.get_live_cells_by_code(
+                                code_hash_opt.clone().unwrap().pack(),
+                                from_number_opt,
+                                terminator,
+                            )
+                        };
+                        (
+                            infos,
+                            total_count,
+                            total_capacity,
+                            current_count,
+                            current_capacity,
                         )
-                    } else if let Some(type_hash) = type_hash_opt {
-                        db.get_live_cells_by_type(
-                            type_hash.clone().pack(),
-                            from_number_opt,
-                            terminator,
-                        )
-                    } else {
-                        db.get_live_cells_by_code(
-                            code_hash_opt.clone().unwrap().pack(),
-                            from_number_opt,
-                            terminator,
-                        )
-                    };
-                    (infos, total_capacity)
-                })?;
+                    })?;
                 let max_mature_number = get_max_mature_number(self.rpc_client)?;
                 let resp = serde_json::json!({
                     "live_cells": infos.into_iter().map(|info| {
@@ -405,6 +420,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         value
                     }).collect::<Vec<_>>(),
                     "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
+                    "current_capacity": format!("{:#}", HumanCapacity::from(current_capacity)),
+                    "total_count": total_count,
+                    "current_count": current_count,
                 });
                 Ok(resp.render(format, color))
             }
@@ -417,10 +435,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let resp = self.with_db(|db| {
                     db.get_top_n(n)
                         .into_iter()
-                        .map(|(lock_hash, address, capacity)| {
+                        .map(|(lock_hash, payload_opt, capacity)| {
                             serde_json::json!({
                                 "lock_hash": format!("{:#x}", lock_hash),
-                                "address": address.map(|addr| addr.display_with_prefix(network_type)),
+                                "address": payload_opt.map(|payload| Address::new(network_type, payload).to_string()),
                                 "capacity": format!("{:#}", HumanCapacity::from(capacity)),
                             })
                         })
@@ -439,13 +457,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 }
 
 fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
-    if capacity < *MIN_SECP_CELL_CAPACITY {
+    if capacity < MIN_SECP_CELL_CAPACITY {
         return Err(format!(
             "Capacity can not less than {} shannons",
-            *MIN_SECP_CELL_CAPACITY
+            MIN_SECP_CELL_CAPACITY
         ));
     }
-    if capacity < *MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
         return Err(format!(
             "Capacity can not hold {} bytes of data",
             to_data_len

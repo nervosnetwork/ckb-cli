@@ -2,10 +2,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ckb_index::VERSION;
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
-    Address, GenesisInfo, HttpRpcClient, NetworkType,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
 };
 use ckb_types::{core::BlockView, H160, H256};
 use clap::ArgMatches;
@@ -38,15 +39,19 @@ pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
         })
 }
 
-pub fn get_address(m: &ArgMatches) -> Result<Address, String> {
-    let address: Option<Address> = AddressParser.from_matches_opt(m, "address", false)?;
+pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
+    let address_opt: Option<Address> = AddressParser::default()
+        .set_network_opt(network)
+        .set_short(CodeHashIndex::Sighash)
+        .from_matches_opt(m, "address", false)?;
     let pubkey: Option<secp256k1::PublicKey> =
         PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
     let lock_arg: Option<H160> =
         FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
-    let address = address
-        .or_else(|| pubkey.map(|pubkey| Address::from_pubkey(&pubkey).unwrap()))
-        .or_else(|| lock_arg.map(|lock_arg| Address::from_lock_arg(lock_arg.as_bytes()).unwrap()))
+    let address = address_opt
+        .map(|address| address.payload().clone())
+        .or_else(|| pubkey.map(|pubkey| AddressPayload::from_pubkey(&pubkey)))
+        .or_else(|| lock_arg.map(AddressPayload::from_pubkey_hash))
         .ok_or_else(|| "Please give one argument".to_owned())?;
     Ok(address)
 }
@@ -129,12 +134,6 @@ pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, S
         .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))
 }
 
-pub fn check_address_prefix(address: &str, network_type: NetworkType) -> Result<(), String> {
-    if address.len() < 3 {
-        Err(format!("Invalid address length: {}", address))
-    } else if &address[..3] != network_type.to_prefix() {
-        Err(format!("Invalid address prefix: {}", &address[..3]))
-    } else {
-        Ok(())
-    }
+pub fn index_dirname() -> String {
+    format!("index-v{}", VERSION)
 }

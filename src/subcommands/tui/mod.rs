@@ -21,7 +21,7 @@ use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_index::{with_index_db, IndexDatabase};
 use ckb_jsonrpc_types::BlockNumber;
-use ckb_sdk::{GenesisInfo, HttpRpcClient, NetworkType, ONE_CKB};
+use ckb_sdk::{constants::ONE_CKB, Address, GenesisInfo, HttpRpcClient, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -519,7 +519,7 @@ fn render_top_capacity<B: Backend>(
         match capacity_list_result {
             Ok(capacity_list) => capacity_list
                 .iter()
-                .flat_map(|(lock_hash, address, capacity)| {
+                .flat_map(|(lock_hash, payload_opt, capacity)| {
                     vec![
                         Text::styled(
                             format!("{:x}", lock_hash),
@@ -527,9 +527,10 @@ fn render_top_capacity<B: Backend>(
                         ),
                         Text::raw(format!(
                             "  [address ]: {}",
-                            address
+                            payload_opt
                                 .as_ref()
-                                .map(|s| s.display_with_prefix(network_type))
+                                .map(|payload| Address::new(network_type, payload.clone())
+                                    .to_string())
                                 .unwrap_or_else(|| "null".to_owned())
                         )),
                         Text::raw(format!(

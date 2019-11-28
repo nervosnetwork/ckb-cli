@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
 
-use ckb_sdk::{Address, GenesisInfo, NetworkType};
+use ckb_sdk::{AddressPayload, GenesisInfo, NetworkType};
 use ckb_types::{
     core::{BlockView, HeaderView},
     packed::{Byte32, Header, OutPoint, Script},
@@ -51,7 +51,13 @@ impl<'a> IndexDatabase<'a> {
                 .map(|bytes| Byte32::from_slice(&bytes).unwrap());
             let network_opt = reader
                 .get(&Key::Network.to_bytes())
-                .map(|bytes| NetworkType::from_u8(bytes[0]).unwrap());
+                .map(|bytes| match bytes[0] {
+                    0 => NetworkType::Mainnet,
+                    1 => NetworkType::Testnet,
+                    254 => NetworkType::Staging,
+                    255 => NetworkType::Dev,
+                    _ => panic!("Corrupted index database (network field)"),
+                });
             (genesis_hash_opt, network_opt)
         };
         if let Some(genesis_hash) = genesis_hash_opt {
@@ -160,13 +166,10 @@ impl<'a> IndexDatabase<'a> {
         self.last_number().map(|number| number + 1)
     }
 
-    fn get_address_inner(&self, reader: &RocksReader, lock_hash: Byte32) -> Option<Address> {
+    fn get_address_inner(&self, reader: &RocksReader, lock_hash: Byte32) -> Option<AddressPayload> {
         reader
             .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
-            .and_then(|bytes| {
-                let script = Script::new_unchecked(bytes.into());
-                Address::from_lock_arg(&script.args().raw_data()).ok()
-            })
+            .map(|bytes| AddressPayload::from(Script::new_unchecked(bytes.into())))
     }
 
     pub fn get_capacity(&self, lock_hash: Byte32) -> Option<u64> {
@@ -180,24 +183,12 @@ impl<'a> IndexDatabase<'a> {
             })
     }
 
-    pub fn get_lock_hash_by_address(&self, address: Address) -> Option<Byte32> {
-        let reader = RocksReader::new(self.db, self.cf);
-        reader
-            .get(&Key::SecpAddrLock(address).to_bytes())
-            .map(|bytes| Byte32::from_slice(&bytes).unwrap())
-    }
-
     pub fn get_lock_script_by_hash(&self, lock_hash: Byte32) -> Option<Script> {
         let reader = RocksReader::new(self.db, self.cf);
         reader
             .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
             .map(|bytes| Script::new_unchecked(bytes.into()))
     }
-
-    // pub fn get_address(&self, lock_hash: Byte32) -> Option<Address> {
-    //     let reader = env_read.read().unwrap();
-    //     self.get_address_inner(&reader, lock_hash)
-    // }
 
     pub fn get_live_cells_by_lock<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
         &self,
@@ -268,7 +259,7 @@ impl<'a> IndexDatabase<'a> {
         infos
     }
 
-    pub fn get_top_n(&self, n: usize) -> Vec<(Byte32, Option<Address>, u64)> {
+    pub fn get_top_n(&self, n: usize) -> Vec<(Byte32, Option<AddressPayload>, u64)> {
         let reader = RocksReader::new(self.db, self.cf);
         let key_prefix: Vec<u8> = KeyType::LockTotalCapacityIndex.to_bytes();
 
@@ -311,12 +302,9 @@ impl<'a> IndexDatabase<'a> {
             blocks
         };
 
-        let secp_data_hash = self.genesis_info.secp_data_hash();
-        let secp_type_hash = self.genesis_info.secp_type_hash();
         let mut txn = RocksTxn::new(self.db, self.cf);
         for block in blocks {
-            let block_delta_info =
-                BlockDeltaInfo::from_block(&block, &txn, secp_data_hash, secp_type_hash);
+            let block_delta_info = BlockDeltaInfo::from_block(&block, &txn);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
             let result = block_delta_info.apply(&mut txn, self.enable_explorer);
@@ -344,7 +332,6 @@ impl<'a> IndexDatabase<'a> {
                 KeyType::Network,
                 KeyType::LastHeader,
                 KeyType::TotalCapacity,
-                KeyType::SecpAddrLock,
                 KeyType::RecentHeader,
                 KeyType::BlockDelta,
                 KeyType::LiveCellMap,
