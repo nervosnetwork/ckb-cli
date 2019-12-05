@@ -175,11 +175,15 @@ impl<'a> WalletSubCommand<'a> {
             .set_network(network_type)
             .from_matches_opt(m, "derive-change-address", false)?;
 
-        let from_address_payload = if let Some(from_privkey) = from_privkey.as_ref() {
+        let (from_address_payload, password) = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            AddressPayload::from_pubkey(&from_pubkey)
+            (AddressPayload::from_pubkey(&from_pubkey), String::new())
         } else {
-            AddressPayload::from_pubkey_hash(from_account.clone().unwrap())
+            let password = read_password(false, None)?;
+            (
+                AddressPayload::from_pubkey_hash(from_account.clone().unwrap()),
+                password,
+            )
         };
         let from_address = Address::new(network_type, from_address_payload.clone());
 
@@ -211,7 +215,6 @@ impl<'a> WalletSubCommand<'a> {
         let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
         let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
-        let password = read_password(false, None)?;
         let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
             // Behave like HD wallet
             let change_last =
