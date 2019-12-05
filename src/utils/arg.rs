@@ -2,7 +2,6 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use ckb_sdk::CodeHashIndex;
 use ckb_types::{H160, H256};
 use clap::Arg;
 
@@ -92,11 +91,7 @@ pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("to-address")
         .long("to-address")
         .takes_value(true)
-        .validator(|input| {
-            AddressParser::default()
-                .set_short(CodeHashIndex::Sighash)
-                .validate(input)
-        })
+        .validator(|input| AddressParser::default().validate(input))
         .help("Target address")
 }
 

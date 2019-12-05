@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use ckb_jsonrpc_types::{BlockNumber, EpochNumber};
 use ckb_types::{
     bytes::Bytes,
-    core::{BlockView, Capacity, EpochNumberWithFraction, TransactionView},
+    core::{BlockView, Capacity, EpochNumberWithFraction, ScriptHashType, TransactionView},
     packed::{CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
@@ -28,10 +28,12 @@ use crate::utils::{
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     calc_max_mature_number,
-    constants::{CELLBASE_MATURITY, DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, ONE_CKB},
+    constants::{
+        CELLBASE_MATURITY, DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB,
+        SIGHASH_TYPE_HASH,
+    },
     wallet::{DerivationPath, KeyStore},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity, TxHelper,
-    SECP256K1,
+    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, TxHelper, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
@@ -183,8 +185,18 @@ impl<'a> WalletSubCommand<'a> {
 
         let to_address: Address = AddressParser::default()
             .set_network(network_type)
-            .set_short(CodeHashIndex::Sighash)
             .from_matches(m, "to-address")?;
+        if !(to_address.payload().hash_type() == ScriptHashType::Type
+            && to_address.payload().code_hash() == SIGHASH_TYPE_HASH.pack()
+            && to_address.payload().args().len() == 20)
+            && !(to_address.payload().hash_type() == ScriptHashType::Type
+                && to_address.payload().code_hash() == MULTISIG_TYPE_HASH.pack()
+                && (to_address.payload().args().len() == 20
+                    || to_address.payload().args().len() == 28))
+        {
+            return Err(format!("Invalid to-address: {}", to_address));
+        }
+
         let to_data = to_data(m)?;
 
         check_capacity(to_capacity, to_data.len())?;
