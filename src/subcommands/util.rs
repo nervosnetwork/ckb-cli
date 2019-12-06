@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
+use ckb_jsonrpc_types::ChainInfo;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
@@ -16,14 +16,12 @@ use ckb_types::{
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
-use std::fs;
-use std::path::PathBuf;
 
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
-        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser,
+        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::get_address,
     printer::{OutputFormat, Printable},
@@ -66,23 +64,6 @@ impl<'a> UtilSubCommand<'a> {
             .validator(|input| FixedHashParser::<H160>::default().validate(input))
             .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
 
-        let json_path_arg = Arg::with_name("json-path")
-            .long("json-path")
-            .takes_value(true)
-            .required(true)
-            .validator(|input| FilePathParser::new(true).validate(input));
-        let binary_hex_arg = Arg::with_name("binary-hex")
-            .long("binary-hex")
-            .takes_value(true)
-            .required(true)
-            .validator(|input| HexParser.validate(input));
-        let serialize_output_type_arg = Arg::with_name("output-type")
-            .long("output-type")
-            .takes_value(true)
-            .default_value("binary")
-            .possible_values(&["binary", "hash"])
-            .help("Serialize output type");
-
         let arg_sighash_address = Arg::with_name("sighash-address")
             .long("sighash-address")
             .required(true)
@@ -97,66 +78,57 @@ impl<'a> UtilSubCommand<'a> {
         SubCommand::with_name(name)
             .about("Utilities")
             .subcommands(vec![
-                SubCommand::with_name("key-info")
-                    .about(
-                        "Show public information of a secp256k1 private key (from file) or public key",
-                    )
-                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                    .arg(arg_pubkey.clone().required(false))
-                    .arg(arg_address.clone().required(false))
-                    .arg(arg_lock_arg.clone()),
-                SubCommand::with_name("serialize-tx")
-                    .about("Serialize a transaction from json file to hex binary or hash")
-                    .arg(json_path_arg.clone()
-                         .help("Transaction content (json format, without witnesses/hash, see rpc get_transaction)"))
-                    .arg(serialize_output_type_arg.clone()),
-                SubCommand::with_name("deserialize-tx")
-                    .about("Deserialize a transaction from binary hex to json")
-                    .arg(binary_hex_arg.clone().help("Transaction binary hex")),
-                SubCommand::with_name("serialize-script")
-                    .about("Serialize a script from json file to hex binary or hash")
-                    .arg(json_path_arg.clone()
-                         .help("Script content (json format, see rpc get_transaction)"))
-                    .arg(serialize_output_type_arg.clone()),
-                SubCommand::with_name("deserialize-script")
-                    .about("Deserialize a script from hex binary to json")
-                    .arg(binary_hex_arg.clone().help("Script binary hex")),
-                SubCommand::with_name("compact-to-difficulty")
-                    .about("Convert compact target value to difficulty value")
-                    .arg(Arg::with_name("compact-target")
-                         .long("compact-target")
-                         .takes_value(true)
-                         .validator(|input| {
-                             FromStrParser::<u32>::default()
-                                 .validate(input.clone())
-                                 .or_else(|_| {
-                                     let input = if input.starts_with("0x") || input.starts_with("0X") {
-                                         &input[2..]
-                                     } else {
-                                         &input[..]
-                                     };
-                                     u32::from_str_radix(input, 16).map(|_| ()).map_err(|err| err.to_string())
-                                 })
-                         })
-                         .required(true)
-                         .help("The compact target value")
-                    ),
-                SubCommand::with_name("difficulty-to-compact")
-                    .about("Convert difficulty value to compact target value")
-                    .arg(Arg::with_name("difficulty")
-                         .long("difficulty")
-                         .takes_value(true)
-                         .validator(|input| {
-                             let input = if input.starts_with("0x") || input.starts_with("0X") {
-                                 &input[2..]
-                             } else {
-                                 &input[..]
-                             };
-                             U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
-                         })
-                         .required(true)
-                         .help("The difficulty value")
-                    ),
+            SubCommand::with_name("key-info")
+                .about(
+                    "Show public information of a secp256k1 private key (from file) or public key",
+                )
+                .arg(arg_privkey.clone().conflicts_with("pubkey"))
+                .arg(arg_pubkey.clone().required(false))
+                .arg(arg_address.clone().required(false))
+                .arg(arg_lock_arg.clone()),
+            SubCommand::with_name("compact-to-difficulty")
+                .about("Convert compact target value to difficulty value")
+                .arg(
+                    Arg::with_name("compact-target")
+                        .long("compact-target")
+                        .takes_value(true)
+                        .validator(|input| {
+                            FromStrParser::<u32>::default()
+                                .validate(input.clone())
+                                .or_else(|_| {
+                                    let input =
+                                        if input.starts_with("0x") || input.starts_with("0X") {
+                                            &input[2..]
+                                        } else {
+                                            &input[..]
+                                        };
+                                    u32::from_str_radix(input, 16)
+                                        .map(|_| ())
+                                        .map_err(|err| err.to_string())
+                                })
+                        })
+                        .required(true)
+                        .help("The compact target value"),
+                ),
+            SubCommand::with_name("difficulty-to-compact")
+                .about("Convert difficulty value to compact target value")
+                .arg(
+                    Arg::with_name("difficulty")
+                        .long("difficulty")
+                        .takes_value(true)
+                        .validator(|input| {
+                            let input = if input.starts_with("0x") || input.starts_with("0X") {
+                                &input[2..]
+                            } else {
+                                &input[..]
+                            };
+                            U256::from_hex_str(input)
+                                .map(|_| ())
+                                .map_err(|err| err.to_string())
+                        })
+                        .required(true)
+                        .help("The difficulty value"),
+                ),
                 SubCommand::with_name("to-genesis-multisig-addr")
                     .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
                     .arg(
@@ -186,7 +158,7 @@ impl<'a> UtilSubCommand<'a> {
                             .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
                             .help("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
                     ),
-            ])
+        ])
     }
 }
 
@@ -245,49 +217,6 @@ message = "0x"
                     "lock_hash": format!("{:#x}", lock_hash),
                 });
                 Ok(resp.render(format, color))
-            }
-            ("serialize-tx", Some(m)) => {
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
-                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
-                let rpc_tx: RpcTransaction =
-                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
-                let tx: packed::Transaction = rpc_tx.into();
-                let output = match m.value_of("output-type") {
-                    Some("binary") => hex_string(tx.raw().as_slice()).unwrap(),
-                    Some("hash") => format!("{:#x}", tx.calc_tx_hash()),
-                    _ => panic!("Invalid output type"),
-                };
-                Ok(output)
-            }
-            ("deserialize-tx", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
-                let raw_tx =
-                    packed::RawTransaction::from_slice(&binary).map_err(|err| err.to_string())?;
-                let rpc_tx: RpcTransaction = packed::Transaction::new_builder()
-                    .raw(raw_tx)
-                    .build()
-                    .into();
-                Ok(rpc_tx.render(format, color))
-            }
-            ("serialize-script", Some(m)) => {
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
-                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
-                let rpc_script: RpcScript =
-                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
-                let script: packed::Script = rpc_script.into();
-                let output = match m.value_of("output-type") {
-                    Some("binary") => hex_string(script.as_slice()).unwrap(),
-                    Some("hash") => format!("{:#x}", script.calc_script_hash()),
-                    _ => panic!("Invalid output type"),
-                };
-                Ok(output)
-            }
-            ("deserialize-script", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
-                let rpc_script: RpcScript = packed::Script::from_slice(&binary)
-                    .map_err(|err| err.to_string())?
-                    .into();
-                Ok(rpc_script.render(format, color))
             }
             ("compact-to-difficulty", Some(m)) => {
                 let compact_target: u32 = FromStrParser::<u32>::default()

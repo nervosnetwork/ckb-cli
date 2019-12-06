@@ -14,7 +14,7 @@ use serde_json::json;
 
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    MoleculeSubCommand, RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -336,6 +336,12 @@ impl InteractiveEnv {
                         color,
                         debug,
                     )?;
+                    println!("{}", output);
+                    Ok(())
+                }
+                ("molecule", Some(sub_matches)) => {
+                    let output =
+                        MoleculeSubCommand::new().process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }
