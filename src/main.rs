@@ -19,6 +19,7 @@ use subcommands::{
     start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
     RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
+use utils::other::sync_to_tip;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
@@ -90,6 +91,17 @@ fn main() -> Result<(), io::Error> {
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
+
+    {
+        let wait_for_sync = matches.is_present("wait-for-sync");
+        if wait_for_sync {
+            if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
+                eprintln!("Synchronize error: {}", err);
+                process::exit(1);
+            }
+        }
+    }
+
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
@@ -234,6 +246,14 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .long("debug")
                 .global(true)
                 .help("Display request parameters"),
+        )
+        .arg(
+            Arg::with_name("wait-for-sync")
+                .long("wait-for-sync")
+                .global(true)
+                .help(
+                    "Ensure the index-store synchronizes completely before command being executed",
+                ),
         );
 
     #[cfg(unix)]
