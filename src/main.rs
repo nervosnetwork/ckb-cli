@@ -120,12 +120,9 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
-        ("util", Some(sub_matches)) => UtilSubCommand::new(&mut rpc_client, None).process(
-            &sub_matches,
-            output_format,
-            color,
-            debug,
-        ),
+        ("util", Some(sub_matches)) => {
+            UtilSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
+        }
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,

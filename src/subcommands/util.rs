@@ -1,10 +1,10 @@
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{ChainInfo, Script as RpcScript, Transaction as RpcTransaction};
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, OldAddress,
+    Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -25,24 +25,22 @@ use crate::utils::{
         AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::{get_address, get_genesis_info},
+    other::get_address,
     printer::{OutputFormat, Printable},
 };
 
+const FLAG_SINCE_EPOCH_NUMBER: u64 =
+    0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
+const EPOCH_LENGTH: u64 = 1800;
+const BLOCK_PERIOD: u64 = 8 * 1000; // 8 seconds
+
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    genesis_info: Option<GenesisInfo>,
 }
 
 impl<'a> UtilSubCommand<'a> {
-    pub fn new(
-        rpc_client: &'a mut HttpRpcClient,
-        genesis_info: Option<GenesisInfo>,
-    ) -> UtilSubCommand<'a> {
-        UtilSubCommand {
-            rpc_client,
-            genesis_info,
-        }
+    pub fn new(rpc_client: &'a mut HttpRpcClient) -> UtilSubCommand<'a> {
+        UtilSubCommand { rpc_client }
     }
 
     pub fn subcommand(name: &'static str) -> App<'static, 'static> {
@@ -84,6 +82,18 @@ impl<'a> UtilSubCommand<'a> {
             .default_value("binary")
             .possible_values(&["binary", "hash"])
             .help("Serialize output type");
+
+        let arg_sighash_address = Arg::with_name("sighash-address")
+            .long("sighash-address")
+            .required(true)
+            .takes_value(true)
+            .validator(|input| {
+                AddressParser::default()
+                    .set_short(CodeHashIndex::Sighash)
+                    .validate(input)
+            })
+            .help("The address in single signature format");
+
         SubCommand::with_name(name)
             .about("Utilities")
             .subcommands(vec![
@@ -147,30 +157,35 @@ impl<'a> UtilSubCommand<'a> {
                          .required(true)
                          .help("The difficulty value")
                     ),
-                SubCommand::with_name("to-multisig-addr")
-                    .about("Convert address in single signature format to multisig format")
+                SubCommand::with_name("to-genesis-multisig-addr")
+                    .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
                     .arg(
-                        Arg::with_name("address")
-                            .long("address")
-                            .required(true)
-                            .takes_value(true)
-                            .hidden(true)
+                        arg_sighash_address
+                            .clone()
                             .validator(|input| {
                                 AddressParser::default()
                                     .set_network(NetworkType::Mainnet)
                                     .set_short(CodeHashIndex::Sighash)
                                     .validate(input)
-                            })
-                            .help("The address in single signature format")
-                    )
+                            }))
                     .arg(
                         Arg::with_name("locktime")
                             .long("locktime")
                             .required(true)
                             .takes_value(true)
-                            .hidden(true)
-                            .help("The locktime in UTC format")
-                    )
+                            .help("The locktime in UTC format date. Example: 2022-05-01")
+                    ),
+                SubCommand::with_name("to-multisig-addr")
+                    .about("Convert address in single signature format to multisig format")
+                    .arg(arg_sighash_address.clone())
+                    .arg(
+                        Arg::with_name("locktime")
+                            .long("locktime")
+                            .required(true)
+                            .takes_value(true)
+                            .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
+                            .help("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
+                    ),
             ])
     }
 }
@@ -304,12 +319,7 @@ message = "0x"
                 });
                 Ok(resp.render(format, color))
             }
-            ("to-multisig-addr", Some(m)) => {
-                const FLAG_SINCE_EPOCH_NUMBER: u64 =
-                    0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
-                const EPOCH_LENGTH: u64 = 1800;
-                const EPOCH_PERIOD: u64 = EPOCH_LENGTH * 8 * 1000; // 4h in millis
-
+            ("to-genesis-multisig-addr", Some(m)) => {
                 let chain_info: ChainInfo = self
                     .rpc_client
                     .get_blockchain_info()
@@ -321,7 +331,7 @@ message = "0x"
 
                 let locktime = m.value_of("locktime").unwrap();
                 let address = {
-                    let input = m.value_of("address").unwrap();
+                    let input = m.value_of("sighash-address").unwrap();
                     AddressParser::new(
                         Some(NetworkType::Mainnet),
                         Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
@@ -329,28 +339,14 @@ message = "0x"
                     .parse(input)?
                 };
 
-                let genesis_timestamp = get_genesis_info(&self.genesis_info, self.rpc_client)?
-                    .header()
-                    .timestamp();
+                let genesis_timestamp =
+                    NaiveDateTime::parse_from_str("2019-11-16 06:00:00", "%Y-%m-%d  %H:%M:%S")
+                        .map(|dt| dt.timestamp_millis() as u64)
+                        .unwrap();
                 let target_timestamp = to_timestamp(locktime)?;
                 let elapsed = target_timestamp.saturating_sub(genesis_timestamp);
-                let epoch_fraction = {
-                    let epoch_number = elapsed / EPOCH_PERIOD;
-                    let epoch_index =
-                        (elapsed - epoch_number * EPOCH_PERIOD) * EPOCH_LENGTH / EPOCH_PERIOD;
-                    EpochNumberWithFraction::new(epoch_number, epoch_index, EPOCH_LENGTH)
-                };
-                let since = FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value();
-
-                let args = {
-                    let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
-                    multi_script.extend_from_slice(address.payload().args().as_ref());
-                    let mut data = Bytes::from(&blake2b_256(multi_script)[..20]);
-                    data.extend(since.to_le_bytes().iter());
-                    data
-                };
-                let addr_payload =
-                    AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+                let (epoch_fraction, addr_payload) =
+                    gen_multisig_addr(address.payload(), None, elapsed);
                 let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload);
                 let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
@@ -366,9 +362,68 @@ message = "0x"
                 }
                 Ok(serde_json::json!(resp).render(format, color))
             }
+            ("to-multisig-addr", Some(m)) => {
+                let address: Address = AddressParser::default()
+                    .set_short(CodeHashIndex::Sighash)
+                    .from_matches(m, "sighash-address")?;
+                let locktime_timestamp =
+                    DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
+                        .map(|dt| dt.timestamp_millis() as u64)
+                        .map_err(|err| err.to_string())?;
+                let (tip_epoch, tip_timestamp) = self
+                    .rpc_client
+                    .get_tip_header()
+                    .call()
+                    .map(|header_view| {
+                        let header = header_view.inner;
+                        let epoch = EpochNumberWithFraction::from_full_value(header.epoch.value());
+                        let timestamp = header.timestamp.value();
+                        (epoch, timestamp)
+                    })
+                    .map_err(|err| err.to_string())?;
+                let elapsed = locktime_timestamp.saturating_sub(tip_timestamp);
+                let (epoch, multisig_addr) =
+                    gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
+                let resp = serde_json::json!({
+                    "address": {
+                        "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, multisig_addr.clone()).to_string(),
+                    },
+                    "target_epoch": epoch.to_string(),
+                });
+                Ok(resp.render(format, color))
+            }
             _ => Err(matches.usage().to_owned()),
         }
     }
+}
+
+fn gen_multisig_addr(
+    sighash_address_payload: &AddressPayload,
+    tip_epoch_opt: Option<EpochNumberWithFraction>,
+    elapsed: u64,
+) -> (EpochNumberWithFraction, AddressPayload) {
+    let epoch_fraction = {
+        let tip_epoch =
+            tip_epoch_opt.unwrap_or_else(|| EpochNumberWithFraction::new(0, 0, EPOCH_LENGTH));
+        let blocks = tip_epoch.number() * EPOCH_LENGTH
+            + tip_epoch.index() * EPOCH_LENGTH / tip_epoch.length()
+            + elapsed / BLOCK_PERIOD;
+        let epoch_number = blocks / EPOCH_LENGTH;
+        let epoch_index = blocks % EPOCH_LENGTH;
+        EpochNumberWithFraction::new(epoch_number, epoch_index, EPOCH_LENGTH)
+    };
+    let since = FLAG_SINCE_EPOCH_NUMBER | epoch_fraction.full_value();
+
+    let args = {
+        let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
+        multi_script.extend_from_slice(sighash_address_payload.args().as_ref());
+        let mut data = Bytes::from(&blake2b_256(multi_script)[..20]);
+        data.extend(since.to_le_bytes().iter());
+        data
+    };
+    let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+    (epoch_fraction, payload)
 }
 
 fn to_timestamp(input: &str) -> Result<u64, String> {
@@ -379,4 +434,24 @@ fn to_timestamp(input: &str) -> Result<u64, String> {
     )
     .map_err(|err| format!("{:?}", err))?;
     Ok(date.timestamp_millis() as u64)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_gen_multisig_addr() {
+        let payload = AddressPayload::new_short(CodeHashIndex::Sighash, H160::default());
+
+        let (epoch, _) = gen_multisig_addr(&payload, None, BLOCK_PERIOD * 2000);
+        assert_eq!(epoch, EpochNumberWithFraction::new(1, 200, EPOCH_LENGTH));
+
+        // (1+2/3) + (1+1/2) = 3+1/6
+        let (epoch, _) = gen_multisig_addr(
+            &payload,
+            Some(EpochNumberWithFraction::new(1, 400, 600)),
+            BLOCK_PERIOD * 2700,
+        );
+        assert_eq!(epoch, EpochNumberWithFraction::new(3, 300, EPOCH_LENGTH))
+    }
 }
