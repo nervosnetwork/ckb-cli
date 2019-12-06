@@ -347,7 +347,6 @@ impl InteractiveEnv {
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
-                        true,
                     )
                     .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);

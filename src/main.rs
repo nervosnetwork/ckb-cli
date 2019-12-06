@@ -92,13 +92,13 @@ fn main() -> Result<(), io::Error> {
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
 
-    {
-        let wait_for_sync = matches.is_present("wait-for-sync");
-        if wait_for_sync {
-            if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
-                eprintln!("Synchronize error: {}", err);
-                process::exit(1);
-            }
+    // When flag `--wait-for-sync` given, we have to ensure that the index-store synchronizes
+    // to the tip before executing the command.
+    let wait_for_sync = matches.is_present("wait-for-sync");
+    if wait_for_sync {
+        if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
+            eprintln!("Synchronize error: {}", err);
+            process::exit(1);
         }
     }
 
@@ -142,7 +142,6 @@ fn main() -> Result<(), io::Error> {
                 None,
                 index_dir.clone(),
                 index_controller.clone(),
-                false,
             )
             .process(&sub_matches, output_format, color, debug)
         }),
