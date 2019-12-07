@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,7 +9,11 @@ use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
 };
-use ckb_types::{core::BlockView, H160, H256};
+use ckb_types::{
+    core::BlockView,
+    packed::{CellOutput, OutPoint},
+    H160, H256,
+};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
@@ -63,7 +68,7 @@ pub fn get_singer(
         let prompt = format!("Password for [{:x}]", lock_arg);
         let password = read_password(false, Some(prompt.as_str()))?;
         let signature = key_store
-            .sign_recoverable_with_password(lock_arg, tx_hash_hash, password.as_bytes())
+            .sign_recoverable_with_password(lock_arg, None, tx_hash_hash, password.as_bytes())
             .map_err(|err| err.to_string())?;
         let (recov_id, data) = signature.serialize_compact();
         let mut signature_bytes = [0u8; 65];
@@ -107,10 +112,12 @@ pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
 }
 
 pub fn get_genesis_info(
-    genesis_info: &mut Option<GenesisInfo>,
+    genesis_info: &Option<GenesisInfo>,
     rpc_client: &mut HttpRpcClient,
 ) -> Result<GenesisInfo, String> {
-    if genesis_info.is_none() {
+    if let Some(genesis_info) = genesis_info {
+        Ok(genesis_info.clone())
+    } else {
         let genesis_block: BlockView = rpc_client
             .get_block_by_number(BlockNumber::from(0))
             .call()
@@ -118,11 +125,41 @@ pub fn get_genesis_info(
             .0
             .ok_or_else(|| String::from("Can not get genesis block"))?
             .into();
-        *genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+        GenesisInfo::from_block(&genesis_block)
     }
-    genesis_info
-        .clone()
-        .ok_or_else(|| String::from("Can not get genesis info"))
+}
+
+pub fn get_live_cell_with_cache(
+    cache: &mut HashMap<(OutPoint, bool), CellOutput>,
+    client: &mut HttpRpcClient,
+    out_point: OutPoint,
+    with_data: bool,
+) -> Result<CellOutput, String> {
+    if let Some(output) = cache.get(&(out_point.clone(), with_data)).cloned() {
+        Ok(output)
+    } else {
+        let output = get_live_cell(client, out_point.clone(), with_data)?;
+        cache.insert((out_point, with_data), output.clone());
+        Ok(output)
+    }
+}
+
+pub fn get_live_cell(
+    client: &mut HttpRpcClient,
+    out_point: OutPoint,
+    with_data: bool,
+) -> Result<CellOutput, String> {
+    let cell = client
+        .get_live_cell(out_point.into(), with_data)
+        .call()
+        .map_err(|err| err.to_string())?;
+    if cell.status != "live" {
+        return Err(format!("Invalid cell status: {}", cell.status));
+    }
+    let cell_status = cell.status.clone();
+    cell.cell
+        .map(|cell| cell.output.into())
+        .ok_or_else(|| format!("Invalid input cell, status: {}", cell_status))
 }
 
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {

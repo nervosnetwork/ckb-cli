@@ -22,7 +22,7 @@ use subcommands::{
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::{check_alerts, get_key_store, index_dirname},
+    other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -86,6 +86,7 @@ fn main() -> Result<(), io::Error> {
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
     check_alerts(&mut rpc_client);
+    config.set_network(get_network_type(&mut rpc_client).ok());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
@@ -119,12 +120,9 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
-        ("util", Some(sub_matches)) => UtilSubCommand::new(&mut rpc_client, None).process(
-            &sub_matches,
-            output_format,
-            color,
-            debug,
-        ),
+        ("util", Some(sub_matches)) => {
+            UtilSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
+        }
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,

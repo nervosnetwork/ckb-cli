@@ -1,14 +1,15 @@
 mod index;
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use ckb_jsonrpc_types::{BlockNumber, CellWithStatus, EpochNumber};
+use ckb_jsonrpc_types::{BlockNumber, EpochNumber};
 use ckb_types::{
     bytes::Bytes,
-    core::{BlockView, EpochNumberWithFraction, TransactionView},
-    packed::Script,
+    core::{BlockView, Capacity, EpochNumberWithFraction, ScriptHashType, TransactionView},
+    packed::{CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
@@ -21,22 +22,26 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{get_address, get_network_type, read_password},
+    other::{get_address, get_live_cell_with_cache, get_network_type, read_password},
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
-    blake2b_args, build_witness_with_key, calc_max_mature_number,
-    constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    serialize_signature,
-    wallet::{KeyStore, KeyStoreError},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    TransferTransactionBuilder, SECP256K1,
+    calc_max_mature_number,
+    constants::{
+        CELLBASE_MATURITY, DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB,
+        SIGHASH_TYPE_HASH,
+    },
+    wallet::{DerivationPath, KeyStore},
+    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, TxHelper, SECP256K1,
 };
 pub use index::{
     start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
     IndexThreadState, SimpleBlockInfo,
 };
+
+// Max derived change address to search
+const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
 
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -98,7 +103,7 @@ impl<'a> WalletSubCommand<'a> {
         })
         .map_err(|_err| {
             format!(
-                "index database may not ready, sync process: {}",
+                "Index database may not ready, sync process: {}",
                 self.index_controller.state().read().to_string()
             )
         })
@@ -111,24 +116,33 @@ impl<'a> WalletSubCommand<'a> {
                 SubCommand::with_name("transfer")
                     .about("Transfer capacity to an address (can have data)")
                     .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
-                    .arg(arg::from_account().required_unless(arg::privkey_path().b.name))
+                    .arg(
+                        arg::from_account()
+                            .required_unless(arg::privkey_path().b.name)
+                            .conflicts_with(arg::privkey_path().b.name),
+                    )
                     .arg(arg::to_address().required(true))
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
                     .arg(arg::tx_fee().required(true))
-                    .arg(arg::with_password()),
+                    .arg(arg::derive_receiving_address_length())
+                    .arg(arg::derive_change_address().conflicts_with(arg::privkey_path().b.name)),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg::lock_hash())
                     .arg(arg::address())
                     .arg(arg::pubkey())
-                    .arg(arg::lock_arg()),
+                    .arg(arg::lock_arg())
+                    .arg(arg::derive_receiving_address_length())
+                    .arg(arg::derive_change_address_length())
+                    .arg(arg::derived().conflicts_with(arg::lock_hash().b.name)),
                 SubCommand::with_name("get-live-cells")
                     .about("Get live cells by lock/type/code  hash")
                     .arg(arg::lock_hash())
                     .arg(arg::type_hash())
                     .arg(arg::code_hash())
+                    .arg(arg::address())
                     .arg(arg::live_cells_limit())
                     .arg(arg::from_block_number())
                     .arg(arg::to_block_number()),
@@ -151,26 +165,45 @@ impl<'a> WalletSubCommand<'a> {
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let from_account: Option<H160> =
             FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
-        let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+        let to_capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
+        let receiving_address_length: u32 =
+            FromStrParser::<u32>::default().from_matches(m, "derive-receiving-address-length")?;
 
         let network_type = get_network_type(self.rpc_client)?;
-        let from_address_payload = if let Some(from_privkey) = from_privkey.as_ref() {
+        let last_change_address_opt: Option<Address> = AddressParser::default()
+            .set_network(network_type)
+            .from_matches_opt(m, "derive-change-address", false)?;
+
+        let (from_address_payload, password) = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            AddressPayload::from_pubkey(&from_pubkey)
+            (AddressPayload::from_pubkey(&from_pubkey), String::new())
         } else {
-            AddressPayload::from_pubkey_hash(from_account.clone().unwrap())
+            let password = read_password(false, None)?;
+            (
+                AddressPayload::from_pubkey_hash(from_account.clone().unwrap()),
+                password,
+            )
         };
         let from_address = Address::new(network_type, from_address_payload.clone());
 
         let to_address: Address = AddressParser::default()
             .set_network(network_type)
-            .set_short(CodeHashIndex::Sighash)
             .from_matches(m, "to-address")?;
-        let to_data = to_data(m)?;
-        let with_password = m.is_present("with-password");
+        if !(to_address.payload().hash_type() == ScriptHashType::Type
+            && to_address.payload().code_hash() == SIGHASH_TYPE_HASH.pack()
+            && to_address.payload().args().len() == 20)
+            && !(to_address.payload().hash_type() == ScriptHashType::Type
+                && to_address.payload().code_hash() == MULTISIG_TYPE_HASH.pack()
+                && (to_address.payload().args().len() == 20
+                    || to_address.payload().args().len() == 28))
+        {
+            return Err(format!("Invalid to-address: {}", to_address));
+        }
 
-        check_capacity(capacity, to_data.len())?;
+        let to_data = to_data(m)?;
+
+        check_capacity(to_capacity, to_data.len())?;
         let genesis_info = self.genesis_info()?;
 
         // For check index database is ready
@@ -178,100 +211,135 @@ impl<'a> WalletSubCommand<'a> {
         let index_dir = self.index_dir.clone();
         let genesis_hash = genesis_info.header().hash();
         let genesis_info_clone = genesis_info.clone();
+
+        let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
+        let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
+        let mut path_map: HashMap<H160, DerivationPath> = Default::default();
+        let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
+            // Behave like HD wallet
+            let change_last =
+                H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
+            let key_set = self
+                .key_store
+                .derived_key_set_with_password(
+                    &from_lock_arg,
+                    password.as_bytes(),
+                    receiving_address_length,
+                    &change_last,
+                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                )
+                .map_err(|err| err.to_string())?;
+            for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                path_map.insert(hash160.clone(), path.clone());
+                let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                lock_hashes.push(Script::from(&payload).calc_script_hash());
+            }
+            last_change_address.payload().clone()
+        } else {
+            from_address.payload().clone()
+        };
+
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
-        let mut total_capacity = 0;
-        let terminator = |_, info: &LiveCellInfo| {
-            let out_point = info.out_point();
-            let resp: CellWithStatus = self
-                .rpc_client
-                .get_live_cell(out_point.into(), true)
-                .call()
-                .expect("get_live_cell by RPC call failed");
-            if is_live_cell(&resp) && is_secp_cell(&resp) && is_mature(info, max_mature_number) {
-                total_capacity += info.capacity;
-                (total_capacity >= capacity + tx_fee, true)
+        let mut from_capacity = 0;
+        let mut infos: Vec<LiveCellInfo> = Default::default();
+        let mut terminator = |_, info: &LiveCellInfo| {
+            if info.type_hashes.is_none()
+                && info.data_bytes == 0
+                && is_mature(info, max_mature_number)
+            {
+                from_capacity += info.capacity;
+                infos.push(info.clone());
+                (from_capacity >= to_capacity + tx_fee, false)
             } else {
                 (false, false)
             }
         };
-        let infos: Vec<LiveCellInfo> =
-            with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-                let db =
-                    IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)?;
-                Ok(db.get_live_cells_by_lock(
-                    Script::from(&from_address_payload).calc_script_hash(),
-                    None,
-                    terminator,
-                ))
-            })
-            .map_err(|_err| {
-                format!(
-                    "index database may not ready, sync process: {}",
-                    self.index_controller.state().read().to_string()
-                )
-            })?;
-
-        if total_capacity < capacity + tx_fee {
+        if let Err(err) = with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
+            IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)
+                .map(|db| {
+                    for lock_hash in lock_hashes {
+                        db.get_live_cells_by_lock(lock_hash, None, &mut terminator);
+                    }
+                })
+                .map_err(Into::into)
+        }) {
             return Err(format!(
-                "Capacity(mature) not enough: {} => {}",
-                from_address, total_capacity,
+                "Index database may not ready, sync process: {}, error: {}",
+                self.index_controller.state().read().to_string(),
+                err.to_string(),
             ));
         }
-        let inputs = infos.iter().map(LiveCellInfo::input).collect::<Vec<_>>();
-        let mut tx_args = TransferTransactionBuilder::new(
-            &from_address,
-            total_capacity,
-            &to_data,
-            &to_address,
-            capacity,
-            tx_fee,
-            inputs,
-        );
-        let transaction = if let Some(privkey) = from_privkey.as_ref() {
-            tx_args.transfer(&genesis_info, |args| {
-                Ok(build_witness_with_key(privkey, args))
-            })
-        } else {
-            let lock_arg = from_account.as_ref().unwrap();
-            let password = if with_password {
-                Some(read_password(false, None)?)
-            } else {
-                None
-            };
-            tx_args.transfer(&genesis_info, |args| {
-                self.build_witness_with_keystore(lock_arg, args, &password)
-            })
-        }?;
-        self.send_transaction(transaction, format, color, debug)
-    }
 
-    fn build_witness_with_keystore(
-        &mut self,
-        lock_arg: &H160,
-        args: &[Vec<u8>],
-        password: &Option<String>,
-    ) -> Result<Bytes, String> {
-        let sign_hash = H256::from_slice(&blake2b_args(args))
-            .expect("converting digest of [u8; 32] to H256 should be ok");
-        let signature_result = if self.interactive && password.is_none() {
-            self.key_store
-                    .sign_recoverable(lock_arg, &sign_hash)
-                    .map_err(|err| {
-                        match err {
-                            KeyStoreError::AccountLocked(lock_arg) => {
-                                format!("Account(lock_arg={:x}) locked or not exists, your may use `account unlock` to unlock it or use --with-password", lock_arg)
-                            }
-                            err => err.to_string(),
-                        }
-                    })
-        } else if let Some(password) = password {
-            self.key_store
-                .sign_recoverable_with_password(lock_arg, &sign_hash, password.as_bytes())
-                .map_err(|err| err.to_string())
-        } else {
-            return Err("Password required to unlock the keystore".to_owned());
+        if tx_fee > ONE_CKB {
+            return Err("Transaction fee can not be more than 1.0 CKB".to_string());
+        }
+        if to_capacity + tx_fee > from_capacity {
+            return Err(format!(
+                "Capacity(mature) not enough: {} => {}",
+                from_address, from_capacity,
+            ));
+        }
+
+        let rest_capacity = from_capacity - to_capacity - tx_fee;
+        if rest_capacity < MIN_SECP_CELL_CAPACITY && tx_fee + rest_capacity > ONE_CKB {
+            return Err("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust".to_string());
+        }
+
+        let key_store = self.key_store.clone();
+        let mut live_cell_cache: HashMap<(OutPoint, bool), CellOutput> = Default::default();
+        let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
+            get_live_cell_with_cache(&mut live_cell_cache, self.rpc_client, out_point, with_data)
         };
-        signature_result.map(|signature| serialize_signature(&signature))
+        let mut helper = TxHelper::default();
+        for info in &infos {
+            helper.add_input(info.out_point(), None, &mut get_live_cell_fn, &genesis_info)?;
+        }
+        let to_output = CellOutput::new_builder()
+            .capacity(Capacity::shannons(to_capacity).pack())
+            .lock(to_address.payload().into())
+            .build();
+        helper.add_output(to_output, to_data);
+        if rest_capacity >= MIN_SECP_CELL_CAPACITY {
+            let change_output = CellOutput::new_builder()
+                .capacity(Capacity::shannons(rest_capacity).pack())
+                .lock((&change_address_payload).into())
+                .build();
+            helper.add_output(change_output, Bytes::default());
+        }
+        let signer = |hash160: &H160, message: &H256| {
+            let signature = if let Some(privkey) = from_privkey.as_ref() {
+                let message = secp256k1::Message::from_slice(message.as_bytes())
+                    .expect("Convert to secp256k1 message failed");
+                SECP256K1.sign_recoverable(&message, privkey)
+            } else {
+                let path = if hash160 == &from_lock_arg {
+                    None
+                } else {
+                    match path_map.get(hash160) {
+                        Some(path) => Some(path),
+                        None => panic!("No derive path for {:#x}", hash160),
+                    }
+                };
+                key_store
+                    .sign_recoverable_with_password(
+                        &from_lock_arg,
+                        path,
+                        message,
+                        password.as_bytes(),
+                    )
+                    .map_err(|err| err.to_string())?
+            };
+            let (recov_id, data) = signature.serialize_compact();
+            let mut signature_bytes = [0u8; 65];
+            signature_bytes[0..64].copy_from_slice(&data[0..64]);
+            signature_bytes[64] = recov_id.to_i32() as u8;
+            Ok(signature_bytes)
+        };
+        for (lock_arg, signature) in helper.sign_sighash_inputs(signer, &mut get_live_cell_fn)? {
+            helper.add_signature(lock_arg, signature)?;
+        }
+        let tx = helper.build_tx(&mut get_live_cell_fn)?;
+        self.send_transaction(tx, format, color, debug)
     }
 
     fn send_transaction(
@@ -311,39 +379,87 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("get-capacity", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
-                let lock_hash = if let Some(lock_hash) = lock_hash_opt {
-                    lock_hash.pack()
+                let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
+                    vec![lock_hash.pack()]
                 } else {
                     let network_type = get_network_type(self.rpc_client)?;
+
+                    let receiving_address_length: u32 = FromStrParser::<u32>::default()
+                        .from_matches(m, "derive-receiving-address-length")?;
+                    let change_address_length: u32 = FromStrParser::<u32>::default()
+                        .from_matches(m, "derive-change-address-length")?;
                     let address_payload = get_address(Some(network_type), m)?;
-                    Script::from(&address_payload).calc_script_hash()
+                    let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
+                    if m.is_present("derived") {
+                        let password = read_password(false, None)?;
+                        let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
+                        let key_set = self
+                            .key_store
+                            .derived_key_set_by_index_with_password(
+                                &lock_arg,
+                                password.as_bytes(),
+                                0,
+                                receiving_address_length,
+                                0,
+                                change_address_length,
+                            )
+                            .map_err(|err| err.to_string())?;
+                        for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                            let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                            lock_hashes.push(Script::from(&payload).calc_script_hash());
+                        }
+                    }
+                    lock_hashes
                 };
 
                 let max_mature_number = get_max_mature_number(self.rpc_client)?;
-                let (total_capacity, immature_capacity) = self.with_db(|db| {
-                    let mut total_capacity = 0;
-                    let mut immature_capacity = 0;
-                    let terminator = |_idx: usize, info: &LiveCellInfo| {
-                        if !is_mature(info, max_mature_number) {
-                            immature_capacity += info.capacity;
+                let (total_capacity, immature_capacity, free_capacity, dao_capacity) = self
+                    .with_db(|db| {
+                        let mut total_capacity = 0;
+                        let mut free_capacity = 0;
+                        let mut dao_capacity = 0;
+                        let mut immature_capacity = 0;
+                        let mut terminator = |_idx: usize, info: &LiveCellInfo| {
+                            if !is_mature(info, max_mature_number) {
+                                immature_capacity += info.capacity;
+                            }
+                            if info
+                                .type_hashes
+                                .as_ref()
+                                .filter(|(code_hash, _)| code_hash == &DAO_TYPE_HASH)
+                                .is_some()
+                            {
+                                dao_capacity += info.capacity;
+                            } else {
+                                free_capacity += info.capacity;
+                            }
+                            total_capacity += info.capacity;
+                            (false, false)
+                        };
+                        for lock_hash in lock_hashes {
+                            let _ = db.get_live_cells_by_lock(lock_hash, None, &mut terminator);
                         }
-                        total_capacity += info.capacity;
-                        (false, false)
-                    };
-                    let _ = db.get_live_cells_by_lock(lock_hash, None, terminator);
-                    (total_capacity, immature_capacity)
-                })?;
+                        (
+                            total_capacity,
+                            immature_capacity,
+                            free_capacity,
+                            dao_capacity,
+                        )
+                    })?;
 
-                let resp = if immature_capacity > 0 {
-                    serde_json::json!({
-                        "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
-                        "immature_capacity": format!("{:#}", HumanCapacity::from(immature_capacity)),
-                    })
-                } else {
-                    serde_json::json!({
-                        "total_capacity": format!("{:#}", HumanCapacity::from(total_capacity)),
-                    })
-                };
+                let mut resp = serde_json::json!({
+                    "total": format!("{:#}", HumanCapacity::from(total_capacity))
+                });
+                if immature_capacity > 0 {
+                    resp["immature"] =
+                        serde_json::json!(format!("{:#}", HumanCapacity::from(immature_capacity)));
+                }
+                if dao_capacity > 0 {
+                    resp["dao"] =
+                        serde_json::json!(format!("{:#}", HumanCapacity::from(dao_capacity)));
+                    resp["free"] =
+                        serde_json::json!(format!("{:#}", HumanCapacity::from(free_capacity)));
+                }
                 Ok(resp.render(format, color))
             }
             ("get-live-cells", Some(m)) => {
@@ -359,8 +475,21 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let to_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
 
+                let network_type = get_network_type(self.rpc_client)?;
+                let lock_hash_opt = if lock_hash_opt.is_none() {
+                    let address_opt: Option<Address> = AddressParser::default()
+                        .set_network_opt(Some(network_type))
+                        .from_matches_opt(m, "address", false)?;
+                    address_opt
+                        .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
+                } else {
+                    lock_hash_opt
+                };
+
                 if lock_hash_opt.is_none() && type_hash_opt.is_none() && code_hash_opt.is_none() {
-                    return Err("lock-hash or type-hash or code-hash is required".to_owned());
+                    return Err(
+                        "lock-hash or type-hash or code-hash or address is required".to_owned()
+                    );
                 }
 
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
@@ -506,43 +635,6 @@ fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
         // Live cells in genesis are all mature
         || info.number == 0
         || info.number <= max_mature_number
-}
-
-fn is_live_cell(cell: &CellWithStatus) -> bool {
-    if cell.status != "live" {
-        eprintln!(
-            "[ERROR]: Not live cell({:?}) status: {}",
-            cell.cell.as_ref().map(|info| &info.output),
-            cell.status
-        );
-        return false;
-    }
-
-    if cell.cell.is_none() {
-        eprintln!(
-            "[ERROR]: No output found for cell: {:?}",
-            cell.cell.as_ref().map(|info| &info.output)
-        );
-        return false;
-    }
-
-    true
-}
-
-fn is_secp_cell(cell: &CellWithStatus) -> bool {
-    if let Some(ref info) = cell.cell {
-        // FIXME Check if output.data.is_empty()
-        if info.output.type_.is_none() {
-            return true;
-        } else {
-            log::info!(
-                "Ignore live cell({:?}) which data is not empty or type is not empty.",
-                info.output
-            );
-        }
-    }
-
-    false
 }
 
 fn to_data(m: &ArgMatches) -> Result<Bytes, String> {

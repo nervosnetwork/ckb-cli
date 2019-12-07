@@ -1,6 +1,7 @@
 ///! Basic ckb sdk types
 mod address;
 mod human_capacity;
+mod since;
 
 use serde_derive::{Deserialize, Serialize};
 use std::fmt;
@@ -9,6 +10,7 @@ pub use address::{
     Address, AddressPayload, AddressType, CodeHashIndex, OldAddress, OldAddressFormat,
 };
 pub use human_capacity::HumanCapacity;
+pub use since::{Since, SinceType};
 
 use crate::constants::{
     NETWORK_DEV, NETWORK_MAINNET, NETWORK_STAGING, NETWORK_TESTNET, PREFIX_MAINNET, PREFIX_TESTNET,

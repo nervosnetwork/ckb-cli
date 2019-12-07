@@ -8,6 +8,11 @@ pub const NETWORK_TESTNET: &str = "ckb_testnet";
 pub const NETWORK_STAGING: &str = "ckb_staging";
 pub const NETWORK_DEV: &str = "ckb_dev";
 
+pub const SECP_SIGNATURE_SIZE: usize = 65;
+
+// Since relative mask
+pub const LOCK_TYPE_FLAG: u64 = 1 << 63;
+
 // Special cells in genesis transactions: (transaction-index, output-index)
 pub const SIGHASH_OUTPUT_LOC: (usize, usize) = (0, 1);
 pub const MULTISIG_OUTPUT_LOC: (usize, usize) = (0, 4);

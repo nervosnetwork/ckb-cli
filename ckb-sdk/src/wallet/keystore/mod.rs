@@ -8,6 +8,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
@@ -65,56 +66,56 @@ impl KeyStore {
         let privkey = MasterPrivKey::try_new(1024)?;
         let key = Key::new(privkey);
         let abs_path = self.storage.store_key(key.filename(), &key, password)?;
-        let address = key.address().clone();
-        self.files.insert(address.clone(), abs_path);
-        Ok(address)
+        let hash160 = key.hash160().clone();
+        self.files.insert(hash160.clone(), abs_path);
+        Ok(hash160)
     }
     pub fn get_accounts(&mut self) -> &HashMap<H160, PathBuf> {
         self.refresh_dir().ok();
         &self.files
     }
-    pub fn has_account(&mut self, address: &H160) -> bool {
+    pub fn has_account(&mut self, hash160: &H160) -> bool {
         self.refresh_dir().ok();
-        self.files.contains_key(address)
+        self.files.contains_key(hash160)
     }
 
     pub fn update(
         &mut self,
-        address: &H160,
+        hash160: &H160,
         password: &[u8],
         new_password: &[u8],
     ) -> Result<(), Error> {
         self.refresh_dir()?;
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, &filepath, password)?;
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
         self.storage
             .store_key(&filepath, &key, new_password)
             .map(|_| ())
     }
-    pub fn delete(&mut self, address: &H160, password: &[u8]) -> Result<(), Error> {
+    pub fn delete(&mut self, hash160: &H160, password: &[u8]) -> Result<(), Error> {
         self.refresh_dir()?;
-        let filepath = self.get_filepath(address)?;
-        let _key = self.storage.get_key(address, &filepath, password)?;
+        let filepath = self.get_filepath(hash160)?;
+        let _key = self.storage.get_key(hash160, &filepath, password)?;
         fs::remove_file(&filepath).map_err(Into::into)
     }
 
-    pub fn lock(&mut self, address: &H160) -> bool {
-        self.unlocked_keys.remove(address).is_some()
+    pub fn lock(&mut self, hash160: &H160) -> bool {
+        self.unlocked_keys.remove(hash160).is_some()
     }
-    pub fn unlock(&mut self, address: &H160, password: &[u8]) -> Result<KeyTimeout, Error> {
-        self.unlock_inner(address, password, None)
+    pub fn unlock(&mut self, hash160: &H160, password: &[u8]) -> Result<KeyTimeout, Error> {
+        self.unlock_inner(hash160, password, None)
     }
     pub fn timed_unlock(
         &mut self,
-        address: &H160,
+        hash160: &H160,
         password: &[u8],
         keep: Duration,
     ) -> Result<KeyTimeout, Error> {
-        self.unlock_inner(address, password, Some(keep))
+        self.unlock_inner(hash160, password, Some(keep))
     }
-    pub fn get_lock_timeout(&self, address: &H160) -> Option<KeyTimeout> {
+    pub fn get_lock_timeout(&self, hash160: &H160) -> Option<KeyTimeout> {
         self.unlocked_keys
-            .get(address)
+            .get(hash160)
             .map(|timed_key| timed_key.timeout)
     }
 
@@ -126,8 +127,8 @@ impl KeyStore {
     ) -> Result<H160, Error> {
         let key = Key::from_json(data, password)?;
         let filepath = self.storage.store_key(key.filename(), &key, new_password)?;
-        self.files.insert(key.address().clone(), filepath);
-        Ok(key.address().clone())
+        self.files.insert(key.hash160().clone(), filepath);
+        Ok(key.hash160().clone())
     }
     pub fn import_secp_key(
         &mut self,
@@ -136,73 +137,124 @@ impl KeyStore {
     ) -> Result<H160, Error> {
         let key = Key::new(MasterPrivKey::from_secp_key(key));
         let filepath = self.storage.store_key(key.filename(), &key, password)?;
-        self.files.insert(key.address().clone(), filepath);
-        Ok(key.address().clone())
+        self.files.insert(key.hash160().clone(), filepath);
+        Ok(key.hash160().clone())
     }
     pub fn import_key(&mut self, key: &Key, password: &[u8]) -> Result<H160, Error> {
         let filepath = self.storage.store_key(key.filename(), key, password)?;
-        self.files.insert(key.address().clone(), filepath);
-        Ok(key.address().clone())
+        self.files.insert(key.hash160().clone(), filepath);
+        Ok(key.hash160().clone())
     }
     pub fn export(
         &self,
-        address: &H160,
+        hash160: &H160,
         password: &[u8],
         new_password: &[u8],
         scrypt_type: ScryptType,
     ) -> Result<serde_json::Value, Error> {
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, &filepath, password)?;
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
         Ok(key.to_json(new_password, scrypt_type))
     }
-    pub fn export_key(&self, address: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, &filepath, password)?;
+    pub fn export_key(&self, hash160: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
         Ok(key.master_privkey)
     }
 
-    pub fn sign(&mut self, address: &H160, hash: &H256) -> Result<secp256k1::Signature, Error> {
-        Ok(self.get_timed_key(address)?.master_privkey().sign(hash))
+    pub fn sign(
+        &mut self,
+        hash160: &H160,
+        path: Option<&DerivationPath>,
+        message: &H256,
+    ) -> Result<secp256k1::Signature, Error> {
+        Ok(self
+            .get_timed_key(hash160)?
+            .master_privkey()
+            .sign(message, path))
     }
     pub fn sign_recoverable(
         &mut self,
-        address: &H160,
-        hash: &H256,
+        hash160: &H160,
+        path: Option<&DerivationPath>,
+        message: &H256,
     ) -> Result<RecoverableSignature, Error> {
         Ok(self
-            .get_timed_key(address)?
+            .get_timed_key(hash160)?
             .master_privkey()
-            .sign_recoverable(hash))
+            .sign_recoverable(message, path))
     }
     pub fn sign_with_password(
         &self,
-        address: &H160,
-        hash: &H256,
+        hash160: &H160,
+        path: Option<&DerivationPath>,
+        message: &H256,
         password: &[u8],
     ) -> Result<secp256k1::Signature, Error> {
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, &filepath, password)?;
-        Ok(key.master_privkey.sign(hash))
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        Ok(key.master_privkey.sign(message, path))
     }
     pub fn sign_recoverable_with_password(
         &self,
-        address: &H160,
-        hash: &H256,
+        hash160: &H160,
+        path: Option<&DerivationPath>,
+        message: &H256,
         password: &[u8],
     ) -> Result<RecoverableSignature, Error> {
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, &filepath, password)?;
-        Ok(key.master_privkey.sign_recoverable(hash))
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        Ok(key.master_privkey.sign_recoverable(message, path))
     }
     pub fn extended_pubkey(
         &mut self,
-        address: &H160,
+        hash160: &H160,
         path: Option<&DerivationPath>,
     ) -> Result<ExtendedPubKey, Error> {
         Ok(self
-            .get_timed_key(address)?
+            .get_timed_key(hash160)?
             .master_privkey()
             .extended_pubkey(path)?)
+    }
+    pub fn extended_pubkey_with_password(
+        &mut self,
+        hash160: &H160,
+        path: Option<&DerivationPath>,
+        password: &[u8],
+    ) -> Result<ExtendedPubKey, Error> {
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        Ok(key.master_privkey.extended_pubkey(path)?)
+    }
+    pub fn derived_key_set_with_password(
+        &mut self,
+        hash160: &H160,
+        password: &[u8],
+        external_max_len: u32,
+        change_last: &H160,
+        change_max_len: u32,
+    ) -> Result<DerivedKeySet, Error> {
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        key.derived_key_set(external_max_len, change_last, change_max_len)
+    }
+    pub fn derived_key_set_by_index_with_password(
+        &mut self,
+        hash160: &H160,
+        password: &[u8],
+        external_start: u32,
+        external_length: u32,
+        change_start: u32,
+        change_length: u32,
+    ) -> Result<DerivedKeySet, Error> {
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        Ok(key.derived_key_set_by_index(
+            external_start,
+            external_length,
+            change_start,
+            change_length,
+        ))
     }
 
     // NOTE: assume refresh keystore directory is not a hot action
@@ -213,11 +265,11 @@ impl KeyStore {
             let path = entry.path();
             if path.is_file() {
                 let filename = path.file_name().and_then(OsStr::to_str).unwrap();
-                if let Some(address_hex) = filename.rsplitn(2, "--").next() {
-                    let mut address_bin = [0u8; 20];
-                    if hex_decode(address_hex.as_bytes(), &mut address_bin).is_ok() {
-                        if let Ok(address) = H160::from_slice(&address_bin) {
-                            files.insert(address, path.to_path_buf());
+                if let Some(hash160_hex) = filename.rsplitn(2, "--").next() {
+                    let mut hash160_bin = [0u8; 20];
+                    if hex_decode(hash160_hex.as_bytes(), &mut hash160_bin).is_ok() {
+                        if let Ok(hash160) = H160::from_slice(&hash160_bin) {
+                            files.insert(hash160, path.to_path_buf());
                         }
                     }
                 }
@@ -227,40 +279,40 @@ impl KeyStore {
         Ok(())
     }
 
-    fn get_timed_key(&mut self, address: &H160) -> Result<&TimedKey, Error> {
+    fn get_timed_key(&mut self, hash160: &H160) -> Result<&TimedKey, Error> {
         let is_expired = self
             .unlocked_keys
-            .get(address)
-            .ok_or_else(|| Error::AccountLocked(address.clone()))?
+            .get(hash160)
+            .ok_or_else(|| Error::AccountLocked(hash160.clone()))?
             .is_expired();
         if is_expired {
-            self.unlocked_keys.remove(address);
-            return Err(Error::AccountLocked(address.clone()));
+            self.unlocked_keys.remove(hash160);
+            return Err(Error::AccountLocked(hash160.clone()));
         }
 
         let timed_key = self
             .unlocked_keys
-            .get(address)
-            .ok_or_else(|| Error::AccountLocked(address.clone()))?;
+            .get(hash160)
+            .ok_or_else(|| Error::AccountLocked(hash160.clone()))?;
         Ok(timed_key)
     }
 
-    fn get_filepath(&self, address: &H160) -> Result<PathBuf, Error> {
+    fn get_filepath(&self, hash160: &H160) -> Result<PathBuf, Error> {
         self.files
-            .get(address)
+            .get(hash160)
             .cloned()
-            .ok_or_else(|| Error::AccountNotFound(address.clone()))
+            .ok_or_else(|| Error::AccountNotFound(hash160.clone()))
     }
 
     fn unlock_inner(
         &mut self,
-        address: &H160,
+        hash160: &H160,
         password: &[u8],
         keep: Option<Duration>,
     ) -> Result<KeyTimeout, Error> {
-        let filepath = self.get_filepath(address)?;
-        let key = self.storage.get_key(address, filepath, password)?;
-        let entry = self.unlocked_keys.entry(address.clone());
+        let filepath = self.get_filepath(hash160)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
+        let entry = self.unlocked_keys.entry(hash160.clone());
         let value = match entry {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(TimedKey::new_timed(key, Duration::default())),
@@ -281,7 +333,7 @@ impl PassphraseKeyStore {
     // Loads and decrypts the key from disk.
     fn get_key<P: AsRef<Path>>(
         &self,
-        address: &H160,
+        hash160: &H160,
         filename: P,
         password: &[u8],
     ) -> Result<Key, Error> {
@@ -290,10 +342,10 @@ impl PassphraseKeyStore {
         let data = serde_json::from_reader(&mut file)
             .map_err(|err| Error::ParseJsonFailed(err.to_string()))?;
         let key = Key::from_json(&data, password)?;
-        if key.address() != address {
+        if key.hash160() != hash160 {
             return Err(Error::KeyMismatch {
-                got: key.address().clone(),
-                expected: address.clone(),
+                got: key.hash160().clone(),
+                expected: hash160.clone(),
             });
         }
         Ok(key)
@@ -394,11 +446,39 @@ impl TimedKey {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[repr(u8)]
+pub enum KeyChain {
+    External = 0,
+    Change = 1,
+}
+
+pub struct DerivedKeySet {
+    pub external: Vec<(DerivationPath, H160)>,
+    pub change: Vec<(DerivationPath, H160)>,
+}
+
+impl DerivedKeySet {
+    pub fn get_path(&self, hash160: &H160) -> Option<(KeyChain, DerivationPath)> {
+        for (path, pubkey_hash) in &self.external {
+            if pubkey_hash == hash160 {
+                return Some((KeyChain::External, path.clone()));
+            }
+        }
+        for (path, pubkey_hash) in &self.change {
+            if pubkey_hash == hash160 {
+                return Some((KeyChain::Change, path.clone()));
+            }
+        }
+        None
+    }
+}
+
 pub struct Key {
     // randomly generate uuid v4
     id: Uuid,
     // H160::from_slice(&blake2b_256(pubkey)[0..20])
-    address: H160,
+    hash160: H160,
     // The extended secp256k1 private key (privkey + chaincode)
     master_privkey: MasterPrivKey,
 }
@@ -406,16 +486,95 @@ pub struct Key {
 impl Key {
     pub fn new(master_privkey: MasterPrivKey) -> Key {
         let id = Uuid::new_v4();
-        let address = master_privkey.address();
+        let hash160 = master_privkey.hash160(None);
         Key {
             id,
-            address,
+            hash160,
             master_privkey,
         }
     }
 
-    pub fn address(&self) -> &H160 {
-        &self.address
+    pub fn hash160(&self) -> &H160 {
+        &self.hash160
+    }
+
+    pub fn derived_key_set(
+        &self,
+        external_max_len: u32,
+        change_last: &H160,
+        change_max_len: u32,
+    ) -> Result<DerivedKeySet, Error> {
+        let mut external_key_set = Vec::new();
+        for i in 0..external_max_len {
+            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
+            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
+            let pubkey_hash = self.derived_pubkey_hash(path.clone());
+            external_key_set.push((path, pubkey_hash.clone()));
+        }
+
+        let mut change_key_set = Vec::new();
+        for i in 0..change_max_len {
+            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
+            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
+            let pubkey_hash = self.derived_pubkey_hash(path.clone());
+            change_key_set.push((path, pubkey_hash.clone()));
+            if change_last == &pubkey_hash {
+                return Ok(DerivedKeySet {
+                    external: external_key_set,
+                    change: change_key_set,
+                });
+            }
+        }
+        Err(Error::SearchDerivedAddrFailed)
+    }
+
+    pub fn derived_pubkey_hash(&self, path: DerivationPath) -> H160 {
+        let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+        let pubkey = extended_pubkey.public_key;
+        H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+            .expect("Generate hash(H160) from pubkey failed")
+    }
+
+    pub fn derived_key_set_by_index(
+        &self,
+        external_start: u32,
+        external_length: u32,
+        change_start: u32,
+        change_length: u32,
+    ) -> DerivedKeySet {
+        let get_pairs = |chain, start, length| {
+            self.derived_pubkeys(chain, start, length)
+                .into_iter()
+                .map(|(path, extended_pubkey)| {
+                    let pubkey = extended_pubkey.public_key;
+                    let hash = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+                        .expect("Generate hash(H160) from pubkey failed");
+                    (path, hash)
+                })
+                .collect::<Vec<_>>()
+        };
+        DerivedKeySet {
+            external: get_pairs(KeyChain::External, external_start, external_length),
+            change: get_pairs(KeyChain::Change, change_start, change_length),
+        }
+    }
+
+    /// Public keys for external/change addresses
+    pub fn derived_pubkeys(
+        &self,
+        chain: KeyChain,
+        start: u32,
+        length: u32,
+    ) -> Vec<(DerivationPath, ExtendedPubKey)> {
+        // At least one pubkey
+        (0..length)
+            .map(|i| {
+                let path_string = format!("m/44'/309'/0'/{}/{}", chain as u8, i + start);
+                let path = DerivationPath::from_str(path_string.as_str()).unwrap();
+                let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+                (path, extended_pubkey)
+            })
+            .collect()
     }
 
     pub fn filename(&self) -> String {
@@ -431,7 +590,7 @@ impl Key {
             time.minute(),
             time.second(),
             time.nanosecond(),
-            self.address(),
+            self.hash160(),
         )
     }
 
@@ -461,10 +620,10 @@ impl Key {
         key_bytes[..].copy_from_slice(&key_vec[..]);
         let master_privkey = MasterPrivKey::from_bytes(key_bytes)?;
 
-        let address = master_privkey.address();
+        let hash160 = master_privkey.hash160(None);
         Ok(Key {
             id,
-            address,
+            hash160,
             master_privkey,
         })
     }
@@ -472,14 +631,14 @@ impl Key {
     pub fn to_json(&self, password: &[u8], scrypt_type: ScryptType) -> serde_json::Value {
         let mut buf = Uuid::encode_buffer();
         let id_str = self.id.to_hyphenated().encode_lower(&mut buf);
-        let address_hex = format!("{:x}", self.address);
+        let hash160_hex = format!("{:x}", self.hash160);
         let master_privkey = self.master_privkey.to_bytes();
         let crypto = Crypto::encrypt_key_scrypt(&master_privkey, password, scrypt_type);
         serde_json::json!({
             "origin": KEYSTORE_ORIGIN,
             "id": id_str,
             "version": KEYSTORE_VERSION,
-            "address": address_hex,
+            "hash160": hash160_hex,
             "crypto": crypto.to_json(),
         })
     }
@@ -534,19 +693,7 @@ impl MasterPrivKey {
         bytes
     }
 
-    pub fn sign(&self, hash: &H256) -> secp256k1::Signature {
-        let message =
-            secp256k1::Message::from_slice(hash.as_bytes()).expect("Convert to message failed");
-        SECP256K1.sign(&message, &self.secp_secret_key)
-    }
-
-    pub fn sign_recoverable(&self, hash: &H256) -> RecoverableSignature {
-        let message =
-            secp256k1::Message::from_slice(hash.as_bytes()).expect("Convert to message failed");
-        SECP256K1.sign_recoverable(&message, &self.secp_secret_key)
-    }
-
-    pub fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, String> {
+    fn sub_privkey(&self, path: Option<&DerivationPath>) -> ExtendedPrivKey {
         let sk = ExtendedPrivKey {
             depth: 0,
             parent_fingerprint: Default::default(),
@@ -554,17 +701,40 @@ impl MasterPrivKey {
             private_key: self.secp_secret_key,
             chain_code: ChainCode(self.chain_code),
         };
-        let sub_sk = if let Some(path) = path {
+        if let Some(path) = path {
             sk.derive_priv(&SECP256K1, path)
-                .map_err(|err| err.to_string())?
+                .expect("Derive sub-privkey error")
         } else {
             sk
-        };
+        }
+    }
+
+    pub fn sign(&self, message: &H256, path: Option<&DerivationPath>) -> secp256k1::Signature {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        let sub_sk = self.sub_privkey(path);
+        SECP256K1.sign(&message, &sub_sk.private_key)
+    }
+
+    pub fn sign_recoverable(
+        &self,
+        message: &H256,
+        path: Option<&DerivationPath>,
+    ) -> RecoverableSignature {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        let sub_sk = self.sub_privkey(path);
+        SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
+    }
+
+    pub fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, String> {
+        let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
     }
 
-    pub fn address(&self) -> H160 {
-        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &self.secp_secret_key);
+    pub fn hash160(&self, path: Option<&DerivationPath>) -> H160 {
+        let sub_sk = self.sub_privkey(path);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
     }

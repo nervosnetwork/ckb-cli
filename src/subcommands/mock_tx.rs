@@ -95,7 +95,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         color: bool,
         _debug: bool,
     ) -> Result<String, String> {
-        let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
+        let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
 
         let mut complete_tx = |m: &ArgMatches,
                                complete: bool,

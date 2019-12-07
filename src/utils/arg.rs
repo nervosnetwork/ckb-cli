@@ -2,7 +2,6 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use ckb_sdk::CodeHashIndex;
 use ckb_types::{H160, H256};
 use clap::Arg;
 
@@ -40,6 +39,38 @@ pub fn lock_hash<'a, 'b>() -> Arg<'a, 'b> {
         .help("Lock hash")
 }
 
+pub fn derive_receiving_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-receiving-address-length")
+        .long("derive-receiving-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived receiving address length")
+}
+
+pub fn derive_change_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address-length")
+        .long("derive-change-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived change address length")
+}
+
+pub fn derive_change_address<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address")
+        .long("derive-change-address")
+        .takes_value(true)
+        .validator(|input| AddressParser::default().validate(input))
+        .help("Manually specify the last change address (search 10000 addresses max, required keystore password, see: BIP-44)")
+}
+
+pub fn derived<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derived")
+        .long("derived")
+        .help("Search derived address space (search 10000 addresses(change/receiving) max, required keystore password, see: BIP-44)")
+}
+
 pub fn lock_arg<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("lock-arg")
         .long("lock-arg")
@@ -60,11 +91,7 @@ pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("to-address")
         .long("to-address")
         .takes_value(true)
-        .validator(|input| {
-            AddressParser::default()
-                .set_short(CodeHashIndex::Sighash)
-                .validate(input)
-        })
+        .validator(|input| AddressParser::default().validate(input))
         .help("Target address")
 }
 
@@ -98,12 +125,6 @@ pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
         .takes_value(true)
         .validator(|input| CapacityParser.validate(input))
         .help("The transaction fee capacity (unit: CKB, format: 0.0001)")
-}
-
-pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name("with-password")
-        .long("with-password")
-        .help("Input password to unlock keystore account just for current transfer transaction")
 }
 
 pub fn type_hash<'a, 'b>() -> Arg<'a, 'b> {

@@ -80,6 +80,12 @@ impl AddressPayload {
             args,
         }
     }
+    pub fn new_full_data(code_hash: Byte32, args: Bytes) -> AddressPayload {
+        Self::new_full(ScriptHashType::Data, code_hash, args)
+    }
+    pub fn new_full_type(code_hash: Byte32, args: Bytes) -> AddressPayload {
+        Self::new_full(ScriptHashType::Type, code_hash, args)
+    }
 
     pub fn ty(&self) -> AddressType {
         match self {
