@@ -49,7 +49,6 @@ pub struct WalletSubCommand<'a> {
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
-    interactive: bool,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -59,7 +58,6 @@ impl<'a> WalletSubCommand<'a> {
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
-        interactive: bool,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
@@ -67,7 +65,6 @@ impl<'a> WalletSubCommand<'a> {
             genesis_info,
             index_dir,
             index_controller,
-            interactive,
         }
     }
 
@@ -90,10 +87,6 @@ impl<'a> WalletSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase) -> T,
     {
-        if !self.interactive {
-            return Err("ERROR: This is an interactive mode only sub-command".to_string());
-        }
-
         let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let genesis_hash: H256 = genesis_info.header().hash().unpack();

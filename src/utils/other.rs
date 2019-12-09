@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ckb_index::VERSION;
+use ckb_index::{with_index_db, IndexDatabase, VERSION};
 use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
     wallet::{KeyStore, ScryptType},
@@ -12,6 +12,7 @@ use ckb_sdk::{
 use ckb_types::{
     core::BlockView,
     packed::{CellOutput, OutPoint},
+    prelude::*,
     H160, H256,
 };
 use clap::ArgMatches;
@@ -173,4 +174,33 @@ pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, S
 
 pub fn index_dirname() -> String {
     format!("index-v{}", VERSION)
+}
+
+pub fn sync_to_tip(rpc_client: &mut HttpRpcClient, index_dir: &PathBuf) -> Result<(), String> {
+    let genesis_block: BlockView = rpc_client
+        .get_block_by_number(0.into())
+        .call()
+        .map_err(|err| err.to_string())?
+        .0
+        .expect("Can not get genesis block?")
+        .into();
+    let genesis_hash: H256 = genesis_block.hash().unpack();
+    let tip_number = rpc_client
+        .get_tip_block_number()
+        .call()
+        .map_err(|err| err.to_string())?
+        .value();
+    let network_type = get_network_type(rpc_client)?;
+    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
+    loop {
+        let synced = with_index_db(index_dir.clone(), genesis_hash.clone(), |backend, cf| {
+            IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)
+                .map(|db| db.last_number().unwrap_or(0))
+                .or_else(|_| Ok(0))
+        });
+        if synced.unwrap_or(0) == tip_number {
+            break;
+        }
+    }
+    Ok(())
 }
