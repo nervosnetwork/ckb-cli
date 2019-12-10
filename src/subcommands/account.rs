@@ -13,8 +13,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser,
+        FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -61,6 +61,16 @@ impl<'a> AccountSubCommand<'a> {
                          .clone()
                          .required_unless("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
+                    ),
+                SubCommand::with_name("import-keystore")
+                    .about("Import key from encrypted keystore json file and create a new account.")
+                    .arg(
+                        Arg::with_name("path")
+                            .long("path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .help("The keystore file path (json format)")
                     ),
                 SubCommand::with_name("unlock")
                     .about("Unlock an account")
@@ -208,6 +218,28 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         .import_key(&key, password.as_bytes())
                         .map_err(|err| err.to_string())?
                 };
+                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                let resp = serde_json::json!({
+                    "lock_arg": format!("{:x}", lock_arg),
+                    "address": {
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                });
+                Ok(resp.render(format, color))
+            }
+            ("import-keystore", Some(m)) => {
+                let path: PathBuf = FilePathParser::new(true).from_matches(m, "path")?;
+
+                let old_password = read_password(false, Some("Decrypt password"))?;
+                let new_password = read_password(true, None)?;
+                let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
+                let data: serde_json::Value =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let lock_arg = self
+                    .key_store
+                    .import(&data, old_password.as_bytes(), new_password.as_bytes())
+                    .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),

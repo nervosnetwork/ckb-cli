@@ -126,9 +126,13 @@ impl KeyStore {
         new_password: &[u8],
     ) -> Result<H160, Error> {
         let key = Key::from_json(data, password)?;
-        let filepath = self.storage.store_key(key.filename(), &key, new_password)?;
-        self.files.insert(key.hash160().clone(), filepath);
-        Ok(key.hash160().clone())
+        if self.files.contains_key(key.hash160()) {
+            Err(Error::KeyExists(key.hash160().clone()))
+        } else {
+            let filepath = self.storage.store_key(key.filename(), &key, new_password)?;
+            self.files.insert(key.hash160().clone(), filepath);
+            Ok(key.hash160().clone())
+        }
     }
     pub fn import_secp_key(
         &mut self,
@@ -136,14 +140,22 @@ impl KeyStore {
         password: &[u8],
     ) -> Result<H160, Error> {
         let key = Key::new(MasterPrivKey::from_secp_key(key));
-        let filepath = self.storage.store_key(key.filename(), &key, password)?;
-        self.files.insert(key.hash160().clone(), filepath);
-        Ok(key.hash160().clone())
+        if self.files.contains_key(key.hash160()) {
+            Err(Error::KeyExists(key.hash160().clone()))
+        } else {
+            let filepath = self.storage.store_key(key.filename(), &key, password)?;
+            self.files.insert(key.hash160().clone(), filepath);
+            Ok(key.hash160().clone())
+        }
     }
     pub fn import_key(&mut self, key: &Key, password: &[u8]) -> Result<H160, Error> {
-        let filepath = self.storage.store_key(key.filename(), key, password)?;
-        self.files.insert(key.hash160().clone(), filepath);
-        Ok(key.hash160().clone())
+        if self.files.contains_key(key.hash160()) {
+            Err(Error::KeyExists(key.hash160().clone()))
+        } else {
+            let filepath = self.storage.store_key(key.filename(), key, password)?;
+            self.files.insert(key.hash160().clone(), filepath);
+            Ok(key.hash160().clone())
+        }
     }
     pub fn export(
         &self,
