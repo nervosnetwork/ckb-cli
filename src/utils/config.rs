@@ -9,8 +9,10 @@ use ckb_sdk::NetworkType;
 use ckb_util::RwLock;
 use regex::{Captures, Regex};
 
-use crate::subcommands::wallet::IndexThreadState;
-use crate::utils::printer::{OutputFormat, Printable};
+use crate::utils::{
+    index::IndexThreadState,
+    printer::{OutputFormat, Printable},
+};
 
 const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
 

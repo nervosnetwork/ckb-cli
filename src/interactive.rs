@@ -12,12 +12,13 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, MockTxSubCommand, MoleculeSubCommand, RpcSubCommand,
+    TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
+    index::{IndexController, IndexRequest},
     other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
