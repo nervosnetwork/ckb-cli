@@ -8,27 +8,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{HumanCapacity, SinceType};
 
-macro_rules! impl_u64_serde {
-    ($struct:ident, $visitor:ident, $from:path, $gen_string:path) => {
-        #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug)]
-        pub struct $struct(pub u64);
-
-        impl From<u64> for $struct {
-            fn from(v: u64) -> $struct {
-                $struct(v)
-            }
-        }
-        impl From<$from> for $struct {
-            fn from(v: $from) -> $struct {
-                $struct(v.into())
-            }
-        }
-        impl From<$struct> for $from {
-            fn from(v: $struct) -> $from {
-                From::from(v.0)
-            }
-        }
-
+macro_rules! impl_serde {
+    ($struct:ident, $visitor:ident, $from_str_ty:ty, $gen_string:path) => {
         struct $visitor;
 
         impl<'a> Visitor<'a> for $visitor {
@@ -43,7 +24,7 @@ macro_rules! impl_u64_serde {
                 E: Error,
             {
                 value
-                    .parse::<u64>()
+                    .parse::<$from_str_ty>()
                     .map($struct)
                     .map_err(|err| Error::custom(format!("parse uint64 error: {}", err)))
             }
@@ -73,6 +54,31 @@ macro_rules! impl_u64_serde {
                 deserializer.deserialize_any($visitor)
             }
         }
+    };
+}
+
+macro_rules! impl_u64_serde {
+    ($struct:ident, $visitor:ident, $from:ty, $gen_string:path) => {
+        #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug)]
+        pub struct $struct(pub u64);
+
+        impl From<u64> for $struct {
+            fn from(v: u64) -> $struct {
+                $struct(v)
+            }
+        }
+        impl From<$from> for $struct {
+            fn from(v: $from) -> $struct {
+                $struct(v.into())
+            }
+        }
+        impl From<$struct> for $from {
+            fn from(v: $struct) -> $from {
+                From::from(v.0)
+            }
+        }
+
+        impl_serde!($struct, $visitor, u64, $gen_string);
     };
 }
 

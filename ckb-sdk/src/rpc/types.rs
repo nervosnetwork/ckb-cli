@@ -1,12 +1,13 @@
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 
 pub use ckb_jsonrpc_types::{
-    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, Script, ScriptHashType,
-    TxStatus, Uint128,
+    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxStatus,
+    Uint128,
 };
 use ckb_types::{core, packed, prelude::*, H256, U256};
 
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
+use crate::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
 
 type Version = u32;
 type BlockNumber = u64;
@@ -19,6 +20,63 @@ type Uint64 = u64;
 // ===============
 //  blockchain.rs
 // ===============
+#[derive(Clone, Default, Deserialize, PartialEq, Eq, Hash, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Script {
+    pub code_hash: H256,
+    pub hash_type: ScriptHashType,
+    pub args: JsonBytes,
+}
+impl From<rpc_types::Script> for Script {
+    fn from(json: rpc_types::Script) -> Script {
+        Script {
+            code_hash: json.code_hash,
+            hash_type: json.hash_type,
+            args: json.args,
+        }
+    }
+}
+impl From<Script> for packed::Script {
+    fn from(json: Script) -> Self {
+        let Script {
+            args,
+            code_hash,
+            hash_type,
+        } = json;
+        let hash_type: core::ScriptHashType = hash_type.into();
+        packed::Script::new_builder()
+            .args(args.into_bytes().pack())
+            .code_hash(code_hash.pack())
+            .hash_type(hash_type.into())
+            .build()
+    }
+}
+impl Serialize for Script {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut rgb = serializer.serialize_struct("Script", 3)?;
+        let code_hash_suffix = if self.hash_type == ScriptHashType::Type {
+            if self.code_hash == SIGHASH_TYPE_HASH {
+                String::from(" (sighash)")
+            } else if self.code_hash == MULTISIG_TYPE_HASH {
+                String::from(" (multisig)")
+            } else if self.code_hash == DAO_TYPE_HASH {
+                String::from(" (dao)")
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+        let code_hash_string = format!("{:#x}{}", self.code_hash, code_hash_suffix);
+        rgb.serialize_field("code_hash", &code_hash_string)?;
+        rgb.serialize_field("args", &self.args)?;
+        rgb.serialize_field("hash_type", &self.hash_type)?;
+        rgb.end()
+    }
+}
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(deny_unknown_fields)]
@@ -32,8 +90,8 @@ impl From<rpc_types::CellOutput> for CellOutput {
     fn from(json: rpc_types::CellOutput) -> CellOutput {
         CellOutput {
             capacity: json.capacity.into(),
-            lock: json.lock,
-            type_: json.type_,
+            lock: json.lock.into(),
+            type_: json.type_.map(Into::into),
         }
     }
 }
@@ -492,8 +550,8 @@ impl From<rpc_types::CellOutputWithOutPoint> for CellOutputWithOutPoint {
             out_point: json.out_point.into(),
             block_hash: json.block_hash,
             capacity: json.capacity.into(),
-            lock: json.lock,
-            type_: json.type_,
+            lock: json.lock.into(),
+            type_: json.type_.map(Into::into),
             // output_data_len: json.output_data_len.into(),
             // cellbase: json.cellbase,
         }
