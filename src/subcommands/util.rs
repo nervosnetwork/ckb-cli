@@ -1,9 +1,9 @@
 use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::ChainInfo;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    rpc::ChainInfo,
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -252,7 +252,6 @@ message = "0x"
                 let chain_info: ChainInfo = self
                     .rpc_client
                     .get_blockchain_info()
-                    .call()
                     .map_err(|err| format!("RPC get_blockchain_info error: {:?}", err))?;
                 if &chain_info.chain != "ckb" {
                     return Err("Node is not in mainnet spec".to_owned());
@@ -302,15 +301,14 @@ message = "0x"
                 let (tip_epoch, tip_timestamp) = self
                     .rpc_client
                     .get_tip_header()
-                    .call()
                     .map(|header_view| {
                         let header = header_view.inner;
-                        let epoch = EpochNumberWithFraction::from_full_value(header.epoch.value());
-                        let timestamp = header.timestamp.value();
+                        let epoch = EpochNumberWithFraction::from_full_value(header.epoch.0);
+                        let timestamp = header.timestamp;
                         (epoch, timestamp)
                     })
                     .map_err(|err| err.to_string())?;
-                let elapsed = locktime_timestamp.saturating_sub(tip_timestamp);
+                let elapsed = locktime_timestamp.saturating_sub(tip_timestamp.0);
                 let (epoch, multisig_addr) =
                     gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
                 let resp = serde_json::json!({

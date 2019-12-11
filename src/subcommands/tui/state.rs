@@ -3,18 +3,20 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ckb_jsonrpc_types::{BlockNumber, BlockView, ChainInfo, Node, TxPoolInfo};
 use ckb_types::{core::HeaderView, packed::Script, prelude::*};
 use ckb_util::RwLock;
 use jsonrpc_client_core::Error as RpcError;
 
 use super::util::ts_now;
-use ckb_sdk::HttpRpcClient;
+use ckb_sdk::{
+    rpc::{BlockView, ChainInfo, Node, TxPoolInfo},
+    HttpRpcClient,
+};
 
 const MAX_SAVE_BLOCKS: usize = 100;
 
 pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
-    let mut rpc_client = HttpRpcClient::from_uri(url.as_str());
+    let mut rpc_client = HttpRpcClient::new(url);
     thread::spawn(move || {
         while let Err(err) = process(&state, &mut rpc_client) {
             log::info!(
@@ -28,11 +30,11 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
 
 fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result<(), RpcError> {
     loop {
-        let chain_info_opt = rpc_client.get_blockchain_info().call().ok();
-        let local_node_info = rpc_client.local_node_info().call()?;
-        let tx_pool_info = rpc_client.tx_pool_info().call()?;
-        let peers = rpc_client.get_peers().call()?;
-        let tip_header: HeaderView = rpc_client.get_tip_header().call()?.into();
+        let chain_info_opt = rpc_client.get_blockchain_info().ok();
+        let local_node_info = rpc_client.local_node_info()?;
+        let tx_pool_info = rpc_client.tx_pool_info()?;
+        let peers = rpc_client.get_peers()?;
+        let tip_header: HeaderView = rpc_client.get_tip_header()?.into();
         let new_block = {
             if state
                 .read()
@@ -41,11 +43,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
                 .map(|header| header.hash() != tip_header.hash())
                 .unwrap_or(true)
             {
-                rpc_client
-                    .get_block(tip_header.hash().unpack())
-                    .call()
-                    .unwrap()
-                    .0
+                rpc_client.get_block(tip_header.hash().unpack()).unwrap()
             } else {
                 None
             }
@@ -56,7 +54,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
             state_mut.tip_header = Some(tip_header.clone());
             state_mut.local_node = Some(local_node_info);
             state_mut.tx_pool = Some(tx_pool_info);
-            state_mut.peers = peers.0;
+            state_mut.peers = peers;
 
             // Handle fork
             if let Some(last_block) = state_mut.blocks.values().rev().next() {
@@ -69,7 +67,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
 
             // Insert tip block
             if let Some(block) = new_block {
-                let number = block.header.inner.number.value();
+                let number = block.header.inner.number;
                 state_mut.blocks.insert(number, block.into());
             }
 
@@ -85,11 +83,7 @@ fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result
                     if first_number < 1 {
                         break;
                     }
-                    if let Some(block) = rpc_client
-                        .get_block_by_number(BlockNumber::from(first_number - 1))
-                        .call()?
-                        .0
-                    {
+                    if let Some(block) = rpc_client.get_block_by_number(first_number - 1)? {
                         state_mut.blocks.insert(first_number - 1, block.into());
                     } else {
                         break;
@@ -164,7 +158,7 @@ impl From<BlockView> for BlockInfo {
         let cellbase_outputs = cellbase
             .outputs
             .iter()
-            .map(|output| (output.capacity.value(), output.lock.clone().into()))
+            .map(|output| (output.capacity.0, output.lock.clone().into()))
             .collect::<Vec<(u64, Script)>>();
         let mut input_count = 0;
         let mut output_count = 0;
