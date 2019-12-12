@@ -15,12 +15,13 @@ use ckb_types::{
     H160, H256, U256,
 };
 use clap::{App, Arg, ArgMatches, SubCommand};
+use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
 
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser,
+        AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::get_address,
@@ -64,6 +65,11 @@ impl<'a> UtilSubCommand<'a> {
             .validator(|input| FixedHashParser::<H160>::default().validate(input))
             .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
 
+        let binary_hex_arg = Arg::with_name("binary-hex")
+            .long("binary-hex")
+            .takes_value(true)
+            .required(true)
+            .validator(|input| HexParser.validate(input));
         let arg_sighash_address = Arg::with_name("sighash-address")
             .long("sighash-address")
             .required(true)
@@ -78,57 +84,61 @@ impl<'a> UtilSubCommand<'a> {
         SubCommand::with_name(name)
             .about("Utilities")
             .subcommands(vec![
-            SubCommand::with_name("key-info")
-                .about(
-                    "Show public information of a secp256k1 private key (from file) or public key",
-                )
-                .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                .arg(arg_pubkey.clone().required(false))
-                .arg(arg_address.clone().required(false))
-                .arg(arg_lock_arg.clone()),
-            SubCommand::with_name("compact-to-difficulty")
-                .about("Convert compact target value to difficulty value")
-                .arg(
-                    Arg::with_name("compact-target")
-                        .long("compact-target")
-                        .takes_value(true)
-                        .validator(|input| {
-                            FromStrParser::<u32>::default()
-                                .validate(input.clone())
-                                .or_else(|_| {
-                                    let input =
-                                        if input.starts_with("0x") || input.starts_with("0X") {
-                                            &input[2..]
-                                        } else {
-                                            &input[..]
-                                        };
-                                    u32::from_str_radix(input, 16)
-                                        .map(|_| ())
-                                        .map_err(|err| err.to_string())
-                                })
-                        })
-                        .required(true)
-                        .help("The compact target value"),
-                ),
-            SubCommand::with_name("difficulty-to-compact")
-                .about("Convert difficulty value to compact target value")
-                .arg(
-                    Arg::with_name("difficulty")
-                        .long("difficulty")
-                        .takes_value(true)
-                        .validator(|input| {
-                            let input = if input.starts_with("0x") || input.starts_with("0X") {
-                                &input[2..]
-                            } else {
-                                &input[..]
-                            };
-                            U256::from_hex_str(input)
-                                .map(|_| ())
-                                .map_err(|err| err.to_string())
-                        })
-                        .required(true)
-                        .help("The difficulty value"),
-                ),
+                SubCommand::with_name("key-info")
+                    .about(
+                        "Show public information of a secp256k1 private key (from file) or public key",
+                    )
+                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
+                    .arg(arg_pubkey.clone().required(false))
+                    .arg(arg_address.clone().required(false))
+                    .arg(arg_lock_arg.clone()),
+                SubCommand::with_name("eaglesong")
+                    .about("Hash binary use eaglesong algorithm")
+                    .arg(binary_hex_arg.clone()),
+                SubCommand::with_name("blake2b")
+                    .about("Hash binary use blake2b algorithm (personalization: 'ckb-default-hash')")
+                    .arg(binary_hex_arg.clone())
+                    .arg(
+                        Arg::with_name("prefix-160")
+                            .long("prefix-160")
+                            .help("Only show prefix 160 bits (Example: calculate lock_arg from pubkey)")
+                    ),
+                SubCommand::with_name("compact-to-difficulty")
+                    .about("Convert compact target value to difficulty value")
+                    .arg(Arg::with_name("compact-target")
+                         .long("compact-target")
+                         .takes_value(true)
+                         .validator(|input| {
+                             FromStrParser::<u32>::default()
+                                 .validate(input.clone())
+                                 .or_else(|_| {
+                                     let input = if input.starts_with("0x") || input.starts_with("0X") {
+                                         &input[2..]
+                                     } else {
+                                         &input[..]
+                                     };
+                                     u32::from_str_radix(input, 16).map(|_| ()).map_err(|err| err.to_string())
+                                 })
+                         })
+                         .required(true)
+                         .help("The compact target value")
+                    ),
+                SubCommand::with_name("difficulty-to-compact")
+                    .about("Convert difficulty value to compact target value")
+                    .arg(Arg::with_name("difficulty")
+                         .long("difficulty")
+                         .takes_value(true)
+                         .validator(|input| {
+                             let input = if input.starts_with("0x") || input.starts_with("0X") {
+                                 &input[2..]
+                             } else {
+                                 &input[..]
+                             };
+                             U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
+                         })
+                         .required(true)
+                         .help("The difficulty value")
+                    ),
                 SubCommand::with_name("to-genesis-multisig-addr")
                     .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
                     .arg(
@@ -217,6 +227,22 @@ message = "0x"
                     "lock_hash": format!("{:#x}", lock_hash),
                 });
                 Ok(resp.render(format, color))
+            }
+            ("eaglesong", Some(m)) => {
+                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let mut builder = EagleSongBuilder::new();
+                builder.update(&binary);
+                Ok(format!("{:#x}", H256::from(builder.finalize())))
+            }
+            ("blake2b", Some(m)) => {
+                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let hash_data = blake2b_256(&binary);
+                let slice = if m.is_present("prefix-160") {
+                    &hash_data[0..20]
+                } else {
+                    &hash_data[..]
+                };
+                Ok(format!("0x{}", hex_string(slice).unwrap()))
             }
             ("compact-to-difficulty", Some(m)) => {
                 let compact_target: u32 = FromStrParser::<u32>::default()
