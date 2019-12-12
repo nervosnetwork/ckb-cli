@@ -22,6 +22,7 @@ use crate::utils::{
     printer::{ColorWhen, OutputFormat, Printable},
 };
 use ckb_sdk::{
+    rpc::RawHttpRpcClient,
     wallet::{KeyStore, ScryptType},
     GenesisInfo, HttpRpcClient,
 };
@@ -37,6 +38,7 @@ pub struct InteractiveEnv {
     parser: clap::App<'static, 'static>,
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
+    raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
     genesis_info: Option<GenesisInfo>,
 }
@@ -72,6 +74,7 @@ impl InteractiveEnv {
 
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
+        let raw_rpc_client = RawHttpRpcClient::from_uri(config.get_url());
         fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
         let key_store = KeyStore::from_dir(keystore_dir, ScryptType::default())
             .map_err(|err| err.to_string())?;
@@ -82,6 +85,7 @@ impl InteractiveEnv {
             history_file,
             parser,
             rpc_client,
+            raw_rpc_client,
             key_store,
             index_controller,
             genesis_info: None,
@@ -235,6 +239,7 @@ impl InteractiveEnv {
                         Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
                         self.rpc_client = HttpRpcClient::new(self.config.get_url().to_string());
+                        self.raw_rpc_client = RawHttpRpcClient::from_uri(self.config.get_url());
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
@@ -295,12 +300,8 @@ impl InteractiveEnv {
                 }
                 ("rpc", Some(sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
-                    let output = RpcSubCommand::new(&mut self.rpc_client).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
+                    let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
+                        .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }

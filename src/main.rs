@@ -7,7 +7,7 @@ use std::process;
 use std::sync::Arc;
 
 use ckb_build_info::Version;
-use ckb_sdk::HttpRpcClient;
+use ckb_sdk::{rpc::RawHttpRpcClient, HttpRpcClient};
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -86,6 +86,7 @@ fn main() -> Result<(), io::Error> {
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::new(api_uri.clone());
+    let mut raw_rpc_client = RawHttpRpcClient::from_uri(api_uri.as_str());
     check_alerts(&mut rpc_client);
     config.set_network(get_network_type(&mut rpc_client).ok());
 
@@ -113,9 +114,8 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
         )
         .start(),
-        ("rpc", Some(sub_matches)) => {
-            RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
-        }
+        ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
+            .process(&sub_matches, output_format, color, debug),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             AccountSubCommand::new(&mut key_store).process(
                 &sub_matches,
