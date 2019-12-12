@@ -6,7 +6,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_index::{with_index_db, IndexDatabase};
-use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::GenesisInfo;
 use ckb_sdk::HttpRpcClient;
 use ckb_types::{
@@ -207,7 +206,7 @@ pub fn start_index_thread(
                 }
             }
 
-            let mut rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+            let mut rpc_client = HttpRpcClient::new(rpc_url.clone());
             loop {
                 match process(
                     &receiver,
@@ -258,13 +257,10 @@ fn process(
 
     state.write().start_init();
     if &old_rpc_url != rpc_url {
-        *rpc_client = HttpRpcClient::from_uri(rpc_url.as_str());
+        *rpc_client = HttpRpcClient::new(rpc_url.clone());
     }
     let genesis_block: BlockView = rpc_client
-        .get_block_by_number(BlockNumber::from(0))
-        .call()
-        .map_err(|err| err.to_string())?
-        .0
+        .get_block_by_number(0)?
         .expect("Can not get genesis block?")
         .into();
     let network_type = get_network_type(rpc_client)?;
@@ -277,11 +273,7 @@ fn process(
     loop {
         if next_get_tip <= Instant::now() {
             next_get_tip = Instant::now() + Duration::from_secs(1);
-            tip_header = rpc_client
-                .get_tip_header()
-                .call()
-                .map_err(|err| err.to_string())?
-                .into();
+            tip_header = rpc_client.get_tip_header()?.into();
             log::debug!("Update to tip {}", tip_header.number());
         }
 
@@ -302,12 +294,8 @@ fn process(
                     if let Some(exit) = try_recv(&receiver, rpc_url) {
                         return Ok(Some(exit));
                     }
-                    let next_block_number = BlockNumber::from(db.next_number().unwrap());
-                    if let Some(next_block) = rpc_client
-                        .get_block_by_number(next_block_number)
-                        .call()
-                        .map_err(|err| err.to_string())?
-                        .0
+                    if let Some(next_block) =
+                        rpc_client.get_block_by_number(db.next_number().unwrap())?
                     {
                         db.apply_next_block(next_block.into())
                             .expect("Add block failed");

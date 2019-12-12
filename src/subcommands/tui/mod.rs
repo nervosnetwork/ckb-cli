@@ -20,7 +20,6 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_index::{with_index_db, IndexDatabase};
-use ckb_jsonrpc_types::BlockNumber;
 use ckb_sdk::{constants::ONE_CKB, Address, GenesisInfo, HttpRpcClient, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView},
@@ -55,19 +54,17 @@ impl TuiSubCommand {
 
     pub fn start(self) -> Result<String, String> {
         let (network_type, genesis_info) = {
-            let mut rpc_client = HttpRpcClient::from_uri(&self.url);
+            let mut rpc_client = HttpRpcClient::new(self.url.clone());
             let network_type = get_network_type(&mut rpc_client)?;
             let genesis_block: BlockView = rpc_client
-                .get_block_by_number(BlockNumber::from(0))
-                .call()
+                .get_block_by_number(0)
                 .map_err(|err| {
                     format!(
                         "Get genesis block from {} failed: {}\n[Hint]: you can use `ckb-cli --url <URL> tui` to override API url",
                         self.url,
-                        err.to_string()
+                        err
                     )
                 })?
-                .0
                 .expect("Can not get genesis block?")
                 .into();
             let genesis_info = GenesisInfo::from_block(&genesis_block)?;
@@ -292,7 +289,7 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     };
 
     let chain_name = chain.as_ref().map(|info| info.chain.to_string());
-    let epoch = chain.as_ref().map(|info| info.epoch.value().to_string());
+    let epoch = chain.as_ref().map(|info| info.epoch.to_string());
     let difficulty = chain.as_ref().map(|info| info.difficulty.to_string());
     let ibd = chain
         .as_ref()
@@ -312,9 +309,7 @@ fn render_summary<B: Backend>(state: &State, url: &str, ctx: RenderContext<B>) {
     let tx_pool_info = tx_pool.map(|info| {
         format!(
             "pending={}, proposed={}, orphan={}",
-            info.pending.value(),
-            info.proposed.value(),
-            info.orphan.value(),
+            info.pending, info.proposed, info.orphan,
         )
     });
     let peers_count = Some(format!("{}", peer_count));

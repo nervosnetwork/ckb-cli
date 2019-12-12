@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
-use ckb_jsonrpc_types::BlockNumber;
 use ckb_types::{core::service::Request, core::BlockView};
 use regex::Regex;
 use rustyline::config::Configurer;
@@ -23,6 +22,7 @@ use crate::utils::{
     printer::{ColorWhen, OutputFormat, Printable},
 };
 use ckb_sdk::{
+    rpc::RawHttpRpcClient,
     wallet::{KeyStore, ScryptType},
     GenesisInfo, HttpRpcClient,
 };
@@ -38,6 +38,7 @@ pub struct InteractiveEnv {
     parser: clap::App<'static, 'static>,
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
+    raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
     genesis_info: Option<GenesisInfo>,
 }
@@ -72,7 +73,8 @@ impl InteractiveEnv {
         }
 
         let parser = crate::build_interactive();
-        let rpc_client = HttpRpcClient::from_uri(config.get_url());
+        let rpc_client = HttpRpcClient::new(config.get_url().to_string());
+        let raw_rpc_client = RawHttpRpcClient::from_uri(config.get_url());
         fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
         let key_store = KeyStore::from_dir(keystore_dir, ScryptType::default())
             .map_err(|err| err.to_string())?;
@@ -83,6 +85,7 @@ impl InteractiveEnv {
             history_file,
             parser,
             rpc_client,
+            raw_rpc_client,
             key_store,
             index_controller,
             genesis_info: None,
@@ -211,10 +214,7 @@ impl InteractiveEnv {
         if self.genesis_info.is_none() {
             let genesis_block: BlockView = self
                 .rpc_client
-                .get_block_by_number(BlockNumber::from(0))
-                .call()
-                .map_err(|err| err.to_string())?
-                .0
+                .get_block_by_number(0)?
                 .expect("Can not get genesis block?")
                 .into();
             self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
@@ -238,7 +238,8 @@ impl InteractiveEnv {
                         let index_sender = self.index_controller.sender();
                         Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
-                        self.rpc_client = HttpRpcClient::from_uri(self.config.get_url());
+                        self.rpc_client = HttpRpcClient::new(self.config.get_url().to_string());
+                        self.raw_rpc_client = RawHttpRpcClient::from_uri(self.config.get_url());
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
@@ -299,12 +300,8 @@ impl InteractiveEnv {
                 }
                 ("rpc", Some(sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
-                    let output = RpcSubCommand::new(&mut self.rpc_client).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
+                    let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
+                        .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }

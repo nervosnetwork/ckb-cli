@@ -12,6 +12,9 @@ pub const SECP_SIGNATURE_SIZE: usize = 65;
 
 // Since relative mask
 pub const LOCK_TYPE_FLAG: u64 = 1 << 63;
+pub const METRIC_TYPE_FLAG_MASK: u64 = 0x6000_0000_0000_0000;
+pub const VALUE_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+pub const REMAIN_FLAGS_BITS: u64 = 0x1f00_0000_0000_0000;
 
 // Special cells in genesis transactions: (transaction-index, output-index)
 pub const SIGHASH_OUTPUT_LOC: (usize, usize) = (0, 1);

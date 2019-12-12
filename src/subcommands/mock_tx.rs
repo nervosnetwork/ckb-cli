@@ -231,8 +231,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let (mock_tx, _cycle) = complete_tx(m, false, true)?;
                 let resp = self
                     .rpc_client
-                    .send_transaction(mock_tx.core_transaction().data().into())
-                    .call()
+                    .send_transaction(mock_tx.core_transaction().data())
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
             }
@@ -249,8 +248,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     fn get_header(&mut self, hash: H256) -> Result<Option<HeaderView>, String> {
         self.rpc_client
             .get_header(hash)
-            .call()
-            .map(|header_opt| header_opt.0.map(Into::into))
+            .map(|header_opt| header_opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 
@@ -260,17 +258,12 @@ impl<'a> MockResourceLoader for Loader<'a> {
     ) -> Result<Option<(CellOutput, Bytes)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
-            .get_live_cell(out_point.clone().into(), true)
-            .call()
-            .map(|resp| resp.cell.map(|info| info.output.into()))
-            .map_err(|err| err.to_string())?;
+            .get_live_cell(out_point.clone(), true)
+            .map(|resp| resp.cell.map(|info| info.output.into()))?;
         if let Some(output) = output {
             Ok(self
                 .rpc_client
-                .get_transaction(out_point.tx_hash().unpack())
-                .call()
-                .map_err(|err| err.to_string())?
-                .0
+                .get_transaction(out_point.tx_hash().unpack())?
                 .and_then(|tx_with_status| {
                     let output_index: u32 = out_point.index().unpack();
                     tx_with_status

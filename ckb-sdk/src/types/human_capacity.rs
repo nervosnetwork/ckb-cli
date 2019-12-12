@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use crate::constants::ONE_CKB;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct HumanCapacity(pub u64);
 
 impl From<u64> for HumanCapacity {

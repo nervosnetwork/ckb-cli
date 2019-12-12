@@ -5,7 +5,6 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use ckb_jsonrpc_types::{BlockNumber, EpochNumber};
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, EpochNumberWithFraction, ScriptHashType, TransactionView},
@@ -72,10 +71,7 @@ impl<'a> WalletSubCommand<'a> {
         if self.genesis_info.is_none() {
             let genesis_block: BlockView = self
                 .rpc_client
-                .get_block_by_number(BlockNumber::from(0))
-                .call()
-                .map_err(|err| err.to_string())?
-                .0
+                .get_block_by_number(0)?
                 .expect("Can not get genesis block?")
                 .into();
             self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
@@ -352,8 +348,7 @@ impl<'a> WalletSubCommand<'a> {
 
         let resp = self
             .rpc_client
-            .send_transaction(transaction.data().into())
-            .call()
+            .send_transaction(transaction.data())
             .map_err(|err| format!("Send transaction error: {}", err))?;
         Ok(resp.render(format, color))
     }
@@ -598,22 +593,17 @@ fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
 fn get_max_mature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
     let tip_epoch = client
         .get_tip_header()
-        .call()
-        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.value()))
-        .map_err(|err| err.to_string())?;
+        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
     let tip_epoch_number = tip_epoch.number();
     if tip_epoch_number < 4 {
         // No cellbase live cell is mature
         Ok(0)
     } else {
         let max_mature_epoch = client
-            .get_epoch_by_number(EpochNumber::from(tip_epoch_number - 4))
-            .call()
-            .map_err(|err| err.to_string())?
-            .0
+            .get_epoch_by_number(tip_epoch_number - 4)?
             .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-        let start_number = max_mature_epoch.start_number.value();
-        let length = max_mature_epoch.length.value();
+        let start_number = max_mature_epoch.start_number;
+        let length = max_mature_epoch.length;
         Ok(calc_max_mature_number(
             tip_epoch,
             Some((start_number, length)),

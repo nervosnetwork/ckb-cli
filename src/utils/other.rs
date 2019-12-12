@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ckb_index::{with_index_db, IndexDatabase, VERSION};
-use ckb_jsonrpc_types::{AlertMessage, BlockNumber};
 use ckb_sdk::{
+    rpc::AlertMessage,
     wallet::{KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
 };
@@ -82,7 +82,6 @@ pub fn get_singer(
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
     if let Some(alerts) = rpc_client
         .get_blockchain_info()
-        .call()
         .ok()
         .map(|info| info.alerts)
     {
@@ -93,7 +92,7 @@ pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
             message,
         } in alerts
         {
-            if notice_until.value()
+            if notice_until.0
                 >= SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
@@ -103,8 +102,8 @@ pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
                 eprintln!(
                     "[{}]: id={}, priority={}, message={}",
                     "alert".yellow().bold(),
-                    id.value().to_string().blue().bold(),
-                    priority.value().to_string().blue().bold(),
+                    id.to_string().blue().bold(),
+                    priority.to_string().blue().bold(),
                     message.yellow().bold(),
                 )
             }
@@ -120,10 +119,7 @@ pub fn get_genesis_info(
         Ok(genesis_info.clone())
     } else {
         let genesis_block: BlockView = rpc_client
-            .get_block_by_number(BlockNumber::from(0))
-            .call()
-            .map_err(|err| err.to_string())?
-            .0
+            .get_block_by_number(0)?
             .ok_or_else(|| String::from("Can not get genesis block"))?
             .into();
         GenesisInfo::from_block(&genesis_block)
@@ -150,10 +146,7 @@ pub fn get_live_cell(
     out_point: OutPoint,
     with_data: bool,
 ) -> Result<CellOutput, String> {
-    let cell = client
-        .get_live_cell(out_point.into(), with_data)
-        .call()
-        .map_err(|err| err.to_string())?;
+    let cell = client.get_live_cell(out_point, with_data)?;
     if cell.status != "live" {
         return Err(format!("Invalid cell status: {}", cell.status));
     }
@@ -164,10 +157,7 @@ pub fn get_live_cell(
 }
 
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
-    let chain_info = rpc_client
-        .get_blockchain_info()
-        .call()
-        .map_err(|err| err.to_string())?;
+    let chain_info = rpc_client.get_blockchain_info()?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
         .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))
 }
@@ -178,18 +168,11 @@ pub fn index_dirname() -> String {
 
 pub fn sync_to_tip(rpc_client: &mut HttpRpcClient, index_dir: &PathBuf) -> Result<(), String> {
     let genesis_block: BlockView = rpc_client
-        .get_block_by_number(0.into())
-        .call()
-        .map_err(|err| err.to_string())?
-        .0
+        .get_block_by_number(0)?
         .expect("Can not get genesis block?")
         .into();
     let genesis_hash: H256 = genesis_block.hash().unpack();
-    let tip_number = rpc_client
-        .get_tip_block_number()
-        .call()
-        .map_err(|err| err.to_string())?
-        .value();
+    let tip_number = rpc_client.get_tip_block_number()?;
     let network_type = get_network_type(rpc_client)?;
     let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
     loop {

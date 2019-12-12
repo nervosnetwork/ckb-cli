@@ -1,11 +1,11 @@
 mod chain;
 mod error;
-mod rpc;
 mod transaction;
 mod tx_helper;
 mod types;
 
 pub mod constants;
+pub mod rpc;
 pub mod wallet;
 
 pub use chain::{calc_max_mature_number, GenesisInfo};
