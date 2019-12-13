@@ -7,7 +7,7 @@ use std::process;
 use std::sync::Arc;
 
 use ckb_build_info::Version;
-use ckb_sdk::HttpRpcClient;
+use ckb_sdk::{rpc::RawHttpRpcClient, HttpRpcClient};
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -17,12 +17,13 @@ use subcommands::TuiSubCommand;
 use interactive::InteractiveEnv;
 use subcommands::{
     start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
-    RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    MoleculeSubCommand, RpcSubCommand, UtilSubCommand, WalletSubCommand,
 };
+use utils::other::sync_to_tip;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::{check_alerts, get_key_store},
+    other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -54,7 +55,7 @@ fn main() -> Result<(), io::Error> {
     let mut resource_dir = ckb_cli_dir.clone();
     resource_dir.push("resource");
     let mut index_dir = ckb_cli_dir.clone();
-    index_dir.push("index");
+    index_dir.push(index_dirname());
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
     let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
@@ -84,11 +85,24 @@ fn main() -> Result<(), io::Error> {
 
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
-    let mut rpc_client = HttpRpcClient::from_uri(api_uri.as_str());
+    let mut rpc_client = HttpRpcClient::new(api_uri.clone());
+    let mut raw_rpc_client = RawHttpRpcClient::from_uri(api_uri.as_str());
     check_alerts(&mut rpc_client);
+    config.set_network(get_network_type(&mut rpc_client).ok());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
+
+    // When flag `--wait-for-sync` given, we have to ensure that the index-store synchronizes
+    // to the tip before executing the command.
+    let wait_for_sync = matches.is_present("wait-for-sync");
+    if wait_for_sync {
+        if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
+            eprintln!("Synchronize error: {}", err);
+            process::exit(1);
+        }
+    }
+
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
@@ -100,11 +114,10 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
         )
         .start(),
-        ("rpc", Some(sub_matches)) => {
-            RpcSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
-        }
+        ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
+            .process(&sub_matches, output_format, color, debug),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut rpc_client, &mut key_store, None).process(
+            AccountSubCommand::new(&mut key_store).process(
                 &sub_matches,
                 output_format,
                 color,
@@ -119,12 +132,12 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
-        ("util", Some(sub_matches)) => UtilSubCommand::new(&mut rpc_client, None).process(
-            &sub_matches,
-            output_format,
-            color,
-            debug,
-        ),
+        ("util", Some(sub_matches)) => {
+            UtilSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
+        }
+        ("molecule", Some(sub_matches)) => {
+            MoleculeSubCommand::new().process(&sub_matches, output_format, color, debug)
+        }
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,
@@ -132,7 +145,6 @@ fn main() -> Result<(), io::Error> {
                 None,
                 index_dir.clone(),
                 index_controller.clone(),
-                false,
             )
             .process(&sub_matches, output_format, color, debug)
         }),
@@ -208,6 +220,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
+        .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
@@ -236,6 +249,14 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .long("debug")
                 .global(true)
                 .help("Display request parameters"),
+        )
+        .arg(
+            Arg::with_name("wait-for-sync")
+                .long("wait-for-sync")
+                .global(true)
+                .help(
+                    "Ensure the index-store synchronizes completely before command being executed",
+                ),
         );
 
     #[cfg(unix)]
@@ -300,5 +321,6 @@ pub fn build_interactive() -> App<'static, 'static> {
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
+        .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
 }

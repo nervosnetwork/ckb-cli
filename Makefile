@@ -13,13 +13,13 @@ ci: fmt clippy test security-audit
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh rc/v0.25
+	bash devtools/ci/integration.sh v0.25.1
 
 prod: ## Build binary with release profile.
 	cargo build --release
 
 security-audit: ## Use cargo-audit to audit Cargo.lock for crates with security vulnerabilities.
-	@cargo +nightly install cargo-audit -Z install-upgrade
+	@cargo +nightly install cargo-audit
 	cargo audit
 	# expecting to see "Success No vulnerable packages found"
 

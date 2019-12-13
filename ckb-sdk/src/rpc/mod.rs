@@ -1,10 +1,13 @@
 mod client;
+mod primitive;
+mod types;
 
-pub use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellOutputWithOutPoint, CellWithStatus, ChainInfo, EpochNumber,
-    EpochView, HeaderView, Node, OutPoint, Transaction, TransactionWithStatus, TxPoolInfo,
-};
-pub use client::{
-    CellOutputWithOutPoints, HttpRpcClient, Nodes, OptionBlockView, OptionEpochView, OptionH256,
-    OptionTransactionWithStatus, RpcClient,
+pub use client::{HttpRpcClient, RawHttpRpcClient, RawRpcClient};
+pub use primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
+pub use types::{
+    Alert, AlertMessage, BannedAddr, Block, BlockReward, BlockView, Byte32, CellDep, CellInput,
+    CellOutput, CellOutputWithOutPoint, CellTransaction, ChainInfo, DepType, EpochView, Header,
+    HeaderView, JsonBytes, LiveCell, LockHashIndexState, Node, NodeAddress, OutPoint,
+    ProposalShortId, Script, ScriptHashType, Transaction, TransactionPoint, TransactionView,
+    TransactionWithStatus, TxPoolInfo, TxStatus, Uint128, UncleBlock, UncleBlockView,
 };

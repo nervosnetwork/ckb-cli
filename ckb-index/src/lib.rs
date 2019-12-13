@@ -11,4 +11,5 @@ pub use index::{
 pub use kvdb::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use util::{with_index_db, with_rocksdb};
 
-const ROCKSDB_COL_INDEX_DB: &str = "index-db";
+pub const ROCKSDB_COL_INDEX_DB: &str = "index-db";
+pub const VERSION: usize = 1;

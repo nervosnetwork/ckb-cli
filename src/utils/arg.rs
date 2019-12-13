@@ -25,7 +25,7 @@ pub fn address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("address")
         .long("address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| AddressParser::default().validate(input))
         .help(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
@@ -37,6 +37,38 @@ pub fn lock_hash<'a, 'b>() -> Arg<'a, 'b> {
         .takes_value(true)
         .validator(|input| FixedHashParser::<H256>::default().validate(input))
         .help("Lock hash")
+}
+
+pub fn derive_receiving_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-receiving-address-length")
+        .long("derive-receiving-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived receiving address length")
+}
+
+pub fn derive_change_address_length<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address-length")
+        .long("derive-change-address-length")
+        .takes_value(true)
+        .default_value("1000")
+        .validator(|input| FromStrParser::<u32>::default().validate(input))
+        .help("Search derived change address length")
+}
+
+pub fn derive_change_address<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derive-change-address")
+        .long("derive-change-address")
+        .takes_value(true)
+        .validator(|input| AddressParser::default().validate(input))
+        .help("Manually specify the last change address (search 10000 addresses max, required keystore password, see: BIP-44)")
+}
+
+pub fn derived<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("derived")
+        .long("derived")
+        .help("Search derived address space (search 10000 addresses(change/receiving) max, required keystore password, see: BIP-44)")
 }
 
 pub fn lock_arg<'a, 'b>() -> Arg<'a, 'b> {
@@ -59,7 +91,7 @@ pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("to-address")
         .long("to-address")
         .takes_value(true)
-        .validator(|input| AddressParser.validate(input))
+        .validator(|input| AddressParser::default().validate(input))
         .help("Target address")
 }
 
@@ -92,13 +124,7 @@ pub fn tx_fee<'a, 'b>() -> Arg<'a, 'b> {
         .long("tx-fee")
         .takes_value(true)
         .validator(|input| CapacityParser.validate(input))
-        .help("The transaction fee capacity (unit: CKB, format: 0.335)")
-}
-
-pub fn with_password<'a, 'b>() -> Arg<'a, 'b> {
-    Arg::with_name("with-password")
-        .long("with-password")
-        .help("Input password to unlock keystore account just for current transfer transaction")
+        .help("The transaction fee capacity (unit: CKB, format: 0.0001)")
 }
 
 pub fn type_hash<'a, 'b>() -> Arg<'a, 'b> {

@@ -95,7 +95,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         color: bool,
         _debug: bool,
     ) -> Result<String, String> {
-        let genesis_info = get_genesis_info(&mut self.genesis_info, self.rpc_client)?;
+        let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
 
         let mut complete_tx = |m: &ArgMatches,
                                complete: bool,
@@ -155,10 +155,10 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let lock_arg_opt: Option<H160> =
                     FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
                 let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
-                let secp_type_hash = genesis_info.secp_type_hash();
+                let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
-                        .code_hash(secp_type_hash.clone())
+                        .code_hash(sighash_type_hash.clone())
                         .hash_type(ScriptHashType::Type.into())
                         .args(Bytes::from(lock_arg.as_ref()).pack())
                         .build()
@@ -231,8 +231,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let (mock_tx, _cycle) = complete_tx(m, false, true)?;
                 let resp = self
                     .rpc_client
-                    .send_transaction(mock_tx.core_transaction().data().into())
-                    .call()
+                    .send_transaction(mock_tx.core_transaction().data())
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
             }
@@ -249,8 +248,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     fn get_header(&mut self, hash: H256) -> Result<Option<HeaderView>, String> {
         self.rpc_client
             .get_header(hash)
-            .call()
-            .map(|header_opt| header_opt.0.map(Into::into))
+            .map(|header_opt| header_opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 
@@ -260,17 +258,12 @@ impl<'a> MockResourceLoader for Loader<'a> {
     ) -> Result<Option<(CellOutput, Bytes)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
-            .get_live_cell(out_point.clone().into(), true)
-            .call()
-            .map(|resp| resp.cell.map(|info| info.output.into()))
-            .map_err(|err| err.to_string())?;
+            .get_live_cell(out_point.clone(), true)
+            .map(|resp| resp.cell.map(|info| info.output.into()))?;
         if let Some(output) = output {
             Ok(self
                 .rpc_client
-                .get_transaction(out_point.tx_hash().unpack())
-                .call()
-                .map_err(|err| err.to_string())?
-                .0
+                .get_transaction(out_point.tx_hash().unpack())?
                 .and_then(|tx_with_status| {
                     let output_index: u32 = out_point.index().unpack();
                     tx_with_status

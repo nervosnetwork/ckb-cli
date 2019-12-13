@@ -11,7 +11,6 @@ use serde_derive::{Deserialize, Serialize};
 
 use super::key::{Key, KeyType};
 use crate::{KVReader, KVTxn};
-use ckb_sdk::Address;
 
 const KEEP_RECENT_HEADERS: u64 = 10_000;
 const KEEP_RECENT_BLOCKS: u64 = 200;
@@ -65,8 +64,6 @@ impl BlockDeltaInfo {
     pub(crate) fn from_block<'r, T: KVReader<'r>>(
         block: &BlockView,
         reader: &'r T,
-        _secp_data_hash: &Byte32,
-        secp_type_hash: &Byte32,
     ) -> BlockDeltaInfo {
         let block_header: HeaderView = block.header().clone();
         let block_number = block_header.number();
@@ -193,7 +190,7 @@ impl BlockDeltaInfo {
                             .unwrap_or(0);
                         LockInfo::new(lock_capacity)
                     });
-                    lock_info.set_script(lock.clone(), secp_type_hash);
+                    lock_info.set_script(lock.clone());
                     lock_info.add_output(capacity);
                 }
 
@@ -349,7 +346,6 @@ impl BlockDeltaInfo {
         for (lock_hash, info) in &self.locks {
             let LockInfo {
                 script_opt,
-                address_opt,
                 old_total_capacity,
                 new_total_capacity,
                 ..
@@ -362,9 +358,6 @@ impl BlockDeltaInfo {
                     lock_hash.clone(),
                     &Script::new_unchecked(script.clone()),
                 ));
-            }
-            if let Some(address) = address_opt {
-                txn.put_pair(Key::pair_secp_addr_lock(address.clone(), &lock_hash));
             }
 
             if old_total_capacity != new_total_capacity {
@@ -541,7 +534,6 @@ impl BlockDeltaInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LockInfo {
     script_opt: Option<Bytes>,
-    address_opt: Option<Address>,
     old_total_capacity: u64,
     new_total_capacity: u64,
     inputs_capacity: u64,
@@ -552,7 +544,6 @@ impl LockInfo {
     fn new(old_total_capacity: u64) -> LockInfo {
         LockInfo {
             script_opt: None,
-            address_opt: None,
             old_total_capacity,
             new_total_capacity: old_total_capacity,
             inputs_capacity: 0,
@@ -560,7 +551,7 @@ impl LockInfo {
         }
     }
 
-    fn set_script(&mut self, script: Script, _secp_type_hash: &Byte32) {
+    fn set_script(&mut self, script: Script) {
         self.script_opt = Some(script.as_slice().into());
     }
 
