@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use ckb_types::{
     bytes::Bytes,
-    core::{BlockView, Capacity, EpochNumberWithFraction, ScriptHashType, TransactionView},
+    core::{BlockView, Capacity, ScriptHashType, TransactionView},
     h256,
     packed::{CellOutput, OutPoint, Script},
     prelude::*,
@@ -22,17 +22,15 @@ use crate::utils::{
     },
     index::IndexController,
     other::{
-        check_capacity, get_address, get_live_cell_with_cache, get_network_type,
-        get_privkey_signer, get_to_data, read_password, serialize_signature,
+        check_capacity, get_address, get_live_cell_with_cache, get_max_mature_number,
+        get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
     },
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
-    calc_max_mature_number,
     constants::{
-        CELLBASE_MATURITY, DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB,
-        SIGHASH_TYPE_HASH,
+        DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::{DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
@@ -660,29 +658,6 @@ fn get_keystore_signer(
 
         Ok(Some(serialize_signature(&signature)))
     })
-}
-
-// Get max mature block number
-fn get_max_mature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
-    let tip_epoch = client
-        .get_tip_header()
-        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
-    let tip_epoch_number = tip_epoch.number();
-    if tip_epoch_number < 4 {
-        // No cellbase live cell is mature
-        Ok(0)
-    } else {
-        let max_mature_epoch = client
-            .get_epoch_by_number(tip_epoch_number - 4)?
-            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-        let start_number = max_mature_epoch.start_number;
-        let length = max_mature_epoch.length;
-        Ok(calc_max_mature_number(
-            tip_epoch,
-            Some((start_number, length)),
-            CELLBASE_MATURITY,
-        ))
-    }
 }
 
 fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {

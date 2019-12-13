@@ -1,4 +1,5 @@
 pub mod account;
+pub mod dao;
 pub mod mock_tx;
 pub mod molecule;
 pub mod rpc;
@@ -12,6 +13,7 @@ pub mod wallet;
 pub use self::tui::TuiSubCommand;
 
 pub use account::AccountSubCommand;
+pub use dao::DAOSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
 pub use rpc::RpcSubCommand;
