@@ -368,17 +368,23 @@ impl TxHelper {
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {
-    sighash_addresses: HashSet<AddressPayload>,
+    sighash_addresses: Vec<AddressPayload>,
     require_first_n: u8,
     threshold: u8,
 }
 
 impl MultisigConfig {
     pub fn new_with(
-        sighash_addresses: HashSet<AddressPayload>,
+        sighash_addresses: Vec<AddressPayload>,
         require_first_n: u8,
         threshold: u8,
     ) -> Result<MultisigConfig, String> {
+        let mut addr_set: HashSet<&AddressPayload> = HashSet::default();
+        for addr in &sighash_addresses {
+            if !addr_set.insert(addr) {
+                return Err(format!("Duplicated address: {:?}", addr));
+            }
+        }
         if threshold as usize > sighash_addresses.len() {
             return Err(format!(
                 "Invalid threshold {} > {}",
@@ -407,7 +413,12 @@ impl MultisigConfig {
         })
     }
 
-    pub fn sighash_addresses(&self) -> &HashSet<AddressPayload> {
+    pub fn contains_address(&self, target: &AddressPayload) -> bool {
+        self.sighash_addresses
+            .iter()
+            .any(|payload| payload == target)
+    }
+    pub fn sighash_addresses(&self) -> &Vec<AddressPayload> {
         &self.sighash_addresses
     }
     pub fn require_first_n(&self) -> u8 {
