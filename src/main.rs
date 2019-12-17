@@ -17,7 +17,7 @@ use subcommands::TuiSubCommand;
 use interactive::InteractiveEnv;
 use subcommands::{
     start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::sync_to_tip;
 use utils::{
@@ -132,6 +132,14 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
+        ("tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            TxSubCommand::new(&mut rpc_client, &mut key_store, None).process(
+                &sub_matches,
+                output_format,
+                color,
+                debug,
+            )
+        }),
         ("util", Some(sub_matches)) => {
             UtilSubCommand::new(&mut rpc_client).process(&sub_matches, output_format, color, debug)
         }
@@ -219,6 +227,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
+        .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
@@ -320,6 +329,7 @@ pub fn build_interactive() -> App<'static, 'static> {
         .subcommand(RpcSubCommand::subcommand())
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
+        .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())

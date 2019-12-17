@@ -236,6 +236,7 @@ impl ArgParser<PathBuf> for DirPathParser {
     }
 }
 
+#[derive(Clone)]
 pub struct PrivkeyWrapper(pub secp256k1::SecretKey);
 
 // For security purpose
@@ -318,7 +319,6 @@ pub enum AddressPayloadOption {
     Full(Option<H256>),
     #[allow(dead_code)]
     FullData(Option<H256>),
-    #[allow(dead_code)]
     FullType(Option<H256>),
 }
 
@@ -339,6 +339,19 @@ impl AddressParser {
         payload: Option<AddressPayloadOption>,
     ) -> AddressParser {
         AddressParser { network, payload }
+    }
+
+    pub fn new_sighash() -> Self {
+        AddressParser {
+            network: None,
+            payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
+        }
+    }
+    pub fn new_multisig() -> Self {
+        AddressParser {
+            network: None,
+            payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Multisig))),
+        }
     }
 
     pub fn set_network(&mut self, network: NetworkType) -> &mut Self {
@@ -366,7 +379,6 @@ impl AddressParser {
         self.payload = Some(AddressPayloadOption::FullData(Some(code_hash)));
         self
     }
-    #[allow(dead_code)]
     pub fn set_full_type(&mut self, code_hash: H256) -> &mut Self {
         self.payload = Some(AddressPayloadOption::FullType(Some(code_hash)));
         self

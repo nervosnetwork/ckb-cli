@@ -2,7 +2,7 @@ use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionBuilder, TransactionView},
-    packed::{self, Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
@@ -82,34 +82,35 @@ impl TxHelper {
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
     ) -> Result<(), String> {
-        let mut since_value_opt =
-            since_absolute_epoch_opt.map(|number| Since::new_absolute_epoch(number).value());
-
         let lock = get_live_cell(out_point.clone(), false)?.lock();
         check_lock_script(&lock)?;
-        if since_value_opt.is_none() {
+
+        let since = if let Some(number) = since_absolute_epoch_opt {
+            Since::new_absolute_epoch(number).value()
+        } else {
             let lock_arg = lock.args().raw_data();
             if lock.code_hash() == MULTISIG_TYPE_HASH.pack() && lock_arg.len() == 28 {
                 let mut since_bytes = [0u8; 8];
                 since_bytes.copy_from_slice(&lock_arg[20..]);
-                let since_value = u64::from_le_bytes(since_bytes);
-                since_value_opt = Some(since_value);
+                u64::from_le_bytes(since_bytes)
+            } else {
+                0
             }
-        }
-        let since = since_value_opt.unwrap_or(0);
+        };
+
         let input = CellInput::new_builder()
             .previous_output(out_point)
             .since(since.pack())
             .build();
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
-        let mut cell_deps = Vec::new();
+        let mut cell_deps: HashSet<CellDep> = HashSet::default();
         for ((code_hash, _), _) in self.input_group(get_live_cell)?.into_iter() {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
-                cell_deps.push(genesis_info.sighash_dep());
+                cell_deps.insert(genesis_info.sighash_dep());
             } else if code_hash == MULTISIG_TYPE_HASH {
-                cell_deps.push(genesis_info.multisig_dep());
+                cell_deps.insert(genesis_info.multisig_dep());
             } else {
                 panic!("Unexpected input code_hash: {:#x}", code_hash);
             }
@@ -117,7 +118,7 @@ impl TxHelper {
         self.transaction = self
             .transaction
             .as_advanced_builder()
-            .set_cell_deps(cell_deps)
+            .set_cell_deps(cell_deps.into_iter().collect())
             .build();
         Ok(())
     }
@@ -175,9 +176,8 @@ impl TxHelper {
                 && !self.multisig_configs.contains_key(&hash160)
             {
                 return Err(format!(
-                    "Invalid input(no.{}) lock script args prefix: 0x{}, expected: {:#x}",
+                    "No mutisig config found for input(no.{}) lock_arg prefix: {:#x}",
                     idx + 1,
-                    hex_string(&lock_arg[..20]).unwrap(),
                     hash160,
                 ));
             }
@@ -197,6 +197,7 @@ impl TxHelper {
         witnesses
     }
 
+    // FIXME: remove this later
     pub fn sign_sighash_inputs<S, C>(
         &self,
         mut signer: S,
@@ -225,14 +226,13 @@ impl TxHelper {
         Ok(signatures)
     }
 
-    pub fn sign_multisig_inputs<S, C>(
+    pub fn sign_inputs<S, C>(
         &self,
-        signer_lock_arg: &H160,
         mut signer: S,
         get_live_cell: C,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
-        S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>,
+        S: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>,
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
     {
         let all_sighash_lock_args = self
@@ -244,28 +244,27 @@ impl TxHelper {
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
         for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
-            if code_hash == SIGHASH_TYPE_HASH.pack() {
-                continue;
-            }
-
-            let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
-            if code_hash == MULTISIG_TYPE_HASH.pack()
-                && !all_sighash_lock_args
-                    .get(&hash160)
+            let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
+            let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
+                all_sighash_lock_args
+                    .get(&multisig_hash160)
                     .unwrap()
-                    .contains(signer_lock_arg)
-            {
-                continue;
+                    .clone()
+            } else {
+                let mut lock_args = HashSet::default();
+                lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
+                lock_args
+            };
+            if signer(&lock_args, &SIGHASH_TYPE_HASH)?.is_some() {
+                let signature = build_signature(
+                    &self.transaction.hash(),
+                    &idxs,
+                    &witnesses,
+                    self.multisig_configs.get(&multisig_hash160),
+                    |message: &H256| signer(&lock_args, message).map(|sig| sig.unwrap()),
+                )?;
+                signatures.insert(lock_arg, signature);
             }
-
-            let signature = build_signature(
-                &self.transaction.hash(),
-                &idxs,
-                &witnesses,
-                Some(self.multisig_configs.get(&hash160).unwrap()),
-                &mut signer,
-            )?;
-            signatures.insert(lock_arg, signature);
         }
         Ok(signatures)
     }
@@ -277,9 +276,14 @@ impl TxHelper {
         let mut witnesses = self.init_witnesses();
         for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
+                let lock_script = Script::new_builder()
+                    .hash_type(ScriptHashType::Type.into())
+                    .code_hash(code_hash.clone())
+                    .args(lock_arg.pack())
+                    .build();
                 format!(
-                    "Missing signatures for lock_arg: 0x{}",
-                    hex_string(&lock_arg).unwrap()
+                    "Missing signatures for lock_hash: {:#x}",
+                    lock_script.calc_script_hash()
                 )
             })?;
             let lock_field = if code_hash == MULTISIG_TYPE_HASH.pack() {

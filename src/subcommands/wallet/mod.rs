@@ -1,8 +1,6 @@
 mod index;
 
 use std::collections::HashMap;
-use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
 
 use ckb_types::{
@@ -18,10 +16,13 @@ use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, HexParser,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{get_address, get_live_cell_with_cache, get_network_type, read_password},
+    other::{
+        check_capacity, get_address, get_live_cell_with_cache, get_network_type, get_to_data,
+        read_password,
+    },
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
@@ -189,8 +190,7 @@ impl<'a> WalletSubCommand<'a> {
         {
             return Err(format!("Invalid to-address: {}", to_address));
         }
-
-        let to_data = to_data(m)?;
+        let to_data = get_to_data(m)?;
 
         check_capacity(to_capacity, to_data.len())?;
         let genesis_info = self.genesis_info()?;
@@ -275,9 +275,11 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         let key_store = self.key_store.clone();
-        let mut live_cell_cache: HashMap<(OutPoint, bool), CellOutput> = Default::default();
+        let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+            Default::default();
         let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
             get_live_cell_with_cache(&mut live_cell_cache, self.rpc_client, out_point, with_data)
+                .map(|(output, _)| output)
         };
         let mut helper = TxHelper::default();
         for info in &infos {
@@ -376,7 +378,15 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .from_matches(m, "derive-receiving-address-length")?;
                     let change_address_length: u32 = FromStrParser::<u32>::default()
                         .from_matches(m, "derive-change-address-length")?;
-                    let address_payload = get_address(Some(network_type), m)?;
+                    let address_payload = if let Some(address_str) = m.value_of("address") {
+                        AddressParser::default()
+                            .set_network(network_type)
+                            .parse(address_str)?
+                            .payload()
+                            .clone()
+                    } else {
+                        get_address(Some(network_type), m)?
+                    };
                     let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
                     if m.is_present("derived") {
                         let password = read_password(false, None)?;
@@ -573,22 +583,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     }
 }
 
-fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
-    if capacity < MIN_SECP_CELL_CAPACITY {
-        return Err(format!(
-            "Capacity can not less than {} shannons",
-            MIN_SECP_CELL_CAPACITY
-        ));
-    }
-    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
-        return Err(format!(
-            "Capacity can not hold {} bytes of data",
-            to_data_len
-        ));
-    }
-    Ok(())
-}
-
 // Get max mature block number
 fn get_max_mature_number(client: &mut HttpRpcClient) -> Result<u64, String> {
     let tip_epoch = client
@@ -618,22 +612,4 @@ fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
         // Live cells in genesis are all mature
         || info.number == 0
         || info.number <= max_mature_number
-}
-
-fn to_data(m: &ArgMatches) -> Result<Bytes, String> {
-    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
-    match to_data_opt {
-        Some(data) => Ok(data),
-        None => {
-            if let Some(path) = m.value_of("to-data-path") {
-                let mut content = Vec::new();
-                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                file.read_to_end(&mut content)
-                    .map_err(|err| err.to_string())?;
-                Ok(Bytes::from(content))
-            } else {
-                Ok(Bytes::new())
-            }
-        }
-    }
 }
