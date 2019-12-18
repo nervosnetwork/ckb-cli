@@ -2,6 +2,7 @@ use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionBuilder, TransactionView},
+    h256,
     packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
@@ -197,35 +198,6 @@ impl TxHelper {
         witnesses
     }
 
-    // FIXME: remove this later
-    pub fn sign_sighash_inputs<S, C>(
-        &self,
-        mut signer: S,
-        get_live_cell: C,
-    ) -> Result<HashMap<Bytes, Bytes>, String>
-    where
-        S: FnMut(&H160, &H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>,
-        C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
-    {
-        let witnesses = self.init_witnesses();
-        let mut signatures: HashMap<Bytes, Bytes> = Default::default();
-        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
-            if code_hash == MULTISIG_TYPE_HASH.pack() {
-                continue;
-            }
-            let hash160 = H160::from_slice(lock_arg.as_ref()).unwrap();
-            let signature = build_signature(
-                &self.transaction.hash(),
-                &idxs,
-                &witnesses,
-                None,
-                |message: &H256| signer(&hash160, message),
-            )?;
-            signatures.insert(lock_arg, signature);
-        }
-        Ok(signatures)
-    }
-
     pub fn sign_inputs<S, C>(
         &self,
         mut signer: S,
@@ -255,7 +227,7 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if signer(&lock_args, &SIGHASH_TYPE_HASH)?.is_some() {
+            if signer(&lock_args, &h256!("0x0"))?.is_some() {
                 let signature = build_signature(
                     &self.transaction.hash(),
                     &idxs,
@@ -369,6 +341,8 @@ impl TxHelper {
         Ok((input_total, output_total))
     }
 }
+
+pub type SignerFn = Box<dyn FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>>;
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {

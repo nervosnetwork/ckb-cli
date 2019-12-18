@@ -1,19 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ckb_hash::blake2b_256;
 use ckb_index::{with_index_db, IndexDatabase, VERSION};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
+    SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
     core::BlockView,
+    h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
     H160, H256,
@@ -22,7 +25,9 @@ use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
 
-use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, HexParser, PubkeyHexParser};
+use super::arg_parser::{
+    AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
+};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -238,4 +243,32 @@ pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
             }
         }
     }
+}
+
+pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
+    let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
+    let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+        .expect("Generate hash(H160) from pubkey failed");
+    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+        if lock_args.contains(&lock_arg) {
+            if message == &h256!("0x0") {
+                Ok(Some([0u8; 65]))
+            } else {
+                let message = secp256k1::Message::from_slice(message.as_bytes())
+                    .expect("Convert to secp256k1 message failed");
+                let signature = SECP256K1.sign_recoverable(&message, &privkey);
+                Ok(Some(serialize_signature(&signature)))
+            }
+        } else {
+            Ok(None)
+        }
+    })
+}
+
+pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
+    let (recov_id, data) = signature.serialize_compact();
+    let mut signature_bytes = [0u8; 65];
+    signature_bytes[0..64].copy_from_slice(&data[0..64]);
+    signature_bytes[64] = recov_id.to_i32() as u8;
+    signature_bytes
 }
