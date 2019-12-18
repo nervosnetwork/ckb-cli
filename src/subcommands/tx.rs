@@ -5,18 +5,18 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH},
+    constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, TxHelper, SECP256K1,
+    MultisigConfig, NetworkType, SignerFn, TxHelper,
 };
 use ckb_types::{
     bytes::Bytes,
     core::Capacity,
+    h256,
     packed::{self, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
@@ -34,7 +34,7 @@ use crate::utils::{
     },
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_to_data, read_password,
+        get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
     },
     printer::{OutputFormat, Printable},
 };
@@ -595,42 +595,10 @@ fn print_cell_info(
     );
 }
 
-fn serialize_signature(
-    signature: &secp256k1::recovery::RecoverableSignature,
-) -> [u8; SECP_SIGNATURE_SIZE] {
-    let (recov_id, data) = signature.serialize_compact();
-    let mut signature_bytes = [0u8; 65];
-    signature_bytes[0..64].copy_from_slice(&data[0..64]);
-    signature_bytes[64] = recov_id.to_i32() as u8;
-    signature_bytes
-}
-
-type SignerFn = Box<dyn FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>>;
-
-fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
-    let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
-    let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
-        .expect("Generate hash(H160) from pubkey failed");
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&lock_arg) {
-            if message == &SIGHASH_TYPE_HASH {
-                Ok(Some([0u8; 65]))
-            } else {
-                let message = secp256k1::Message::from_slice(message.as_bytes())
-                    .expect("Convert to secp256k1 message failed");
-                let signature = SECP256K1.sign_recoverable(&message, &privkey);
-                Ok(Some(serialize_signature(&signature)))
-            }
-        } else {
-            Ok(None)
-        }
-    })
-}
-
 fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
     Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
         if lock_args.contains(&account) {
-            if message == &SIGHASH_TYPE_HASH {
+            if message == &h256!("0x0") {
                 Ok(Some([0u8; 65]))
             } else {
                 key_store
