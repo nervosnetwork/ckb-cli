@@ -83,8 +83,25 @@ pub fn from_account<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("from-account")
         .long("from-account")
         .takes_value(true)
-        .validator(|input| FixedHashParser::<H160>::default().validate(input))
-        .help("The account's lock-arg (transfer from this account)")
+        .validator(|input| {
+            FixedHashParser::<H160>::default()
+                .validate(input.clone())
+                .or_else(|err| {
+                    AddressParser::default()
+                        .validate(input.clone())
+                        .and_then(|()| AddressParser::new_sighash().validate(input))
+                        .map_err(|_| err)
+                })
+        })
+        .help("The account's lock-arg or sighash address (transfer from this account)")
+}
+
+pub fn from_locked_address<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("from-locked-address")
+        .long("from-locked-address")
+        .takes_value(true)
+        .validator(|input| AddressParser::default().validate(input))
+        .help("The time locked multisig address to search live cells (which S=0,R=0,M=1,N=1 and have since value)")
 }
 
 pub fn to_address<'a, 'b>() -> Arg<'a, 'b> {

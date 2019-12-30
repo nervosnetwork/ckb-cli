@@ -13,7 +13,7 @@ use serde_json::json;
 
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, UtilSubCommand, WalletSubCommand,
+    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -323,6 +323,14 @@ impl InteractiveEnv {
                         genesis_info,
                     )
                     .process(&sub_matches, format, color, debug)?;
+                    println!("{}", output);
+                    Ok(())
+                }
+                ("tx", Some(sub_matches)) => {
+                    let genesis_info = self.genesis_info().ok();
+                    let output =
+                        TxSubCommand::new(&mut self.rpc_client, &mut self.key_store, genesis_info)
+                            .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }

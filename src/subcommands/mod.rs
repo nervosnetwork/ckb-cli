@@ -4,6 +4,7 @@ pub mod molecule;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
+pub mod tx;
 pub mod util;
 pub mod wallet;
 
@@ -14,6 +15,7 @@ pub use account::AccountSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
 pub use rpc::RpcSubCommand;
+pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
 pub use wallet::{
     start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,

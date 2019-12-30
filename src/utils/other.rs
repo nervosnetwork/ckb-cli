@@ -1,16 +1,22 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ckb_hash::blake2b_256;
 use ckb_index::{with_index_db, IndexDatabase, VERSION};
 use ckb_sdk::{
+    constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
+    SECP256K1,
 };
 use ckb_types::{
+    bytes::Bytes,
     core::BlockView,
+    h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
     H160, H256,
@@ -19,7 +25,9 @@ use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
 
-use super::arg_parser::{AddressParser, ArgParser, FixedHashParser, PubkeyHexParser};
+use super::arg_parser::{
+    AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
+};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -127,11 +135,11 @@ pub fn get_genesis_info(
 }
 
 pub fn get_live_cell_with_cache(
-    cache: &mut HashMap<(OutPoint, bool), CellOutput>,
+    cache: &mut HashMap<(OutPoint, bool), (CellOutput, Bytes)>,
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
-) -> Result<CellOutput, String> {
+) -> Result<(CellOutput, Bytes), String> {
     if let Some(output) = cache.get(&(out_point.clone(), with_data)).cloned() {
         Ok(output)
     } else {
@@ -145,15 +153,30 @@ pub fn get_live_cell(
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
-) -> Result<CellOutput, String> {
-    let cell = client.get_live_cell(out_point, with_data)?;
+) -> Result<(CellOutput, Bytes), String> {
+    let cell = client.get_live_cell(out_point.clone(), with_data)?;
     if cell.status != "live" {
-        return Err(format!("Invalid cell status: {}", cell.status));
+        return Err(format!(
+            "Invalid cell status: {}, out_point: {}",
+            cell.status, out_point
+        ));
     }
     let cell_status = cell.status.clone();
     cell.cell
-        .map(|cell| cell.output.into())
-        .ok_or_else(|| format!("Invalid input cell, status: {}", cell_status))
+        .map(|cell| {
+            (
+                cell.output.into(),
+                cell.data
+                    .map(|data| data.content.into_bytes())
+                    .unwrap_or_default(),
+            )
+        })
+        .ok_or_else(|| {
+            format!(
+                "Invalid input cell, status: {}, out_point: {}",
+                cell_status, out_point
+            )
+        })
 }
 
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
@@ -186,4 +209,66 @@ pub fn sync_to_tip(rpc_client: &mut HttpRpcClient, index_dir: &PathBuf) -> Resul
         }
     }
     Ok(())
+}
+
+pub fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
+    if capacity < MIN_SECP_CELL_CAPACITY {
+        return Err(format!(
+            "Capacity can not less than {} shannons",
+            MIN_SECP_CELL_CAPACITY
+        ));
+    }
+    if capacity < MIN_SECP_CELL_CAPACITY + (to_data_len as u64 * ONE_CKB) {
+        return Err(format!(
+            "Capacity can not hold {} bytes of data",
+            to_data_len
+        ));
+    }
+    Ok(())
+}
+
+pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    match to_data_opt {
+        Some(data) => Ok(data),
+        None => {
+            if let Some(path) = m.value_of("to-data-path") {
+                let mut content = Vec::new();
+                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                file.read_to_end(&mut content)
+                    .map_err(|err| err.to_string())?;
+                Ok(Bytes::from(content))
+            } else {
+                Ok(Bytes::new())
+            }
+        }
+    }
+}
+
+pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
+    let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
+    let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+        .expect("Generate hash(H160) from pubkey failed");
+    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+        if lock_args.contains(&lock_arg) {
+            if message == &h256!("0x0") {
+                Ok(Some([0u8; 65]))
+            } else {
+                let message = secp256k1::Message::from_slice(message.as_bytes())
+                    .expect("Convert to secp256k1 message failed");
+                let signature = SECP256K1.sign_recoverable(&message, &privkey);
+                Ok(Some(serialize_signature(&signature)))
+            }
+        } else {
+            Ok(None)
+        }
+    })
+}
+
+pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
+    let (recov_id, data) = signature.serialize_compact();
+    let mut signature_bytes = [0u8; 65];
+    signature_bytes[0..64].copy_from_slice(&data[0..64]);
+    signature_bytes[64] = recov_id.to_i32() as u8;
+    signature_bytes
 }
