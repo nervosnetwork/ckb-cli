@@ -16,13 +16,14 @@ use subcommands::TuiSubCommand;
 
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    start_index_thread, AccountSubCommand, CliSubCommand, MockTxSubCommand, MoleculeSubCommand,
+    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::sync_to_tip;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
+    index::IndexThreadState,
     other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
@@ -97,7 +98,7 @@ fn main() -> Result<(), io::Error> {
     // to the tip before executing the command.
     let wait_for_sync = matches.is_present("wait-for-sync");
     if wait_for_sync {
-        if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
+        if let Err(err) = sync_to_tip(&index_controller) {
             eprintln!("Synchronize error: {}", err);
             process::exit(1);
         }

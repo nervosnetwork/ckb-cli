@@ -64,6 +64,7 @@ impl BlockDeltaInfo {
     pub(crate) fn from_block<'r, T: KVReader<'r>>(
         block: &BlockView,
         reader: &'r T,
+        clear_old: bool,
     ) -> BlockDeltaInfo {
         let block_header: HeaderView = block.header().clone();
         let block_number = block_header.number();
@@ -72,26 +73,28 @@ impl BlockDeltaInfo {
         // Collect old headers to be deleted
         let mut old_headers = Vec::new();
         let mut old_blocks = Vec::new();
-        for (key_bytes, _) in reader.iter_from(&KeyType::RecentHeader.to_bytes()) {
-            if let Key::RecentHeader(number) = Key::from_bytes(&key_bytes) {
-                if number + KEEP_RECENT_HEADERS <= block_number {
-                    old_headers.push(number);
+        if clear_old {
+            for (key_bytes, _) in reader.iter_from(&KeyType::RecentHeader.to_bytes()) {
+                if let Key::RecentHeader(number) = Key::from_bytes(&key_bytes) {
+                    if number + KEEP_RECENT_HEADERS <= block_number {
+                        old_headers.push(number);
+                    } else {
+                        break;
+                    }
                 } else {
                     break;
                 }
-            } else {
-                break;
             }
-        }
-        for (key_bytes, _) in reader.iter_from(&KeyType::BlockDelta.to_bytes()) {
-            if let Key::BlockDelta(number) = Key::from_bytes(&key_bytes) {
-                if number + KEEP_RECENT_BLOCKS <= block_number {
-                    old_blocks.push(number);
+            for (key_bytes, _) in reader.iter_from(&KeyType::BlockDelta.to_bytes()) {
+                if let Key::BlockDelta(number) = Key::from_bytes(&key_bytes) {
+                    if number + KEEP_RECENT_BLOCKS <= block_number {
+                        old_blocks.push(number);
+                    } else {
+                        break;
+                    }
                 } else {
                     break;
                 }
-            } else {
-                break;
             }
         }
         log::info!(

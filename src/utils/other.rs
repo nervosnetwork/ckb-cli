@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
-use ckb_index::{with_index_db, IndexDatabase, VERSION};
+use ckb_index::VERSION;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
@@ -15,10 +16,9 @@ use ckb_sdk::{
 };
 use ckb_types::{
     bytes::Bytes,
-    core::BlockView,
+    core::{service::Request, BlockView},
     h256,
     packed::{CellOutput, OutPoint},
-    prelude::*,
     H160, H256,
 };
 use clap::ArgMatches;
@@ -28,6 +28,7 @@ use rpassword::prompt_password_stdout;
 use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
+use super::index::{IndexController, IndexRequest, IndexThreadState};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -189,23 +190,17 @@ pub fn index_dirname() -> String {
     format!("index-v{}", VERSION)
 }
 
-pub fn sync_to_tip(rpc_client: &mut HttpRpcClient, index_dir: &PathBuf) -> Result<(), String> {
-    let genesis_block: BlockView = rpc_client
-        .get_block_by_number(0)?
-        .expect("Can not get genesis block?")
-        .into();
-    let genesis_hash: H256 = genesis_block.hash().unpack();
-    let tip_number = rpc_client.get_tip_block_number()?;
-    let network_type = get_network_type(rpc_client)?;
-    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
+pub fn sync_to_tip(index_controller: &IndexController) -> Result<(), String> {
+    // Kick index thread to start
+    Request::call(index_controller.sender(), IndexRequest::Kick);
     loop {
-        let synced = with_index_db(index_dir.clone(), genesis_hash.clone(), |backend, cf| {
-            IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)
-                .map(|db| db.last_number().unwrap_or(0))
-                .or_else(|_| Ok(0))
-        });
-        if synced.unwrap_or(0) == tip_number {
+        let state = IndexThreadState::clone(&index_controller.state().read());
+        if state.is_synced() {
             break;
+        } else if state.is_error() {
+            return Err(state.get_error().unwrap());
+        } else {
+            thread::sleep(Duration::from_millis(200));
         }
     }
     Ok(())

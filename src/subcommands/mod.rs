@@ -17,10 +17,7 @@ pub use molecule::MoleculeSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
-pub use wallet::{
-    start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,
-    WalletSubCommand,
-};
+pub use wallet::{start_index_thread, WalletSubCommand};
 
 use clap::ArgMatches;
 

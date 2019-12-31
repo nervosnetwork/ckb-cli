@@ -20,6 +20,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
+    index::IndexController,
     other::{
         check_capacity, get_address, get_live_cell_with_cache, get_network_type,
         get_privkey_signer, get_to_data, read_password, serialize_signature,
@@ -37,10 +38,7 @@ use ckb_sdk::{
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
     Since, SinceType, TxHelper, SECP256K1,
 };
-pub use index::{
-    start_index_thread, CapacityResult, IndexController, IndexRequest, IndexResponse,
-    IndexThreadState, SimpleBlockInfo,
-};
+pub use index::start_index_thread;
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;

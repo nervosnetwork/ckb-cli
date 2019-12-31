@@ -27,8 +27,10 @@ use ckb_types::{
     H256,
 };
 
-use super::wallet::{IndexController, IndexRequest};
-use crate::utils::other::get_network_type;
+use crate::utils::{
+    index::{IndexController, IndexRequest},
+    other::get_network_type,
+};
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{human_capacity, ts_now, App, Event, Events, TabsState};
 use widgets::List;
