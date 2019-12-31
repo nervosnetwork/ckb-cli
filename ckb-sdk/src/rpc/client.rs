@@ -1,7 +1,8 @@
 use ckb_jsonrpc_types::{
-    BannedAddr, BlockNumber, BlockReward, BlockView, CellOutputWithOutPoint, CellTransaction,
-    CellWithStatus, ChainInfo, EpochNumber, EpochView, HeaderView, LiveCell, LockHashIndexState,
-    Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus, TxPoolInfo, Uint64,
+    BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
+    CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, HeaderView, LiveCell,
+    LockHashIndexState, Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus,
+    TxPoolInfo, Uint64, Version,
 };
 use jsonrpc_client_core::{expand_params, jsonrpc_client};
 use jsonrpc_client_http::{HttpHandle, HttpTransport};
@@ -72,6 +73,10 @@ jsonrpc_client!(pub struct RawRpcClient {
     pub fn add_node(&mut self, peer_id: String, address: String) -> RpcRequest<()>;
     pub fn remove_node(&mut self, peer_id: String) -> RpcRequest<()>;
     pub fn broadcast_transaction(&mut self, tx: Transaction) -> RpcRequest<H256>;
+
+    // Miner
+    pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> RpcRequest<BlockTemplate>;
+    pub fn submit_block(&mut self, _work_id: String, _data: Block) -> RpcRequest<H256>;
 });
 
 impl RawRpcClient<HttpHandle> {
@@ -352,6 +357,29 @@ impl HttpRpcClient {
     pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client
             .broadcast_transaction(tx.into())
+            .call()
+            .map_err(|err| err.to_string())
+    }
+
+    // Miner
+    pub fn get_block_template(
+        &mut self,
+        bytes_limit: Option<u64>,
+        proposals_limit: Option<u64>,
+        max_version: Option<u32>,
+    ) -> Result<BlockTemplate, String> {
+        self.client
+            .get_block_template(
+                bytes_limit.map(Into::into),
+                proposals_limit.map(Into::into),
+                max_version.map(Into::into),
+            )
+            .call()
+            .map_err(|err| err.to_string())
+    }
+    pub fn submit_block(&mut self, work_id: String, data: packed::Block) -> Result<H256, String> {
+        self.client
+            .submit_block(work_id, data.into())
             .call()
             .map_err(|err| err.to_string())
     }
