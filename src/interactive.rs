@@ -157,7 +157,7 @@ impl InteractiveEnv {
                         }
                         Ok(false) => {}
                         Err(err) => {
-                            eprintln!("{}", err.to_string());
+                            eprintln!("{}", err);
                         }
                     }
                     rl.add_history_entry(line.as_str());

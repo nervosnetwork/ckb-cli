@@ -14,6 +14,9 @@ pub enum Error {
     #[fail(display = "Key mismatch, got {:x}, expected: {:x}", got, expected)]
     KeyMismatch { got: H160, expected: H160 },
 
+    #[fail(display = "Key already exists {:x}", _0)]
+    KeyExists(H160),
+
     #[fail(display = "Wrong password for {:x}", _0)]
     WrongPassword(H160),
 
