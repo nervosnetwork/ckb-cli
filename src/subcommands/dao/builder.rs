@@ -1,6 +1,6 @@
 use super::util::minimal_unlock_point;
 use ckb_index::LiveCellInfo;
-use ckb_sdk::{GenesisInfo, HttpRpcClient, Since};
+use ckb_sdk::{GenesisInfo, HttpRpcClient, Since, SinceType};
 use ckb_types::{
     bytes::Bytes,
     core::{HeaderView, ScriptHashType, TransactionBuilder, TransactionView},
@@ -177,8 +177,12 @@ impl DAOBuilder {
             .zip(prepare_txo_headers.iter())
             .map(|((_, _, deposit_header), (out_point, _, prepare_header))| {
                 let minimal_unlock_point = minimal_unlock_point(deposit_header, prepare_header);
-                let since = Since::new_absolute_epoch(minimal_unlock_point.full_value()).value();
-                CellInput::new(out_point.clone(), since)
+                let since = Since::new(
+                    SinceType::EpochNumberWithFraction,
+                    minimal_unlock_point.full_value(),
+                    false,
+                );
+                CellInput::new(out_point.clone(), since.value())
             });
         let total_capacity = deposit_txo_headers
             .iter()

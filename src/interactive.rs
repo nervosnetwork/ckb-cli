@@ -12,8 +12,8 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand, RpcSubCommand,
-    TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
+    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,

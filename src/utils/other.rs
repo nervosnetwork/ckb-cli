@@ -20,6 +20,7 @@ use ckb_types::{
     core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
     h256,
     packed::{CellOutput, OutPoint},
+    prelude::*,
     H160, H256,
 };
 use clap::ArgMatches;

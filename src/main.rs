@@ -17,8 +17,8 @@ use subcommands::TuiSubCommand;
 use crate::utils::other::get_genesis_info;
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
-    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    start_index_thread, AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
+    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::sync_to_tip;
 use utils::{

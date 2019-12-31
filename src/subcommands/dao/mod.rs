@@ -2,7 +2,7 @@ use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use self::util::blake2b_args;
 use crate::subcommands::dao::util::is_mature;
-use crate::subcommands::IndexController;
+use crate::utils::index::IndexController;
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, read_password, serialize_signature,
 };
