@@ -2,10 +2,12 @@ use crate::utils::{
     other::check_lack_of_capacity,
     printer::{OutputFormat, Printable},
 };
+use ckb_dao_utils::extract_dao_data;
 use ckb_hash::new_blake2b;
 use ckb_index::LiveCellInfo;
 use ckb_sdk::HttpRpcClient;
-use ckb_types::core::TransactionView;
+use ckb_types::core::{Capacity, TransactionView};
+use ckb_types::packed::CellOutput;
 use ckb_types::{
     core::{EpochNumber, EpochNumberWithFraction, HeaderView},
     packed,
@@ -32,28 +34,79 @@ pub(crate) fn blake2b_args(args: &[Vec<u8>]) -> [u8; 32] {
 
 pub(crate) fn calculate_dao_maximum_withdraw(
     rpc_client: &mut HttpRpcClient,
-    info: &LiveCellInfo,
+    prepare_cell: &LiveCellInfo,
 ) -> Result<u64, String> {
-    let tx = rpc_client
-        .get_transaction(info.tx_hash.clone())?
-        .ok_or_else(|| "invalid prepare out_point, the tx is notfound".to_string())?;
-    let prepare_block_hash = tx
+    // Get the deposit_header and prepare_header corresponding to the `prepare_cell`
+    let prepare_tx_status = rpc_client
+        .get_transaction(prepare_cell.tx_hash.clone())?
+        .ok_or_else(|| "invalid prepare out_point, the tx is not found".to_string())?;
+    let prepare_block_hash = prepare_tx_status
         .tx_status
         .block_hash
         .ok_or("invalid prepare out_point, the tx is not committed")?;
-    let tx: packed::Transaction = tx.transaction.inner.into();
-    let tx = tx.into_view();
+    let prepare_tx = {
+        let tx: packed::Transaction = prepare_tx_status.transaction.inner.into();
+        tx.into_view()
+    };
+    let deposit_tx_status = {
+        let input = prepare_tx
+            .inputs()
+            .get(prepare_cell.out_point().index().unpack())
+            .expect("invalid prepare out_point");
+        let deposit_tx_hash = input.previous_output().tx_hash();
+        rpc_client
+            .get_transaction(deposit_tx_hash.unpack())?
+            .ok_or_else(|| "invalid deposit out_point, the tx is not found".to_string())?
+    };
+    let deposit_block_hash = deposit_tx_status
+        .tx_status
+        .block_hash
+        .ok_or("invalid deposit out_point, the tx is not committed")?;
+    let deposit_tx = {
+        let tx: packed::Transaction = deposit_tx_status.transaction.inner.into();
+        tx.into_view()
+    };
+    let (output, output_data) = {
+        deposit_tx
+            .output_with_data(prepare_cell.out_point().index().unpack())
+            .ok_or_else(|| "invalid deposit out_point, the cell is not found".to_string())?
+    };
+    let deposit_header: HeaderView = rpc_client
+        .get_header(deposit_block_hash)?
+        .ok_or_else(|| "failed to get deposit_header".to_string())?
+        .into();
+    let prepare_header: HeaderView = rpc_client
+        .get_header(prepare_block_hash)?
+        .ok_or_else(|| "failed to get prepare_header".to_string())?
+        .into();
 
-    let input = tx
-        .inputs()
-        .get(info.out_point().index().unpack())
-        .expect("invalid prepare out_point");
-    let deposit_out_point = input.previous_output();
+    // Calculate maximum withdraw of the deposited_output
+    //
+    // NOTE: It is safe to use `unwrap` for the data we fetch from ckb node.
+    let occupied_capacity = output
+        .occupied_capacity(Capacity::bytes(output_data.len()).unwrap())
+        .unwrap();
+    Ok(calculate_dao_maximum_withdraw4(
+        &deposit_header,
+        &prepare_header,
+        &output,
+        occupied_capacity.as_u64(),
+    ))
+}
 
-    let maximum = rpc_client
-        .calculate_dao_maximum_withdraw(deposit_out_point, prepare_block_hash)?
-        .as_u64();
-    Ok(maximum)
+pub(crate) fn calculate_dao_maximum_withdraw4(
+    deposit_header: &HeaderView,
+    prepare_header: &HeaderView,
+    output: &CellOutput,
+    occupied_capacity: u64,
+) -> u64 {
+    let (deposit_ar, _, _, _) = extract_dao_data(deposit_header.dao()).unwrap();
+    let (prepare_ar, _, _, _) = extract_dao_data(prepare_header.dao()).unwrap();
+    let output_capacity: Capacity = output.capacity().unpack();
+    let counted_capacity = output_capacity.safe_sub(occupied_capacity).unwrap();
+    let interest =
+        u128::from(counted_capacity.as_u64()) * u128::from(prepare_ar) / u128::from(deposit_ar);
+    output_capacity.as_u64() + interest as u64
 }
 
 pub(crate) fn send_transaction(

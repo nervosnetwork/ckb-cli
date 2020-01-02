@@ -336,6 +336,7 @@ dependencies = [
  "chrono 0.4.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "ckb-build-info 0.26.1-pre (git+https://github.com/nervosnetwork/ckb?tag=v0.26.1-rc1)",
  "ckb-crypto 0.26.1-pre (git+https://github.com/nervosnetwork/ckb?tag=v0.26.1-rc1)",
+ "ckb-dao-utils 0.26.1-pre (git+https://github.com/nervosnetwork/ckb?tag=v0.26.1-rc1)",
  "ckb-hash 0.26.1-pre (git+https://github.com/nervosnetwork/ckb?tag=v0.26.1-rc1)",
  "ckb-index 0.26.1",
  "ckb-jsonrpc-types 0.26.1-pre (git+https://github.com/nervosnetwork/ckb?tag=v0.26.1-rc1)",

@@ -1,6 +1,8 @@
 use super::util::minimal_unlock_point;
+use crate::subcommands::dao::util::calculate_dao_maximum_withdraw4;
 use ckb_index::LiveCellInfo;
 use ckb_sdk::{GenesisInfo, HttpRpcClient, Since, SinceType};
+use ckb_types::core::Capacity;
 use ckb_types::{
     bytes::Bytes,
     core::{HeaderView, ScriptHashType, TransactionBuilder, TransactionView},
@@ -187,14 +189,17 @@ impl DAOBuilder {
         let total_capacity = deposit_txo_headers
             .iter()
             .zip(prepare_txo_headers.iter())
-            .map(|((deposit_txo, _, _), (_, _, prepare_header))| {
-                rpc_client
-                    .calculate_dao_maximum_withdraw(
-                        deposit_txo.clone(),
-                        prepare_header.hash().unpack(),
-                    )
-                    .expect("RPC calculate_dao_maximum_withdraw failed")
-                    .as_u64()
+            .map(|((_, output, deposit_header), (_, _, prepare_header))| {
+                const DAO_OUTPUT_DATA_LEN: usize = 8;
+                let occupied_capacity = output
+                    .occupied_capacity(Capacity::bytes(DAO_OUTPUT_DATA_LEN).unwrap())
+                    .unwrap();
+                calculate_dao_maximum_withdraw4(
+                    deposit_header,
+                    prepare_header,
+                    output,
+                    occupied_capacity.as_u64(),
+                )
             })
             .sum::<u64>();
         let output_capacity = total_capacity - self.tx_fee;
