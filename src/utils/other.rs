@@ -8,7 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ckb_hash::blake2b_256;
 use ckb_index::VERSION;
 use ckb_sdk::{
-    constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
+    calc_max_mature_number,
+    constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
@@ -16,9 +17,10 @@ use ckb_sdk::{
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView},
+    core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
     h256,
     packed::{CellOutput, OutPoint},
+    prelude::*,
     H160, H256,
 };
 use clap::ArgMatches;
@@ -180,6 +182,29 @@ pub fn get_live_cell(
         })
 }
 
+// Get max mature block number
+pub fn get_max_mature_number(rpc_client: &mut HttpRpcClient) -> Result<u64, String> {
+    let tip_epoch = rpc_client
+        .get_tip_header()
+        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
+    let tip_epoch_number = tip_epoch.number();
+    if tip_epoch_number < 4 {
+        // No cellbase live cell is mature
+        Ok(0)
+    } else {
+        let max_mature_epoch = rpc_client
+            .get_epoch_by_number(tip_epoch_number - 4)?
+            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
+        let start_number = max_mature_epoch.start_number;
+        let length = max_mature_epoch.length;
+        Ok(calc_max_mature_number(
+            tip_epoch,
+            Some((start_number, length)),
+            CELLBASE_MATURITY,
+        ))
+    }
+}
+
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
     let chain_info = rpc_client.get_blockchain_info()?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
@@ -218,6 +243,28 @@ pub fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
             "Capacity can not hold {} bytes of data",
             to_data_len
         ));
+    }
+    Ok(())
+}
+
+pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), String> {
+    for (output, output_data) in transaction.outputs_with_data_iter() {
+        let exact = output
+            .clone()
+            .as_builder()
+            .build_exact_capacity(Capacity::bytes(output_data.len()).unwrap())
+            .unwrap();
+        let output_capacity: u64 = output.capacity().unpack();
+        let exact_capacity: u64 = exact.capacity().unpack();
+        if output_capacity < exact_capacity {
+            return Err(format!(
+                "Insufficient Cell Capacity, output_capacity({}) < exact_capacity({}), output: {}, output_data_size: {}",
+                output_capacity,
+                exact_capacity,
+                output,
+                output_data.len(),
+            ));
+        }
     }
     Ok(())
 }

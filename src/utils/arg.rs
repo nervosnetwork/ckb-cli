@@ -1,6 +1,6 @@
 use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-    HexParser, PrivkeyPathParser, PubkeyHexParser,
+    HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
 use ckb_types::{H160, H256};
 use clap::Arg;
@@ -193,4 +193,12 @@ pub fn top_n<'a, 'b>() -> Arg<'a, 'b> {
         .validator(|input| FromStrParser::<u32>::default().validate(input))
         .default_value("10")
         .help("Get top n capacity addresses")
+}
+
+pub fn out_point<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("out-point")
+        .long("out-point")
+        .takes_value(true)
+        .validator(|input| { OutPointParser.validate(input) })
+        .help("out-point to specify a cell. Example: 0xd56ed5d4e8984701714de9744a533413f79604b3b91461e2265614829d2005d1-1")
 }

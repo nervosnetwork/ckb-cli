@@ -497,7 +497,6 @@ impl ArgParser<HumanCapacity> for CapacityParser {
     }
 }
 
-#[allow(dead_code)]
 pub struct OutPointParser;
 
 impl ArgParser<OutPoint> for OutPointParser {

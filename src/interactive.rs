@@ -12,8 +12,8 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, MockTxSubCommand, MoleculeSubCommand, RpcSubCommand,
-    TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
+    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -357,6 +357,19 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.key_store,
                         Some(genesis_info),
+                        self.index_dir.clone(),
+                        self.index_controller.clone(),
+                    )
+                    .process(&sub_matches, format, color, debug)?;
+                    println!("{}", output);
+                    Ok(())
+                }
+                ("dao", Some(sub_matches)) => {
+                    let genesis_info = self.genesis_info()?;
+                    let output = DAOSubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.key_store,
+                        genesis_info,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                     )

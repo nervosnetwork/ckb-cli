@@ -1,5 +1,7 @@
+mod dao;
 mod rpc;
 
+pub use dao::*;
 pub use rpc::*;
 
 use crate::setup::Setup;
