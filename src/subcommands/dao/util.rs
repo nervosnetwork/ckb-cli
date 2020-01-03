@@ -157,7 +157,11 @@ pub(crate) fn minimal_unlock_point(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ckb_types::core::HeaderBuilder;
+    use ckb_dao_utils::pack_dao_data;
+    use ckb_types::{
+        bytes::Bytes,
+        core::{capacity_bytes, HeaderBuilder},
+    };
 
     #[test]
     fn test_minimal_unlock_point() {
@@ -200,5 +204,39 @@ mod tests {
                 deposit_point, prepare_point, expected, actual,
             );
         }
+    }
+
+    #[test]
+    fn check_withdraw_calculation() {
+        let data = Bytes::from(vec![1; 10]);
+        let output = CellOutput::new_builder()
+            .capacity(capacity_bytes!(1000000).pack())
+            .build();
+        let deposit_header = HeaderBuilder::default()
+            .number(100.pack())
+            .dao(pack_dao_data(
+                10_000_000_000_123_456,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ))
+            .build();
+        let prepare_header = HeaderBuilder::default()
+            .number(200.pack())
+            .dao(pack_dao_data(
+                10_000_000_001_123_456,
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ))
+            .build();
+
+        let result = calculate_dao_maximum_withdraw4(
+            &deposit_header,
+            &prepare_header,
+            &output,
+            Capacity::bytes(data.len()).unwrap().as_u64(),
+        );
+        assert_eq!(result, 100_000_000_009_999);
     }
 }
