@@ -48,12 +48,13 @@ pub(crate) fn calculate_dao_maximum_withdraw(
         let tx: packed::Transaction = prepare_tx_status.transaction.inner.into();
         tx.into_view()
     };
+    let deposit_out_point = prepare_tx
+        .inputs()
+        .get(prepare_cell.index.output_index as usize)
+        .ok_or_else(|| "invalid prepare tx".to_string())?
+        .previous_output();
     let deposit_tx_status = {
-        let input = prepare_tx
-            .inputs()
-            .get(prepare_cell.out_point().index().unpack())
-            .expect("invalid prepare out_point");
-        let deposit_tx_hash = input.previous_output().tx_hash();
+        let deposit_tx_hash = deposit_out_point.tx_hash();
         rpc_client
             .get_transaction(deposit_tx_hash.unpack())?
             .ok_or_else(|| "invalid deposit out_point, the tx is not found".to_string())?
@@ -68,7 +69,7 @@ pub(crate) fn calculate_dao_maximum_withdraw(
     };
     let (output, output_data) = {
         deposit_tx
-            .output_with_data(prepare_cell.out_point().index().unpack())
+            .output_with_data(deposit_out_point.index().unpack())
             .ok_or_else(|| "invalid deposit out_point, the cell is not found".to_string())?
     };
     let deposit_header: HeaderView = rpc_client
@@ -103,10 +104,10 @@ pub(crate) fn calculate_dao_maximum_withdraw4(
     let (deposit_ar, _, _, _) = extract_dao_data(deposit_header.dao()).unwrap();
     let (prepare_ar, _, _, _) = extract_dao_data(prepare_header.dao()).unwrap();
     let output_capacity: Capacity = output.capacity().unpack();
-    let counted_capacity = output_capacity.safe_sub(occupied_capacity).unwrap();
-    let interest =
-        u128::from(counted_capacity.as_u64()) * u128::from(prepare_ar) / u128::from(deposit_ar);
-    output_capacity.as_u64() + interest as u64
+    let counted_capacity = output_capacity.as_u64() - occupied_capacity;
+    let withdraw_counted_capacity =
+        u128::from(counted_capacity) * u128::from(prepare_ar) / u128::from(deposit_ar);
+    occupied_capacity + withdraw_counted_capacity as u64
 }
 
 pub(crate) fn send_transaction(
