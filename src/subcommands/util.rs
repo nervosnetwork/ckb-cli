@@ -27,6 +27,7 @@ use crate::utils::{
     other::get_address,
     printer::{OutputFormat, Printable},
 };
+use crate::{build_cli, get_version};
 
 const FLAG_SINCE_EPOCH_NUMBER: u64 =
     0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
@@ -167,6 +168,14 @@ impl<'a> UtilSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
                             .help("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
+                    ),
+                SubCommand::with_name("completions")
+                    .about("Generates completion scripts for your shell")
+                    .arg(
+                        Arg::with_name("shell")
+                            .required(true)
+                            .possible_values(&["bash", "fish", "zsh"])
+                            .help("The shell to generate the script for")
                     ),
         ])
     }
@@ -345,6 +354,16 @@ message = "0x"
                     "target_epoch": epoch.to_string(),
                 });
                 Ok(resp.render(format, color))
+            }
+            ("completions", Some(m)) => {
+                let shell = m.value_of("shell").unwrap();
+                let version = get_version();
+                build_cli(&version.short(), &version.long()).gen_completions_to(
+                    "ckb-cli",
+                    shell.parse().unwrap(),
+                    &mut std::io::stdout(),
+                );
+                Ok("".to_string())
             }
             _ => Err(matches.usage().to_owned()),
         }
