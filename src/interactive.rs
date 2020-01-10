@@ -12,12 +12,13 @@ use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, IndexController, IndexRequest, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
+    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
+    index::{IndexController, IndexRequest},
     other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
@@ -156,7 +157,7 @@ impl InteractiveEnv {
                         }
                         Ok(false) => {}
                         Err(err) => {
-                            eprintln!("{}", err.to_string());
+                            eprintln!("{}", err);
                         }
                     }
                     rl.add_history_entry(line.as_str());
@@ -356,6 +357,19 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.key_store,
                         Some(genesis_info),
+                        self.index_dir.clone(),
+                        self.index_controller.clone(),
+                    )
+                    .process(&sub_matches, format, color, debug)?;
+                    println!("{}", output);
+                    Ok(())
+                }
+                ("dao", Some(sub_matches)) => {
+                    let genesis_info = self.genesis_info()?;
+                    let output = DAOSubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.key_store,
+                        genesis_info,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                     )

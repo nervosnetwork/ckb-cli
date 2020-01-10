@@ -14,15 +14,17 @@ use clap::{App, AppSettings, Arg, SubCommand};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 
+use crate::utils::other::get_genesis_info;
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, AccountSubCommand, CliSubCommand, IndexThreadState, MockTxSubCommand,
+    start_index_thread, AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
     MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::sync_to_tip;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
+    index::IndexThreadState,
     other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
@@ -97,7 +99,7 @@ fn main() -> Result<(), io::Error> {
     // to the tip before executing the command.
     let wait_for_sync = matches.is_present("wait-for-sync");
     if wait_for_sync {
-        if let Err(err) = sync_to_tip(&mut rpc_client, &index_dir) {
+        if let Err(err) = sync_to_tip(&index_controller) {
             eprintln!("Synchronize error: {}", err);
             process::exit(1);
         }
@@ -156,6 +158,20 @@ fn main() -> Result<(), io::Error> {
             )
             .process(&sub_matches, output_format, color, debug)
         }),
+        ("dao", Some(sub_matches)) => {
+            get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
+                get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+                    DAOSubCommand::new(
+                        &mut rpc_client,
+                        &mut key_store,
+                        genesis_info,
+                        index_dir.clone(),
+                        index_controller.clone(),
+                    )
+                    .process(&sub_matches, output_format, color, debug)
+                })
+            })
+        }
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
@@ -231,6 +247,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
+        .subcommand(DAOSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
                 .long("url")
@@ -333,4 +350,5 @@ pub fn build_interactive() -> App<'static, 'static> {
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
+        .subcommand(DAOSubCommand::subcommand())
 }

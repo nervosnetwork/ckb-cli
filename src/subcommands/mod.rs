@@ -1,4 +1,5 @@
 pub mod account;
+pub mod dao;
 pub mod mock_tx;
 pub mod molecule;
 pub mod rpc;
@@ -12,15 +13,13 @@ pub mod wallet;
 pub use self::tui::TuiSubCommand;
 
 pub use account::AccountSubCommand;
+pub use dao::DAOSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
-pub use wallet::{
-    start_index_thread, IndexController, IndexRequest, IndexResponse, IndexThreadState,
-    WalletSubCommand,
-};
+pub use wallet::{start_index_thread, WalletSubCommand};
 
 use clap::ArgMatches;
 

@@ -303,8 +303,10 @@ impl<'a> IndexDatabase<'a> {
         };
 
         let mut txn = RocksTxn::new(self.db, self.cf);
-        for block in blocks {
-            let block_delta_info = BlockDeltaInfo::from_block(&block, &txn);
+        let blocks_len = blocks.len();
+        for (idx, block) in blocks.into_iter().enumerate() {
+            let clear_old = idx + 1 == blocks_len;
+            let block_delta_info = BlockDeltaInfo::from_block(&block, &txn, clear_old);
             let number = block_delta_info.number();
             let hash = block_delta_info.hash();
             let result = block_delta_info.apply(&mut txn, self.enable_explorer);
