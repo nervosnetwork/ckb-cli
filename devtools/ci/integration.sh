@@ -12,32 +12,34 @@ mkdir -p ../ckb-cli-integration
 cd ../ckb-cli-integration
 
 if [[ "$BRANCH" == v* ]]; then
-  if [ "$(uname)" = Darwin ]; then
-    rm -rf "ckb_${BRANCH}_x86_64-apple-darwin.zip" "ckb_${BRANCH}_x86_64-apple-darwin"
-    curl -L -O "https://github.com/nervosnetwork/ckb/releases/download/${BRANCH}/ckb_${BRANCH}_x86_64-apple-darwin.zip"
-    unzip "ckb_${BRANCH}_x86_64-apple-darwin.zip"
-    CKB_BIN="$(pwd)/ckb_${BRANCH}_x86_64-apple-darwin/ckb"
-  else
-    rm -rf "ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz" "ckb_${BRANCH}_x86_64-unknown-linux-gnu"
-    curl -L -O "https://github.com/nervosnetwork/ckb/releases/download/${BRANCH}/ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz"
-    tar -xzf "ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz"
-    CKB_BIN="$(pwd)/ckb_${BRANCH}_x86_64-unknown-linux-gnu/ckb"
-  fi
+    if [ "$(uname)" = Darwin ]; then
+        if [ ! -f "ckb_${BRANCH}_x86_64-apple-darwin.zip" ]; then
+            curl -L -O "https://github.com/nervosnetwork/ckb/releases/download/${BRANCH}/ckb_${BRANCH}_x86_64-apple-darwin.zip"
+            unzip "ckb_${BRANCH}_x86_64-apple-darwin.zip"
+        fi
+        CKB_BIN="$(pwd)/ckb_${BRANCH}_x86_64-apple-darwin/ckb"
+    else
+        if [ ! -f "ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz" ]; then
+            curl -L -O "https://github.com/nervosnetwork/ckb/releases/download/${BRANCH}/ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz"
+            tar -xzf "ckb_${BRANCH}_x86_64-unknown-linux-gnu.tar.gz"
+        fi
+        CKB_BIN="$(pwd)/ckb_${BRANCH}_x86_64-unknown-linux-gnu/ckb"
+    fi
 else
-  if [ -d "ckb" ]; then
-      cd ckb
-      echo ">> checkout branch ${BRANCH}"
-      git checkout ${BRANCH}
-      git pull
-  else
-      echo ">> clone branch ${BRANCH}"
-      git clone --depth 1 --branch ${BRANCH} https://github.com/nervosnetwork/ckb.git
-      cd ckb
-  fi
+    if [ -d "ckb" ]; then
+        cd ckb
+        echo ">> checkout branch ${BRANCH}"
+        git checkout ${BRANCH}
+        git pull
+    else
+        echo ">> clone branch ${BRANCH}"
+        git clone --depth 1 --branch ${BRANCH} https://github.com/nervosnetwork/ckb.git
+        cd ckb
+    fi
 
-  rm -rf target && ln -snf ${CKB_CLI_DIR}/target target
-  make prod
-  CKB_BIN="$(pwd)/target/release/ckb"
+    rm -rf target && ln -snf ${CKB_CLI_DIR}/target target
+    make prod
+    CKB_BIN="$(pwd)/target/release/ckb"
 fi
 
 cd ${CKB_CLI_DIR}
