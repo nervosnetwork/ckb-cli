@@ -3,8 +3,8 @@ use crate::subcommands::{CliSubCommand, DAOSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        ArgParser, CapacityParser, FixedHashParser, OutPointParser, PrivkeyPathParser,
-        PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, OutPointParser,
+        PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{get_address, get_network_type},
     printer::{OutputFormat, Printable},
@@ -156,8 +156,19 @@ impl TransactArgs {
             let payload = AddressPayload::from_pubkey(&pubkey);
             Address::new(network_type, payload)
         } else {
-            let account: Option<H160> =
-                FixedHashParser::<H160>::default().from_matches_opt(m, "from-account", false)?;
+            let account: Option<H160> = FixedHashParser::<H160>::default()
+                .from_matches_opt(m, "from-account", false)
+                .or_else(|err| {
+                    let result: Result<Option<Address>, String> = AddressParser::new_sighash()
+                        .set_network(network_type)
+                        .from_matches_opt(m, "from-account", false);
+                    result
+                        .map(|address_opt| {
+                            address_opt
+                                .map(|address| H160::from_slice(&address.payload().args()).unwrap())
+                        })
+                        .map_err(|_| err)
+                })?;
             let payload = AddressPayload::from_pubkey_hash(account.clone().unwrap());
             Address::new(network_type, payload)
         };
