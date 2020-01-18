@@ -1,9 +1,11 @@
 mod dao;
 mod rpc;
+mod util;
 mod wallet;
 
 pub use dao::*;
 pub use rpc::*;
+pub use util::*;
 pub use wallet::*;
 
 use crate::setup::Setup;

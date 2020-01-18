@@ -4,6 +4,7 @@ use ckb_hash::blake2b_256;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
+    wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -17,14 +18,16 @@ use ckb_types::{
 use clap::{App, Arg, ArgMatches, SubCommand};
 use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
+use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
 use super::CliSubCommand;
 use crate::utils::{
+    arg,
     arg_parser::{
         AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::get_address,
+    other::{get_address, read_password, serialize_signature},
     printer::{OutputFormat, Printable},
 };
 
@@ -35,11 +38,18 @@ const BLOCK_PERIOD: u64 = 8 * 1000; // 8 seconds
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
+    key_store: &'a mut KeyStore,
 }
 
 impl<'a> UtilSubCommand<'a> {
-    pub fn new(rpc_client: &'a mut HttpRpcClient) -> UtilSubCommand<'a> {
-        UtilSubCommand { rpc_client }
+    pub fn new(
+        rpc_client: &'a mut HttpRpcClient,
+        key_store: &'a mut KeyStore,
+    ) -> UtilSubCommand<'a> {
+        UtilSubCommand {
+            rpc_client,
+            key_store,
+        }
     }
 
     pub fn subcommand(name: &'static str) -> App<'static, 'static> {
@@ -81,6 +91,16 @@ impl<'a> UtilSubCommand<'a> {
             })
             .help("The address in single signature format");
 
+        let arg_recoverable = Arg::with_name("recoverable")
+            .long("recoverable")
+            .help("Sign use recoverable signature");
+
+        let arg_message = Arg::with_name("message")
+            .long("message")
+            .takes_value(true)
+            .required(true)
+            .validator(|input| FixedHashParser::<H256>::default().validate(input));
+
         SubCommand::with_name(name)
             .about("Utilities")
             .subcommands(vec![
@@ -92,6 +112,47 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(arg_pubkey.clone().required(false))
                     .arg(arg_address.clone().required(false))
                     .arg(arg_lock_arg.clone()),
+                SubCommand::with_name("sign-data")
+                    .about("Sign data with secp256k1 signature ")
+                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(
+                        arg::from_account()
+                            .required_unless(arg::privkey_path().b.name)
+                            .conflicts_with(arg::privkey_path().b.name),
+                    )
+                    .arg(arg_recoverable.clone())
+                    .arg(
+                        binary_hex_arg
+                            .clone()
+                            .help("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                    ),
+                SubCommand::with_name("sign-message")
+                    .about("Sign message with secp256k1 signature")
+                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(
+                        arg::from_account()
+                            .required_unless(arg::privkey_path().b.name)
+                            .conflicts_with(arg::privkey_path().b.name),
+                    )
+                    .arg(arg_recoverable.clone())
+                    .arg(arg_message.clone().help("The message to be signed (32 bytes)")),
+                SubCommand::with_name("verify-signature")
+                    .about("Verify a compact format signature")
+                    .arg(arg::pubkey())
+                    .arg(arg::privkey_path().conflicts_with(arg::pubkey().b.name))
+                    .arg(
+                        arg::from_account()
+                            .conflicts_with_all(&[arg::privkey_path().b.name, arg::pubkey().b.name]),
+                    )
+                    .arg(arg_message.clone().help("The message to be verify (32 bytes)"))
+                    .arg(
+                        Arg::with_name("signature")
+                            .long("signature")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| HexParser.validate(input))
+                            .help("The compact format signature (support recoverable signature)")
+                    ),
                 SubCommand::with_name("eaglesong")
                     .about("Hash binary use eaglesong algorithm")
                     .arg(binary_hex_arg.clone()),
@@ -228,6 +289,137 @@ message = "0x"
                 });
                 Ok(resp.render(format, color))
             }
+            ("sign-data", Some(m)) => {
+                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let recoverable = m.is_present("recoverable");
+                let from_privkey_opt: Option<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
+                    .from_matches_opt(m, "from-account", false)
+                    .or_else(|err| {
+                        let result: Result<Option<Address>, String> =
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                        result
+                            .map(|address_opt| {
+                                address_opt.map(|address| {
+                                    H160::from_slice(&address.payload().args()).unwrap()
+                                })
+                            })
+                            .map_err(|_| err)
+                    })?;
+
+                let message = H256::from(blake2b_256(&binary));
+                let key_store_opt = from_account_opt
+                    .as_ref()
+                    .map(|account| (&*self.key_store, account));
+                let signature = sign_message(
+                    from_privkey_opt.as_ref(),
+                    key_store_opt,
+                    recoverable,
+                    &message,
+                )?;
+                let result = serde_json::json!({
+                    "message": format!("{:#x}", message),
+                    "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                    "recoverable": recoverable,
+                });
+                Ok(result.render(format, color))
+            }
+            ("sign-message", Some(m)) => {
+                let message: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "message")?;
+                let recoverable = m.is_present("recoverable");
+                let from_privkey_opt: Option<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
+                    .from_matches_opt(m, "from-account", false)
+                    .or_else(|err| {
+                        let result: Result<Option<Address>, String> =
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                        result
+                            .map(|address_opt| {
+                                address_opt.map(|address| {
+                                    H160::from_slice(&address.payload().args()).unwrap()
+                                })
+                            })
+                            .map_err(|_| err)
+                    })?;
+
+                let key_store_opt = from_account_opt
+                    .as_ref()
+                    .map(|account| (&*self.key_store, account));
+                let signature = sign_message(
+                    from_privkey_opt.as_ref(),
+                    key_store_opt,
+                    recoverable,
+                    &message,
+                )?;
+                let result = serde_json::json!({
+                    "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                    "recoverable": recoverable,
+                });
+                Ok(result.render(format, color))
+            }
+            ("verify-signature", Some(m)) => {
+                let message: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "message")?;
+                let signature: Vec<u8> = HexParser.from_matches(m, "signature")?;
+                let pubkey_opt: Option<secp256k1::PublicKey> =
+                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                let from_privkey_opt: Option<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
+                    .from_matches_opt(m, "from-account", false)
+                    .or_else(|err| {
+                        let result: Result<Option<Address>, String> =
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                        result
+                            .map(|address_opt| {
+                                address_opt.map(|address| {
+                                    H160::from_slice(&address.payload().args()).unwrap()
+                                })
+                            })
+                            .map_err(|_| err)
+                    })?;
+
+                let pubkey = if let Some(pubkey) = pubkey_opt {
+                    pubkey
+                } else if let Some(privkey) = from_privkey_opt {
+                    secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey)
+                } else if let Some(account) = from_account_opt {
+                    let password = read_password(false, None)?;
+                    self.key_store
+                        .extended_pubkey_with_password(&account, None, password.as_bytes())
+                        .map_err(|err| err.to_string())?
+                        .public_key
+                } else {
+                    return Err(String::from(
+                        "Missing <pubkey> or <privkey-path> or <from-account> argument",
+                    ));
+                };
+
+                let recoverable = signature.len() == 65;
+                let signature = if signature.len() == 65 {
+                    let recov_id = RecoveryId::from_i32(i32::from(signature[64]))
+                        .map_err(|err| err.to_string())?;
+                    RecoverableSignature::from_compact(&signature[0..64], recov_id)
+                        .map_err(|err| err.to_string())?
+                        .to_standard()
+                } else if signature.len() == 64 {
+                    secp256k1::Signature::from_compact(&signature).map_err(|err| err.to_string())?
+                } else {
+                    return Err(format!("Invalid signature length: {}", signature.len()));
+                };
+                let message = secp256k1::Message::from_slice(message.as_bytes())
+                    .expect("Convert to message failed");
+                let verify_ok = SECP256K1.verify(&message, &signature, &pubkey).is_ok();
+                let result = serde_json::json!({
+                    "pubkey": format!("0x{}", hex_string(&pubkey.serialize()[..]).unwrap()),
+                    "recoverable": recoverable,
+                    "verify-ok": verify_ok,
+                });
+                Ok(result.render(format, color))
+            }
             ("eaglesong", Some(m)) => {
                 let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
                 let mut builder = EagleSongBuilder::new();
@@ -348,6 +540,42 @@ message = "0x"
             }
             _ => Err(matches.usage().to_owned()),
         }
+    }
+}
+
+fn sign_message(
+    from_privkey_opt: Option<&PrivkeyWrapper>,
+    from_account_opt: Option<(&KeyStore, &H160)>,
+    recoverable: bool,
+    message: &H256,
+) -> Result<Vec<u8>, String> {
+    match (from_privkey_opt, from_account_opt, recoverable) {
+        (Some(privkey), _, false) => {
+            let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
+            Ok(SECP256K1
+                .sign(&message, privkey)
+                .serialize_compact()
+                .to_vec())
+        }
+        (Some(privkey), _, true) => {
+            let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
+            Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
+        }
+        (None, Some((key_store, account)), false) => {
+            let password = read_password(false, None)?;
+            key_store
+                .sign_with_password(account, None, message, password.as_bytes())
+                .map(|sig| sig.serialize_compact().to_vec())
+                .map_err(|err| err.to_string())
+        }
+        (None, Some((key_store, account)), true) => {
+            let password = read_password(false, None)?;
+            key_store
+                .sign_recoverable_with_password(account, None, message, password.as_bytes())
+                .map(|sig| serialize_signature(&sig).to_vec())
+                .map_err(|err| err.to_string())
+        }
+        _ => Err(String::from("Both privkey and key store is missing")),
     }
 }
 
