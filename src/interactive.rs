@@ -336,12 +336,8 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("util", Some(sub_matches)) => {
-                    let output = UtilSubCommand::new(&mut self.rpc_client).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
+                    let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.key_store)
+                        .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }

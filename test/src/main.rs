@@ -7,7 +7,7 @@ pub mod util;
 use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
-    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, RpcGetTipBlockNumber, Spec,
+    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, RpcGetTipBlockNumber, Spec, Util,
     WalletTimelockedAddress, WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
@@ -62,5 +62,6 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(DaoPrepareOne),
         Box::new(DaoPrepareMultiple),
         Box::new(DaoWithdrawMultiple),
+        Box::new(Util),
     ]
 }
