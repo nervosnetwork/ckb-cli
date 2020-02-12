@@ -23,7 +23,8 @@ use crate::utils::{
     index::IndexController,
     other::{
         check_capacity, get_address, get_live_cell_with_cache, get_max_mature_number,
-        get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
+        get_network_type, get_privkey_signer, get_to_data, is_mature, read_password,
+        serialize_signature,
     },
     printer::{OutputFormat, Printable},
 };
@@ -658,12 +659,4 @@ fn get_keystore_signer(
 
         Ok(Some(serialize_signature(&signature)))
     })
-}
-
-fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
-    // Not cellbase cell
-    info.index.tx_index > 0
-        // Live cells in genesis are all mature
-        || info.number == 0
-        || info.number <= max_mature_number
 }
