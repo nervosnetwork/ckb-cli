@@ -167,7 +167,7 @@ impl TransactArgs {
                             address_opt
                                 .map(|address| H160::from_slice(&address.payload().args()).unwrap())
                         })
-                        .map_err(|_| err)
+                        .map_err(|_| format!("Invalid value for '--from-account': {}", err))
                 })?;
             let payload = AddressPayload::from_pubkey_hash(account.clone().unwrap());
             Address::new(network_type, payload)
