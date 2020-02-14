@@ -780,7 +780,13 @@ impl MasterPrivKey {
 pub trait AbstractMasterPrivKey {
     type Err;
     fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, Self::Err>;
-    fn hash160(&self, path: Option<&DerivationPath>) -> Result<H160, Self::Err>;
+    fn hash160(&self, path: Option<&DerivationPath>) -> Result<H160, Self::Err> {
+        let extended_public_key = self.extended_pubkey(path)?;
+        Ok(
+            H160::from_slice(&blake2b_256(&extended_public_key.public_key.serialize()[..])[0..20])
+                .expect("Generate hash(H160) from pubkey failed"),
+        )
+    }
 }
 
 impl AbstractMasterPrivKey for MasterPrivKey {
@@ -789,14 +795,6 @@ impl AbstractMasterPrivKey for MasterPrivKey {
     fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, Void> {
         let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
-    }
-
-    fn hash160(&self, path: Option<&DerivationPath>) -> Result<H160, Void> {
-        let extended_public_key = self.extended_pubkey(path).void_unwrap();
-        Ok(
-            H160::from_slice(&blake2b_256(&extended_public_key.public_key.serialize()[..])[0..20])
-                .expect("Generate hash(H160) from pubkey failed"),
-        )
     }
 }
 
