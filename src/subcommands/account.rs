@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ckb_sdk::{
-    wallet::{AbstractKeyStore, DerivationPath, Key, MasterPrivKey},
+    wallet::{AbstractKeyStore, DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
@@ -20,12 +20,13 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
 };
 
-pub struct AccountSubCommand<'a, KS: AbstractKeyStore> {
-    key_store: &'a mut KS,
+pub struct AccountSubCommand<'a> {
+    key_store: &'a mut KeyStore,
+    //ledger_key_store: &'a mut LedgerKeyStore,
 }
 
-impl<'a, KS: AbstractKeyStore> AccountSubCommand<'a, KS> {
-    pub fn new(key_store: &'a mut KS) -> Self {
+impl<'a> AccountSubCommand<'a> {
+    pub fn new(key_store: &'a mut KeyStore) -> Self {
         AccountSubCommand { key_store }
     }
 
@@ -144,7 +145,7 @@ impl<'a, KS: AbstractKeyStore> AccountSubCommand<'a, KS> {
     }
 }
 
-impl<'a, KS: AbstractKeyStore> CliSubCommand for AccountSubCommand<'a, KS> {
+impl<'a> CliSubCommand for AccountSubCommand<'a> {
     fn process(
         &mut self,
         matches: &ArgMatches,
@@ -170,7 +171,7 @@ impl<'a, KS: AbstractKeyStore> CliSubCommand for AccountSubCommand<'a, KS> {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                 "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                             },
-                            "account_source": KS::SOURCE_NAME,
+                            "account_source": KeyStore::SOURCE_NAME,
                         })
                     })
                     .collect::<Vec<_>>();

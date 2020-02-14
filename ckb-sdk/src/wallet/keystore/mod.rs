@@ -20,6 +20,7 @@ use faster_hex::hex_decode;
 use rand::Rng;
 use secp256k1::recovery::RecoverableSignature;
 use uuid::Uuid;
+use void::*;
 
 pub use error::Error;
 pub use passphrase::{CipherParams, Crypto, KdfParams, ScryptParams, ScryptType};
@@ -67,7 +68,7 @@ impl AbstractKeyStore for KeyStore {
                 .map(|(lock_arg, _filepath)| lock_arg)
                 .collect::<Vec<H160>>()
                 .into_iter()
-                .enumerate()
+                .enumerate(),
         )
     }
 
@@ -254,7 +255,8 @@ impl KeyStore {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
-            .extended_pubkey(path)?)
+            .extended_pubkey(path)
+            .void_unwrap())
     }
     pub fn extended_pubkey_with_password(
         &mut self,
@@ -264,7 +266,8 @@ impl KeyStore {
     ) -> Result<ExtendedPubKey, Error> {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.master_privkey.extended_pubkey(path)?)
+        let key = key.master_privkey.extended_pubkey(path).void_unwrap();
+        Ok(key)
     }
     pub fn derived_key_set_with_password(
         &mut self,
@@ -526,7 +529,7 @@ pub struct Key {
 impl Key {
     pub fn new(master_privkey: MasterPrivKey) -> Key {
         let id = Uuid::new_v4();
-        let hash160 = master_privkey.hash160(None);
+        let hash160 = master_privkey.hash160(None).void_unwrap();
         Key {
             id,
             hash160,
@@ -569,7 +572,10 @@ impl Key {
     }
 
     pub fn derived_pubkey_hash(&self, path: DerivationPath) -> H160 {
-        let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+        let extended_pubkey = self
+            .master_privkey
+            .extended_pubkey(Some(&path))
+            .void_unwrap();
         let pubkey = extended_pubkey.public_key;
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
@@ -611,7 +617,10 @@ impl Key {
             .map(|i| {
                 let path_string = format!("m/44'/309'/0'/{}/{}", chain as u8, i + start);
                 let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-                let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+                let extended_pubkey = self
+                    .master_privkey
+                    .extended_pubkey(Some(&path))
+                    .void_unwrap();
                 (path, extended_pubkey)
             })
             .collect()
@@ -660,7 +669,7 @@ impl Key {
         key_bytes[..].copy_from_slice(&key_vec[..]);
         let master_privkey = MasterPrivKey::from_bytes(key_bytes)?;
 
-        let hash160 = master_privkey.hash160(None);
+        let hash160 = master_privkey.hash160(None).void_unwrap();
         Ok(Key {
             id,
             hash160,
@@ -766,17 +775,28 @@ impl MasterPrivKey {
         let sub_sk = self.sub_privkey(path);
         SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
     }
+}
 
-    pub fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, String> {
+pub trait AbstractMasterPrivKey {
+    type Err;
+    fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, Self::Err>;
+    fn hash160(&self, path: Option<&DerivationPath>) -> Result<H160, Self::Err>;
+}
+
+impl AbstractMasterPrivKey for MasterPrivKey {
+    type Err = Void;
+
+    fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, Void> {
         let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
     }
 
-    pub fn hash160(&self, path: Option<&DerivationPath>) -> H160 {
-        let sub_sk = self.sub_privkey(path);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key);
-        H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
-            .expect("Generate hash(H160) from pubkey failed")
+    fn hash160(&self, path: Option<&DerivationPath>) -> Result<H160, Void> {
+        let extended_public_key = self.extended_pubkey(path).void_unwrap();
+        Ok(
+            H160::from_slice(&blake2b_256(&extended_public_key.public_key.serialize()[..])[0..20])
+                .expect("Generate hash(H160) from pubkey failed"),
+        )
     }
 }
 
