@@ -29,7 +29,6 @@ const KEYSTORE_VERSION: u32 = 3;
 const KEYSTORE_ORIGIN: &str = "ckb-cli";
 
 pub struct KeyStore {
-    keys_dir: PathBuf,
     storage: PassphraseKeyStore,
     files: HashMap<H160, PathBuf>,
     unlocked_keys: HashMap<H160, TimedKey>,
@@ -38,7 +37,6 @@ pub struct KeyStore {
 impl Clone for KeyStore {
     fn clone(&self) -> KeyStore {
         KeyStore {
-            keys_dir: self.keys_dir.clone(),
             storage: self.storage.clone(),
             files: self.files.clone(),
             unlocked_keys: HashMap::default(),
@@ -50,7 +48,6 @@ impl KeyStore {
     pub fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {
         let abs_dir = dir.canonicalize()?;
         let mut key_store = KeyStore {
-            keys_dir: abs_dir.clone(),
             storage: PassphraseKeyStore {
                 keys_dir_path: abs_dir,
                 scrypt_type,
@@ -272,7 +269,7 @@ impl KeyStore {
     // NOTE: assume refresh keystore directory is not a hot action
     fn refresh_dir(&mut self) -> Result<(), Error> {
         let mut files = HashMap::default();
-        for entry in fs::read_dir(&self.keys_dir)? {
+        for entry in fs::read_dir(&self.storage.keys_dir_path)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() {
