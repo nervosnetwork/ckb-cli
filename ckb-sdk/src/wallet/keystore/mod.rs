@@ -35,6 +35,13 @@ pub struct KeyStore {
     unlocked_keys: HashMap<H160, TimedKey>,
 }
 
+pub trait AbstractKeyStore {
+    // Just box it because no `impl Trait` in traits for now
+    fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>>;
+
+    const SOURCE_NAME: &'static str;
+}
+
 impl Clone for KeyStore {
     fn clone(&self) -> KeyStore {
         KeyStore {
@@ -44,6 +51,27 @@ impl Clone for KeyStore {
             unlocked_keys: HashMap::default(),
         }
     }
+}
+
+impl AbstractKeyStore for KeyStore {
+    fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>> {
+        let mut accounts = self
+            .get_accounts()
+            .iter()
+            .map(|(address, filepath)| (address.clone(), filepath))
+            .collect::<Vec<(H160, &PathBuf)>>();
+        accounts.sort_by(|a, b| a.1.cmp(&b.1));
+        Box::new(
+            accounts
+                .into_iter()
+                .map(|(lock_arg, _filepath)| lock_arg)
+                .collect::<Vec<H160>>()
+                .into_iter()
+                .enumerate()
+        )
+    }
+
+    const SOURCE_NAME: &'static str = "on-disk password-protected key store";
 }
 
 impl KeyStore {

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use ckb_build_info::Version;
 use ckb_sdk::{rpc::RawHttpRpcClient, HttpRpcClient};
+use ckb_sdk::wallet::{KeyStore};
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg, SubCommand};
@@ -246,7 +247,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
         .subcommand(RpcSubCommand::subcommand())
-        .subcommand(AccountSubCommand::subcommand("account"))
+        .subcommand(AccountSubCommand::<KeyStore>::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
@@ -349,7 +350,7 @@ pub fn build_interactive() -> App<'static, 'static> {
                 .about("Exit the interactive interface"),
         )
         .subcommand(RpcSubCommand::subcommand())
-        .subcommand(AccountSubCommand::subcommand("account"))
+        .subcommand(AccountSubCommand::<KeyStore>::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(UtilSubCommand::subcommand("util"))

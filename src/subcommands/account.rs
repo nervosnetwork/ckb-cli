@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ckb_sdk::{
-    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
+    wallet::{AbstractKeyStore, DerivationPath, Key, MasterPrivKey},
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
@@ -20,12 +20,12 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
 };
 
-pub struct AccountSubCommand<'a> {
-    key_store: &'a mut KeyStore,
+pub struct AccountSubCommand<'a, KS: AbstractKeyStore> {
+    key_store: &'a mut KS,
 }
 
-impl<'a> AccountSubCommand<'a> {
-    pub fn new(key_store: &'a mut KeyStore) -> AccountSubCommand<'a> {
+impl<'a, KS: AbstractKeyStore> AccountSubCommand<'a, KS> {
+    pub fn new(key_store: &'a mut KS) -> Self {
         AccountSubCommand { key_store }
     }
 
@@ -144,7 +144,7 @@ impl<'a> AccountSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for AccountSubCommand<'a> {
+impl<'a, KS: AbstractKeyStore> CliSubCommand for AccountSubCommand<'a, KS> {
     fn process(
         &mut self,
         matches: &ArgMatches,
@@ -154,17 +154,10 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("list", _) => {
-                let mut accounts = self
+                let resp = self
                     .key_store
-                    .get_accounts()
-                    .iter()
-                    .map(|(address, filepath)| (address.clone(), filepath.clone()))
-                    .collect::<Vec<(H160, PathBuf)>>();
-                accounts.sort_by(|a, b| a.1.cmp(&b.1));
-                let resp = accounts
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, (lock_arg, _filepath))| {
+                    .list_accounts()
+                    .map(|(idx, lock_arg)| {
                         let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
@@ -177,6 +170,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                 "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                             },
+                            "account_source": KS::SOURCE_NAME,
                         })
                     })
                     .collect::<Vec<_>>();
