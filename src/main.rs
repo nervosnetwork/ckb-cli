@@ -25,7 +25,7 @@ use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
     index::IndexThreadState,
-    other::{check_alerts, get_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_key_store, get_ledger_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -119,12 +119,14 @@ fn main() -> Result<(), io::Error> {
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
             .process(&sub_matches, output_format, color, debug),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut key_store).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
+            get_ledger_key_store(&ckb_cli_dir).and_then(|mut ledger_key_store| {
+                AccountSubCommand::new(&mut key_store, &mut ledger_key_store).process(
+                    &sub_matches,
+                    output_format,
+                    color,
+                    debug,
+                )
+            })
         }),
         ("mock-tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             MockTxSubCommand::new(&mut rpc_client, &mut key_store, None).process(

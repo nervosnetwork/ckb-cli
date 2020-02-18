@@ -36,11 +36,15 @@ pub struct KeyStore {
     unlocked_keys: HashMap<H160, TimedKey>,
 }
 
-pub trait AbstractKeyStore {
+pub trait AbstractKeyStore: Sized {
+    const SOURCE_NAME: &'static str;
+
+    type Err;
+
     // Just box it because no `impl Trait` in traits for now
     fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>>;
 
-    const SOURCE_NAME: &'static str;
+    fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<Self, Self::Err>;
 }
 
 impl Clone for KeyStore {
@@ -55,6 +59,10 @@ impl Clone for KeyStore {
 }
 
 impl AbstractKeyStore for KeyStore {
+    const SOURCE_NAME: &'static str = "on-disk password-protected key store";
+
+    type Err = Error;
+
     fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>> {
         let mut accounts = self
             .get_accounts()
@@ -72,11 +80,7 @@ impl AbstractKeyStore for KeyStore {
         )
     }
 
-    const SOURCE_NAME: &'static str = "on-disk password-protected key store";
-}
-
-impl KeyStore {
-    pub fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {
+    fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {
         let abs_dir = dir.canonicalize()?;
         let mut key_store = KeyStore {
             keys_dir: abs_dir.clone(),
@@ -90,7 +94,9 @@ impl KeyStore {
         key_store.refresh_dir()?;
         Ok(key_store)
     }
+}
 
+impl KeyStore {
     pub fn new_account(&mut self, password: &[u8]) -> Result<H160, Error> {
         let privkey = MasterPrivKey::try_new(1024)?;
         let key = Key::new(privkey);

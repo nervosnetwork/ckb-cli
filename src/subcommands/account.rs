@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     wallet::{AbstractKeyStore, DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, AddressPayload, NetworkType,
@@ -22,12 +23,15 @@ use crate::utils::{
 
 pub struct AccountSubCommand<'a> {
     key_store: &'a mut KeyStore,
-    //ledger_key_store: &'a mut LedgerKeyStore,
+    ledger_key_store: &'a mut LedgerKeyStore,
 }
 
 impl<'a> AccountSubCommand<'a> {
-    pub fn new(key_store: &'a mut KeyStore) -> Self {
-        AccountSubCommand { key_store }
+    pub fn new(key_store: &'a mut KeyStore, ledger_key_store: &'a mut LedgerKeyStore) -> Self {
+        AccountSubCommand {
+            key_store,
+            ledger_key_store,
+        }
     }
 
     pub fn subcommand(name: &'static str) -> App<'static, 'static> {
@@ -155,10 +159,15 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("list", _) => {
-                let resp = self
-                    .key_store
-                    .list_accounts()
-                    .map(|(idx, lock_arg)| {
+                fn list_accounts_with_source<KS: AbstractKeyStore>(
+                    ks: &mut KS,
+                ) -> impl Iterator<Item = (usize, H160, &'static str)> {
+                    ks.list_accounts()
+                        .map(|(idx, lock_arg)| (idx, lock_arg, KS::SOURCE_NAME))
+                }
+                let resp = list_accounts_with_source(self.key_store)
+                    .chain(list_accounts_with_source(self.ledger_key_store))
+                    .map(|(idx, lock_arg, source)| {
                         let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
@@ -171,7 +180,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                 "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                             },
-                            "account_source": KeyStore::SOURCE_NAME,
+                            "account_source": source,
                         })
                     })
                     .collect::<Vec<_>>();

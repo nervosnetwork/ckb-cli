@@ -1,0 +1,12 @@
+[package]
+name = "ckb-ledger"
+version = "0.1.0"
+authors = ["John Ericson <git@JohnEricson.me>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ckb-sdk = { path = "../ckb-sdk" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
+failure = "0.1.5"

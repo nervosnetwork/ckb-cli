@@ -7,11 +7,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
 use ckb_index::{LiveCellInfo, VERSION};
+use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
-    wallet::{KeyStore, ScryptType},
+    wallet::{AbstractKeyStore, KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
     SECP256K1,
 };
@@ -46,14 +47,21 @@ pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, Strin
     Ok(pass)
 }
 
-pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
+fn get_some_dir(dir: &str, ckb_cli_dir: &PathBuf) -> Result<PathBuf, String> {
     let mut keystore_dir = ckb_cli_dir.clone();
-    keystore_dir.push("keystore");
-    fs::create_dir_all(&keystore_dir)
-        .map_err(|err| err.to_string())
-        .and_then(|_| {
-            KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
-        })
+    keystore_dir.push(dir);
+    fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
+    Ok(keystore_dir)
+}
+
+pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
+    let keystore_dir = get_some_dir("keystore", ckb_cli_dir)?;
+    KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
+}
+
+pub fn get_ledger_key_store(ckb_cli_dir: &PathBuf) -> Result<LedgerKeyStore, String> {
+    let keystore_dir = get_some_dir("ledger-keystore", ckb_cli_dir)?;
+    LedgerKeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
 }
 
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {

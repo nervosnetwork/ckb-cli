@@ -14,6 +14,7 @@ ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" 
 ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
 ckb-sdk = { path = "ckb-sdk" }
 ckb-index = { path = "ckb-index" }
+ckb-ledger = { path = "ckb-ledger" }
 ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
 ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
 

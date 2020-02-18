@@ -4,16 +4,18 @@ use super::Bip32Error;
 use super::KeyStoreError;
 
 #[derive(Debug, Fail)]
-pub enum Error {
+pub enum Error_<AbsKeyStoreErr: Fail> {
     #[fail(display = "BIP32 error: {}", _0)]
     BIP32(Bip32Error),
 
     #[fail(display = "KeyStore error: {}", _0)]
-    KeyStore(KeyStoreError),
+    KeyStore(AbsKeyStoreErr),
 
     #[fail(display = "Other error: {}", _0)]
     Other(String),
 }
+
+pub type Error = Error_<KeyStoreError>;
 
 impl From<String> for Error {
     fn from(err: String) -> Error {

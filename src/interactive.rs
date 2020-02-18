@@ -19,14 +19,11 @@ use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
     index::{IndexController, IndexRequest},
-    other::{check_alerts, get_network_type, index_dirname},
+    other::{check_alerts, get_key_store, get_ledger_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
-use ckb_sdk::{
-    rpc::RawHttpRpcClient,
-    wallet::{KeyStore, ScryptType},
-    GenesisInfo, HttpRpcClient,
-};
+use ckb_ledger::LedgerKeyStore;
+use ckb_sdk::{rpc::RawHttpRpcClient, wallet::KeyStore, GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -38,6 +35,7 @@ pub struct InteractiveEnv {
     index_dir: PathBuf,
     parser: clap::App<'static, 'static>,
     key_store: KeyStore,
+    ledger_key_store: LedgerKeyStore,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
@@ -59,8 +57,6 @@ impl InteractiveEnv {
         config_file.push("config");
         let mut index_dir = ckb_cli_dir.clone();
         index_dir.push(index_dirname());
-        let mut keystore_dir = ckb_cli_dir.clone();
-        keystore_dir.push("keystore");
 
         let mut env_file = ckb_cli_dir.clone();
         env_file.push("env_vars");
@@ -76,9 +72,8 @@ impl InteractiveEnv {
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
         let raw_rpc_client = RawHttpRpcClient::from_uri(config.get_url());
-        fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
-        let key_store = KeyStore::from_dir(keystore_dir, ScryptType::default())
-            .map_err(|err| err.to_string())?;
+        let key_store = get_key_store(&ckb_cli_dir)?;
+        let ledger_key_store = get_ledger_key_store(&ckb_cli_dir)?;
         Ok(InteractiveEnv {
             config,
             config_file,
@@ -88,6 +83,7 @@ impl InteractiveEnv {
             rpc_client,
             raw_rpc_client,
             key_store,
+            ledger_key_store,
             index_controller,
             genesis_info: None,
         })
@@ -307,12 +303,9 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.key_store).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
+                    let output =
+                        AccountSubCommand::new(&mut self.key_store, &mut self.ledger_key_store)
+                            .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
                     Ok(())
                 }
