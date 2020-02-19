@@ -1,4 +1,3 @@
-
 use std::path::PathBuf;
 
 use ckb_sdk::wallet::{
@@ -25,11 +24,13 @@ impl AbstractKeyStore for LedgerKeyStore {
     type Err = LedgerError;
 
     fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>> {
-        unimplemented!()
+        //unimplemented!()
+        Box::new(::std::iter::empty())
     }
 
     fn from_dir(_dir: PathBuf, _scrypt_type: ScryptType) -> Result<Self, LedgerError> {
-        unimplemented!()
+        //unimplemented!()
+        Ok(LedgerKeyStore { _scrypt_type })
     }
 }
 
@@ -37,7 +38,7 @@ impl AbstractKeyStore for LedgerKeyStore {
 pub enum LedgerError {
     //#[fail(display = "Human interface device error: {}", _0)]
     #[fail(display = "Human interface device error")]
-    HidError
+    HidError,
     // TODO
 }
 
