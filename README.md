@@ -3,72 +3,17 @@ CKB command line tool
 
 ## Features
 ```
->> rpc: Invoke RPC call to node
-
-    get_block                               Get block content by hash
-    get_block_by_number                     Get block content by block number
-    get_block_hash                          Get block hash by block number
-    get_cellbase_output_capacity_details    Get block header content by hash
-    get_cells_by_lock_hash                  Get cells by lock script hash
-    get_current_epoch                       Get current epoch information
-    get_epoch_by_number                     Get epoch information by epoch number
-    get_header                              Get block header content by hash
-    get_header_by_number                    Get block header by block number
-    get_live_cell                           Get live cell (live means unspent)
-    get_tip_block_number                    Get tip block number
-    get_tip_header                          Get tip header
-    get_transaction                         Get transaction content by transaction hash
-    deindex_lock_hash                       Remove index for live cells and transactions by the hash of lock script
-    get_live_cells_by_lock_hash             Get the live cells collection by the hash of lock script
-    get_transactions_by_lock_hash           Get the transactions collection by the hash of lock script. Returns
-                                            empty array when the `lock_hash` has not been indexed yet
-    index_lock_hash                         Create index for live cells and transactions by the hash of lock script
-    get_banned_addresses                    Get all banned IPs/Subnets
-    get_peers                               Get connected peers
-    local_node_info                         Get local node information
-    set_ban                                 Insert or delete an IP/Subnet from the banned list
-    tx_pool_info                            Get transaction pool information
-    get_blockchain_info                     Get chain information
-    add_node                                Connect to a node
-    remove_node                             Disconnect a node
-    broadcast_transaction                   Broadcast transaction without verify
-
->> wallet: Transfer / query balance (with local index) / key utils
-
-    transfer               Transfer capacity to an address (can have data)
-    deposit-dao            Deposit capacity into NervosDAO(can have data)
-    withdraw-dao           Withdraw capacity from NervosDAO(can have data)
-    get-capacity           Get capacity by lock script hash or address or lock arg or pubkey
-    get-dao-capacity       Get NervosDAO deposited capacity by lock script hash or address or lock arg or pubkey
-    get-live-cells         Get live cells by lock/type/code  hash
-    get-lock-by-address    Get lock script (include hash) by address
-    db-metrics             Show index database metrics
-    top-capacity           Show top n capacity owned by lock script hash
-
->> account: Manage accounts
-
-    list      List all accounts
-    new       Create a new account and print related information.
-    import    Import an unencrypted private key from <privkey-path> and create a new account.
-    unlock    Unlock an account
-    update    Update password of an account
-    export    Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)
-
->> util: Utilities
-
-    key-info              Show public information of a secp256k1 private key (from file) or public key
-    serialize-tx          Serialize a transaction from json file to hex binary or hash
-    deserialize-tx        Deserialize a transaction from binary hex to json
-    serialize-script      Serialize a script from json file to hex binary or hash
-    deserialize-script    Deserialize a script from hex binary to json
-
->> mock-tx: Handle mock transactions (verify/send)
-
-    template    Print mock transaction template
-    complete    Complete the mock transaction
-    verify      Verify a mock transaction in local
-    send        Complete then send a transaction
+    rpc         Invoke RPC call to node
+    account     Manage accounts
+    mock-tx     Handle mock transactions (verify/send)
+    tx          Handle common sighash/multisig transaction
+    util        Utilities
+    molecule    Molecule encode/decode utilities
+    wallet      Transfer / query balance (with local index) / key utils
+    dao         Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils
 ```
+
+All second level sub-commands are listed in [wiki page](https://github.com/nervosnetwork/ckb-cli/wiki/Sub-Commands).
 
 ## Build this project
 ```
