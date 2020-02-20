@@ -7,6 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+log = "0.4.6"
 ckb-sdk = { path = "../ckb-sdk" }
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
+# Until branch = "use-log-crate" is upstreamed
+ledger = { git = "https://github.com/obsidiansystems/ledger-rs", rev = "be2d5cbcd877bf396aa94bb285d579884883763e" }
 failure = "0.1.5"
