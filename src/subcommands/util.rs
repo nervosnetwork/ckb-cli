@@ -389,7 +389,7 @@ message = "0x"
                 } else if let Some(account) = from_account_opt {
                     let password = read_password(false, None)?;
                     self.key_store
-                        .extended_pubkey_with_password(&account, None, password.as_bytes())
+                        .extended_pubkey_with_password(&account, &[], password.as_bytes())
                         .map_err(|err| err.to_string())?
                         .public_key
                 } else {
@@ -564,14 +564,14 @@ fn sign_message(
         (None, Some((key_store, account)), false) => {
             let password = read_password(false, None)?;
             key_store
-                .sign_with_password(account, None, message, password.as_bytes())
+                .sign_with_password(account, &[], message, password.as_bytes())
                 .map(|sig| sig.serialize_compact().to_vec())
                 .map_err(|err| err.to_string())
         }
         (None, Some((key_store, account)), true) => {
             let password = read_password(false, None)?;
             key_store
-                .sign_recoverable_with_password(account, None, message, password.as_bytes())
+                .sign_recoverable_with_password(account, &[], message, password.as_bytes())
                 .map(|sig| serialize_signature(&sig).to_vec())
                 .map_err(|err| err.to_string())
         }

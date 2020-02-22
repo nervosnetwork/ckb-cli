@@ -174,66 +174,80 @@ impl KeyStore {
         Ok(key.master_privkey)
     }
 
-    pub fn sign(
+    pub fn sign<P>(
         &mut self,
         hash160: &H160,
-        path: Option<&DerivationPath>,
+        path: &P,
         message: &H256,
-    ) -> Result<secp256k1::Signature, Error> {
+    ) -> Result<secp256k1::Signature, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
             .sign(message, path))
     }
-    pub fn sign_recoverable(
+    pub fn sign_recoverable<P>(
         &mut self,
         hash160: &H160,
-        path: Option<&DerivationPath>,
+        path: &P,
         message: &H256,
-    ) -> Result<RecoverableSignature, Error> {
+    ) -> Result<RecoverableSignature, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
             .sign_recoverable(message, path))
     }
-    pub fn sign_with_password(
+    pub fn sign_with_password<P>(
         &self,
         hash160: &H160,
-        path: Option<&DerivationPath>,
+        path: &P,
         message: &H256,
         password: &[u8],
-    ) -> Result<secp256k1::Signature, Error> {
+    ) -> Result<secp256k1::Signature, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
         Ok(key.master_privkey.sign(message, path))
     }
-    pub fn sign_recoverable_with_password(
+    pub fn sign_recoverable_with_password<P>(
         &self,
         hash160: &H160,
-        path: Option<&DerivationPath>,
+        path: &P,
         message: &H256,
         password: &[u8],
-    ) -> Result<RecoverableSignature, Error> {
+    ) -> Result<RecoverableSignature, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
         Ok(key.master_privkey.sign_recoverable(message, path))
     }
-    pub fn extended_pubkey(
-        &mut self,
-        hash160: &H160,
-        path: Option<&DerivationPath>,
-    ) -> Result<ExtendedPubKey, Error> {
+    pub fn extended_pubkey<P>(&mut self, hash160: &H160, path: &P) -> Result<ExtendedPubKey, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
             .extended_pubkey(path)?)
     }
-    pub fn extended_pubkey_with_password(
+    pub fn extended_pubkey_with_password<P>(
         &mut self,
         hash160: &H160,
-        path: Option<&DerivationPath>,
+        path: &P,
         password: &[u8],
-    ) -> Result<ExtendedPubKey, Error> {
+    ) -> Result<ExtendedPubKey, Error>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
         Ok(key.master_privkey.extended_pubkey(path)?)
@@ -498,7 +512,7 @@ pub struct Key {
 impl Key {
     pub fn new(master_privkey: MasterPrivKey) -> Key {
         let id = Uuid::new_v4();
-        let hash160 = master_privkey.hash160(None);
+        let hash160 = master_privkey.hash160(&[]);
         Key {
             id,
             hash160,
@@ -520,7 +534,7 @@ impl Key {
         for i in 0..external_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(path.clone());
+            let pubkey_hash = self.derived_pubkey_hash(&path);
             external_key_set.push((path, pubkey_hash.clone()));
         }
 
@@ -528,7 +542,7 @@ impl Key {
         for i in 0..change_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(path.clone());
+            let pubkey_hash = self.derived_pubkey_hash(&path);
             change_key_set.push((path, pubkey_hash.clone()));
             if change_last == &pubkey_hash {
                 return Ok(DerivedKeySet {
@@ -540,8 +554,11 @@ impl Key {
         Err(Error::SearchDerivedAddrFailed)
     }
 
-    pub fn derived_pubkey_hash(&self, path: DerivationPath) -> H160 {
-        let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+    pub fn derived_pubkey_hash<P>(&self, path: &P) -> H160
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
+        let extended_pubkey = self.master_privkey.extended_pubkey(path).unwrap();
         let pubkey = extended_pubkey.public_key;
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
@@ -583,7 +600,7 @@ impl Key {
             .map(|i| {
                 let path_string = format!("m/44'/309'/0'/{}/{}", chain as u8, i + start);
                 let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-                let extended_pubkey = self.master_privkey.extended_pubkey(Some(&path)).unwrap();
+                let extended_pubkey = self.master_privkey.extended_pubkey(&path).unwrap();
                 (path, extended_pubkey)
             })
             .collect()
@@ -632,7 +649,7 @@ impl Key {
         key_bytes[..].copy_from_slice(&key_vec[..]);
         let master_privkey = MasterPrivKey::from_bytes(key_bytes)?;
 
-        let hash160 = master_privkey.hash160(None);
+        let hash160 = master_privkey.hash160(&[]);
         Ok(Key {
             id,
             hash160,
@@ -705,7 +722,10 @@ impl MasterPrivKey {
         bytes
     }
 
-    fn sub_privkey(&self, path: Option<&DerivationPath>) -> ExtendedPrivKey {
+    fn sub_privkey<P>(&self, path: &P) -> ExtendedPrivKey
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let sk = ExtendedPrivKey {
             depth: 0,
             parent_fingerprint: Default::default(),
@@ -713,38 +733,42 @@ impl MasterPrivKey {
             private_key: self.secp_secret_key,
             chain_code: ChainCode(self.chain_code),
         };
-        if let Some(path) = path {
-            sk.derive_priv(&SECP256K1, path)
-                .expect("Derive sub-privkey error")
-        } else {
-            sk
-        }
+        sk.derive_priv(&SECP256K1, path)
+            .expect("Derive sub-privkey error")
     }
 
-    pub fn sign(&self, message: &H256, path: Option<&DerivationPath>) -> secp256k1::Signature {
+    pub fn sign<P>(&self, message: &H256, path: &P) -> secp256k1::Signature
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let message =
             secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
         SECP256K1.sign(&message, &sub_sk.private_key)
     }
 
-    pub fn sign_recoverable(
-        &self,
-        message: &H256,
-        path: Option<&DerivationPath>,
-    ) -> RecoverableSignature {
+    pub fn sign_recoverable<P>(&self, message: &H256, path: &P) -> RecoverableSignature
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let message =
             secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
         SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
     }
 
-    pub fn extended_pubkey(&self, path: Option<&DerivationPath>) -> Result<ExtendedPubKey, String> {
+    pub fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, String>
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
     }
 
-    pub fn hash160(&self, path: Option<&DerivationPath>) -> H160 {
+    pub fn hash160<P>(&self, path: &P) -> H160
+    where
+        P: ?Sized + AsRef<[ChildNumber]>,
+    {
         let sub_sk = self.sub_privkey(path);
         let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
