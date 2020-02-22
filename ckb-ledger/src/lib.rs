@@ -5,7 +5,7 @@ use ::std::fmt::Debug;
 use log::debug;
 
 use ckb_sdk::wallet::{
-    AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, ExtendedPubKey, ScryptType,
+    AbstractKeyStore, AbstractMasterPrivKey, Bip32Error, ChildNumber, ExtendedPubKey, ScryptType,
 };
 use ckb_types::H160;
 use failure::Fail;
@@ -85,7 +85,8 @@ impl AbstractKeyStore for LedgerKeyStore {
 pub enum LedgerKeyStoreError {
     #[fail(display = "App-agnostic ledger error: {}", _0)]
     LedgerError(LedgerError),
-    // TODO
+    #[fail(display = "Error in client-side BIP-32 calculations: {}", _0)]
+    Bip32Error(Bip32Error),
 }
 
 impl From<LedgerError> for LedgerKeyStoreError {
@@ -94,10 +95,16 @@ impl From<LedgerError> for LedgerKeyStoreError {
     }
 }
 
+impl From<Bip32Error> for LedgerKeyStoreError {
+    fn from(err: Bip32Error) -> Self {
+        LedgerKeyStoreError::Bip32Error(err)
+    }
+}
+
 impl AbstractMasterPrivKey for &mut LedgerKeyStore {
     type Err = LedgerKeyStoreError;
 
-    fn extended_pubkey<P>(self, path: P) -> Result<ExtendedPubKey, Self::Err>
+    fn extended_pubkey<P>(self, path: &P) -> Result<ExtendedPubKey, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
@@ -116,8 +123,11 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
             (path, result)
         );
         Ok(ExtendedPubKey {
-            depth: path.length(),
-            child_number: ChildNumber::from_normal_idx(0),
+            depth: path.as_ref().len() as u8,
+            parent_fingerprint: unimplemented!(),
+            child_number: ChildNumber::from_hardened_idx(0)?,
+            public_key: unimplemented!(),
+            chain_code: unimplemented!(),
         })
     }
 }

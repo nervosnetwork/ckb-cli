@@ -16,6 +16,7 @@
 //! Implementation of BIP32 hierarchical deterministic wallets, as defined
 //! at https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki
 
+use std::borrow::Borrow;
 use std::default::Default;
 use std::io::Write;
 use std::str::FromStr;
@@ -344,6 +345,12 @@ impl<'a> ::std::iter::IntoIterator for &'a DerivationPath {
     }
 }
 
+impl Borrow<[ChildNumber]> for DerivationPath {
+    fn borrow(&self) -> &[ChildNumber] {
+        &self.0
+    }
+}
+
 impl AsRef<[ChildNumber]> for DerivationPath {
     fn as_ref(&self) -> &[ChildNumber] {
         &self.0
@@ -395,6 +402,10 @@ impl<'a> Iterator for DerivationPathIterator<'a> {
 }
 
 impl DerivationPath {
+    /// Create the empty [DerivationPath]y which refers to the original key.
+    pub fn empty() -> Self {
+        DerivationPath(Vec::new())
+    }
     /// Create a new [DerivationPath] that is a child of this one.
     pub fn child(&self, cn: ChildNumber) -> DerivationPath {
         let mut path = self.0.clone();

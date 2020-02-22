@@ -602,7 +602,7 @@ fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> 
                 Ok(Some([0u8; 65]))
             } else {
                 key_store
-                    .sign_recoverable_with_password(&account, None, message, password.as_bytes())
+                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
                     .map(|signature| Some(serialize_signature(&signature)))
                     .map_err(|err| err.to_string())
             }

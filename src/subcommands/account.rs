@@ -50,6 +50,7 @@ impl<'a> AccountSubCommand<'a> {
             .long("extended-privkey-path")
             .takes_value(true)
             .help("Extended private key path (include master private key and chain code)");
+
         SubCommand::with_name(name)
             .about("Manage accounts")
             .subcommands(vec![
@@ -168,6 +169,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
         color: bool,
         _debug: bool,
     ) -> Result<String, String> {
+        fn parse_optional_derivation_path(m: &ArgMatches) -> Result<DerivationPath, String> {
+            Ok(FromStrParser::<DerivationPath>::new()
+                .from_matches_opt(m, "path", false)?
+                .unwrap_or(DerivationPath::empty()))
+        }
+
         match matches.subcommand() {
             ("list", _) => {
                 fn list_accounts_with_source<KS: AbstractKeyStore>(
@@ -365,22 +372,18 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let path: Option<DerivationPath> =
-                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
-
+                let path = parse_optional_derivation_path(m)?;
                 let password = read_password(false, None)?;
                 let extended_pubkey = self
                     .key_store
-                    .extended_pubkey_with_password(&lock_arg, path.as_ref(), password.as_bytes())
+                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
                 let resp = address_resp::<KeyStore>(&address_payload);
                 Ok(resp.render(format, color))
             }
             ("extended-address-ledger", Some(m)) => {
-                let path: Option<DerivationPath> =
-                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
-
+                let path = parse_optional_derivation_path(m)?;
                 let extended_pubkey = self
                     .ledger_key_store
                     .extended_pubkey(path.as_ref())
