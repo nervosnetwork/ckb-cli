@@ -526,7 +526,7 @@ impl ExtendedPrivKey {
     /// Attempts to derive an extended private key from a path.
     ///
     /// The `path` argument can be both of type `DerivationPath` or `Vec<ChildNumber>`.
-    pub fn derive_priv<C: secp256k1::Signing, P: AsRef<[ChildNumber]>>(
+    pub fn derive_priv<C: secp256k1::Signing, P: ?Sized + AsRef<[ChildNumber]>>(
         &self,
         secp: &Secp256k1<C>,
         path: &P,
@@ -603,7 +603,7 @@ impl ExtendedPubKey {
     /// Attempts to derive an extended public key from a path.
     ///
     /// The `path` argument can be both of type `DerivationPath` or `Vec<ChildNumber>`.
-    pub fn derive_pub<C: secp256k1::Verification, P: AsRef<[ChildNumber]>>(
+    pub fn derive_pub<C: secp256k1::Verification, P: ?Sized + AsRef<[ChildNumber]>>(
         &self,
         secp: &Secp256k1<C>,
         path: &P,

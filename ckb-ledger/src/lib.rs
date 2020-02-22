@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
+use ::std::fmt::Debug;
+
 use log::debug;
 
 use ckb_sdk::wallet::{
-    AbstractKeyStore, AbstractMasterPrivKey, DerivationPath, ExtendedPubKey, ScryptType,
+    AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, ExtendedPubKey, ScryptType,
 };
 use ckb_types::H160;
 use failure::Fail;
@@ -45,7 +47,7 @@ impl LedgerKeyStore {
                 data: Vec::new(),
             };
             let result = ledger_app.exchange(command)?;;
-            debug!("Nervos CBK App Version: {:?}", result);
+            debug!("Nervos CBK Ledger app Version: {:?}", result);
         }
         {
             let command = ApduCommand {
@@ -57,7 +59,7 @@ impl LedgerKeyStore {
                 data: Vec::new(),
             };
             let result = ledger_app.exchange(command)?;
-            debug!("Nervos CBK App Git Hash: {:?}", result);
+            debug!("Nervos CBK Ledger app Git Hash: {:?}", result);
         }
         Ok(())
     }
@@ -92,10 +94,30 @@ impl From<LedgerError> for LedgerKeyStoreError {
     }
 }
 
-impl AbstractMasterPrivKey for LedgerKeyStore {
+impl AbstractMasterPrivKey for &mut LedgerKeyStore {
     type Err = LedgerKeyStoreError;
 
-    fn extended_pubkey(&self, _path: Option<&DerivationPath>) -> Result<ExtendedPubKey, Self::Err> {
-        unimplemented!()
+    fn extended_pubkey<P>(self, path: P) -> Result<ExtendedPubKey, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        let ledger_app = self.init()?;
+        let command = ApduCommand {
+            cla: 0x80,
+            ins: 0x02,
+            p1: 0x00,
+            p2: 0x00,
+            length: 0,
+            data: Vec::new(),
+        };
+        let result = ledger_app.exchange(command)?;
+        debug!(
+            "Nervos CBK Ledger app extended pub key raw {:?}",
+            (path, result)
+        );
+        Ok(ExtendedPubKey {
+            depth: path.length(),
+            child_number: ChildNumber::from_normal_idx(0),
+        })
     }
 }

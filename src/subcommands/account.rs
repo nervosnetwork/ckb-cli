@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
-    wallet::{AbstractKeyStore, DerivationPath, Key, KeyStore, MasterPrivKey},
+    wallet::{
+        AbstractKeyStore, AbstractMasterPrivKey, DerivationPath, Key, KeyStore, MasterPrivKey,
+    },
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
@@ -138,6 +140,15 @@ impl<'a> AccountSubCommand<'a> {
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(arg_lock_arg.clone())
+                    .arg(
+                        Arg::with_name("path")
+                            .long("path")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
+                            .help("The address path")
+                    ),
+                SubCommand::with_name("extended-address-ledger")
+                    .about("Extended address (see: BIP-44)")
                     .arg(
                         Arg::with_name("path")
                             .long("path")
@@ -363,16 +374,35 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .extended_pubkey_with_password(&lock_arg, path.as_ref(), password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
-                let resp = serde_json::json!({
-                    "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
-                    },
-                });
+                let resp = address_resp::<KeyStore>(&address_payload);
+                Ok(resp.render(format, color))
+            }
+            ("extended-address-ledger", Some(m)) => {
+                let path: Option<DerivationPath> =
+                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
+
+                let extended_pubkey = self
+                    .ledger_key_store
+                    .extended_pubkey(path.as_ref())
+                    .map_err(|err| err.to_string())?;
+                let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
+                let resp = address_resp::<KeyStore>(&address_payload);
                 Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
         }
     }
+}
+
+fn address_resp<KS: AbstractKeyStore>(
+    address_payload: &AddressPayload,
+) -> serde_json::value::Value {
+    serde_json::json!({
+        "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
+        "account_source": KS::SOURCE_NAME,
+        "address": {
+            "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+            "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+        },
+    })
 }
