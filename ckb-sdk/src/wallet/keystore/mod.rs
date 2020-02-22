@@ -42,7 +42,7 @@ pub trait AbstractKeyStore: Sized {
     type Err;
 
     // Just box it because no `impl Trait` in traits for now
-    fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>>;
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err>;
 
     fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<Self, Self::Err>;
 }
@@ -63,21 +63,21 @@ impl AbstractKeyStore for KeyStore {
 
     type Err = Error;
 
-    fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>> {
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
         let mut accounts = self
             .get_accounts()
             .iter()
             .map(|(address, filepath)| (address.clone(), filepath))
             .collect::<Vec<(H160, &PathBuf)>>();
         accounts.sort_by(|a, b| a.1.cmp(&b.1));
-        Box::new(
+        Ok(Box::new(
             accounts
                 .into_iter()
                 .map(|(lock_arg, _filepath)| lock_arg)
                 .collect::<Vec<H160>>()
                 .into_iter()
                 .enumerate(),
-        )
+        ))
     }
 
     fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {

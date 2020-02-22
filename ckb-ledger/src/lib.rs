@@ -44,9 +44,7 @@ impl LedgerKeyStore {
                 length: 0,
                 data: Vec::new(),
             };
-            let result = ledger_app
-                .exchange(command)
-                .expect("Error during exchange for app version");
+            let result = ledger_app.exchange(command)?;;
             debug!("Nervos CBK App Version: {:?}", result);
         }
         {
@@ -58,9 +56,7 @@ impl LedgerKeyStore {
                 length: 0,
                 data: Vec::new(),
             };
-            let result = ledger_app
-                .exchange(command)
-                .expect("Error during exchange for app git hash");
+            let result = ledger_app.exchange(command)?;
             debug!("Nervos CBK App Git Hash: {:?}", result);
         }
         Ok(())
@@ -72,9 +68,9 @@ impl AbstractKeyStore for LedgerKeyStore {
 
     type Err = LedgerKeyStoreError;
 
-    fn list_accounts(&mut self) -> Box<dyn Iterator<Item = (usize, H160)>> {
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
         let _ = self.check_version(); //.expect("oh no!");
-        Box::new(::std::iter::empty())
+        Ok(Box::new(::std::iter::empty()))
     }
 
     fn from_dir(_dir: PathBuf, _scrypt_type: ScryptType) -> Result<Self, LedgerKeyStoreError> {
@@ -85,10 +81,15 @@ impl AbstractKeyStore for LedgerKeyStore {
 
 #[derive(Debug, Fail)]
 pub enum LedgerKeyStoreError {
-    //#[fail(display = "Human interface device error: {}", _0)]
-    #[fail(display = "App-agnostic ledger error")]
+    #[fail(display = "App-agnostic ledger error: {}", _0)]
     LedgerError(LedgerError),
     // TODO
+}
+
+impl From<LedgerError> for LedgerKeyStoreError {
+    fn from(err: LedgerError) -> Self {
+        LedgerKeyStoreError::LedgerError(err)
+    }
 }
 
 impl AbstractMasterPrivKey for LedgerKeyStore {

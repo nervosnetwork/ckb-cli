@@ -161,12 +161,17 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("list", _) => {
                 fn list_accounts_with_source<KS: AbstractKeyStore>(
                     ks: &mut KS,
-                ) -> impl Iterator<Item = (usize, H160, &'static str)> {
-                    ks.list_accounts()
-                        .map(|(idx, lock_arg)| (idx, lock_arg, KS::SOURCE_NAME))
+                ) -> Result<impl Iterator<Item = (usize, H160, &'static str)>, String>
+                where
+                    KS::Err: std::string::ToString,
+                {
+                    Ok(ks
+                        .list_accounts()
+                        .map_err(|err| err.to_string())?
+                        .map(|(idx, lock_arg)| (idx, lock_arg, KS::SOURCE_NAME)))
                 }
-                let resp = list_accounts_with_source(self.key_store)
-                    .chain(list_accounts_with_source(self.ledger_key_store))
+                let resp = list_accounts_with_source(self.key_store)?
+                    .chain(list_accounts_with_source(self.ledger_key_store)?)
                     .map(|(idx, lock_arg, source)| {
                         let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                         let lock_hash: H256 = Script::from(&address_payload)
