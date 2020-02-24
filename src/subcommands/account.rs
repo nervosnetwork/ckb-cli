@@ -16,8 +16,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use super::CliSubCommand;
 use crate::utils::{
     arg_parser::{
-        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser,
-        FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        ArgParser, DerivationPathParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser,
+        FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -169,19 +169,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
         color: bool,
         _debug: bool,
     ) -> Result<String, String> {
-        fn parse_optional_derivation_path(m: &ArgMatches) -> Result<DerivationPath, String> {
-            Ok(FromStrParser::<DerivationPath>::new()
-                .from_matches_opt(m, "path", false)?
-                .unwrap_or(DerivationPath::empty()))
-        }
-
         match matches.subcommand() {
             ("list", _) => {
-                fn list_accounts_with_source<KS: AbstractKeyStore>(
+                fn list_accounts_with_source<KS>(
                     ks: &mut KS,
-                ) -> Result<impl Iterator<Item = (usize, H160, &'static str)>, String>
+                ) -> Result<impl Iterator<Item = (usize, KS::AcccountId, &'static str)>, String>
                 where
                     KS::Err: std::string::ToString,
+                    KS: AbstractKeyStore<AcccountId = H160>,
                 {
                     Ok(ks
                         .list_accounts()
@@ -372,7 +367,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let path = parse_optional_derivation_path(m)?;
+                let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
                 let password = read_password(false, None)?;
                 let extended_pubkey = self
                     .key_store
@@ -383,7 +378,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("extended-address-ledger", Some(m)) => {
-                let path = parse_optional_derivation_path(m)?;
+                let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
                 let extended_pubkey = self
                     .ledger_key_store
                     .extended_pubkey(path.as_ref())

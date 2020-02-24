@@ -7,6 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bitcoin_hashes = "0.3.2"
 byteorder = "1.3.4"
 ckb-sdk = { path = "../ckb-sdk" }
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }

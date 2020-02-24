@@ -1,4 +1,4 @@
-use ledger::{ApduCommand};
+use ledger::ApduCommand;
 
 pub fn app_version() -> ledger::ApduCommand {
     ApduCommand {

@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
-use ::std::fmt::Debug;
+use std::fmt::Debug;
+use std::io::Write;
 
 use log::debug;
 
+use bitcoin_hashes::{hash160, Hash};
 use byteorder::{BigEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
-    AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, ExtendedPubKey, ScryptType,
+    AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber, ExtendedPubKey, Fingerprint,
+    ScryptType,
 };
 use ckb_types::H160;
 
@@ -63,6 +66,8 @@ impl AbstractKeyStore for LedgerKeyStore {
 
     type Err = LedgerKeyStoreError;
 
+    type AcccountId = H160;
+
     fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
         let _ = self.check_version(); //.expect("oh no!");
         Ok(Box::new(::std::iter::empty()))
@@ -91,14 +96,20 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
         let response = ledger_app.exchange(command)?;
         debug!(
             "Nervos CBK Ledger app extended pub key raw {:?}",
-            (path, response)
+            (&path, &response)
         );
         Ok(ExtendedPubKey {
             depth: path.as_ref().len() as u8,
-            parent_fingerprint: unimplemented!(),
+            parent_fingerprint: {
+                let mut engine = hash160::Hash::engine();
+                engine
+                    .write_all(b"`parent_fingerprint` currently unused by Nervos.")
+                    .expect("write must ok");
+                Fingerprint::from(&hash160::Hash::from_engine(engine)[0..4])
+            },
             child_number: ChildNumber::from_hardened_idx(0)?,
             public_key: PublicKey::from_slice(&response.data)?,
-            chain_code: unimplemented!(),
+            chain_code: ChainCode([0; 32]), // dummy, unused
         })
     }
 }
