@@ -17,7 +17,7 @@ use ledger::{LedgerApp, LedgerError};
 pub mod apdu;
 mod error;
 
-use error::Error as LedgerKeyStoreError;
+pub use error::Error as LedgerKeyStoreError;
 
 #[cfg(test)]
 mod tests {

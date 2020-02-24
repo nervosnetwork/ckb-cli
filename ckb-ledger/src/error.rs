@@ -12,7 +12,7 @@ pub enum Error {
     LedgerError(LedgerError),
     #[fail(display = "Error in client-side BIP-32 calculations: {}", _0)]
     Bip32Error(Bip32Error),
-    #[fail(display = "Error in secp256k1 marshalling")]
+    #[fail(display = "Error in secp256k1 marshalling: {}", _0)]
     Secp256k1Error(secp256k1::Error),
 }
 
