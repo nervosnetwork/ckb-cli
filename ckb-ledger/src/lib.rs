@@ -4,6 +4,7 @@ use ::std::fmt::Debug;
 
 use log::debug;
 
+use byteorder::{LittleEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
     AbstractKeyStore, AbstractMasterPrivKey, Bip32Error, ChildNumber, ExtendedPubKey, ScryptType,
 };
@@ -109,13 +110,18 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         let ledger_app = self.init()?;
+        let mut data = Vec::new();
+        for &child_num in path.as_ref().iter() {
+            data.write_u32::<LittleEndian>(From::from(child_num))
+                .expect("IO error not possible when writing to Vec last I checked");
+        }
         let command = ApduCommand {
             cla: 0x80,
             ins: 0x02,
             p1: 0x00,
             p2: 0x00,
             length: 0,
-            data: Vec::new(),
+            data,
         };
         let result = ledger_app.exchange(command)?;
         debug!(
