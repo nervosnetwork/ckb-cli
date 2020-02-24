@@ -490,6 +490,7 @@ dependencies = [
  "failure 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "ledger 0.3.0 (git+https://github.com/obsidiansystems/ledger-rs?rev=be2d5cbcd877bf396aa94bb285d579884883763e)",
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "secp256k1 0.15.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

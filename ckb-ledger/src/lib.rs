@@ -10,6 +10,7 @@ use ckb_sdk::wallet::{
 };
 use ckb_types::H160;
 use failure::Fail;
+use secp256k1::key::PublicKey;
 
 use ledger::{ApduCommand, LedgerApp, LedgerError};
 
@@ -47,8 +48,8 @@ impl LedgerKeyStore {
                 length: 0,
                 data: Vec::new(),
             };
-            let result = ledger_app.exchange(command)?;;
-            debug!("Nervos CBK Ledger app Version: {:?}", result);
+            let response = ledger_app.exchange(command)?;;
+            debug!("Nervos CBK Ledger app Version: {:?}", response);
         }
         {
             let command = ApduCommand {
@@ -59,8 +60,8 @@ impl LedgerKeyStore {
                 length: 0,
                 data: Vec::new(),
             };
-            let result = ledger_app.exchange(command)?;
-            debug!("Nervos CBK Ledger app Git Hash: {:?}", result);
+            let response = ledger_app.exchange(command)?;
+            debug!("Nervos CBK Ledger app Git Hash: {:?}", response);
         }
         Ok(())
     }
@@ -88,6 +89,8 @@ pub enum LedgerKeyStoreError {
     LedgerError(LedgerError),
     #[fail(display = "Error in client-side BIP-32 calculations: {}", _0)]
     Bip32Error(Bip32Error),
+    #[fail(display = "Error in secp256k1 marshalling")]
+    Secp256k1Error(secp256k1::Error),
 }
 
 impl From<LedgerError> for LedgerKeyStoreError {
@@ -99,6 +102,12 @@ impl From<LedgerError> for LedgerKeyStoreError {
 impl From<Bip32Error> for LedgerKeyStoreError {
     fn from(err: Bip32Error) -> Self {
         LedgerKeyStoreError::Bip32Error(err)
+    }
+}
+
+impl From<secp256k1::Error> for LedgerKeyStoreError {
+    fn from(err: secp256k1::Error) -> Self {
+        LedgerKeyStoreError::Secp256k1Error(err)
     }
 }
 
@@ -123,16 +132,16 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
             length: 0,
             data,
         };
-        let result = ledger_app.exchange(command)?;
+        let response = ledger_app.exchange(command)?;
         debug!(
             "Nervos CBK Ledger app extended pub key raw {:?}",
-            (path, result)
+            (path, response)
         );
         Ok(ExtendedPubKey {
             depth: path.as_ref().len() as u8,
             parent_fingerprint: unimplemented!(),
             child_number: ChildNumber::from_hardened_idx(0)?,
-            public_key: unimplemented!(),
+            public_key: PublicKey::from_slice(&response.data)?,
             chain_code: unimplemented!(),
         })
     }

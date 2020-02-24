@@ -14,3 +14,4 @@ failure = "0.1.5"
 # Until branch = "use-log-crate" is upstreamed
 ledger = { git = "https://github.com/obsidiansystems/ledger-rs", rev = "be2d5cbcd877bf396aa94bb285d579884883763e" }
 log = "0.4.6"
+secp256k1 = "0.15.0"
