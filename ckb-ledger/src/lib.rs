@@ -6,13 +6,18 @@ use log::debug;
 
 use byteorder::{BigEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
-    AbstractKeyStore, AbstractMasterPrivKey, Bip32Error, ChildNumber, ExtendedPubKey, ScryptType,
+    AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, ExtendedPubKey, ScryptType,
 };
 use ckb_types::H160;
-use failure::Fail;
+
 use secp256k1::key::PublicKey;
 
-use ledger::{ApduCommand, LedgerApp, LedgerError};
+use ledger::{LedgerApp, LedgerError};
+
+pub mod apdu;
+mod error;
+
+use error::Error as LedgerKeyStoreError;
 
 #[cfg(test)]
 mod tests {
@@ -40,26 +45,12 @@ impl LedgerKeyStore {
     fn check_version(&mut self) -> Result<(), LedgerError> {
         let ledger_app = self.init()?;
         {
-            let command = ApduCommand {
-                cla: 0x80,
-                ins: 0x00,
-                p1: 0x00,
-                p2: 0x00,
-                length: 0,
-                data: Vec::new(),
-            };
+            let command = apdu::app_version();
             let response = ledger_app.exchange(command)?;;
             debug!("Nervos CBK Ledger app Version: {:?}", response);
         }
         {
-            let command = ApduCommand {
-                cla: 0x80,
-                ins: 0x09,
-                p1: 0x00,
-                p2: 0x00,
-                length: 0,
-                data: Vec::new(),
-            };
+            let command = apdu::app_git_hash();
             let response = ledger_app.exchange(command)?;
             debug!("Nervos CBK Ledger app Git Hash: {:?}", response);
         }
@@ -83,34 +74,6 @@ impl AbstractKeyStore for LedgerKeyStore {
     }
 }
 
-#[derive(Debug, Fail)]
-pub enum LedgerKeyStoreError {
-    #[fail(display = "App-agnostic ledger error: {}", _0)]
-    LedgerError(LedgerError),
-    #[fail(display = "Error in client-side BIP-32 calculations: {}", _0)]
-    Bip32Error(Bip32Error),
-    #[fail(display = "Error in secp256k1 marshalling")]
-    Secp256k1Error(secp256k1::Error),
-}
-
-impl From<LedgerError> for LedgerKeyStoreError {
-    fn from(err: LedgerError) -> Self {
-        LedgerKeyStoreError::LedgerError(err)
-    }
-}
-
-impl From<Bip32Error> for LedgerKeyStoreError {
-    fn from(err: Bip32Error) -> Self {
-        LedgerKeyStoreError::Bip32Error(err)
-    }
-}
-
-impl From<secp256k1::Error> for LedgerKeyStoreError {
-    fn from(err: secp256k1::Error) -> Self {
-        LedgerKeyStoreError::Secp256k1Error(err)
-    }
-}
-
 impl AbstractMasterPrivKey for &mut LedgerKeyStore {
     type Err = LedgerKeyStoreError;
 
@@ -124,14 +87,7 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
             data.write_u32::<BigEndian>(From::from(child_num))
                 .expect("IO error not possible when writing to Vec last I checked");
         }
-        let command = ApduCommand {
-            cla: 0x80,
-            ins: 0x02,
-            p1: 0x00,
-            p2: 0x00,
-            length: 0,
-            data,
-        };
+        let command = apdu::extend_public_key(data);
         let response = ledger_app.exchange(command)?;
         debug!(
             "Nervos CBK Ledger app extended pub key raw {:?}",
