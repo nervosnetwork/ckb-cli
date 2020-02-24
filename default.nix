@@ -20,11 +20,14 @@ let
   };
 in rustPlatform.buildRustPackage {
   name = "ckb-cli";
-  src = ./.;
-  nativeBuildInputs = [ pkgs.openssl pkgs.pkgconfig ];
-  buildInputs = [ rustPackages.rust-std ];
+  src = pkgs.lib.cleanSourceWith {
+    filter = path: type: !(builtins.any (x: x == baseNameOf path) ["target" "result" ".git" "tags" "TAGS"]);
+    src = ./.;
+  };
+  nativeBuildInputs = [ pkgs.pkgconfig ];
+  buildInputs = [ rustPackages.rust-std pkgs.openssl pkgs.libudev ];
   verifyCargoDeps = true;
 
   # Cargo hash must be updated when Cargo.lock file changes.
-  cargoSha256 = "1h2nwmmiqcz430fl2z2hi40b76lxhgwkpnxb81ivz41f2y08qlmb";
+  cargoSha256 = "0r7wbcmql70aff3mnbr05a40phfpxp08q1gxc84qkcla3wrii81l";
 }
