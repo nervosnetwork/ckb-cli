@@ -2,8 +2,8 @@ use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use crate::utils::index::IndexController;
 use crate::utils::other::{
-    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    serialize_signature,
+    get_keystore_signer, get_max_mature_number, get_network_type, get_privkey_signer, is_mature,
+    read_password,
 };
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
@@ -12,14 +12,14 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
     wallet::KeyStore,
-    GenesisInfo, HttpRpcClient, SignerFn,
+    GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
     packed::{Byte32, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
-    {h256, H160, H256},
+    {H160, H256},
 };
 use itertools::Itertools;
 use std::collections::HashSet;
@@ -317,24 +317,6 @@ impl<'a> DAOSubCommand<'a> {
     pub(crate) fn rpc_client(&mut self) -> &mut HttpRpcClient {
         &mut self.rpc_client
     }
-}
-
-// TODO remove the duplicated function later
-fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                key_store
-                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
-                    .map(|signature| Some(serialize_signature(&signature)))
-                    .map_err(|err| err.to_string())
-            }
-        } else {
-            Ok(None)
-        }
-    })
 }
 
 fn take_by_out_points(

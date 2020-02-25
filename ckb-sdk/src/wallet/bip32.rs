@@ -402,7 +402,7 @@ impl<'a> Iterator for DerivationPathIterator<'a> {
 }
 
 impl DerivationPath {
-    /// Create the empty [DerivationPath]y which refers to the original key.
+    /// Create the empty [DerivationPath] which refers to the original key.
     pub fn empty() -> Self {
         DerivationPath(Vec::new())
     }

@@ -11,12 +11,11 @@ use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, SignerFn, TxHelper,
+    MultisigConfig, NetworkType, TxHelper,
 };
 use ckb_types::{
     bytes::Bytes,
     core::Capacity,
-    h256,
     packed::{self, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
@@ -33,8 +32,8 @@ use crate::utils::{
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{
-        check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
+        check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
+        get_live_cell_with_cache, get_network_type, get_privkey_signer, get_to_data, read_password,
     },
     printer::{OutputFormat, Printable},
 };
@@ -593,23 +592,6 @@ fn print_cell_info(
         type_script_status,
         lock_kind,
     );
-}
-
-fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                key_store
-                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
-                    .map(|signature| Some(serialize_signature(&signature)))
-                    .map_err(|err| err.to_string())
-            }
-        } else {
-            Ok(None)
-        }
-    })
 }
 
 fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
