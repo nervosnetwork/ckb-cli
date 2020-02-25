@@ -12,10 +12,10 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::CliSubCommand;
 use crate::utils::{
-    arg::lock_arg,
+    arg::{self, lock_arg},
     arg_parser::{
-        ArgParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser,
-        FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        ArgParser, DerivationPathParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser,
+        FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
@@ -128,13 +128,7 @@ impl<'a> AccountSubCommand<'a> {
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(lock_arg().required(true))
-                    .arg(
-                        Arg::with_name("path")
-                            .long("path")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-                            .help("The address path")
-                    ),
+                    .arg(arg::derivation_path()),
             ])
     }
 }
@@ -340,9 +334,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let path: DerivationPath = FromStrParser::<DerivationPath>::new()
-                    .from_matches_opt(m, "path", false)?
-                    .unwrap_or_else(DerivationPath::empty);
+                let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
 
                 let password = read_password(false, None)?;
                 let extended_pubkey = self

@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use ckb_sdk::{
-    wallet::{zeroize_privkey, MasterPrivKey},
+    wallet::{zeroize_privkey, DerivationPath, MasterPrivKey},
     Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
 };
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
@@ -537,6 +537,25 @@ impl ArgParser<Duration> for DurationParser {
             }
         };
         Ok(Duration::from_secs(seconds))
+    }
+}
+
+pub struct DerivationPathParser;
+
+impl ArgParser<DerivationPath> for DerivationPathParser {
+    fn parse(&self, input: &str) -> Result<DerivationPath, String> {
+        FromStrParser::<DerivationPath>::new().parse(input)
+    }
+    fn from_matches<R: From<DerivationPath>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<R, String> {
+        Ok(From::from(
+            FromStrParser::<DerivationPath>::new()
+                .from_matches_opt(matches, name, false)?
+                .unwrap_or_else(DerivationPath::empty),
+        ))
     }
 }
 

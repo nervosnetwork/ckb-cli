@@ -2,6 +2,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
+use ckb_sdk::wallet::DerivationPath;
 use ckb_types::{H160, H256};
 use clap::Arg;
 
@@ -37,6 +38,14 @@ pub fn lock_hash<'a, 'b>() -> Arg<'a, 'b> {
         .takes_value(true)
         .validator(|input| FixedHashParser::<H256>::default().validate(input))
         .help("Lock hash")
+}
+
+pub fn derivation_path<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("path")
+        .long("path")
+        .takes_value(true)
+        .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
+        .help("The address path")
 }
 
 pub fn derive_receiving_address_length<'a, 'b>() -> Arg<'a, 'b> {
