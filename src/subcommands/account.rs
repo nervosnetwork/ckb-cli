@@ -171,12 +171,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
     ) -> Result<String, String> {
         match matches.subcommand() {
             ("list", _) => {
-                fn list_accounts_with_source<KS>(
+                fn list_accounts_with_source<KS: AbstractKeyStore>(
                     ks: &mut KS,
-                ) -> Result<impl Iterator<Item = (usize, KS::AcccountId, &'static str)>, String>
+                ) -> Result<impl Iterator<Item = (usize, H160, &'static str)>, String>
                 where
                     KS::Err: std::string::ToString,
-                    KS: AbstractKeyStore<AcccountId = H160>,
                 {
                     Ok(ks
                         .list_accounts()

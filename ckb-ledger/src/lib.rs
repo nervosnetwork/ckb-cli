@@ -66,8 +66,6 @@ impl AbstractKeyStore for LedgerKeyStore {
 
     type Err = LedgerKeyStoreError;
 
-    type AcccountId = H160;
-
     fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
         let _ = self.check_version(); //.expect("oh no!");
         Ok(Box::new(::std::iter::empty()))

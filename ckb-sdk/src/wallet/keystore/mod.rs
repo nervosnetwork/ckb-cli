@@ -40,22 +40,10 @@ pub struct KeyStore {
 pub trait AbstractKeyStore: Sized {
     const SOURCE_NAME: &'static str;
 
-    /// Error type for key store operations.
     type Err;
 
-    // /// Identifier for the individual accounts, i.e. those which per idiomatic
-    // /// use of UTXO are not reused between transactions for sake of the actors'
-    // /// privacy.
-    // ///
-    // /// This must always contain at least the a `H160` hash as mandated by the
-    // /// blockchain. It may also contain more information to different between
-    // /// underlying keystores, e.g. files vs hardware wallets.
-    type AcccountId;
-
     // Just box it because no `impl Trait` in traits for now
-    fn list_accounts(
-        &mut self,
-    ) -> Result<Box<dyn Iterator<Item = (usize, Self::AcccountId)>>, Self::Err>;
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err>;
 
     fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<Self, Self::Err>;
 }
@@ -75,8 +63,6 @@ impl AbstractKeyStore for KeyStore {
     const SOURCE_NAME: &'static str = "on-disk password-protected key store";
 
     type Err = Error;
-
-    type AcccountId = H160;
 
     fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
         let mut accounts = self
