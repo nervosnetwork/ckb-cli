@@ -287,6 +287,23 @@ pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
     }
 }
 
+pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
+    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+        if lock_args.contains(&account) {
+            if message == &h256!("0x0") {
+                Ok(Some([0u8; 65]))
+            } else {
+                key_store
+                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
+                    .map(|signature| Some(serialize_signature(&signature)))
+                    .map_err(|err| err.to_string())
+            }
+        } else {
+            Ok(None)
+        }
+    })
+}
+
 pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
