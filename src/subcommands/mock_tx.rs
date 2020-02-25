@@ -20,7 +20,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::CliSubCommand;
 use crate::utils::{
-    arg::lock_arg,
+    arg,
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
     other::{get_genesis_info, get_singer},
     printer::{OutputFormat, Printable},
@@ -62,7 +62,7 @@ impl<'a> MockTxSubCommand<'a> {
             .subcommands(vec![
                 SubCommand::with_name("template")
                     .about("Print mock transaction template")
-                    .arg(lock_arg().required(true).clone().required(false))
+                    .arg(arg::lock_arg().required(true).clone().required(false))
                     .arg(arg_output_file.clone().help("Save to a output file")),
                 SubCommand::with_name("complete")
                     .about("Complete the mock transaction")
