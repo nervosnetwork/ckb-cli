@@ -28,7 +28,7 @@ pub fn extend_public_key(data: Vec<u8>) -> ledger::ApduCommand {
         ins: 0x02,
         p1: 0x00,
         p2: 0x00,
-        length: 0,
+        length: data.len() as u8,
         data,
     }
 }

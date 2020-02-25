@@ -86,6 +86,8 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
     {
         let ledger_app = self.init()?;
         let mut data = Vec::new();
+        data.write_u8(path.as_ref().len() as u8)
+            .expect("IO error not possible when writing to Vec last I checked");
         for &child_num in path.as_ref().iter() {
             data.write_u32::<BigEndian>(From::from(child_num))
                 .expect("IO error not possible when writing to Vec last I checked");
@@ -96,6 +98,16 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
             "Nervos CBK Ledger app extended pub key raw {:?}",
             (&path, &response)
         );
+        let (len, pubkey) = response
+            .data
+            .split_first()
+            .expect("Ledger response is empty!");
+        if pubkey.len() != *len as usize {
+            return Err(LedgerKeyStoreError::ResponseWrongLengthError {
+                expected: *len as usize,
+                got: response.data.len(),
+            });
+        }
         Ok(ExtendedPubKey {
             depth: path.as_ref().len() as u8,
             parent_fingerprint: {
@@ -106,7 +118,7 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
                 Fingerprint::from(&hash160::Hash::from_engine(engine)[0..4])
             },
             child_number: ChildNumber::from_hardened_idx(0)?,
-            public_key: PublicKey::from_slice(&response.data)?,
+            public_key: PublicKey::from_slice(&pubkey)?,
             chain_code: ChainCode([0; 32]), // dummy, unused
         })
     }

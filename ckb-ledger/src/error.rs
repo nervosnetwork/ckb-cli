@@ -14,6 +14,11 @@ pub enum Error {
     Bip32Error(Bip32Error),
     #[fail(display = "Error in secp256k1 marshalling: {}", _0)]
     Secp256k1Error(secp256k1::Error),
+    #[fail(
+        display = "Error in Ledger response, length is incorrect: expected {}, got {}",
+        _0, _1
+    )]
+    ResponseWrongLengthError { expected: usize, got: usize },
 }
 
 impl From<LedgerError> for Error {
