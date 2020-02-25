@@ -15,7 +15,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::CliSubCommand;
 use crate::utils::{
-    arg::lock_arg,
+    arg,
     arg_parser::{
         ArgParser, DerivationPathParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser,
         FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
@@ -67,17 +67,10 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 SubCommand::with_name("import-keystore")
                     .about("Import key from encrypted keystore json file and create a new account.")
-                    .arg(
-                        Arg::with_name("path")
-                            .long("path")
-                            .takes_value(true)
-                            .required(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("The keystore file path (json format)")
-                    ),
+                    .arg(arg::derivation_path().required(true)),
                 SubCommand::with_name("unlock")
                     .about("Unlock an account")
-                    .arg(lock_arg().required(true))
+                    .arg(arg::lock_arg().required(true))
                     .arg(
                         Arg::with_name("keep")
                             .long("keep")
@@ -88,10 +81,10 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 SubCommand::with_name("update")
                     .about("Update password of an account")
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
                 SubCommand::with_name("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
-                    .arg(lock_arg().required(true))
+                    .arg(arg::lock_arg().required(true))
                     .arg(
                         arg_extended_privkey_path
                             .clone()
@@ -132,10 +125,10 @@ impl<'a> AccountSubCommand<'a> {
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .help("Change addresses length")
                     )
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
-                    .arg(lock_arg().required(true))
+                    .arg(arg::lock_arg().required(true))
                     .arg(
                         Arg::with_name("path")
                             .long("path")

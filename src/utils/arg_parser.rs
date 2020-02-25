@@ -544,7 +544,7 @@ pub struct DerivationPathParser;
 
 impl ArgParser<DerivationPath> for DerivationPathParser {
     fn parse(&self, input: &str) -> Result<DerivationPath, String> {
-        return FromStrParser::<DerivationPath>::new().parse(input);
+        FromStrParser::<DerivationPath>::new().parse(input)
     }
     fn from_matches<R: From<DerivationPath>>(
         &self,
@@ -554,7 +554,7 @@ impl ArgParser<DerivationPath> for DerivationPathParser {
         Ok(From::from(
             FromStrParser::<DerivationPath>::new()
                 .from_matches_opt(matches, name, false)?
-                .unwrap_or(DerivationPath::empty()),
+                .unwrap_or_else(DerivationPath::empty),
         ))
     }
 }
