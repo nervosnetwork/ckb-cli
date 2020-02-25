@@ -222,7 +222,8 @@ impl KeyStore {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
-            .sign(message, path))
+            .sign(message, path)
+            .void_unwrap())
     }
     pub fn sign_recoverable<P>(
         &mut self,
@@ -236,7 +237,8 @@ impl KeyStore {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
-            .sign_recoverable(message, path))
+            .sign_recoverable(message, path)
+            .void_unwrap())
     }
     pub fn sign_with_password<P>(
         &self,
@@ -250,7 +252,7 @@ impl KeyStore {
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.master_privkey.sign(message, path))
+        Ok((&key.master_privkey).sign(message, path).void_unwrap())
     }
     pub fn sign_recoverable_with_password<P>(
         &self,
@@ -264,7 +266,9 @@ impl KeyStore {
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.master_privkey.sign_recoverable(message, path))
+        Ok((&key.master_privkey)
+            .sign_recoverable(message, path)
+            .void_unwrap())
     }
     pub fn extended_pubkey<P>(&mut self, hash160: &H160, path: &P) -> Result<ExtendedPubKey, Error>
     where
@@ -774,26 +778,6 @@ impl MasterPrivKey {
         sk.derive_priv(&SECP256K1, path)
             .expect("Derive sub-privkey error")
     }
-
-    pub fn sign<P>(&self, message: &H256, path: &P) -> secp256k1::Signature
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign(&message, &sub_sk.private_key)
-    }
-
-    pub fn sign_recoverable<P>(&self, message: &H256, path: &P) -> RecoverableSignature
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
-    }
 }
 
 pub trait AbstractMasterPrivKey: Sized {
@@ -811,6 +795,18 @@ pub trait AbstractMasterPrivKey: Sized {
                 .expect("Generate hash(H160) from pubkey failed"),
         )
     }
+
+    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>;
+
+    fn sign_recoverable<P>(
+        &self,
+        message: &H256,
+        path: &P,
+    ) -> Result<RecoverableSignature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>;
 }
 
 impl AbstractMasterPrivKey for &MasterPrivKey {
@@ -822,6 +818,26 @@ impl AbstractMasterPrivKey for &MasterPrivKey {
     {
         let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
+    }
+
+    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Void>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        let sub_sk = self.sub_privkey(path);
+        Ok(SECP256K1.sign(&message, &sub_sk.private_key))
+    }
+
+    fn sign_recoverable<P>(&self, message: &H256, path: &P) -> Result<RecoverableSignature, Void>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        let sub_sk = self.sub_privkey(path);
+        Ok(SECP256K1.sign_recoverable(&message, &sub_sk.private_key))
     }
 }
 

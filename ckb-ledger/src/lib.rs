@@ -11,9 +11,9 @@ use ckb_sdk::wallet::{
     AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber, ExtendedPubKey, Fingerprint,
     ScryptType,
 };
-use ckb_types::H160;
+use ckb_types::{H160, H256};
 
-use secp256k1::key::PublicKey;
+use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
 
 use ledger::{LedgerApp, LedgerError};
 
@@ -109,5 +109,23 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
             public_key: PublicKey::from_slice(&response.data)?,
             chain_code: ChainCode([0; 32]), // dummy, unused
         })
+    }
+
+    fn sign<P>(&self, message: &H256, path: &P) -> Result<Signature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        unimplemented!()
+    }
+
+    fn sign_recoverable<P>(
+        &self,
+        message: &H256,
+        path: &P,
+    ) -> Result<RecoverableSignature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        unimplemented!()
     }
 }
