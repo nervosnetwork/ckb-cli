@@ -69,11 +69,6 @@ impl<'a> UtilSubCommand<'a> {
             .validator(|input| AddressParser::default().validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
-        let arg_lock_arg = Arg::with_name("lock-arg")
-            .long("lock-arg")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H160>::default().validate(input))
-            .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
 
         let binary_hex_arg = Arg::with_name("binary-hex")
             .long("binary-hex")
@@ -111,7 +106,7 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(arg_privkey.clone().conflicts_with("pubkey"))
                     .arg(arg_pubkey.clone().required(false))
                     .arg(arg_address.clone().required(false))
-                    .arg(arg_lock_arg.clone()),
+                    .arg(arg::lock_arg().clone()),
                 SubCommand::with_name("sign-data")
                     .about("Sign data with secp256k1 signature ")
                     .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
