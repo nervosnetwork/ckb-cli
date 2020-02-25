@@ -19,6 +19,7 @@ use ledger::{LedgerApp, LedgerError};
 
 pub mod apdu;
 mod error;
+pub mod parse;
 
 pub use error::Error as LedgerKeyStoreError;
 
@@ -95,19 +96,17 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
         let command = apdu::extend_public_key(data);
         let response = ledger_app.exchange(command)?;
         debug!(
-            "Nervos CBK Ledger app extended pub key raw {:?}",
-            (&path, &response)
+            "Nervos CBK Ledger app extended pub key raw public key {:?} for path {:?}",
+            &response, &path
         );
-        let (len, pubkey) = response
-            .data
-            .split_first()
-            .expect("Ledger response is empty!");
-        if pubkey.len() != *len as usize {
-            return Err(LedgerKeyStoreError::ResponseWrongLengthError {
-                expected: *len as usize,
-                got: response.data.len(),
-            });
-        }
+        let mut resp = &response.data[..];
+        let len_slice = parse::split_off_at(&mut resp, 1)?;
+        let len = match *len_slice {
+            [len] => len as usize,
+            _ => unreachable!("we used 1 above so this should be a 1-element slice"),
+        };
+        let raw_public_key = parse::split_off_at(&mut resp, len)?;
+        parse::assert_nothing_left(resp)?;
         Ok(ExtendedPubKey {
             depth: path.as_ref().len() as u8,
             parent_fingerprint: {
@@ -118,7 +117,7 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
                 Fingerprint::from(&hash160::Hash::from_engine(engine)[0..4])
             },
             child_number: ChildNumber::from_hardened_idx(0)?,
-            public_key: PublicKey::from_slice(&pubkey)?,
+            public_key: PublicKey::from_slice(&raw_public_key)?,
             chain_code: ChainCode([0; 32]), // dummy, unused
         })
     }

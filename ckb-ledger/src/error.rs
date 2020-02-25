@@ -15,10 +15,15 @@ pub enum Error {
     #[fail(display = "Error in secp256k1 marshalling: {}", _0)]
     Secp256k1Error(secp256k1::Error),
     #[fail(
-        display = "Error in Ledger response, length is incorrect: expected {}, got {}",
+        display = "Error when parsing ledger response, remaining response too short to parse: expected {} bytes, got data {:?}",
         _0, _1
     )]
-    ResponseWrongLengthError { expected: usize, got: usize },
+    RestOfResponseTooShort { expected: usize, tail: Vec<u8> },
+    #[fail(
+        display = "Error when parsing ledger response, remaining response left over after parse: {:?}",
+        _0
+    )]
+    TrailingExtraReponse { tail: Vec<u8> },
 }
 
 impl From<LedgerError> for Error {
