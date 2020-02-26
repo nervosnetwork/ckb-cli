@@ -50,10 +50,11 @@ impl LedgerKeyStore {
     fn refresh(&mut self) -> Result<(), RawLedgerError> {
         self.discovered_devices.clear();
         // TODO fix ledger library so can put in all ledgers
-        let raw_ledger_app = RawLedgerApp::new()?;
-        let ledger_app = LedgerCap::from_ledger(raw_ledger_app)?;
-        self.discovered_devices
-            .insert(ledger_app.id.clone(), ledger_app);
+        if let Ok(raw_ledger_app) = RawLedgerApp::new() {
+            let ledger_app = LedgerCap::from_ledger(raw_ledger_app)?;
+            self.discovered_devices
+                .insert(ledger_app.id.clone(), ledger_app);
+        }
         Ok(())
     }
 }
