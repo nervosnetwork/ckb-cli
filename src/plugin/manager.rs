@@ -27,7 +27,10 @@ use plugin_protocol::{
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
 pub const INACTIVE_DIRNAME: &str = "inactive";
+#[cfg(unix)]
 pub const PLUGIN_FILENAME_EXT: &str = "bin";
+#[cfg(not(unix))]
+pub const PLUGIN_FILENAME_EXT: &str = "exe";
 
 pub struct PluginManager {
     plugin_dir: PathBuf,
@@ -62,7 +65,6 @@ impl PluginManager {
             fs::create_dir_all(&inactive_plugin_dir).map_err(|err| err.to_string())?;
         }
         for (dir, is_active) in &[(&plugin_dir, true), (&inactive_plugin_dir, false)] {
-            println!("plugin direcotry: {:?}", dir);
             for entry in fs::read_dir(dir).map_err(|err| err.to_string())? {
                 let entry = entry.map_err(|err| err.to_string())?;
                 let path = entry.path();
@@ -72,14 +74,13 @@ impl PluginManager {
                         .map(|ext| ext == PLUGIN_FILENAME_EXT)
                         .unwrap_or(false)
                 {
-                    let plugin = Plugin::new(path, Vec::new(), *is_active);
+                    let plugin = Plugin::new(path.clone(), Vec::new(), *is_active);
                     match plugin.register() {
                         Ok(config) => {
-                            println!("register plugin: {:?}", config);
                             plugins.insert(config.name.clone(), (plugin, config));
                         }
                         Err(err) => {
-                            println!("register error: {}", err);
+                            println!("register error: {}, path: {:?}", err, path);
                         }
                     }
                 }
@@ -224,6 +225,7 @@ impl PluginManager {
         };
         let path = base_dir.join(format!("{}.{}", config.name, PLUGIN_FILENAME_EXT));
         fs::copy(tmp_plugin.path(), &path).map_err(|err| err.to_string())?;
+        // TODO: change this address to executable
         let plugin = Plugin::new(path, Vec::new(), active);
         self.plugins
             .insert(config.name.clone(), (plugin, config.clone()));
@@ -333,6 +335,13 @@ impl PluginManager {
                 callback_name
             ))
         }
+    }
+
+    pub fn plugin_dir(&self) -> &PathBuf {
+        &self.plugin_dir
+    }
+    pub fn plugins(&self) -> &HashMap<String, (Plugin, PluginConfig)> {
+        &self.plugins
     }
 }
 
@@ -625,7 +634,6 @@ impl PluginProcess {
                 // EOF
                 break;
             }
-            println!("received message from plugin: {:?}", content);
             let result: Result<PluginResponse, _> = serde_json::from_str(&content);
             if let Ok(response) = result {
                 stdout_sender.send(response).unwrap();

@@ -14,7 +14,7 @@ use serde_json::json;
 use crate::plugin::PluginManager;
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
-    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -45,6 +45,7 @@ impl InteractiveEnv {
     pub fn from_config(
         ckb_cli_dir: PathBuf,
         mut config: GlobalConfig,
+        plugin_mgr: PluginManager,
         index_controller: IndexController,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
@@ -67,8 +68,6 @@ impl InteractiveEnv {
                 _ => eprintln!("Parse environment variable file failed."),
             }
         }
-
-        let plugin_mgr = PluginManager::init(&ckb_cli_dir, config.get_url().to_string())?;
 
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
@@ -333,6 +332,12 @@ impl InteractiveEnv {
                 ("util", Some(sub_matches)) => {
                     let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr)
                         .process(&sub_matches, debug)?;
+                    output.print(format, color);
+                    Ok(())
+                }
+                ("plugin", Some(sub_matches)) => {
+                    let output =
+                        PluginSubCommand::new(&mut self.plugin_mgr).process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }

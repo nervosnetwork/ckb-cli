@@ -19,8 +19,8 @@ use interactive::InteractiveEnv;
 use plugin::PluginManager;
 use subcommands::{
     start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
-    MockTxSubCommand, MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
-    WalletSubCommand,
+    MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, RpcSubCommand, TxSubCommand,
+    UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
@@ -147,6 +147,9 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
         )
         .process(&sub_matches, debug),
+        ("plugin", Some(sub_matches)) => {
+            PluginSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
+        }
         ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(&sub_matches, debug),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
@@ -171,9 +174,13 @@ fn main() -> Result<(), io::Error> {
             })
         }
         _ => {
-            if let Err(err) =
-                InteractiveEnv::from_config(ckb_cli_dir, config, index_controller.clone())
-                    .and_then(|mut env| env.start())
+            if let Err(err) = InteractiveEnv::from_config(
+                ckb_cli_dir,
+                config,
+                plugin_mgr,
+                index_controller.clone(),
+            )
+            .and_then(|mut env| env.start())
             {
                 eprintln!("Process error: {}", err);
                 index_controller.shutdown();
@@ -244,6 +251,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(ApiServerSubCommand::subcommand("server"))
         .subcommand(UtilSubCommand::subcommand("util"))
+        .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
@@ -360,6 +368,7 @@ pub fn build_interactive() -> App<'static> {
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))
         .subcommand(UtilSubCommand::subcommand("util"))
+        .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
