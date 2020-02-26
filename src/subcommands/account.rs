@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use ckb_ledger::LedgerKeyStore;
+use ckb_ledger::{LedgerId, LedgerKeyStore};
 use ckb_sdk::{
     wallet::{
         AbstractKeyStore, AbstractMasterPrivKey, DerivationPath, Key, KeyStore, MasterPrivKey,
@@ -164,7 +164,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 ) -> Result<impl Iterator<Item = (KS::AccountId, &'static str)>, String>
                 where
                     KS::Err: std::string::ToString,
-                    KS: AbstractKeyStore<AccountId = H160>,
+                    KS: AbstractKeyStore,
                 {
                     Ok(ks
                         .list_accounts()
@@ -172,15 +172,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         .map(|lock_arg| (lock_arg, KS::SOURCE_NAME)))
                 }
                 let resp = list_accounts_with_source(self.key_store)?
-                    .chain(list_accounts_with_source(self.ledger_key_store)?)
-                    .enumerate()
-                    .map(|(idx, (lock_arg, source))| {
+                    .map(|(lock_arg, source)| {
                         let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
                             .unpack();
-                        serde_json::json!({
-                            "#": idx,
+                        let v = serde_json::json!({
                             "lock_arg": format!("{:#x}", lock_arg),
                             "lock_hash": format!("{:#x}", lock_hash),
                             "address": {
@@ -188,7 +185,28 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
                             },
                             "account_source": source,
-                        })
+                        });
+                        match v {
+                            serde_json::Value::Object(m) => m,
+                            _ => panic!("We should have written a panic above."),
+                        }
+                    })
+                    .chain(list_accounts_with_source(self.ledger_key_store)?
+                           .map(|(LedgerId, source)| {
+                               let v = serde_json::json!({
+                                   "ledger_id": "", // TODO actual value here
+                                   "account_source": source,
+                               });
+                               match v {
+                                   serde_json::Value::Object(m) => m,
+                                   _ => panic!("We should have written a panic above."),
+                               }
+                           }))
+                    .enumerate()
+                    .map(|(idx, mut rest_of_map)| {
+                        // unwrap is gross, but also what the macro does?!?
+                        rest_of_map.insert("#".to_string(), serde_json::to_value(idx).unwrap());
+                        serde_json::Value::Object(rest_of_map)
                     })
                     .collect::<Vec<_>>();
                 Ok(serde_json::json!(resp).render(format, color))
@@ -370,6 +388,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
                 let extended_pubkey = self
                     .ledger_key_store
+                    .borrow_account(&LedgerId)
+                    .map_err(|err| err.to_string())?
                     .extended_pubkey(path.as_ref())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
