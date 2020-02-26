@@ -143,11 +143,7 @@ impl AbstractMasterPrivKey for LedgerCap {
             &response, &path
         );
         let mut resp = &response.data[..];
-        let len_slice = parse::split_off_at(&mut resp, 1)?;
-        let len = match *len_slice {
-            [len] => len as usize,
-            _ => unreachable!("we used 1 above so this should be a 1-element slice"),
-        };
+        let len = parse::split_first(&mut resp)? as usize;
         let raw_public_key = parse::split_off_at(&mut resp, len)?;
         parse::assert_nothing_left(resp)?;
         Ok(ExtendedPubKey {
