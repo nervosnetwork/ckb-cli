@@ -34,7 +34,7 @@ use ckb_sdk::{
     },
     wallet::{ChildNumber, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
-    NetworkType, SignerFn, Since, SinceType, TxHelper, SECP256K1,
+    NetworkType, SignerFnTrait, BoxedSignerFn, Since, SinceType, TxHelper, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -274,10 +274,10 @@ impl<'a> WalletSubCommand<'a> {
                 None
             };
 
-        let signer = if let Some(from_privkey) = from_privkey_opt {
-            get_privkey_signer(from_privkey)
+        let signer: BoxedSignerFn = if let Some(from_privkey) = from_privkey_opt {
+            Box::new(get_privkey_signer(from_privkey))
         } else {
-            get_keystore_signer(self.key_store.clone(), path_map, from_lock_arg, password)
+            Box::new(get_keystore_signer(self.key_store.clone(), path_map, from_lock_arg, password))
         };
 
         let to_data = get_to_data(m)?;
@@ -309,7 +309,7 @@ impl<'a> WalletSubCommand<'a> {
         to_data: Bytes,
         tx_fee: u64,
         lock_hashes: Vec<Byte32>,
-        signer: SignerFn,
+        signer: BoxedSignerFn,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
@@ -678,8 +678,8 @@ fn get_keystore_signer(
     path_map: HashMap<H160, DerivationPath>,
     account: H160,
     password: String,
-) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+) -> impl SignerFnTrait + 'static {
+    move |lock_args: &HashSet<H160>, message: &H256| {
         let path: &[ChildNumber] = if lock_args.contains(&account) {
             &[]
         } else {
@@ -689,5 +689,5 @@ fn get_keystore_signer(
             }
         };
         get_keystore_signer_raw(&key_store, &account, path, &password)(lock_args, message)
-    })
+    }
 }

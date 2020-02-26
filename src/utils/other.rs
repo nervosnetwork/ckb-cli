@@ -13,7 +13,7 @@ use ckb_sdk::{
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{AbstractKeyStore, ChildNumber, KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
     SignerFnTrait, SECP256K1,
 };
 use ckb_types::{
@@ -295,8 +295,8 @@ pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
     }
 }
 
-pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> impl SignerFnTrait + 'static {
+    move |lock_args: &HashSet<H160>, message: &H256| {
         if lock_args.contains(&account) {
             if message == &h256!("0x0") {
                 Ok(Some([0u8; 65]))
@@ -306,7 +306,7 @@ pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String)
         } else {
             Ok(None)
         }
-    })
+    }
 }
 
 pub fn get_keystore_signer_raw<'a>(
@@ -327,11 +327,11 @@ pub fn get_keystore_signer_raw<'a>(
     }
 }
 
-pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
+pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> impl SignerFnTrait {
     let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed");
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
+    move |lock_args: &HashSet<H160>, message: &H256| {
         if lock_args.contains(&lock_arg) {
             if message == &h256!("0x0") {
                 Ok(Some([0u8; 65]))
@@ -344,7 +344,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
         } else {
             Ok(None)
         }
-    })
+    }
 }
 
 pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {

@@ -11,7 +11,7 @@ use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, TxHelper,
+    MultisigConfig, NetworkType, TxHelper, BoxedSignerFn,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -450,13 +450,13 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let account_opt: Option<H160> = FixedHashParser::<H160>::default()
                     .from_matches_opt(m, "from-account", false)?;
 
-                let signer = if let Some(privkey) = privkey_opt {
-                    get_privkey_signer(privkey)
+                let signer: BoxedSignerFn = if let Some(privkey) = privkey_opt {
+                    Box::new(get_privkey_signer(privkey))
                 } else {
                     let password = read_password(false, None)?;
                     let account = account_opt.unwrap();
                     let key_store = self.key_store.clone();
-                    get_keystore_signer(key_store, account, password)
+                    Box::new(get_keystore_signer(key_store, account, password))
                 };
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
