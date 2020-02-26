@@ -8,7 +8,7 @@ pub use bip32::{
 };
 pub use error::Error as WalletError;
 pub use keystore::{
-    zeroize_privkey, zeroize_slice, AbstractKeyStore, AbstractMasterPrivKey, CipherParams, Crypto,
-    DerivedKeySet, Error as KeyStoreError, KdfParams, Key, KeyChain, KeyStore, KeyTimeout,
-    MasterPrivKey, ScryptParams, ScryptType,
+    interface::{AbstractKeyStore, AbstractMasterPrivKey},
+    zeroize_privkey, zeroize_slice, CipherParams, Crypto, DerivedKeySet, Error as KeyStoreError,
+    KdfParams, Key, KeyChain, KeyStore, KeyTimeout, MasterPrivKey, ScryptParams, ScryptType,
 };
