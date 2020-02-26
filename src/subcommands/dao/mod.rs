@@ -12,7 +12,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
     wallet::KeyStore,
-    GenesisInfo, HttpRpcClient, BoxedSignerFn,
+    BoxedSignerFn, GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -264,7 +264,11 @@ impl<'a> DAOSubCommand<'a> {
                     Box::new(get_privkey_signer(privkey.clone()))
                 } else {
                     let password = read_password(false, None)?;
-                    Box::new(get_keystore_signer(self.key_store.clone(), account.clone(), password))
+                    Box::new(get_keystore_signer(
+                        self.key_store.clone(),
+                        account.clone(),
+                        password,
+                    ))
                 }
             };
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();

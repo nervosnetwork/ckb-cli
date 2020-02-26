@@ -13,8 +13,8 @@ use ckb_sdk::{
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{AbstractKeyStore, ChildNumber, KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
-    SignerFnTrait, SECP256K1,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFnTrait,
+    SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -295,7 +295,11 @@ pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
     }
 }
 
-pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> impl SignerFnTrait + 'static {
+pub fn get_keystore_signer(
+    key_store: KeyStore,
+    account: H160,
+    password: String,
+) -> impl SignerFnTrait + 'static {
     move |lock_args: &HashSet<H160>, message: &H256| {
         if lock_args.contains(&account) {
             get_keystore_signer_raw(&key_store, &account, &[], &password)(lock_args, message)

@@ -33,8 +33,8 @@ use ckb_sdk::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::{ChildNumber, DerivationPath, KeyStore},
-    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
-    NetworkType, SignerFnTrait, BoxedSignerFn, Since, SinceType, TxHelper, SECP256K1,
+    Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient, HumanCapacity,
+    MultisigConfig, NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -277,7 +277,12 @@ impl<'a> WalletSubCommand<'a> {
         let signer: BoxedSignerFn = if let Some(from_privkey) = from_privkey_opt {
             Box::new(get_privkey_signer(from_privkey))
         } else {
-            Box::new(get_keystore_signer(self.key_store.clone(), path_map, from_lock_arg, password))
+            Box::new(get_keystore_signer(
+                self.key_store.clone(),
+                path_map,
+                from_lock_arg,
+                password,
+            ))
         };
 
         let to_data = get_to_data(m)?;

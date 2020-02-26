@@ -10,8 +10,8 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     wallet::KeyStore,
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, TxHelper, BoxedSignerFn,
+    Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
+    HumanCapacity, MultisigConfig, NetworkType, TxHelper,
 };
 use ckb_types::{
     bytes::Bytes,
