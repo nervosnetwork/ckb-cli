@@ -15,6 +15,9 @@ use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
 
+use crate::subcommands::account::AccountId;
+use super::arg::account_id_error;
+
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
 
@@ -556,6 +559,62 @@ impl ArgParser<DerivationPath> for DerivationPathParser {
                 .from_matches_opt(matches, name, false)?
                 .unwrap_or_else(DerivationPath::empty),
         ))
+    }
+}
+
+pub struct AccountIdParser;
+
+impl ArgParser<AccountId> for AccountIdParser {
+    fn parse(&self, input: &str) -> Result<AccountId, String> {
+        Ok(loop {
+            let e_0 = match FixedHashParser::<H160>::default().parse(input) {
+                Ok(v) => break AccountId::SoftwareMasterKey(v),
+                Err(e) => e,
+            };
+            let e_1 = match FixedHashParser::<H256>::default().parse(input) {
+                Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
+                Err(e) => e,
+            };
+            return Err(account_id_error(e_0, e_1))
+        })
+    }
+    fn from_matches<R: From<AccountId>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<R, String> {
+        return Ok(From::from(loop {
+            let e_0 = match FixedHashParser::<H160>::default().from_matches(matches, name) {
+                Ok(v) => break AccountId::SoftwareMasterKey(v),
+                Err(e) => e,
+            };
+            let e_1 = match FixedHashParser::<H256>::default().from_matches(matches, name) {
+                Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
+                Err(e) => e,
+            };
+            return Err(account_id_error(e_0, e_1))
+        }));
+    }
+    fn from_matches_opt<R: From<AccountId>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+        required: bool,
+    ) -> Result<Option<R>, String> {
+        return Ok(loop {
+            let e_0 = match FixedHashParser::<H160>::default().from_matches_opt(matches, name, required) {
+                Ok(v) => break v.map(AccountId::SoftwareMasterKey),
+                Err(e) => e,
+            };
+            let e_1 = match FixedHashParser::<H256>::default()
+                .from_matches_opt(matches, name, required)
+            {
+                Ok(v) => break v.map(|v| AccountId::LedgerId(ckb_ledger::LedgerId(v))),
+                Err(e) => e,
+            };
+            return Err(account_id_error(e_0, e_1))
+        }
+        .map(From::from));
     }
 }
 

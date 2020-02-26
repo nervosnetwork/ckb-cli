@@ -88,6 +88,28 @@ pub fn lock_arg<'a, 'b>() -> Arg<'a, 'b> {
         .help("Lock argument (account identifier, blake2b(pubkey)[0..20])")
 }
 
+pub fn account_id<'a, 'b>() -> Arg<'a, 'b> {
+    Arg::with_name("account-id")
+        .long("account-id")
+        .takes_value(true)
+        .validator(|input| {
+            let e_0 = match FixedHashParser::<H160>::default().validate(input.clone()) {
+                x @ Ok(()) => return x,
+                Err(e) => e,
+            };
+            let e_1 = match FixedHashParser::<H256>::default().validate(input.clone()) {
+                x @ Ok(()) => return x,
+                Err(e) => e,
+            };
+            Err(account_id_error(e_0, e_1))
+        })
+        .help("Account identifier (software key lock argument: blake2b(pubkey)[0..20], or hardware wallet opaque identifier)")
+}
+
+pub fn account_id_error(left_error: String, right_error: String) -> String {
+    format!("Not a valid account id of any type: not a valid software key because of {}, not a valid ledger key because of {}", left_error, right_error)
+}
+
 pub fn from_account<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("from-account")
         .long("from-account")

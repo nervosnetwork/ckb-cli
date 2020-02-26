@@ -17,12 +17,18 @@ use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        ArgParser, DerivationPathParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser,
-        FixedHashParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        AccountIdParser, ArgParser, DerivationPathParser, DurationParser,
+        ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
+        PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
     printer::{OutputFormat, Printable},
 };
+
+pub enum AccountId {
+    SoftwareMasterKey(H160),
+    LedgerId(LedgerId),
+}
 
 pub struct AccountSubCommand<'a> {
     key_store: &'a mut KeyStore,
@@ -128,16 +134,7 @@ impl<'a> AccountSubCommand<'a> {
                     .arg(arg::lock_arg().required(true)),
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
-                    .arg(arg::lock_arg().required(true))
-                    .arg(
-                        Arg::with_name("path")
-                            .long("path")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-                            .help("The address path")
-                    ),
-                SubCommand::with_name("extended-address-ledger")
-                    .about("Extended address (see: BIP-44)")
+                    .arg(arg::account_id().required(true))
                     .arg(
                         Arg::with_name("path")
                             .long("path")
@@ -372,26 +369,22 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("extended-address", Some(m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let account_id = AccountIdParser.from_matches(m, "account-id")?;
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
-                let password = read_password(false, None)?;
-                let extended_pubkey = self
-                    .key_store
-                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
-                    .map_err(|err| err.to_string())?;
-                let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
-                let resp = address_resp::<KeyStore>(&address_payload);
-                Ok(resp.render(format, color))
-            }
-            ("extended-address-ledger", Some(m)) => {
-                let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
-                let extended_pubkey = self
-                    .ledger_key_store
-                    .borrow_account(&LedgerId(H256(Default::default()))) // TODO: provide proper address
-                    .map_err(|err| err.to_string())?
-                    .extended_pubkey(path.as_ref())
-                    .map_err(|err| err.to_string())?;
+                let extended_pubkey = match account_id {
+                    AccountId::SoftwareMasterKey(lock_arg) => {
+                        let password = read_password(false, None)?;
+                        self.key_store
+                            .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
+                            .map_err(|err| err.to_string())?
+                    }
+                    AccountId::LedgerId(ledger_id) => self
+                        .ledger_key_store
+                        .borrow_account(&ledger_id)
+                        .map_err(|err| err.to_string())?
+                        .extended_pubkey(path.as_ref())
+                        .map_err(|err| err.to_string())?,
+                };
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
                 let resp = address_resp::<KeyStore>(&address_payload);
                 Ok(resp.render(format, color))

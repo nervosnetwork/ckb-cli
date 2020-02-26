@@ -19,9 +19,7 @@ pub fn split_off_at<'inner, 'outer>(
     Ok(head)
 }
 
-pub fn split_first<'inner, 'outer>(
-    response: &'outer mut &'inner [u8],
-) -> Result<u8, Error> {
+pub fn split_first<'inner, 'outer>(response: &'outer mut &'inner [u8]) -> Result<u8, Error> {
     let len_slice = split_off_at(response, 1)?;
     Ok(match *len_slice {
         [len] => len,
