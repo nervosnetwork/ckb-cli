@@ -342,7 +342,13 @@ impl TxHelper {
     }
 }
 
-pub type SignerFn = Box<dyn FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>>;
+// do this until we get aliases
+
+pub trait SignerFnTrait: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String> {}
+impl<T> SignerFnTrait for T where T: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>
+{}
+
+pub type SignerFn = Box<dyn SignerFnTrait>;
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {

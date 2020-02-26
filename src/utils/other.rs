@@ -14,7 +14,7 @@ use ckb_sdk::{
     rpc::AlertMessage,
     wallet::{AbstractKeyStore, ChildNumber, KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
-    SECP256K1,
+    SignerFnTrait, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -314,8 +314,7 @@ pub fn get_keystore_signer_raw<'a>(
     account: &'a H160,
     path: &'a [ChildNumber],
     password: &'a String,
-) -> impl FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String> + Sized + 'a
-{
+) -> impl SignerFnTrait + Sized + 'a {
     move |_lock_args: &HashSet<H160>, message: &H256| {
         if message == &h256!("0x0") {
             Ok(Some([0u8; 65]))
