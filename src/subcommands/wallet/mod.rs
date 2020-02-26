@@ -7,7 +7,7 @@ use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
     h256,
-    packed::{CellOutput, OutPoint, Script},
+    packed::{Byte32, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
@@ -34,8 +34,8 @@ use ckb_sdk::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::{DerivationPath, KeyStore},
-    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
-    Since, SinceType, TxHelper, SECP256K1,
+    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
+    NetworkType, SignerFn, Since, SinceType, TxHelper, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -128,7 +128,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::derive_change_address_length())
                     .arg(arg::derived().conflicts_with(arg::lock_hash().b.name)),
                 SubCommand::with_name("get-live-cells")
-                    .about("Get live cells by lock/type/code  hash")
+                    .about("Get live cells by lock/type/code hash")
                     .arg(arg::lock_hash())
                     .arg(arg::type_hash())
                     .arg(arg::code_hash())
@@ -143,7 +143,6 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::top_n()),
             ])
     }
-
     pub fn transfer(
         &mut self,
         m: &ArgMatches,
@@ -168,18 +167,8 @@ impl<'a> WalletSubCommand<'a> {
                     })
                     .map_err(|_| err)
             })?;
-        let from_locked_address_opt: Option<Address> = AddressParser::default()
-            .set_network(network_type)
-            .set_full_type(MULTISIG_TYPE_HASH.clone())
-            .from_matches_opt(m, "from-locked-address", false)?;
         let to_capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-        let receiving_address_length: u32 =
-            FromStrParser::<u32>::default().from_matches(m, "derive-receiving-address-length")?;
-
-        let last_change_address_opt: Option<Address> = AddressParser::default()
-            .set_network(network_type)
-            .from_matches_opt(m, "derive-change-address", false)?;
 
         let (from_address_payload, password) = if let Some(from_privkey) = from_privkey_opt.as_ref()
         {
@@ -192,12 +181,15 @@ impl<'a> WalletSubCommand<'a> {
                 password,
             )
         };
-        let from_address = Address::new(network_type, from_address_payload.clone());
 
         let to_address: Address = AddressParser::default()
             .set_network(network_type)
             .from_matches(m, "to-address")?;
 
+        let from_locked_address_opt: Option<Address> = AddressParser::default()
+            .set_network(network_type)
+            .set_full_type(MULTISIG_TYPE_HASH.clone())
+            .from_matches_opt(m, "from-locked-address", false)?;
         if let Some(from_locked_address) = from_locked_address_opt.as_ref() {
             let args = from_locked_address.payload().args();
             let err_prefix = "Invalid from-locked-address's args";
@@ -219,39 +211,21 @@ impl<'a> WalletSubCommand<'a> {
             }
         }
 
-        let to_address_hash_type = to_address.payload().hash_type();
-        let to_address_code_hash: H256 = to_address.payload().code_hash().unpack();
-        let to_address_args_len = to_address.payload().args().len();
-        if !(to_address_hash_type == ScriptHashType::Type
-            && to_address_code_hash == SIGHASH_TYPE_HASH
-            && to_address_args_len == 20)
-            && !(to_address_hash_type == ScriptHashType::Type
-                && to_address_code_hash == MULTISIG_TYPE_HASH
-                && (to_address_args_len == 20 || to_address_args_len == 28))
-        {
-            return Err(format!("Invalid to-address: {}", to_address));
-        }
-        let to_data = get_to_data(m)?;
-        check_capacity(to_capacity, to_data.len())?;
-
-        let genesis_info = self.genesis_info()?;
-
-        // For check index database is ready
-        self.with_db(|_| ())?;
-        let index_dir = self.index_dir.clone();
-        let genesis_hash = genesis_info.header().hash();
-        let genesis_info_clone = genesis_info.clone();
-
         // The lock hashes for search live cells
         let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
-        let mut helper = TxHelper::default();
 
-        let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
+        let from_lock_arg = H160::from_slice(from_address_payload.args().as_ref()).unwrap();
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
+
+        let last_change_address_opt: Option<Address> = AddressParser::default()
+            .set_network(network_type)
+            .from_matches_opt(m, "derive-change-address", false)?;
         let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
             // Behave like HD wallet
             let change_last =
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
+            let receiving_address_length: u32 = FromStrParser::<u32>::default()
+                .from_matches(m, "derive-receiving-address-length")?;
             let key_set = self
                 .key_store
                 .derived_key_set_with_password(
@@ -269,31 +243,95 @@ impl<'a> WalletSubCommand<'a> {
             }
             last_change_address.payload().clone()
         } else {
-            from_address.payload().clone()
+            from_address_payload.clone()
         };
 
-        if let Some(from_locked_address) = from_locked_address_opt.as_ref() {
-            lock_hashes.insert(
-                0,
-                Script::from(from_locked_address.payload()).calc_script_hash(),
-            );
-            for lock_arg in std::iter::once(&from_lock_arg).chain(path_map.keys()) {
-                let mut sighash_addresses = Vec::default();
-                sighash_addresses.push(AddressPayload::from_pubkey_hash(lock_arg.clone()));
-                let require_first_n = 0;
-                let threshold = 1;
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
-                if cfg.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
-                    helper.add_multisig_config(cfg);
-                    break;
-                }
-            }
-            if helper.multisig_configs().is_empty() {
-                return Err(String::from(
-                    "from-locked-address is not created from the key or derived keys",
-                ));
-            }
+        let multisig_config_opt =
+            if let Some(from_locked_address) = from_locked_address_opt.as_ref() {
+                lock_hashes.insert(
+                    0,
+                    Script::from(from_locked_address.payload()).calc_script_hash(),
+                );
+                let mut lock_args = std::iter::once(&from_lock_arg).chain(path_map.keys());
+                Some(loop {
+                    let lock_arg =
+                        match lock_args.next() {
+                            Some(la) => la,
+                            None => return Err(String::from(
+                                "from-locked-address is not created from the key or derived keys",
+                            )),
+                        };
+                    let mut sighash_addresses = Vec::default();
+                    sighash_addresses.push(AddressPayload::from_pubkey_hash(lock_arg.clone()));
+                    let require_first_n = 0;
+                    let threshold = 1;
+                    let cfg =
+                        MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
+                    if cfg.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
+                        break cfg;
+                    }
+                })
+            } else {
+                None
+            };
+
+        let signer = if let Some(from_privkey) = from_privkey_opt {
+            get_privkey_signer(from_privkey)
+        } else {
+            get_keystore_signer(self.key_store.clone(), path_map, from_lock_arg, password)
+        };
+
+        let to_data = get_to_data(m)?;
+
+        self.transfer_impl(
+            network_type,
+            from_address_payload,
+            change_address_payload,
+            to_address,
+            to_capacity,
+            to_data,
+            tx_fee,
+            lock_hashes,
+            signer,
+            multisig_config_opt,
+            format,
+            color,
+            debug,
+        )
+    }
+
+    fn transfer_impl(
+        &mut self,
+        network_type: NetworkType,
+        from_address_payload: AddressPayload,
+        change_address_payload: AddressPayload,
+        to_address: Address,
+        to_capacity: u64,
+        to_data: Bytes,
+        tx_fee: u64,
+        lock_hashes: Vec<Byte32>,
+        signer: SignerFn,
+        multisig_config_opt: Option<MultisigConfig>,
+        format: OutputFormat,
+        color: bool,
+        debug: bool,
+    ) -> Result<String, String> {
+        let from_address = Address::new(network_type, from_address_payload.clone());
+
+        let to_address_hash_type = to_address.payload().hash_type();
+        let to_address_code_hash: H256 = to_address.payload().code_hash().unpack();
+        let to_address_args_len = to_address.payload().args().len();
+        if !(to_address_hash_type == ScriptHashType::Type
+            && to_address_code_hash == SIGHASH_TYPE_HASH
+            && to_address_args_len == 20)
+            && !(to_address_hash_type == ScriptHashType::Type
+                && to_address_code_hash == MULTISIG_TYPE_HASH
+                && (to_address_args_len == 20 || to_address_args_len == 28))
+        {
+            return Err(format!("Invalid to-address: {}", to_address));
         }
+
+        check_capacity(to_capacity, to_data.len())?;
 
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let mut from_capacity = 0;
@@ -312,6 +350,15 @@ impl<'a> WalletSubCommand<'a> {
                 (false, false)
             }
         };
+
+        let genesis_info = self.genesis_info()?;
+        let genesis_hash = genesis_info.header().hash();
+        let genesis_info_clone = genesis_info.clone();
+
+        // For check index database is ready
+        self.with_db(|_| ())?;
+        let index_dir = self.index_dir.clone();
+
         if let Err(err) = with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
             IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)
                 .map(|db| {
@@ -343,7 +390,11 @@ impl<'a> WalletSubCommand<'a> {
             return Err("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust".to_string());
         }
 
-        let key_store = self.key_store.clone();
+        let mut helper = TxHelper::default();
+        if let Some(multisig_config) = multisig_config_opt {
+            helper.add_multisig_config(multisig_config)
+        }
+
         let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
             Default::default();
         let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
@@ -366,11 +417,6 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        let signer = if let Some(from_privkey) = from_privkey_opt {
-            get_privkey_signer(from_privkey)
-        } else {
-            get_keystore_signer(key_store, path_map, from_lock_arg, password)
-        };
         for (lock_arg, signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
             helper.add_signature(lock_arg, signature)?;
         }
