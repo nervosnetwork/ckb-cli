@@ -192,9 +192,9 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         }
                     })
                     .chain(list_accounts_with_source(self.ledger_key_store)?
-                           .map(|(LedgerId, source)| {
+                           .map(|(LedgerId(ledger_id), source)| {
                                let v = serde_json::json!({
-                                   "ledger_id": "", // TODO actual value here
+                                   "ledger_id": ledger_id,
                                    "account_source": source,
                                });
                                match v {
@@ -388,7 +388,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
                 let extended_pubkey = self
                     .ledger_key_store
-                    .borrow_account(&LedgerId)
+                    .borrow_account(&LedgerId(H256(Default::default()))) // TODO: provide proper address
                     .map_err(|err| err.to_string())?
                     .extended_pubkey(path.as_ref())
                     .map_err(|err| err.to_string())?;

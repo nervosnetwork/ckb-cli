@@ -16,7 +16,7 @@ use ckb_types::H256;
 
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
 
-use ledger::{LedgerApp as RawLedgerApp, LedgerError as RawLedgerError};
+use ledger::{LedgerApp as RawLedgerApp};
 
 pub mod apdu;
 mod error;
@@ -38,7 +38,7 @@ pub struct LedgerKeyStore {
 
 #[derive(Clone, Default, PartialEq, Eq, Hash, Debug)]
 // TODO make contain actual id to distinguish between ledgers
-pub struct LedgerId;
+pub struct LedgerId(pub H256);
 
 impl LedgerKeyStore {
     fn new() -> Self {
@@ -47,7 +47,7 @@ impl LedgerKeyStore {
         }
     }
 
-    fn refresh(&mut self) -> Result<(), RawLedgerError> {
+    fn refresh(&mut self) -> Result<(), LedgerKeyStoreError> {
         self.discovered_devices.clear();
         // TODO fix ledger library so can put in all ledgers
         if let Ok(raw_ledger_app) = RawLedgerApp::new() {
@@ -101,20 +101,21 @@ pub struct LedgerCap {
 impl LedgerCap {
     /// Create from a ledger device, checking that a proper version of the
     /// Nervos app is installed.
-    fn from_ledger(_raw_ledger_app: RawLedgerApp) -> Result<Self, RawLedgerError> {
-        let ledger_app = RawLedgerApp::new()?;
-        {
-            let command = apdu::app_version();
-            let response = ledger_app.exchange(command)?;;
-            debug!("Nervos CBK Ledger app Version: {:?}", response);
-        }
-        {
-            let command = apdu::app_git_hash();
-            let response = ledger_app.exchange(command)?;
-            debug!("Nervos CBK Ledger app Git Hash: {:?}", response);
-        }
+    fn from_ledger(ledger_app: RawLedgerApp) -> Result<Self, LedgerKeyStoreError> {
+        let command = apdu::get_wallet_id();
+        let response = ledger_app.exchange(command)?;
+        debug!("Nervos CKB Ledger app wallet id: {:?}", response);
+
+        let mut resp = &response.data[..];
+        // TODO: The ledger app gives us 64 bytes but we only use 32
+        // bytes. We should either limit how many the ledger app
+        // gives, or take all 64 bytes here.
+        let raw_wallet_id = parse::split_off_at(&mut resp, 32)?;
+        let _ = parse::split_off_at(&mut resp, 32)?;
+        parse::assert_nothing_left(resp)?;
+
         Ok(LedgerCap {
-            id: LedgerId,
+            id: LedgerId(H256::from_slice(raw_wallet_id).unwrap()),
             ledger_app: ledger_app,
         })
     }

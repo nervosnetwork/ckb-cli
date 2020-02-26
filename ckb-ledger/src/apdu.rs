@@ -32,3 +32,14 @@ pub fn extend_public_key(data: Vec<u8>) -> ledger::ApduCommand {
         data,
     }
 }
+
+pub fn get_wallet_id() -> ledger::ApduCommand {
+    ApduCommand {
+        cla: 0x80,
+        ins: 0x01,
+        p1: 0x00,
+        p2: 0x00,
+        length: 0,
+        data: Vec::new(),
+    }
+}
