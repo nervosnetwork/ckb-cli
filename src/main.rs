@@ -15,22 +15,24 @@ use clap::{App, AppSettings, Arg};
 #[cfg(unix)]
 use subcommands::{Output, TuiSubCommand};
 
-use crate::utils::other::get_genesis_info;
 use interactive::InteractiveEnv;
+use plugin::PluginManager;
 use subcommands::{
     start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
     MockTxSubCommand, MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
     WalletSubCommand,
 };
+use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
     index::IndexThreadState,
-    other::{check_alerts, get_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
 mod interactive;
+mod plugin;
 mod subcommands;
 mod utils;
 
@@ -115,6 +117,7 @@ fn main() -> Result<(), io::Error> {
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, api_uri.clone()).unwrap();
     let result = match matches.subcommand() {
         #[cfg(unix)]
         ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone())
@@ -123,54 +126,48 @@ fn main() -> Result<(), io::Error> {
         ("rpc", Some(sub_matches)) => {
             RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(&sub_matches, debug)
         }
-        ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut key_store).process(&sub_matches, debug)
-        }),
-        ("mock-tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            MockTxSubCommand::new(&mut rpc_client, &mut key_store, None)
+        ("account", Some(sub_matches)) => {
+            AccountSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
+        }
+        ("mock-tx", Some(sub_matches)) => {
+            MockTxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None)
                 .process(&sub_matches, debug)
-        }),
-        ("tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            TxSubCommand::new(&mut rpc_client, &mut key_store, None).process(&sub_matches, debug)
-        }),
-        ("util", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            UtilSubCommand::new(&mut rpc_client, &mut key_store).process(&sub_matches, debug)
-        }),
-        ("server", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            ApiServerSubCommand::new(
-                &mut rpc_client,
-                &mut key_store,
-                None,
-                index_dir.clone(),
-                index_controller.clone(),
-            )
-            .process(&sub_matches, debug)
-        }),
+        }
+        ("tx", Some(sub_matches)) => {
+            TxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None).process(&sub_matches, debug)
+        }
+        ("util", Some(sub_matches)) => {
+            UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(&sub_matches, debug)
+        }
+        ("server", Some(sub_matches)) => ApiServerSubCommand::new(
+            &mut rpc_client,
+            plugin_mgr,
+            None,
+            index_dir.clone(),
+            index_controller.clone(),
+        )
+        .process(&sub_matches, debug),
         ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(&sub_matches, debug),
-        ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            WalletSubCommand::new(
-                &mut rpc_client,
-                &mut key_store,
-                None,
-                index_dir.clone(),
-                index_controller.clone(),
-                wait_for_sync,
-            )
-            .process(&sub_matches, debug)
-        }),
+        ("wallet", Some(sub_matches)) => WalletSubCommand::new(
+            &mut rpc_client,
+            &mut plugin_mgr,
+            None,
+            index_dir.clone(),
+            index_controller.clone(),
+            wait_for_sync,
+        )
+        .process(&sub_matches, debug),
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
-                get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-                    DAOSubCommand::new(
-                        &mut rpc_client,
-                        &mut key_store,
-                        genesis_info,
-                        index_dir.clone(),
-                        index_controller.clone(),
-                        wait_for_sync,
-                    )
-                    .process(&sub_matches, debug)
-                })
+                DAOSubCommand::new(
+                    &mut rpc_client,
+                    &mut plugin_mgr,
+                    genesis_info,
+                    index_dir.clone(),
+                    index_controller.clone(),
+                    wait_for_sync,
+                )
+                .process(&sub_matches, debug)
             })
         }
         _ => {

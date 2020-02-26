@@ -31,6 +31,7 @@ use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
+use crate::plugin::KeyStoreHandler;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -73,20 +74,31 @@ pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<Addre
     Ok(address)
 }
 
-pub fn get_singer(
-    key_store: KeyStore,
+pub fn get_signer(
+    keystore: KeyStoreHandler,
+    require_password: bool,
 ) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
     move |lock_arg: &H160, tx_hash_hash: &H256| {
-        let prompt = format!("Password for [{:x}]", lock_arg);
-        let password = read_password(false, Some(prompt.as_str()))?;
-        let signature = key_store
-            .sign_recoverable_with_password(lock_arg, &[], tx_hash_hash, password.as_bytes())
+        let password = if require_password {
+            let prompt = format!("Password for [{:x}]", lock_arg);
+            Some(read_password(false, Some(prompt.as_str()))?)
+        } else {
+            None
+        };
+        let data = keystore
+            .sign(lock_arg.clone(), &[], tx_hash_hash.clone(), password, true)
             .map_err(|err| err.to_string())?;
-        let (recov_id, data) = signature.serialize_compact();
-        let mut signature_bytes = [0u8; 65];
-        signature_bytes[0..64].copy_from_slice(&data[0..64]);
-        signature_bytes[64] = recov_id.to_i32() as u8;
-        Ok(signature_bytes)
+        if data.len() != 65 {
+            Err(format!(
+                "Invalid signature data lenght: {}, data: {:?}",
+                data.len(),
+                data
+            ))
+        } else {
+            let mut data_bytes = [0u8; 65];
+            data_bytes.copy_from_slice(data.as_slice());
+            Ok(data_bytes)
+        }
     }
 }
 

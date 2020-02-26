@@ -154,6 +154,10 @@ impl<'a> IndexDatabase<'a> {
         self.tip_header = header
     }
 
+    pub fn tip_header(&self) -> &HeaderView {
+        &self.tip_header
+    }
+
     pub fn last_header(&self) -> Option<&HeaderView> {
         self.last_header.as_ref()
     }

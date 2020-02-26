@@ -11,6 +11,7 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
+use crate::plugin::PluginManager;
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
     RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
@@ -19,10 +20,10 @@ use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
     index::{IndexController, IndexRequest},
-    other::{check_alerts, get_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
-use ckb_sdk::{rpc::RawHttpRpcClient, wallet::KeyStore, GenesisInfo, HttpRpcClient};
+use ckb_sdk::{rpc::RawHttpRpcClient, GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -33,7 +34,7 @@ pub struct InteractiveEnv {
     history_file: PathBuf,
     index_dir: PathBuf,
     parser: clap::App<'static>,
-    key_store: KeyStore,
+    plugin_mgr: PluginManager,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
@@ -67,19 +68,20 @@ impl InteractiveEnv {
             }
         }
 
+        let plugin_mgr = PluginManager::init(&ckb_cli_dir, config.get_url().to_string())?;
+
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
         let raw_rpc_client = RawHttpRpcClient::new(config.get_url());
-        let key_store = get_key_store(&ckb_cli_dir)?;
         Ok(InteractiveEnv {
             config,
             config_file,
             index_dir,
             history_file,
             parser,
+            plugin_mgr,
             rpc_client,
             raw_rpc_client,
-            key_store,
             index_controller,
             genesis_info: None,
         })
@@ -304,8 +306,8 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output =
-                        AccountSubCommand::new(&mut self.key_store).process(&sub_matches, debug)?;
+                    let output = AccountSubCommand::new(&mut self.plugin_mgr)
+                        .process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -313,7 +315,7 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info().ok();
                     let output = MockTxSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         genesis_info,
                     )
                     .process(&sub_matches, debug)?;
@@ -323,13 +325,13 @@ impl InteractiveEnv {
                 ("tx", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output =
-                        TxSubCommand::new(&mut self.rpc_client, &mut self.key_store, genesis_info)
+                        TxSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr, genesis_info)
                             .process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
                 ("util", Some(sub_matches)) => {
-                    let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.key_store)
+                    let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr)
                         .process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
@@ -343,7 +345,7 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info()?;
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
@@ -357,7 +359,7 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info()?;
                     let output = DAOSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         genesis_info,
                         self.index_dir.clone(),
                         self.index_controller.clone(),

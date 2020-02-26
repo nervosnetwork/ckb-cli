@@ -4,7 +4,6 @@ use ckb_hash::blake2b_256;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
-    wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -25,6 +24,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
+use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{
@@ -42,17 +42,17 @@ const BLOCK_PERIOD: u64 = 8 * 1000; // 8 seconds
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
 }
 
 impl<'a> UtilSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
     ) -> UtilSubCommand<'a> {
         UtilSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr,
         }
     }
 
@@ -317,12 +317,11 @@ message = "0x"
                     })?;
 
                 let message = H256::from(blake2b_256(&binary));
-                let key_store_opt = from_account_opt
-                    .as_ref()
-                    .map(|account| (&*self.key_store, account));
+                let plugin_mgr_opt =
+                    from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
-                    key_store_opt,
+                    plugin_mgr_opt,
                     recoverable,
                     &message,
                 )?;
@@ -353,12 +352,11 @@ message = "0x"
                             .map_err(|_| err)
                     })?;
 
-                let key_store_opt = from_account_opt
-                    .as_ref()
-                    .map(|account| (&*self.key_store, account));
+                let plugin_mgr_opt =
+                    from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
-                    key_store_opt,
+                    plugin_mgr_opt,
                     recoverable,
                     &message,
                 )?;
@@ -395,11 +393,15 @@ message = "0x"
                 } else if let Some(privkey) = from_privkey_opt {
                     secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey)
                 } else if let Some(account) = from_account_opt {
-                    let password = read_password(false, None)?;
-                    self.key_store
-                        .extended_pubkey_with_password(&account, &[], password.as_bytes())
+                    let password = if self.plugin_mgr.keystore_require_password() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                    self.plugin_mgr
+                        .keystore_handler()
+                        .extended_pubkey(account, &[], password)
                         .map_err(|err| err.to_string())?
-                        .public_key
                 } else {
                     return Err(String::from(
                         "Missing <pubkey> or <privkey-path> or <from-account> argument",
@@ -585,7 +587,7 @@ message = "0x"
 
 fn sign_message(
     from_privkey_opt: Option<&PrivkeyWrapper>,
-    from_account_opt: Option<(&KeyStore, &H160)>,
+    from_account_opt: Option<(&mut PluginManager, H160)>,
     recoverable: bool,
     message: &H256,
 ) -> Result<Vec<u8>, String> {
@@ -601,18 +603,26 @@ fn sign_message(
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
             Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
         }
-        (None, Some((key_store, account)), false) => {
-            let password = read_password(false, None)?;
-            key_store
-                .sign_with_password(account, &[], message, password.as_bytes())
-                .map(|sig| sig.serialize_compact().to_vec())
+        (None, Some((plugin_mgr, account)), false) => {
+            let password = if plugin_mgr.keystore_require_password() {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
+            plugin_mgr
+                .keystore_handler()
+                .sign(account, &[], message.clone(), password, false)
                 .map_err(|err| err.to_string())
         }
-        (None, Some((key_store, account)), true) => {
-            let password = read_password(false, None)?;
-            key_store
-                .sign_recoverable_with_password(account, &[], message, password.as_bytes())
-                .map(|sig| serialize_signature(&sig).to_vec())
+        (None, Some((plugin_mgr, account)), true) => {
+            let password = if plugin_mgr.keystore_require_password() {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
+            plugin_mgr
+                .keystore_handler()
+                .sign(account, &[], message.clone(), password, true)
                 .map_err(|err| err.to_string())
         }
         _ => Err(String::from("Both privkey and key store is missing")),

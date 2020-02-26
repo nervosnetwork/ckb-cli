@@ -15,6 +15,7 @@ use clap::{App, AppSettings, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
+use crate::plugin::{KeyStoreHandler, PluginManager};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -25,7 +26,7 @@ use crate::utils::{
     other::{
         check_capacity, get_address, get_arg_value, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        read_password, serialize_signature, sync_to_tip,
+        read_password, sync_to_tip,
     },
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
@@ -33,7 +34,7 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{DerivationPath, KeyStore},
+    wallet::DerivationPath,
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
     Since, SinceType, TxHelper, SECP256K1,
 };
@@ -44,7 +45,7 @@ const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
 
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -54,7 +55,7 @@ pub struct WalletSubCommand<'a> {
 impl<'a> WalletSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
@@ -62,7 +63,7 @@ impl<'a> WalletSubCommand<'a> {
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr,
             genesis_info,
             index_dir,
             index_controller,
@@ -223,12 +224,14 @@ impl<'a> WalletSubCommand<'a> {
 
         let (from_address_payload, password) = if let Some(from_privkey) = from_privkey.as_ref() {
             let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            (AddressPayload::from_pubkey(&from_pubkey), String::new())
+            (AddressPayload::from_pubkey(&from_pubkey), None)
         } else {
             let password = if let Some(password) = password {
-                password
+                Some(password)
+            } else if self.plugin_mgr.keystore_require_password() {
+                Some(read_password(false, None)?)
             } else {
-                read_password(false, None)?
+                None
             };
             (
                 AddressPayload::from_pubkey_hash(from_account.unwrap()),
@@ -291,13 +294,14 @@ impl<'a> WalletSubCommand<'a> {
             let change_last =
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
             let key_set = self
-                .key_store
-                .derived_key_set_with_password(
-                    &from_lock_arg,
-                    password.as_bytes(),
+                .plugin_mgr
+                .keystore_handler()
+                .derived_key_set(
+                    from_lock_arg.clone(),
                     receiving_address_length,
-                    &change_last,
+                    change_last,
                     DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                    password.clone(),
                 )
                 .map_err(|err| err.to_string())?;
             for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
@@ -384,7 +388,7 @@ impl<'a> WalletSubCommand<'a> {
             return Err("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust".to_string());
         }
 
-        let key_store = self.key_store.clone();
+        let keystore = self.plugin_mgr.keystore_handler();
         let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
             Default::default();
         let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
@@ -416,7 +420,7 @@ impl<'a> WalletSubCommand<'a> {
         let signer = if let Some(from_privkey) = from_privkey {
             get_privkey_signer(from_privkey)
         } else {
-            get_keystore_signer(key_store, path_map, from_lock_arg, password)
+            get_keystore_signer(keystore, path_map, from_lock_arg, password)
         };
         for (lock_arg, signature) in
             helper.sign_inputs(signer, &mut get_live_cell_fn, skip_check)?
@@ -578,17 +582,22 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     };
                     let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
                     if m.is_present("derived") {
-                        let password = read_password(false, None)?;
+                        let password = if self.plugin_mgr.keystore_require_password() {
+                            Some(read_password(false, None)?)
+                        } else {
+                            None
+                        };
                         let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
                         let key_set = self
-                            .key_store
-                            .derived_key_set_by_index_with_password(
-                                &lock_arg,
-                                password.as_bytes(),
+                            .plugin_mgr
+                            .keystore_handler()
+                            .derived_key_set_by_index(
+                                lock_arg,
                                 0,
                                 receiving_address_length,
                                 0,
                                 change_address_length,
+                                password,
                             )
                             .map_err(|err| err.to_string())?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
@@ -732,10 +741,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 }
 
 fn get_keystore_signer(
-    key_store: KeyStore,
+    keystore: KeyStoreHandler,
     path_map: HashMap<H160, DerivationPath>,
     account: H160,
-    password: String,
+    password: Option<String>,
 ) -> SignerFn {
     Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
         let path: &[_] = if lock_args.contains(&account) {
@@ -749,10 +758,26 @@ fn get_keystore_signer(
         if message == &h256!("0x0") {
             return Ok(Some([0u8; 65]));
         }
-        let signature = key_store
-            .sign_recoverable_with_password(&account, path, message, password.as_bytes())
+        let data = keystore
+            .sign(
+                account.clone(),
+                path,
+                message.clone(),
+                password.clone(),
+                true,
+            )
             .map_err(|err| err.to_string())?;
-        Ok(Some(serialize_signature(&signature)))
+        if data.len() != 65 {
+            Err(format!(
+                "Invalid signature data lenght: {}, data: {:?}",
+                data.len(),
+                data
+            ))
+        } else {
+            let mut data_bytes = [0u8; 65];
+            data_bytes.copy_from_slice(data.as_slice());
+            Ok(Some(data_bytes))
+        }
     })
 }
 
