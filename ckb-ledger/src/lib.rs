@@ -85,13 +85,15 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
+        static write_err_msg: &'static str =
+            "IO error not possible when writing to Vec last I checked";
         let ledger_app = self.init()?;
         let mut data = Vec::new();
         data.write_u8(path.as_ref().len() as u8)
-            .expect("IO error not possible when writing to Vec last I checked");
+            .expect(write_err_msg);
         for &child_num in path.as_ref().iter() {
             data.write_u32::<BigEndian>(From::from(child_num))
-                .expect("IO error not possible when writing to Vec last I checked");
+                .expect(write_err_msg);
         }
         let command = apdu::extend_public_key(data);
         let response = ledger_app.exchange(command)?;
