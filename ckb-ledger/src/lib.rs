@@ -16,7 +16,7 @@ use ckb_types::H256;
 
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
 
-use ledger::{LedgerApp as RawLedgerApp};
+use ledger::LedgerApp as RawLedgerApp;
 
 pub mod apdu;
 mod error;

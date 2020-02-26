@@ -12,7 +12,7 @@ use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
-    wallet::{AbstractKeyStore, KeyStore, ScryptType},
+    wallet::{AbstractKeyStore, ChildNumber, KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
     SECP256K1,
 };
@@ -301,15 +301,31 @@ pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String)
             if message == &h256!("0x0") {
                 Ok(Some([0u8; 65]))
             } else {
-                key_store
-                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
-                    .map(|signature| Some(serialize_signature(&signature)))
-                    .map_err(|err| err.to_string())
+                get_keystore_signer_raw(&key_store, &account, &[], &password)(lock_args, message)
             }
         } else {
             Ok(None)
         }
     })
+}
+
+pub fn get_keystore_signer_raw<'a>(
+    key_store: &'a KeyStore,
+    account: &'a H160,
+    path: &'a [ChildNumber],
+    password: &'a String,
+) -> impl FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String> + Sized + 'a
+{
+    move |_lock_args: &HashSet<H160>, message: &H256| {
+        if message == &h256!("0x0") {
+            Ok(Some([0u8; 65]))
+        } else {
+            key_store
+                .sign_recoverable_with_password(&account, &path, message, password.as_bytes())
+                .map(|signature| Some(serialize_signature(&signature)))
+                .map_err(|err| err.to_string())
+        }
+    }
 }
 
 pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {

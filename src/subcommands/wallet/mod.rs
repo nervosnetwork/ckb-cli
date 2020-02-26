@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
-    h256,
     packed::{Byte32, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
@@ -22,9 +21,9 @@ use crate::utils::{
     },
     index::IndexController,
     other::{
-        check_capacity, get_address, get_live_cell_with_cache, get_max_mature_number,
-        get_network_type, get_privkey_signer, get_to_data, is_mature, read_password,
-        serialize_signature,
+        check_capacity, get_address, get_keystore_signer_raw, get_live_cell_with_cache,
+        get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
+        read_password,
     },
     printer::{OutputFormat, Printable},
 };
@@ -33,7 +32,7 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{DerivationPath, KeyStore},
+    wallet::{ChildNumber, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
     NetworkType, SignerFn, Since, SinceType, TxHelper, SECP256K1,
 };
@@ -681,7 +680,7 @@ fn get_keystore_signer(
     password: String,
 ) -> SignerFn {
     Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        let path: &[_] = if lock_args.contains(&account) {
+        let path: &[ChildNumber] = if lock_args.contains(&account) {
             &[]
         } else {
             match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
@@ -689,13 +688,6 @@ fn get_keystore_signer(
                 Some(path) => path.as_ref(),
             }
         };
-        if message == &h256!("0x0") {
-            return Ok(Some([0u8; 65]));
-        }
-        let signature = key_store
-            .sign_recoverable_with_password(&account, path, message, password.as_bytes())
-            .map_err(|err| err.to_string())?;
-
-        Ok(Some(serialize_signature(&signature)))
+        get_keystore_signer_raw(&key_store, &account, path, &password)(lock_args, message)
     })
 }

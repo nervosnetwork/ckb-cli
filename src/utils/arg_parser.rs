@@ -15,8 +15,8 @@ use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
 
-use crate::subcommands::account::AccountId;
 use super::arg::account_id_error;
+use crate::subcommands::account::AccountId;
 
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
@@ -575,7 +575,7 @@ impl ArgParser<AccountId> for AccountIdParser {
                 Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
                 Err(e) => e,
             };
-            return Err(account_id_error(e_0, e_1))
+            return Err(account_id_error(e_0, e_1));
         })
     }
     fn from_matches<R: From<AccountId>>(
@@ -592,7 +592,7 @@ impl ArgParser<AccountId> for AccountIdParser {
                 Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
                 Err(e) => e,
             };
-            return Err(account_id_error(e_0, e_1))
+            return Err(account_id_error(e_0, e_1));
         }));
     }
     fn from_matches_opt<R: From<AccountId>>(
@@ -602,7 +602,9 @@ impl ArgParser<AccountId> for AccountIdParser {
         required: bool,
     ) -> Result<Option<R>, String> {
         return Ok(loop {
-            let e_0 = match FixedHashParser::<H160>::default().from_matches_opt(matches, name, required) {
+            let e_0 = match FixedHashParser::<H160>::default()
+                .from_matches_opt(matches, name, required)
+            {
                 Ok(v) => break v.map(AccountId::SoftwareMasterKey),
                 Err(e) => e,
             };
@@ -612,7 +614,7 @@ impl ArgParser<AccountId> for AccountIdParser {
                 Ok(v) => break v.map(|v| AccountId::LedgerId(ckb_ledger::LedgerId(v))),
                 Err(e) => e,
             };
-            return Err(account_id_error(e_0, e_1))
+            return Err(account_id_error(e_0, e_1));
         }
         .map(From::from));
     }
