@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::Write;
 
@@ -11,11 +12,11 @@ use ckb_sdk::wallet::{
     AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber, ExtendedPubKey, Fingerprint,
     ScryptType,
 };
-use ckb_types::{H160, H256};
+use ckb_types::H256;
 
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
 
-use ledger::{LedgerApp, LedgerError};
+use ledger::{LedgerApp as RawLedgerApp, LedgerError as RawLedgerError};
 
 pub mod apdu;
 mod error;
@@ -32,22 +33,75 @@ mod tests {
 }
 
 pub struct LedgerKeyStore {
-    ledger_app: Option<LedgerApp>,
+    discovered_devices: HashMap<LedgerId, LedgerCap>,
 }
 
+#[derive(Clone, Default, PartialEq, Eq, Hash, Debug)]
+// TODO make contain actual id to distinguish between ledgers
+pub struct LedgerId;
+
 impl LedgerKeyStore {
-    fn init(&mut self) -> Result<&mut LedgerApp, LedgerError> {
-        match self.ledger_app {
-            Some(ref mut ledger_app) => Ok(ledger_app),
-            None => {
-                self.ledger_app = Some(LedgerApp::new()?);
-                self.init()
-            }
+    fn new() -> Self {
+        LedgerKeyStore {
+            discovered_devices: HashMap::new(),
         }
     }
 
-    fn check_version(&mut self) -> Result<(), LedgerError> {
-        let ledger_app = self.init()?;
+    fn refresh(&mut self) -> Result<(), RawLedgerError> {
+        self.discovered_devices.clear();
+        // TODO fix ledger library so can put in all ledgers
+        let raw_ledger_app = RawLedgerApp::new()?;
+        let ledger_app = LedgerCap::from_ledger(raw_ledger_app)?;
+        self.discovered_devices
+            .insert(ledger_app.id.clone(), ledger_app);
+        Ok(())
+    }
+}
+
+impl AbstractKeyStore for LedgerKeyStore {
+    const SOURCE_NAME: &'static str = "ledger hardware wallet";
+
+    type Err = LedgerKeyStoreError;
+
+    type AccountId = LedgerId;
+
+    type AccountCap = LedgerCap;
+
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = Self::AccountId>>, Self::Err> {
+        self.refresh()?;
+        let key_copies: Vec<_> = self.discovered_devices.keys().cloned().collect();
+        Ok(Box::new(key_copies.into_iter()))
+    }
+
+    fn from_dir(_dir: PathBuf, _scrypt_type: ScryptType) -> Result<Self, LedgerKeyStoreError> {
+        // TODO maybe force the initialization of the HidAPI "lazy static"?
+        Ok(LedgerKeyStore::new())
+    }
+
+    fn borrow_account<'a, 'b>(
+        &'a mut self,
+        account_id: &'b Self::AccountId,
+    ) -> Result<&'a Self::AccountCap, Self::Err> {
+        self.refresh()?;
+        self.discovered_devices
+            .get(account_id)
+            .ok_or_else(|| LedgerKeyStoreError::LedgerNotFound {
+                id: account_id.clone(),
+            })
+    }
+}
+
+/// A ledger device with the Nervos app.
+pub struct LedgerCap {
+    id: LedgerId,
+    ledger_app: RawLedgerApp,
+}
+
+impl LedgerCap {
+    /// Create from a ledger device, checking that a proper version of the
+    /// Nervos app is installed.
+    fn from_ledger(_raw_ledger_app: RawLedgerApp) -> Result<Self, RawLedgerError> {
+        let ledger_app = RawLedgerApp::new()?;
         {
             let command = apdu::app_version();
             let response = ledger_app.exchange(command)?;;
@@ -58,45 +112,31 @@ impl LedgerKeyStore {
             let response = ledger_app.exchange(command)?;
             debug!("Nervos CBK Ledger app Git Hash: {:?}", response);
         }
-        Ok(())
+        Ok(LedgerCap {
+            id: LedgerId,
+            ledger_app: ledger_app,
+        })
     }
 }
 
-impl AbstractKeyStore for LedgerKeyStore {
-    const SOURCE_NAME: &'static str = "ledger hardware wallet";
-
+impl AbstractMasterPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
-    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
-        let _ = self.check_version(); //.expect("oh no!");
-        Ok(Box::new(::std::iter::empty()))
-    }
-
-    fn from_dir(_dir: PathBuf, _scrypt_type: ScryptType) -> Result<Self, LedgerKeyStoreError> {
-        //unimplemented!()
-        Ok(LedgerKeyStore { ledger_app: None })
-    }
-}
-
-impl AbstractMasterPrivKey for &mut LedgerKeyStore {
-    type Err = LedgerKeyStoreError;
-
-    fn extended_pubkey<P>(self, path: &P) -> Result<ExtendedPubKey, Self::Err>
+    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
-        static write_err_msg: &'static str =
+        static WRITE_ERR_MSG: &'static str =
             "IO error not possible when writing to Vec last I checked";
-        let ledger_app = self.init()?;
         let mut data = Vec::new();
         data.write_u8(path.as_ref().len() as u8)
-            .expect(write_err_msg);
+            .expect(WRITE_ERR_MSG);
         for &child_num in path.as_ref().iter() {
             data.write_u32::<BigEndian>(From::from(child_num))
-                .expect(write_err_msg);
+                .expect(WRITE_ERR_MSG);
         }
         let command = apdu::extend_public_key(data);
-        let response = ledger_app.exchange(command)?;
+        let response = self.ledger_app.exchange(command)?;
         debug!(
             "Nervos CBK Ledger app extended pub key raw public key {:?} for path {:?}",
             &response, &path
@@ -124,7 +164,7 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
         })
     }
 
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<Signature, Self::Err>
+    fn sign<P>(&self, _message: &H256, _path: &P) -> Result<Signature, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
@@ -133,8 +173,8 @@ impl AbstractMasterPrivKey for &mut LedgerKeyStore {
 
     fn sign_recoverable<P>(
         &self,
-        message: &H256,
-        path: &P,
+        _message: &H256,
+        _path: &P,
     ) -> Result<RecoverableSignature, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,

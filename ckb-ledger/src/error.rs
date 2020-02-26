@@ -4,12 +4,16 @@ use ckb_sdk::wallet::Bip32Error;
 
 use failure::Fail;
 
-use ledger::LedgerError;
+use ledger::LedgerError as RawLedgerError;
+
+use super::LedgerId;
 
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "App-agnostic ledger error: {}", _0)]
-    LedgerError(LedgerError),
+    RawLedgerError(RawLedgerError),
+    #[fail(display = "Ledger with id {:?} not found", _0)]
+    LedgerNotFound { id: LedgerId },
     #[fail(display = "Error in client-side BIP-32 calculations: {}", _0)]
     Bip32Error(Bip32Error),
     #[fail(display = "Error in secp256k1 marshalling: {}", _0)]
@@ -26,9 +30,9 @@ pub enum Error {
     TrailingExtraReponse { tail: Vec<u8> },
 }
 
-impl From<LedgerError> for Error {
-    fn from(err: LedgerError) -> Self {
-        Error::LedgerError(err)
+impl From<RawLedgerError> for Error {
+    fn from(err: RawLedgerError) -> Self {
+        Error::RawLedgerError(err)
     }
 }
 

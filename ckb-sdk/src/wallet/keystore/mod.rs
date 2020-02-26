@@ -1,4 +1,5 @@
 mod error;
+pub mod interface;
 mod passphrase;
 mod util;
 
@@ -12,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
+use self::interface::{AbstractKeyStore, AbstractMasterPrivKey};
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
@@ -37,17 +39,6 @@ pub struct KeyStore {
     unlocked_keys: HashMap<H160, TimedKey>,
 }
 
-pub trait AbstractKeyStore: Sized {
-    const SOURCE_NAME: &'static str;
-
-    type Err;
-
-    // Just box it because no `impl Trait` in traits for now
-    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err>;
-
-    fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<Self, Self::Err>;
-}
-
 impl Clone for KeyStore {
     fn clone(&self) -> KeyStore {
         KeyStore {
@@ -64,7 +55,11 @@ impl AbstractKeyStore for KeyStore {
 
     type Err = Error;
 
-    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = (usize, H160)>>, Self::Err> {
+    type AccountId = H160;
+
+    type AccountCap = MasterPrivKey;
+
+    fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = Self::AccountId>>, Self::Err> {
         let mut accounts = self
             .get_accounts()
             .iter()
@@ -76,12 +71,11 @@ impl AbstractKeyStore for KeyStore {
                 .into_iter()
                 .map(|(lock_arg, _filepath)| lock_arg)
                 .collect::<Vec<H160>>()
-                .into_iter()
-                .enumerate(),
+                .into_iter(),
         ))
     }
 
-    fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Error> {
+    fn from_dir(dir: PathBuf, scrypt_type: ScryptType) -> Result<KeyStore, Self::Err> {
         let abs_dir = dir.canonicalize()?;
         let mut key_store = KeyStore {
             keys_dir: abs_dir.clone(),
@@ -94,6 +88,13 @@ impl AbstractKeyStore for KeyStore {
         };
         key_store.refresh_dir()?;
         Ok(key_store)
+    }
+
+    fn borrow_account<'a, 'b>(
+        &'a mut self,
+        hash160: &'b Self::AccountId,
+    ) -> Result<&'a Self::AccountCap, Self::Err> {
+        Ok(self.get_timed_key(hash160)?.master_privkey())
     }
 }
 
@@ -220,8 +221,7 @@ impl KeyStore {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         Ok(self
-            .get_timed_key(hash160)?
-            .master_privkey()
+            .borrow_account(hash160)?
             .sign(message, path)
             .void_unwrap())
     }
@@ -235,8 +235,7 @@ impl KeyStore {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         Ok(self
-            .get_timed_key(hash160)?
-            .master_privkey()
+            .borrow_account(hash160)?
             .sign_recoverable(message, path)
             .void_unwrap())
     }
@@ -275,8 +274,7 @@ impl KeyStore {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         Ok(self
-            .get_timed_key(hash160)?
-            .master_privkey()
+            .borrow_account(hash160)?
             .extended_pubkey(path)
             .void_unwrap())
     }
@@ -780,39 +778,10 @@ impl MasterPrivKey {
     }
 }
 
-pub trait AbstractMasterPrivKey: Sized {
-    type Err;
-    fn extended_pubkey<P>(self, path: &P) -> Result<ExtendedPubKey, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-    fn hash160<P>(self, path: &P) -> Result<H160, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let extended_public_key = self.extended_pubkey(path)?;
-        Ok(
-            H160::from_slice(&blake2b_256(&extended_public_key.public_key.serialize()[..])[0..20])
-                .expect("Generate hash(H160) from pubkey failed"),
-        )
-    }
-
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-
-    fn sign_recoverable<P>(
-        &self,
-        message: &H256,
-        path: &P,
-    ) -> Result<RecoverableSignature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-}
-
-impl AbstractMasterPrivKey for &MasterPrivKey {
+impl AbstractMasterPrivKey for MasterPrivKey {
     type Err = Void;
 
-    fn extended_pubkey<P>(self, path: &P) -> Result<ExtendedPubKey, Void>
+    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Void>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
