@@ -298,11 +298,7 @@ pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
 pub fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> impl SignerFnTrait + 'static {
     move |lock_args: &HashSet<H160>, message: &H256| {
         if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                get_keystore_signer_raw(&key_store, &account, &[], &password)(lock_args, message)
-            }
+            get_keystore_signer_raw(&key_store, &account, &[], &password)(lock_args, message)
         } else {
             Ok(None)
         }
