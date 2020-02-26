@@ -204,7 +204,7 @@ impl TxHelper {
         get_live_cell: C,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
-        S: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>,
+        S: SignerFnTrait,
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
     {
         let all_sighash_lock_args = self
