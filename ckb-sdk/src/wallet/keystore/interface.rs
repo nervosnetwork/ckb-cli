@@ -46,19 +46,19 @@ pub trait AbstractKeyStore: Sized {
 }
 
 pub trait AbstractMasterPrivKey: Sized {
+    /// Error type for private key operations.
     type Err;
+
     fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>;
+
     fn hash160<P>(&self, path: &P) -> Result<H160, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         let extended_public_key = self.extended_pubkey(path)?;
-        Ok(
-            H160::from_slice(&blake2b_256(&extended_public_key.public_key.serialize()[..])[0..20])
-                .expect("Generate hash(H160) from pubkey failed"),
-        )
+        Ok(hash_publick_key(&extended_public_key.public_key))
     }
 
     fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
@@ -72,4 +72,9 @@ pub trait AbstractMasterPrivKey: Sized {
     ) -> Result<RecoverableSignature, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>;
+}
+
+pub fn hash_publick_key(public_key: &secp256k1::PublicKey) -> H160 {
+    H160::from_slice(&blake2b_256(&public_key.serialize()[..])[0..20])
+        .expect("Generate hash(H160) from pubkey failed")
 }

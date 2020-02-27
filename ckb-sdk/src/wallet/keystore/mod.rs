@@ -57,7 +57,7 @@ impl AbstractKeyStore for KeyStore {
 
     type AccountId = H160;
 
-    type AccountCap = MasterPrivKey;
+    type AccountCap = Key;
 
     fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = Self::AccountId>>, Self::Err> {
         let mut accounts = self
@@ -94,7 +94,7 @@ impl AbstractKeyStore for KeyStore {
         &'a mut self,
         hash160: &'b Self::AccountId,
     ) -> Result<&'a Self::AccountCap, Self::Err> {
-        Ok(self.get_timed_key(hash160)?.master_privkey())
+        Ok(self.get_timed_key(hash160)?.key())
     }
 }
 
@@ -202,8 +202,10 @@ impl KeyStore {
         scrypt_type: ScryptType,
     ) -> Result<serde_json::Value, Error> {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.to_json(new_password, scrypt_type))
+        Ok(self
+            .storage
+            .get_key(hash160, &filepath, password)?
+            .to_json(new_password, scrypt_type))
     }
     pub fn export_key(&self, hash160: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
         let filepath = self.get_filepath(hash160)?;
@@ -251,7 +253,7 @@ impl KeyStore {
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok((&key.master_privkey).sign(message, path).void_unwrap())
+        Ok(key.sign(message, path).void_unwrap())
     }
     pub fn sign_recoverable_with_password<P>(
         &self,
@@ -264,8 +266,9 @@ impl KeyStore {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok((&key.master_privkey)
+        Ok(self
+            .storage
+            .get_key(hash160, &filepath, password)?
             .sign_recoverable(message, path)
             .void_unwrap())
     }
@@ -479,8 +482,8 @@ struct TimedKey {
 }
 
 impl TimedKey {
-    fn master_privkey(&self) -> &MasterPrivKey {
-        &self.key.master_privkey
+    fn key(&self) -> &Key {
+        &self.key
     }
 
     fn new_timed(key: Key, keep: Duration) -> TimedKey {
@@ -710,6 +713,35 @@ impl Key {
             "hash160": hash160_hex,
             "crypto": crypto.to_json(),
         })
+    }
+}
+
+impl AbstractMasterPrivKey for Key {
+    type Err = Void;
+
+    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        self.master_privkey.extended_pubkey(path)
+    }
+
+    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        self.master_privkey.sign(message, path)
+    }
+
+    fn sign_recoverable<P>(
+        &self,
+        message: &H256,
+        path: &P,
+    ) -> Result<RecoverableSignature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        self.master_privkey.sign_recoverable(message, path)
     }
 }
 
