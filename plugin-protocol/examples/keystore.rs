@@ -5,17 +5,23 @@ use plugin_protocol::{
 use std::io::{self, Write};
 
 fn main() {
-    let mut line = String::new();
-    match io::stdin().read_line(&mut line) {
-        Ok(_n) => {
-            let request: PluginRequest = serde_json::from_str(&line).unwrap();
-            if let Some(response) = handle(request) {
-                let response_string = format!("{}\n", serde_json::to_string(&response).unwrap());
-                io::stdout().write_all(response_string.as_bytes()).unwrap();
-                io::stdout().flush().unwrap();
+    loop {
+        let mut line = String::new();
+        match io::stdin().read_line(&mut line) {
+            Ok(0) => {
+                break;
             }
+            Ok(_n) => {
+                let request: PluginRequest = serde_json::from_str(&line).unwrap();
+                if let Some(response) = handle(request) {
+                    let response_string =
+                        format!("{}\n", serde_json::to_string(&response).unwrap());
+                    io::stdout().write_all(response_string.as_bytes()).unwrap();
+                    io::stdout().flush().unwrap();
+                }
+            }
+            Err(_err) => {}
         }
-        Err(_err) => {}
     }
 }
 
@@ -26,7 +32,7 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
             let config = PluginConfig {
                 name: String::from("demo_keystore"),
                 description: String::from("It's a keystore for demo"),
-                daemon: false,
+                daemon: true,
                 roles: vec![PluginRole::KeyStore(true)],
             };
             Some(PluginResponse::PluginConfig(config))

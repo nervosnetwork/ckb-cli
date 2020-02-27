@@ -51,7 +51,7 @@ impl<'a> PluginSubCommand<'a> {
                             .long("inactive")
                             .about("Install the plugin but not active it"),
                     ),
-                App::new("unstall")
+                App::new("uninstall")
                     .about("Uninstall a plugin, deactive it then remove the binary file")
                     .arg(arg_plugin_name.clone()),
             ])
@@ -130,7 +130,7 @@ impl<'a> CliSubCommand for PluginSubCommand<'a> {
             }
             ("install", Some(m)) => {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "binary-path")?;
-                let active = !m.is_present("deactive");
+                let active = !m.is_present("inactive");
                 let config = self.plugin_mgr.install(path, active)?;
                 let resp = serde_json::json!({
                     "name": config.name,

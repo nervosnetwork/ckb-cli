@@ -63,13 +63,17 @@ impl DefaultKeyStore {
                     let password = password.ok_or_else(|| {
                         String::from("Password is required by default keystore: import key")
                     })?;
-                    let privkey = secp256k1::SecretKey::from_slice(&privkey).unwrap();
+                    let privkey = secp256k1::SecretKey::from_slice(&privkey)
+                        .map_err(|err| err.to_string())?;
                     let mut data = [0u8; 64];
                     data[0..32].copy_from_slice(&privkey[..]);
                     data[32..64].copy_from_slice(&chain_code[..]);
-                    let master_privkey = MasterPrivKey::from_bytes(data).unwrap();
+                    let master_privkey =
+                        MasterPrivKey::from_bytes(data).map_err(|err| err.to_string())?;
                     let key = Key::new(master_privkey);
-                    let lock_arg = keystore.import_key(&key, password.as_bytes()).unwrap();
+                    let lock_arg = keystore
+                        .import_key(&key, password.as_bytes())
+                        .map_err(|err| err.to_string())?;
                     Ok(PluginResponse::KeyStore(KeyStoreResponse::AccountImported(
                         lock_arg,
                     )))
@@ -157,9 +161,10 @@ impl DefaultKeyStore {
                     password,
                     recoverable,
                 } => {
-                    // password is required
-                    let password = password.unwrap();
-                    let path = DerivationPath::from_str(&path).unwrap();
+                    let password = password.ok_or_else(|| {
+                        String::from("Password is required by default keystore: sign")
+                    })?;
+                    let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let signature = if recoverable {
                         keystore
                             .sign_recoverable_with_password(
@@ -169,7 +174,7 @@ impl DefaultKeyStore {
                                 password.as_bytes(),
                             )
                             .map(|sig| serialize_signature(&sig).to_vec())
-                            .unwrap()
+                            .map_err(|err| err.to_string())?
                     } else {
                         keystore
                             .sign_with_password(
@@ -178,7 +183,7 @@ impl DefaultKeyStore {
                                 &message,
                                 password.as_bytes(),
                             )
-                            .unwrap()
+                            .map_err(|err| err.to_string())?
                             .serialize_compact()
                             .to_vec()
                     };
@@ -191,12 +196,13 @@ impl DefaultKeyStore {
                     path,
                     password,
                 } => {
-                    // password is required
-                    let password = password.unwrap();
-                    let path = DerivationPath::from_str(&path).unwrap();
+                    let password = password.ok_or_else(|| {
+                        String::from("Password is required by default keystore: extended pubkey")
+                    })?;
+                    let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let data = keystore
                         .extended_pubkey_with_password(&hash160, path.as_ref(), password.as_bytes())
-                        .unwrap()
+                        .map_err(|err| err.to_string())?
                         .public_key
                         .serialize()
                         .to_vec();
@@ -212,26 +218,30 @@ impl DefaultKeyStore {
         }
 
         let (keystore_sender, keystore_receiver) = bounded(1);
-        let mut keystore = get_key_store(ckb_cli_dir).unwrap();
+        let mut keystore = get_key_store(ckb_cli_dir)?;
 
         let keystore_thread = thread::spawn(move || loop {
-            if let Ok(Request {
-                responder,
-                arguments,
-            }) = keystore_receiver.recv()
-            {
-                let response = if let PluginRequest::KeyStore(request) = arguments {
-                    handle_request(&mut keystore, request).unwrap_or_else(PluginResponse::Error)
-                } else {
-                    PluginResponse::Error(format!(
-                        "Invalid request for keystore: {}",
-                        serde_json::to_string(&arguments).unwrap()
-                    ))
-                };
-                responder.send(response).unwrap();
-            } else {
-                // TODO: log error
-                break;
+            match keystore_receiver.recv() {
+                Ok(Request {
+                    responder,
+                    arguments,
+                }) => {
+                    let response = if let PluginRequest::KeyStore(request) = arguments {
+                        handle_request(&mut keystore, request).unwrap_or_else(PluginResponse::Error)
+                    } else {
+                        PluginResponse::Error(format!(
+                            "Invalid request for keystore: {}",
+                            serde_json::to_string(&arguments).expect("Serialize request error")
+                        ))
+                    };
+                    if let Err(err) = responder.send(response) {
+                        log::warn!("Default keystore send response err: {:?}", err);
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Default keystore receive request error: {:?}", err);
+                    break;
+                }
             }
         });
 

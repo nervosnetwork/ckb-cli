@@ -12,6 +12,35 @@ pub struct PluginConfig {
     pub roles: Vec<PluginRole>,
 }
 
+impl PluginConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        // TODO: validate PluginConfig.name
+        if self.roles.is_empty() {
+            return Err(String::from("Role list can not be empty"));
+        }
+        for role in &self.roles {
+            role.validate()?;
+        }
+        Ok(())
+    }
+
+    pub fn is_normal_daemon(&self) -> bool {
+        if !self.daemon {
+            return false;
+        }
+        for role in &self.roles {
+            match role {
+                PluginRole::KeyStore(_) => (),
+                PluginRole::Indexer => (),
+                _ => {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PluginRole {
     // The argument is for if keystore need password
@@ -20,7 +49,19 @@ pub enum PluginRole {
     // The argument is for where the sub-command is injected to.
     SubCommand(String),
     // The argument is for the callback function name
-    Callback(String),
+    Callback(CallbackName),
+}
+
+impl PluginRole {
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            Self::SubCommand(_name) => {
+                // TODO: check sub-command name
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

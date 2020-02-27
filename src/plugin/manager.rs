@@ -45,7 +45,7 @@ pub struct PluginManager {
     // The key is sub-command name
     sub_commands: HashMap<String, String>,
     // The key is callback name
-    callbacks: HashMap<CallbackName, String>,
+    callbacks: HashMap<CallbackName, Vec<String>>,
 
     service_provider: ServiceProvider,
     jsonrpc_id: Arc<AtomicU64>,
@@ -59,11 +59,11 @@ impl PluginManager {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let inactive_plugin_dir = plugin_dir.join(INACTIVE_DIRNAME);
 
-        let mut plugins = HashMap::default();
-
         if !inactive_plugin_dir.exists() {
             fs::create_dir_all(&inactive_plugin_dir).map_err(|err| err.to_string())?;
         }
+
+        let mut plugins = HashMap::default();
         for (dir, is_active) in &[(&plugin_dir, true), (&inactive_plugin_dir, false)] {
             for entry in fs::read_dir(dir).map_err(|err| err.to_string())? {
                 let entry = entry.map_err(|err| err.to_string())?;
@@ -77,10 +77,15 @@ impl PluginManager {
                     let plugin = Plugin::new(path.clone(), Vec::new(), *is_active);
                     match plugin.register() {
                         Ok(config) => {
-                            plugins.insert(config.name.clone(), (plugin, config));
+                            if let Err(err) = config.validate() {
+                                log::warn!("Invalid plugin config: {:?}, error: {}", config, err);
+                            } else {
+                                log::info!("Loaded plugin: {}", config.name);
+                                plugins.insert(config.name.clone(), (plugin, config));
+                            }
                         }
                         Err(err) => {
-                            println!("register error: {}, path: {:?}", err, path);
+                            log::warn!("register error: {}, path: {:?}", err, path);
                         }
                     }
                 }
@@ -97,13 +102,11 @@ impl PluginManager {
         let mut keystores = Vec::new();
         let mut indexers = Vec::new();
         let mut sub_commands = HashMap::new();
-        let mut callbacks = HashMap::new();
+        let mut callbacks: HashMap<CallbackName, Vec<String>> = HashMap::new();
         let mut keystore_plugin = None;
         let mut indexer_plugin = None;
+        // TODO plugins order matters
         for (plugin_name, (plugin, config)) in &plugins {
-            if config.daemon {
-                daemon_plugins.push((plugin.clone(), config.clone()));
-            }
             for role in &config.roles {
                 match role {
                     PluginRole::KeyStore(_) => {
@@ -121,11 +124,17 @@ impl PluginManager {
                     PluginRole::SubCommand(command_name) => {
                         sub_commands.insert(command_name.clone(), plugin_name.clone());
                     }
-                    PluginRole::Callback(name) => {
-                        let callback_name = CallbackName::from_str(name.as_str()).unwrap();
-                        callbacks.insert(callback_name, plugin_name.clone());
+                    PluginRole::Callback(callback_name) => {
+                        callbacks
+                            .entry(callback_name.clone())
+                            .or_default()
+                            .push(plugin_name.clone());
                     }
                 }
+            }
+            if config.is_normal_daemon() {
+                log::info!("Start daemon plugin: {}", config.name);
+                daemon_plugins.push((plugin.clone(), config.clone()));
             }
         }
         let service_provider = ServiceProvider::start(
@@ -156,23 +165,46 @@ impl PluginManager {
         })
     }
 
-    pub fn keystore_require_password(&self) -> bool {
+    pub fn actived_keystore(&self) -> Option<(&Plugin, &PluginConfig, bool)> {
         self.keystores
             .iter()
             .filter_map(|name| {
                 self.plugins
                     .get(name)
                     .filter(|(plugin, _)| plugin.is_active())
-                    .map(|(_, config)| {
+                    .map(|(plugin, config)| {
                         for role in &config.roles {
                             if let PluginRole::KeyStore(require_password) = role {
-                                return *require_password;
+                                return (plugin, config, *require_password);
                             }
                         }
-                        true
+                        panic!("Plugin {} is not a keystore plugin", config.name);
                     })
             })
             .next()
+    }
+    pub fn actived_indexer(&self) -> Option<(&Plugin, &PluginConfig)> {
+        self.indexers
+            .iter()
+            .filter_map(|name| {
+                self.plugins
+                    .get(name)
+                    .filter(|(plugin, _)| plugin.is_active())
+                    .map(|(plugin, config)| {
+                        for role in &config.roles {
+                            if let PluginRole::Indexer = role {
+                                return (plugin, config);
+                            }
+                        }
+                        panic!("Plugin {} is not a indexer plugin", config.name);
+                    })
+            })
+            .next()
+    }
+
+    pub fn keystore_require_password(&self) -> bool {
+        self.actived_keystore()
+            .map(|(_, _, require_password)| require_password)
             .unwrap_or(true)
     }
     pub fn keystore_handler(&self) -> KeyStoreHandler {
@@ -183,41 +215,92 @@ impl PluginManager {
     }
 
     pub fn active(&mut self, name: &str) -> Result<(), String> {
-        // TODO: notify ServiceProvider
-        if let Some((plugin, config)) = self.plugins.get_mut(name) {
+        if !self.plugins.contains_key(name) {
+            return Err(format!("Plugin not found: {}", name));
+        }
+
+        let last_actived_keystore = self
+            .actived_keystore()
+            .map(|(_, config, _)| config.name.clone());
+        let last_actived_indexer = self
+            .actived_indexer()
+            .map(|(_, config)| config.name.clone());
+        if let Some((plugin, config)) = self.plugins.get_mut(name).and_then(|(plugin, config)| {
             if !plugin.is_active() {
                 plugin.active();
-                if config.daemon {
-                    let process = PluginProcess::start(
-                        plugin.clone(),
-                        config.clone(),
-                        self.service_provider.handler().clone(),
-                    )?;
-                    self.daemon_processes.insert(name.to_string(), process);
-                }
+                Some((plugin.clone(), config.clone()))
+            } else {
+                None
             }
-            Ok(())
-        } else {
-            Err(format!("Plugin not found: {}", name))
+        }) {
+            if config.is_normal_daemon() {
+                log::info!("Starting daemon process: {}", config.name);
+                let process = PluginProcess::start(
+                    plugin.clone(),
+                    config.clone(),
+                    self.service_provider.handler().clone(),
+                )?;
+                log::info!("Daemon process started: {}", config.name);
+                self.daemon_processes.insert(name.to_string(), process);
+            }
+            let new_path = self
+                .plugin_dir
+                .join(format!("{}.{}", config.name, PLUGIN_FILENAME_EXT));
+            log::info!("Rename plugin file: {:?} => {:?}", plugin.path(), new_path);
+            fs::rename(plugin.path(), &new_path).map_err(|err| err.to_string())?;
+            if let Some((plugin, _)) = self.plugins.get_mut(name) {
+                plugin.set_path(new_path);
+            }
+            self.service_plugin_changed(last_actived_keystore, last_actived_indexer)?;
         }
+        Ok(())
     }
     pub fn deactive(&mut self, name: &str) -> Result<(), String> {
-        // TODO: notify ServiceProvider
-        if let Some((plugin, config)) = self.plugins.get_mut(name) {
+        if !self.plugins.contains_key(name) {
+            return Err(format!("Plugin not found: {}", name));
+        }
+
+        let last_actived_keystore = self
+            .actived_keystore()
+            .map(|(_, config, _)| config.name.clone());
+        let last_actived_indexer = self
+            .actived_indexer()
+            .map(|(_, config)| config.name.clone());
+        if let Some((plugin, config)) = self.plugins.get_mut(name).and_then(|(plugin, config)| {
             if plugin.is_active() {
                 plugin.deactive();
-                if config.daemon {
-                    self.daemon_processes.remove(name);
-                }
+                Some((plugin.clone(), config.clone()))
+            } else {
+                None
             }
-            Ok(())
-        } else {
-            Err(format!("Plugin not found: {}", name))
+        }) {
+            if config.is_normal_daemon() {
+                log::info!("Stopping daemon process: {}", config.name);
+                self.daemon_processes.remove(name);
+            }
+            let new_path = self
+                .plugin_dir
+                .join(INACTIVE_DIRNAME)
+                .join(format!("{}.{}", config.name, PLUGIN_FILENAME_EXT));
+            log::debug!("Rename plugin file: {:?} => {:?}", plugin.path(), new_path);
+            fs::rename(plugin.path(), &new_path).map_err(|err| err.to_string())?;
+            if let Some((plugin, _)) = self.plugins.get_mut(name) {
+                plugin.set_path(new_path);
+            }
+            self.service_plugin_changed(last_actived_keystore, last_actived_indexer)?;
         }
+        Ok(())
     }
     pub fn install(&mut self, tmp_path: PathBuf, active: bool) -> Result<PluginConfig, String> {
         let tmp_plugin = Plugin::new(tmp_path, Vec::new(), active);
         let config = tmp_plugin.register()?;
+        config.validate()?;
+        if self.plugins.contains_key(&config.name) {
+            return Err(format!(
+                "Plugin {} already installed! If you want update, please uninstall it first",
+                config.name
+            ));
+        }
         let base_dir = if active {
             self.plugin_dir.clone()
         } else {
@@ -226,7 +309,7 @@ impl PluginManager {
         let path = base_dir.join(format!("{}.{}", config.name, PLUGIN_FILENAME_EXT));
         fs::copy(tmp_plugin.path(), &path).map_err(|err| err.to_string())?;
         // TODO: change this address to executable
-        let plugin = Plugin::new(path, Vec::new(), active);
+        let plugin = Plugin::new(path, Vec::new(), false);
         self.plugins
             .insert(config.name.clone(), (plugin, config.clone()));
 
@@ -242,9 +325,11 @@ impl PluginManager {
                     self.sub_commands
                         .insert(command_name.clone(), config.name.clone());
                 }
-                PluginRole::Callback(name) => {
-                    let callback_name = CallbackName::from_str(name.as_str()).unwrap();
-                    self.callbacks.insert(callback_name, config.name.clone());
+                PluginRole::Callback(callback_name) => {
+                    self.callbacks
+                        .entry(callback_name.clone())
+                        .or_default()
+                        .push(config.name.clone());
                 }
             }
         }
@@ -255,9 +340,40 @@ impl PluginManager {
     }
     pub fn uninstall(&mut self, name: &str) -> Result<(), String> {
         self.deactive(name)?;
-        if let Some((plugin, _config)) = self.plugins.remove(name) {
+        if let Some((plugin, config)) = self.plugins.remove(name) {
             fs::remove_file(plugin.path()).map_err(|err| err.to_string())?;
-            // TODO: clean up role configs
+            for role in &config.roles {
+                match role {
+                    PluginRole::KeyStore(_) => {
+                        self.keystores = self
+                            .keystores
+                            .split_off(0)
+                            .into_iter()
+                            .filter(|plugin_name| plugin_name != name)
+                            .collect::<Vec<_>>();
+                    }
+                    PluginRole::Indexer => {
+                        self.indexers = self
+                            .indexers
+                            .split_off(0)
+                            .into_iter()
+                            .filter(|plugin_name| plugin_name != name)
+                            .collect::<Vec<_>>();
+                    }
+                    PluginRole::SubCommand(command_name) => {
+                        self.sub_commands.remove(command_name);
+                    }
+                    PluginRole::Callback(callback_name) => {
+                        if let Some(names) = self.callbacks.get_mut(callback_name) {
+                            *names = names
+                                .split_off(0)
+                                .into_iter()
+                                .filter(|plugin_name| plugin_name != name)
+                                .collect::<Vec<_>>();
+                        }
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -274,7 +390,7 @@ impl PluginManager {
             if plugin.is_active() {
                 let service_handler = self.service_provider.handler().clone();
                 let process =
-                    PluginProcess::start(plugin.clone(), config.clone(), service_handler).unwrap();
+                    PluginProcess::start(plugin.clone(), config.clone(), service_handler)?;
                 func(process.handler())
             } else {
                 Err(format!("Plugin {} is inactive", name))
@@ -284,23 +400,45 @@ impl PluginManager {
         }
     }
 
-    pub fn rpc_url_changed(&self, new_url: String) -> Result<(), String> {
-        match Request::call(
-            self.service_provider.handler(),
-            ServiceRequest::RpcUrlChanged(new_url.clone()),
-        )
-        .unwrap()
+    fn service_plugin_changed(
+        &self,
+        last_actived_keystore: Option<String>,
+        last_actived_indexer: Option<String>,
+    ) -> Result<(), String> {
+        let actived_keystore = self.actived_keystore();
+        if last_actived_keystore != actived_keystore.map(|(_, config, _)| config.name.clone()) {
+            let keystore_plugin =
+                actived_keystore.map(|(plugin, config, _)| (plugin.clone(), config.clone()));
+            self.call_service(ServiceRequest::KeyStoreChanged(keystore_plugin))?;
+        }
+
+        let actived_indexer = self.actived_indexer();
+        if last_actived_indexer != actived_indexer.map(|(_, config)| config.name.clone()) {
+            let indexer_plugin =
+                actived_indexer.map(|(plugin, config)| (plugin.clone(), config.clone()));
+            self.call_service(ServiceRequest::IndexerChanged(indexer_plugin))?;
+        }
+        Ok(())
+    }
+    fn call_service(&self, request: ServiceRequest) -> Result<(), String> {
+        match Request::call(self.service_provider.handler(), request)
+            .ok_or_else(|| String::from("Send request to ServiceProvider failed"))?
         {
             ServiceResponse::Ok => Ok(()),
             _ => Err(format!("Invalid plugin response")),
         }
     }
 
+    pub fn rpc_url_changed(&self, new_url: String) -> Result<(), String> {
+        self.call_service(ServiceRequest::RpcUrlChanged(new_url))
+    }
+
     pub fn sub_command(&self, command_name: &str, rest_args: String) -> Result<String, String> {
         if let Some(plugin_name) = self.sub_commands.get(command_name) {
             self.handle(plugin_name.as_str(), |handler| {
                 let request = PluginRequest::SubCommand(rest_args);
-                if let PluginResponse::SubCommand(output) = Request::call(handler, request).unwrap()
+                if let PluginResponse::SubCommand(output) = Request::call(handler, request)
+                    .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
                 {
                     Ok(output)
                 } else {
@@ -318,17 +456,23 @@ impl PluginManager {
         &self,
         callback_name: CallbackName,
         arguments: CallbackRequest,
-    ) -> Result<CallbackResponse, String> {
-        if let Some(plugin_name) = self.callbacks.get(&callback_name) {
-            self.handle(plugin_name.as_str(), |handler| {
-                let request = PluginRequest::Callback(arguments);
-                if let PluginResponse::Callback(response) = Request::call(handler, request).unwrap()
-                {
-                    Ok(response)
-                } else {
-                    Err("Invalid plugin response".to_string())
-                }
-            })
+    ) -> Result<Vec<CallbackResponse>, String> {
+        if let Some(plugin_names) = self.callbacks.get(&callback_name) {
+            let mut responses = Vec::new();
+            for plugin_name in plugin_names {
+                let response = self.handle(plugin_name.as_str(), |handler| {
+                    let request = PluginRequest::Callback(arguments.clone());
+                    if let PluginResponse::Callback(response) = Request::call(handler, request)
+                        .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
+                    {
+                        Ok(response)
+                    } else {
+                        Err(format!("Invalid response from plugin: {}", plugin_name))
+                    }
+                })?;
+                responses.push(response);
+            }
+            Ok(responses)
         } else {
             Err(format!(
                 "callback plugin for {} hook not found or inactive",
@@ -364,14 +508,8 @@ pub enum ServiceRequest {
         plugin_name: String,
         request: PluginRequest,
     },
-    KeyStoreChanged {
-        plugin: Plugin,
-        config: PluginConfig,
-    },
-    IndexerChanged {
-        plugin: Plugin,
-        config: PluginConfig,
-    },
+    KeyStoreChanged(Option<(Plugin, PluginConfig)>),
+    IndexerChanged(Option<(Plugin, PluginConfig)>),
     RpcUrlChanged(String),
 }
 
@@ -397,6 +535,7 @@ impl ServiceProvider {
                 .as_ref()
                 .filter(|(plugin, config)| plugin.is_active() && config.daemon)
                 .map(|(plugin, config)| {
+                    log::info!("Start daemon plugin: {}", config.name);
                     PluginProcess::start(plugin.clone(), config.clone(), service_handler.clone())
                 })
                 .transpose()
@@ -416,18 +555,56 @@ impl ServiceProvider {
                     arguments,
                 }) => {
                     let response = match arguments {
-                        ServiceRequest::KeyStoreChanged { plugin, config } => {
-                            keystore_plugin = Some((plugin, config));
-                            // TODO: error handle
-                            keystore_daemon =
-                                start_daemon(&keystore_plugin, &service_handler).unwrap();
+                        ServiceRequest::KeyStoreChanged(Some((plugin, config))) => {
+                            if Some(&config.name)
+                                != keystore_plugin.as_ref().map(|(_, config)| &config.name)
+                            {
+                                keystore_plugin = Some((plugin, config));
+                                match start_daemon(&keystore_plugin, &service_handler) {
+                                    Ok(process) => {
+                                        keystore_daemon = process;
+                                        ServiceResponse::Ok
+                                    }
+                                    Err(err) => ServiceResponse::Error(err),
+                                }
+                            } else {
+                                ServiceResponse::Ok
+                            }
+                        }
+                        ServiceRequest::KeyStoreChanged(None) => {
+                            if let Some((_, config)) = keystore_plugin {
+                                if keystore_daemon.is_some() {
+                                    log::info!("Stop kesytore daemon plugin: {}", config.name);
+                                }
+                            }
+                            keystore_plugin = None;
+                            keystore_daemon = None;
                             ServiceResponse::Ok
                         }
-                        ServiceRequest::IndexerChanged { plugin, config } => {
-                            indexer_plugin = Some((plugin, config));
-                            // TODO: error handle
-                            indexer_daemon =
-                                start_daemon(&indexer_plugin, &service_handler).unwrap();
+                        ServiceRequest::IndexerChanged(Some((plugin, config))) => {
+                            if Some(&config.name)
+                                != indexer_plugin.as_ref().map(|(_, config)| &config.name)
+                            {
+                                indexer_plugin = Some((plugin, config));
+                                match start_daemon(&indexer_plugin, &service_handler) {
+                                    Ok(process) => {
+                                        indexer_daemon = process;
+                                        ServiceResponse::Ok
+                                    }
+                                    Err(err) => ServiceResponse::Error(err),
+                                }
+                            } else {
+                                ServiceResponse::Ok
+                            }
+                        }
+                        ServiceRequest::IndexerChanged(None) => {
+                            if let Some((_, config)) = indexer_plugin {
+                                if indexer_daemon.is_some() {
+                                    log::info!("Stop indexer daemon plugin: {}", config.name);
+                                }
+                            }
+                            indexer_plugin = None;
+                            indexer_daemon = None;
                             ServiceResponse::Ok
                         }
                         ServiceRequest::RpcUrlChanged(new_url) => {
@@ -438,104 +615,108 @@ impl ServiceProvider {
                         }
                         ServiceRequest::Request { request, .. } => {
                             let response = match request {
-                                PluginRequest::KeyStore(_) => {
-                                    let keystore_process = keystore_plugin
-                                        .as_ref()
-                                        .filter(|(plugin, config)| {
-                                            plugin.is_active() && !config.daemon
+                                PluginRequest::KeyStore(_) => keystore_plugin
+                                    .as_ref()
+                                    .filter(|(plugin, config)| plugin.is_active() && !config.daemon)
+                                    .map(|(plugin, config)| {
+                                        PluginProcess::start(
+                                            plugin.clone(),
+                                            config.clone(),
+                                            inner_sender.clone(),
+                                        )
+                                    })
+                                    .transpose()
+                                    .and_then(|keystore_process| {
+                                        let handler = keystore_daemon
+                                            .as_ref()
+                                            .or_else(|| keystore_process.as_ref())
+                                            .map(|process| process.handler())
+                                            .unwrap_or_else(|| default_keystore.handler());
+                                        Request::call(handler, request.clone()).ok_or_else(|| {
+                                            String::from("Send request to keystore failed")
                                         })
-                                        .map(|(plugin, config)| {
-                                            PluginProcess::start(
-                                                plugin.clone(),
-                                                config.clone(),
-                                                inner_sender.clone(),
-                                            )
+                                    })
+                                    .unwrap_or_else(|err| PluginResponse::Error(err)),
+                                PluginRequest::Indexer { .. } => indexer_plugin
+                                    .as_ref()
+                                    .filter(|(plugin, config)| plugin.is_active() && !config.daemon)
+                                    .map(|(plugin, config)| {
+                                        PluginProcess::start(
+                                            plugin.clone(),
+                                            config.clone(),
+                                            inner_sender.clone(),
+                                        )
+                                    })
+                                    .transpose()
+                                    .and_then(|indexer_process| {
+                                        let handler = indexer_daemon
+                                            .as_ref()
+                                            .or_else(|| indexer_process.as_ref())
+                                            .map(|process| process.handler())
+                                            .unwrap_or_else(|| default_indexer.handler());
+                                        Request::call(handler, request.clone()).ok_or_else(|| {
+                                            String::from("Send request to indexer failed")
                                         })
-                                        .transpose()
-                                        .unwrap();
-                                    let handler = keystore_daemon
-                                        .as_ref()
-                                        .or_else(|| keystore_process.as_ref())
-                                        .map(|process| process.handler())
-                                        .unwrap_or_else(|| default_keystore.handler());
-                                    Request::call(handler, request.clone()).unwrap()
-                                }
-                                PluginRequest::Indexer { .. } => {
-                                    let indexer_process = indexer_plugin
-                                        .as_ref()
-                                        .filter(|(plugin, config)| {
-                                            plugin.is_active() && !config.daemon
-                                        })
-                                        .map(|(plugin, config)| {
-                                            PluginProcess::start(
-                                                plugin.clone(),
-                                                config.clone(),
-                                                inner_sender.clone(),
-                                            )
-                                        })
-                                        .transpose()
-                                        .unwrap();
-                                    let handler = indexer_daemon
-                                        .as_ref()
-                                        .or_else(|| indexer_process.as_ref())
-                                        .map(|process| process.handler())
-                                        .unwrap_or_else(|| default_indexer.handler());
-                                    Request::call(handler, request.clone()).unwrap()
-                                }
+                                    })
+                                    .unwrap_or_else(|err| PluginResponse::Error(err)),
                                 PluginRequest::Rpc(rpc_request) => {
-                                    let response = match rpc_request {
+                                    let response_result = match rpc_request {
                                         RpcRequest::GetBlock { hash } => {
                                             // TODO: handle error
-                                            RpcResponse::BlockView(
-                                                rpc_client.get_block(hash).unwrap(),
-                                            )
+                                            rpc_client.get_block(hash).map(RpcResponse::BlockView)
                                         }
-                                        RpcRequest::GetBlockByNumber { number } => {
-                                            RpcResponse::BlockView(
-                                                rpc_client.get_block_by_number(number).unwrap(),
-                                            )
-                                        }
-                                        RpcRequest::GetBlockHash { number } => {
-                                            RpcResponse::BlockHash(
-                                                rpc_client.get_block_hash(number).unwrap(),
-                                            )
-                                        }
+                                        RpcRequest::GetBlockByNumber { number } => rpc_client
+                                            .get_block_by_number(number)
+                                            .map(RpcResponse::BlockView),
+                                        RpcRequest::GetBlockHash { number } => rpc_client
+                                            .get_block_hash(number)
+                                            .map(RpcResponse::BlockHash),
                                         RpcRequest::GetCellbaseOutputCapacityDetails { hash } => {
-                                            RpcResponse::BlockReward(
-                                                rpc_client
-                                                    .get_cellbase_output_capacity_details(hash)
-                                                    .unwrap(),
-                                            )
+                                            rpc_client
+                                                .get_cellbase_output_capacity_details(hash)
+                                                .map(RpcResponse::BlockReward)
                                         } // TODO: more rpc methods
                                     };
-                                    PluginResponse::Rpc(response)
+                                    response_result
+                                        .map(PluginResponse::Rpc)
+                                        .unwrap_or_else(|err| PluginResponse::Error(err))
                                 }
                                 PluginRequest::ReadPassword(prompt) => {
-                                    let password =
-                                        read_password(false, Some(prompt.as_str())).unwrap();
-                                    PluginResponse::Password(password)
+                                    read_password(false, Some(prompt.as_str()))
+                                        .map(PluginResponse::Password)
+                                        .unwrap_or_else(|err| PluginResponse::Error(err))
                                 }
                                 PluginRequest::PrintStdout(content) => {
                                     print!("{}", content);
-                                    io::stdout().flush().unwrap();
-                                    PluginResponse::Ok
+                                    io::stdout()
+                                        .flush()
+                                        .map(|_| PluginResponse::Ok)
+                                        .unwrap_or_else(|err| {
+                                            PluginResponse::Error(err.to_string())
+                                        })
                                 }
                                 PluginRequest::PrintStderr(content) => {
                                     eprint!("{}", content);
-                                    io::stdout().flush().unwrap();
-                                    PluginResponse::Ok
+                                    io::stderr()
+                                        .flush()
+                                        .map(|_| PluginResponse::Ok)
+                                        .unwrap_or_else(|err| {
+                                            PluginResponse::Error(err.to_string())
+                                        })
                                 }
-                                _ => {
-                                    // TODO: error
-                                    break;
-                                }
+                                _ => PluginResponse::Error(String::from(
+                                    "Invalid request to ServiceProvider",
+                                )),
                             };
                             ServiceResponse::Response(response)
                         }
                     };
-                    responder.send(response).unwrap();
+                    if let Err(err) = responder.send(response) {
+                        log::warn!("Send ServiceResponse failed: {:?}", err);
+                    }
                 }
-                Err(_err) => {
+                Err(err) => {
+                    log::warn!("ServiceProvider receive request error: {:?}", err);
                     break;
                 }
             }
@@ -577,9 +758,15 @@ impl PluginProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap();
-        let mut stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
+            .map_err(|err| err.to_string())?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| String::from("Get stdin failed"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| String::from("Get stdout failed"))?;
         let daemon = config.daemon;
 
         let (request_sender, request_receiver) = bounded(1);
@@ -587,37 +774,55 @@ impl PluginProcess {
         let (service_sender, service_receiver) = bounded(1);
         let (stop_sender, stop_receiver) = bounded(1);
 
-        let stdin_thread = thread::spawn(move || loop {
-            select! {
-                // Send response requested by ckb-cli to plugin
-                recv(request_receiver) -> msg => {
-                    if let Ok(Request { responder, arguments }) = msg {
-                        let request_string = format!("{}\n", serde_json::to_string(&arguments).unwrap());
-                        stdin.write_all(request_string.as_bytes()).unwrap();
-                        stdin.flush().unwrap();
-                        if let Ok(response) = stdout_receiver.recv() {
-                            responder.send(response).unwrap();
-                            if !daemon {
-                                stop_sender.send(()).unwrap();
-                                break;
+        let stdin_plugin_name = config.name.clone();
+        let stdin_thread = thread::spawn(move || {
+            let mut do_select = || -> Result<bool, String> {
+                select! {
+                    // Send response requested by ckb-cli to plugin
+                    recv(request_receiver) -> msg_result => {
+                        match msg_result {
+                            Ok(Request { responder, arguments }) => {
+                                let request_string = serde_json::to_string(&arguments).expect("Serialize request error");
+                                stdin.write_all(format!("{}\n", request_string).as_bytes()).map_err(|err| err.to_string())?;
+                                stdin.flush().map_err(|err| err.to_string())?;
+                                if let Ok(response) = stdout_receiver.recv() {
+                                    responder.send(response).map_err(|err| err.to_string())?;
+                                    if !daemon {
+                                        stop_sender.send(()).map_err(|err| err.to_string())?;
+                                        Ok(true)
+                                    } else {
+                                        Ok(false)
+                                    }
+                                } else {
+                                    // TODO: error handling
+                                    Ok(true)
+                                }
                             }
-                        } else {
-                            // TODO: error handling
-                            break;
+                            Err(err) => Err(err.to_string())
                         }
-                    } else {
-                        // TODO: error handling
-                        break;
+                    }
+                    // Send repsonse requested by plugin to ckb-cli (ServiceProvider)
+                    recv(service_receiver) -> msg_result => {
+                        match msg_result {
+                            Ok(response) => {
+                                let response_string = serde_json::to_string(&response).expect("Serialize response error");
+                                stdin.write_all(format!("{}\n", response_string).as_bytes()).map_err(|err| err.to_string())?;
+                                stdin.flush().map_err(|err| err.to_string())?;
+                                Ok(false)
+                            }
+                            Err(err) => Err(err.to_string())
+                        }
                     }
                 }
-                // Send repsonse requested by plugin to ckb-cli (ServiceProvider)
-                recv(service_receiver) -> msg => {
-                    if let Ok(response) = msg {
-                        let response_string = format!("{}\n", serde_json::to_string(&response).unwrap());
-                        stdin.write_all(response_string.as_bytes()).unwrap();
-                        stdin.flush().unwrap();
-                    } else {
-                        // TODO: error handling
+            };
+            loop {
+                match do_select() {
+                    Ok(true) => {
+                        break;
+                    }
+                    Ok(false) => (),
+                    Err(err) => {
+                        log::info!("plugin {} stdin error: {}", stdin_plugin_name, err);
                         break;
                     }
                 }
@@ -625,29 +830,55 @@ impl PluginProcess {
         });
 
         let mut buf_reader = BufReader::new(stdout);
-        let stdout_thread = thread::spawn(move || loop {
-            if stop_receiver.try_recv().is_ok() {
-                break;
-            }
-            let mut content = String::new();
-            if buf_reader.read_line(&mut content).unwrap() == 0 {
-                // EOF
-                break;
-            }
-            let result: Result<PluginResponse, _> = serde_json::from_str(&content);
-            if let Ok(response) = result {
-                stdout_sender.send(response).unwrap();
-            } else {
-                let request: PluginRequest = serde_json::from_str(&content).unwrap();
-                let service_request = ServiceRequest::Request {
-                    is_from_plugin: true,
-                    plugin_name: config.name.clone(),
-                    request,
-                };
-                if let ServiceResponse::Response(response) =
-                    Request::call(&service_handler, service_request).unwrap()
+        let stdout_thread = thread::spawn(move || {
+            let mut do_recv = || -> Result<bool, String> {
+                if stop_receiver.try_recv().is_ok() {
+                    return Ok(true);
+                }
+                let mut content = String::new();
+                if buf_reader
+                    .read_line(&mut content)
+                    .map_err(|err| err.to_string())?
+                    == 0
                 {
-                    service_sender.send(response).unwrap();
+                    // EOF
+                    return Ok(true);
+                }
+                let result: Result<PluginResponse, _> = serde_json::from_str(&content);
+                if let Ok(response) = result {
+                    stdout_sender
+                        .send(response)
+                        .map_err(|err| err.to_string())?;
+                } else {
+                    let request: PluginRequest =
+                        serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                    let service_request = ServiceRequest::Request {
+                        is_from_plugin: true,
+                        plugin_name: config.name.clone(),
+                        request,
+                    };
+                    if let ServiceResponse::Response(response) =
+                        Request::call(&service_handler, service_request)
+                            .ok_or_else(|| String::from("Send request to ServiceProvider failed"))?
+                    {
+                        service_sender
+                            .send(response)
+                            .map_err(|err| err.to_string())?;
+                    }
+                }
+                Ok(false)
+            };
+            loop {
+                match do_recv() {
+                    Ok(true) => {
+                        log::info!("plugin {} quit", config.name);
+                        break;
+                    }
+                    Ok(false) => {}
+                    Err(err) => {
+                        log::warn!("plugin {} stdout error: {}", config.name, err);
+                        break;
+                    }
                 }
             }
         });
@@ -688,20 +919,31 @@ impl Plugin {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap();
-        let mut stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
+            .map_err(|err| err.to_string())?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| String::from("Get stdin failed"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| String::from("Get stdout failed"))?;
         let request_string = format!(
             "{}\n",
-            serde_json::to_string(&PluginRequest::Register).unwrap()
+            serde_json::to_string(&PluginRequest::Register).expect("Serialize request error")
         );
-        stdin.write_all(request_string.as_bytes()).unwrap();
-        stdin.flush().unwrap();
+        stdin
+            .write_all(request_string.as_bytes())
+            .map_err(|err| err.to_string())?;
+        stdin.flush().map_err(|err| err.to_string())?;
         let mut buf_reader = BufReader::new(stdout);
         let mut response_string = String::new();
-        buf_reader.read_line(&mut response_string).unwrap();
+        buf_reader
+            .read_line(&mut response_string)
+            .map_err(|err| err.to_string())?;
         // TODO: make sure process exit
-        let response: PluginResponse = serde_json::from_str(&response_string).unwrap();
+        let response: PluginResponse =
+            serde_json::from_str(&response_string).map_err(|err| err.to_string())?;
         if let PluginResponse::PluginConfig(config) = response {
             Ok(config)
         } else {
@@ -712,6 +954,9 @@ impl Plugin {
         }
     }
 
+    pub fn set_path(&mut self, path: PathBuf) {
+        self.path = path;
+    }
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
@@ -821,7 +1066,7 @@ impl KeyStoreHandler {
             let mut data = [0u8; 64];
             data[0..32].copy_from_slice(&privkey[..]);
             data[32..64].copy_from_slice(&chain_code[..]);
-            let master_privkey = MasterPrivKey::from_bytes(data).unwrap();
+            let master_privkey = MasterPrivKey::from_bytes(data).map_err(|err| err.to_string())?;
             Ok(master_privkey)
         } else {
             Err("Mismatch keystore response".to_string())
@@ -926,7 +1171,7 @@ impl KeyStoreHandler {
         if let PluginResponse::KeyStore(KeyStoreResponse::ExtendedPubkey(data)) =
             self.call(request)?
         {
-            Ok(secp256k1::PublicKey::from_slice(&data).unwrap())
+            secp256k1::PublicKey::from_slice(&data).map_err(|err| err.to_string())
         } else {
             Err("Mismatch keystore response".to_string())
         }
