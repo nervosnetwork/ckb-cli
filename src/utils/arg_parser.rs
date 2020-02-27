@@ -15,7 +15,6 @@ use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
 
-use super::arg::account_id_error;
 use crate::subcommands::account::AccountId;
 
 pub struct MissingFieldError {
@@ -134,10 +133,7 @@ where
 {
     #[allow(dead_code)]
     pub fn new(a: A, b: B) -> Self {
-        EitherParser {
-            a,
-            b,
-        }
+        EitherParser { a, b }
     }
 }
 
@@ -728,6 +724,12 @@ impl ArgParser for DerivationPathParser {
 #[derive(Default)]
 pub struct AccountIdParser(EitherParser<FixedHashParser<H160>, FixedHashParser<H256>>);
 
+impl AccountIdParser {
+    fn render_error((left_error, right_error): (String, String)) -> String {
+        format!("Not a valid account id of any type: not a valid software key because of {}, not a valid ledger key because of {}", left_error, right_error)
+    }
+}
+
 impl From<EitherValue<H160, H256>> for AccountId {
     fn from(val: EitherValue<H160, H256>) -> Self {
         match val {
@@ -745,7 +747,65 @@ impl ArgParser for AccountIdParser {
         self.0
             .parse(input)
             .map(From::from)
-            .map_err(account_id_error)
+            .map_err(Self::render_error)
+    }
+}
+
+pub struct FromAccountParser;
+
+impl From<EitherValue<EitherValue<H160, H256>, EitherValue<Address, Address>>> for AccountId {
+    fn from(val: EitherValue<EitherValue<H160, H256>, EitherValue<Address, Address>>) -> Self {
+        use EitherValue::*;
+        let address = match val {
+            A(either_hashes) => return From::from(either_hashes),
+            B(A(address)) => address,
+            B(B(address)) => address,
+        };
+        AccountId::SoftwareMasterKey(H160::from_slice(&address.payload().args()).unwrap())
+    }
+}
+
+impl FromAccountParser {
+    fn mk_parser() -> EitherParser<
+        EitherParser<FixedHashParser<H160>, FixedHashParser<H256>>,
+        EitherParser<AddressParser, AddressParser>,
+    > {
+        EitherParser {
+            a: EitherParser::default(),
+            b: EitherParser {
+                a: AddressParser::default(),
+                b: AddressParser::new_sighash(),
+            },
+        }
+    }
+    fn render_error(
+        ((lock_arg_error, wallet_error), (address_default_error, address_sighash_error)): (
+            (String, String),
+            (String, String),
+        ),
+    ) -> String {
+        format!(
+            concat!(
+                "Not a valid account id of any type:\n",
+                "\n",
+                " - not a valid software key lock arg because of {}\n",
+                " - not a valid ledger key because of {}\n",
+                " - not a address (for software key) because of {} or {}\n",
+            ),
+            lock_arg_error, wallet_error, address_default_error, address_sighash_error,
+        )
+    }
+}
+
+impl ArgParser for FromAccountParser {
+    type Value = AccountId;
+    type Error = String;
+
+    fn parse(&self, input: &str) -> Result<Self::Value, Self::Error> {
+        Self::mk_parser()
+            .parse(input)
+            .map(From::from)
+            .map_err(Self::render_error)
     }
 }
 

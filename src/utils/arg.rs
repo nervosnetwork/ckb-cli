@@ -1,6 +1,7 @@
 use crate::utils::arg_parser::{
-    AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-    HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
+    AccountIdParser, AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
+    FromAccountParser, FromStrParser, HexParser, OutPointParser, PrivkeyPathParser,
+    PubkeyHexParser,
 };
 use ckb_sdk::wallet::DerivationPath;
 use ckb_types::{H160, H256};
@@ -92,40 +93,32 @@ pub fn account_id<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("account-id")
         .long("account-id")
         .takes_value(true)
-        .validator(|input| {
-            Err(account_id_error((
-                match FixedHashParser::<H160>::default().validate(input.clone()) {
-                    x @ Ok(()) => return x,
-                    Err(e) => e,
-                },
-                match FixedHashParser::<H256>::default().validate(input.clone()) {
-                    x @ Ok(()) => return x,
-                    Err(e) => e,
-                },
-            )))
-        })
-        .help("Account identifier (software key lock argument: blake2b(pubkey)[0..20], or hardware wallet opaque identifier)")
-}
-
-pub fn account_id_error((left_error, right_error): (String, String)) -> String {
-    format!("Not a valid account id of any type: not a valid software key because of {}, not a valid ledger key because of {}", left_error, right_error)
+        .validator(|input| AccountIdParser::default().validate(input))
+        .help("The account from which to extend public/private key pairs")
+        .long_help(concat!(
+            "The account identifier is one of:\n",
+            "\n",
+            "- software key lock argument: blake2b(pubkey)[0..20]\n",
+            "\n",
+            "- hardware wallet: opaque identifie\nr",
+        ))
 }
 
 pub fn from_account<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("from-account")
         .long("from-account")
         .takes_value(true)
-        .validator(|input| {
-            FixedHashParser::<H160>::default()
-                .validate(input.clone())
-                .or_else(|err| {
-                    AddressParser::default()
-                        .validate(input.clone())
-                        .and_then(|()| AddressParser::new_sighash().validate(input))
-                        .map_err(|_| err)
-                })
-        })
-        .help("The account's lock-arg or sighash address (transfer from this account)")
+        .validator(|input| FromAccountParser.validate(input))
+        .help("transfer from this account")
+        .long_help(concat!(
+            "The account identifier is one of:\n",
+            "\n",
+            " - software key lock argument: blake2b(pubkey)[0..20]\n",
+            "\n",
+            " - hardware wallet: opaque identifier\n",
+            "\n",
+            " - sighash address for software key\n",
+        ))
 }
 
 pub fn from_locked_address<'a, 'b>() -> Arg<'a, 'b> {
