@@ -5,6 +5,11 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use either::Either;
+use clap::ArgMatches;
+use colored::Colorize;
+use rpassword::prompt_password_stdout;
+
 use ckb_hash::blake2b_256;
 use ckb_index::{LiveCellInfo, VERSION};
 use ckb_ledger::LedgerKeyStore;
@@ -24,12 +29,9 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::ArgMatches;
-use colored::Colorize;
-use rpassword::prompt_password_stdout;
 
 use super::arg_parser::{
-    AddressParser, ArgParser, EitherValue, FixedHashParser, FromAccountParser, HexParser,
+    AddressParser, ArgParser, FixedHashParser, FromAccountParser, HexParser,
     PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
@@ -394,12 +396,12 @@ pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
 
 pub fn privkey_or_from_account(
     m: &ArgMatches,
-) -> Result<EitherValue<PrivkeyWrapper, AccountId>, String> {
+) -> Result<Either<PrivkeyWrapper, AccountId>, String> {
     let from_privkey_opt = PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
     let from_account_opt = FromAccountParser.from_matches_opt(m, "from-account", false)?;
     Ok(match (from_privkey_opt, from_account_opt) {
-        (Some(pk), None) => EitherValue::A(pk),
-        (None, Some(aid)) => EitherValue::B(aid),
+        (Some(pk), None) => Either::Left(pk),
+        (None, Some(aid)) => Either::Right(aid),
         _ => unreachable!("arg parser should prevent both or neithers of --privkey-path and --from--account specified")
     })
 }

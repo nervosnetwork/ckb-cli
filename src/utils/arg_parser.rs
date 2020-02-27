@@ -6,14 +6,16 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+use clap::ArgMatches;
+use either::Either;
+use faster_hex::hex_decode;
+use url::Url;
+
 use ckb_sdk::{
     wallet::{zeroize_privkey, DerivationPath, MasterPrivKey},
     Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
 };
 use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
-use clap::ArgMatches;
-use faster_hex::hex_decode;
-use url::Url;
 
 use crate::subcommands::account::AccountId;
 
@@ -21,10 +23,10 @@ pub struct MissingFieldError {
     name: String,
 }
 
-fn combine_error(error: EitherValue<String, MissingFieldError>) -> String {
+fn combine_error(error: Either<String, MissingFieldError>) -> String {
     match error {
-        EitherValue::A(e) => e,
-        EitherValue::B(MissingFieldError { name }) => format!("<{}> is required", name),
+        Either::Left(e) => e,
+        Either::Right(MissingFieldError { name }) => format!("<{}> is required", name),
     }
 }
 
@@ -66,7 +68,7 @@ pub trait ArgParser {
         &self,
         matches: &ArgMatches,
         name: &str,
-    ) -> Result<R, EitherValue<Self::Error, MissingFieldError>> {
+    ) -> Result<R, Either<Self::Error, MissingFieldError>> {
         self.from_matches_opt_raw(matches, name, true)
             .map(Option::unwrap)
     }
@@ -77,9 +79,9 @@ pub trait ArgParser {
         matches: &ArgMatches,
         name: &str,
         required: bool,
-    ) -> Result<Option<R>, EitherValue<Self::Error, MissingFieldError>> {
+    ) -> Result<Option<R>, Either<Self::Error, MissingFieldError>> {
         if required && !matches.is_present(name) {
-            return Err(EitherValue::B(MissingFieldError {
+            return Err(Either::Right(MissingFieldError {
                 name: name.to_string(),
             }));
         }
@@ -87,7 +89,7 @@ pub trait ArgParser {
             .value_of(name)
             .map(|input| self.parse(input).map(Into::into))
             .transpose()
-            .map_err(EitherValue::A)
+            .map_err(Either::Left)
     }
 
     fn from_matches_vec<R: From<Self::Value>>(
@@ -115,11 +117,6 @@ impl ArgParser for NullParser {
     }
 }
 
-pub enum EitherValue<TA, TB> {
-    A(TA),
-    B(TB),
-}
-
 #[derive(Default)]
 pub struct EitherParser<A, B> {
     a: A,
@@ -142,79 +139,79 @@ where
     A: ArgParser,
     B: ArgParser,
 {
-    type Value = EitherValue<A::Value, B::Value>;
+    type Value = Either<A::Value, B::Value>;
     type Error = (A::Error, B::Error);
 
     fn parse(&self, input: &str) -> Result<Self::Value, Self::Error> {
         Ok(loop {
             return Err((
                 match self.a.parse(input) {
-                    Ok(v) => break EitherValue::A(v),
+                    Ok(v) => break Either::Left(v),
                     Err(e) => e,
                 },
                 match self.b.parse(input) {
-                    Ok(v) => break EitherValue::B(v),
+                    Ok(v) => break Either::Right(v),
                     Err(e) => e,
                 },
             ));
         })
     }
-    fn from_matches_raw<R: From<EitherValue<A::Value, B::Value>>>(
+    fn from_matches_raw<R: From<Either<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
-    ) -> Result<R, EitherValue<Self::Error, MissingFieldError>> {
+    ) -> Result<R, Either<Self::Error, MissingFieldError>> {
         return Ok(From::from(loop {
-            return Err(EitherValue::A((
+            return Err(Either::Left((
                 match self.a.from_matches_raw(matches, name) {
-                    Ok(v) => break EitherValue::A(v),
-                    Err(EitherValue::A(e)) => e,
-                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                    Ok(v) => break Either::Left(v),
+                    Err(Either::Left(e)) => e,
+                    Err(Either::Right(e)) => return Err(Either::Right(e)),
                 },
                 match self.b.from_matches_raw(matches, name) {
-                    Ok(v) => break EitherValue::B(v),
-                    Err(EitherValue::A(e)) => e,
-                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                    Ok(v) => break Either::Right(v),
+                    Err(Either::Left(e)) => e,
+                    Err(Either::Right(e)) => return Err(Either::Right(e)),
                 },
             )));
         }));
     }
-    fn from_matches_opt_raw<R: From<EitherValue<A::Value, B::Value>>>(
+    fn from_matches_opt_raw<R: From<Either<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
         required: bool,
-    ) -> Result<Option<R>, EitherValue<Self::Error, MissingFieldError>> {
+    ) -> Result<Option<R>, Either<Self::Error, MissingFieldError>> {
         return Ok(loop {
-            return Err(EitherValue::A((
+            return Err(Either::Left((
                 match self.a.from_matches_opt_raw(matches, name, required) {
-                    Ok(v) => break v.map(EitherValue::A),
-                    Err(EitherValue::A(e)) => e,
-                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                    Ok(v) => break v.map(Either::Left),
+                    Err(Either::Left(e)) => e,
+                    Err(Either::Right(e)) => return Err(Either::Right(e)),
                 },
                 match self.b.from_matches_opt_raw(matches, name, required) {
-                    Ok(v) => break v.map(EitherValue::B),
-                    Err(EitherValue::A(e)) => e,
-                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                    Ok(v) => break v.map(Either::Right),
+                    Err(Either::Left(e)) => e,
+                    Err(Either::Right(e)) => return Err(Either::Right(e)),
                 },
             )));
         }
         .map(From::from));
     }
 
-    fn from_matches_vec<R: From<EitherValue<A::Value, B::Value>>>(
+    fn from_matches_vec<R: From<Either<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
     ) -> Result<Vec<R>, Self::Error> {
-        let x: Box<dyn Iterator<Item = EitherValue<A::Value, B::Value>>> = loop {
+        let x: Box<dyn Iterator<Item = Either<A::Value, B::Value>>> = loop {
             return Err((
                 match self.a.from_matches_vec(matches, name) {
-                    Ok(v) => break Box::new(v.into_iter().map(EitherValue::A)),
+                    Ok(v) => break Box::new(v.into_iter().map(Either::Left)),
                     Err(e) => e,
                 },
                 match self.b.from_matches_vec(matches, name) {
-                    Ok(v) => break Box::new(v.into_iter().map(EitherValue::B)),
+                    Ok(v) => break Box::new(v.into_iter().map(Either::Right)),
                     Err(e) => e,
                 },
             ));
@@ -730,11 +727,11 @@ impl AccountIdParser {
     }
 }
 
-impl From<EitherValue<H160, H256>> for AccountId {
-    fn from(val: EitherValue<H160, H256>) -> Self {
+impl From<Either<H160, H256>> for AccountId {
+    fn from(val: Either<H160, H256>) -> Self {
         match val {
-            EitherValue::A(x) => AccountId::SoftwareMasterKey(x),
-            EitherValue::B(x) => AccountId::LedgerId(ckb_ledger::LedgerId(x)),
+            Either::Left(x) => AccountId::SoftwareMasterKey(x),
+            Either::Right(x) => AccountId::LedgerId(ckb_ledger::LedgerId(x)),
         }
     }
 }
@@ -754,13 +751,13 @@ impl ArgParser for AccountIdParser {
 #[derive(Default)]
 pub struct FromAccountParser;
 
-impl From<EitherValue<EitherValue<H160, H256>, EitherValue<Address, Address>>> for AccountId {
-    fn from(val: EitherValue<EitherValue<H160, H256>, EitherValue<Address, Address>>) -> Self {
-        use EitherValue::*;
+impl From<Either<Either<H160, H256>, Either<Address, Address>>> for AccountId {
+    fn from(val: Either<Either<H160, H256>, Either<Address, Address>>) -> Self {
+        use Either::*;
         let address = match val {
-            A(either_hashes) => return From::from(either_hashes),
-            B(A(address)) => address,
-            B(B(address)) => address,
+            Left(either_hashes) => return From::from(either_hashes),
+            Right(Left(address)) => address,
+            Right(Right(address)) => address,
         };
         AccountId::SoftwareMasterKey(H160::from_slice(&address.payload().args()).unwrap())
     }

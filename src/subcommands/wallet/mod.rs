@@ -19,7 +19,7 @@ use super::{account::AccountId, CliSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, EitherValue, FixedHashParser, FromStrParser,
+        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyWrapper,
     },
     index::IndexController,
@@ -157,14 +157,14 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String> {
         let from_account = privkey_or_from_account(m)?;
         let from_address_payload = match from_account {
-            EitherValue::A(ref from_privkey) => {
+            Either::Left(ref from_privkey) => {
                 let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
                 AddressPayload::from_pubkey(&from_pubkey)
             }
-            EitherValue::B(AccountId::SoftwareMasterKey(ref hash160)) => {
+            Either::Right(AccountId::SoftwareMasterKey(ref hash160)) => {
                 AddressPayload::from_pubkey_hash(hash160.clone())
             }
-            EitherValue::B(AccountId::LedgerId(ref ledger_id)) => {
+            Either::Right(AccountId::LedgerId(ref ledger_id)) => {
                 return self.transfer_middle(
                     m,
                     self.ledger_key_store
@@ -201,7 +201,7 @@ impl<'a> WalletSubCommand<'a> {
         &mut self,
         m: &ArgMatches,
         key_cap: &K,
-        from_account: EitherValue<PrivkeyWrapper, AccountId>,
+        from_account: Either<PrivkeyWrapper, AccountId>,
         from_address_payload: AddressPayload,
         format: OutputFormat,
         color: bool,
@@ -313,7 +313,7 @@ impl<'a> WalletSubCommand<'a> {
 
         let to_data = get_to_data(m)?;
 
-        if let EitherValue::A(from_privkey) = from_account {
+        if let Either::Left(from_privkey) = from_account {
             let signer = get_privkey_signer(from_privkey);
             self.transfer_impl(
                 network_type,
