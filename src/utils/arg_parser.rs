@@ -29,36 +29,41 @@ fn combine_error(error: EitherValue<String, MissingFieldError>) -> String {
     }
 }
 
-pub trait ArgParser<T> {
+pub trait ArgParser {
+    type Value;
     type Error;
 
-    fn parse(&self, input: &str) -> Result<T, Self::Error>;
+    fn parse(&self, input: &str) -> Result<Self::Value, Self::Error>;
 
     fn validate(&self, input: String) -> Result<(), Self::Error> {
         self.parse(&input).map(|_| ())
     }
 
-    fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, Self::Error>
+    fn from_matches<R: From<Self::Value>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<R, Self::Error>
     where
-        Self: ArgParser<T, Error = String>,
+        Self: ArgParser<Error = String>,
     {
         self.from_matches_raw(matches, name).map_err(combine_error)
     }
 
-    fn from_matches_opt<R: From<T>>(
+    fn from_matches_opt<R: From<Self::Value>>(
         &self,
         matches: &ArgMatches,
         name: &str,
         required: bool,
     ) -> Result<Option<R>, Self::Error>
     where
-        Self: ArgParser<T, Error = String>,
+        Self: ArgParser<Error = String>,
     {
         self.from_matches_opt_raw(matches, name, required)
             .map_err(combine_error)
     }
 
-    fn from_matches_raw<R: From<T>>(
+    fn from_matches_raw<R: From<Self::Value>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -68,7 +73,7 @@ pub trait ArgParser<T> {
     }
 
     // Need raw versions to combine error types
-    fn from_matches_opt_raw<R: From<T>>(
+    fn from_matches_opt_raw<R: From<Self::Value>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -86,7 +91,7 @@ pub trait ArgParser<T> {
             .map_err(EitherValue::A)
     }
 
-    fn from_matches_vec<R: From<T>>(
+    fn from_matches_vec<R: From<Self::Value>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -102,7 +107,8 @@ pub trait ArgParser<T> {
 
 #[allow(dead_code)]
 pub struct NullParser;
-impl ArgParser<String> for NullParser {
+impl ArgParser for NullParser {
+    type Value = String;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<String, String> {
@@ -116,37 +122,34 @@ pub enum EitherValue<TA, TB> {
 }
 
 #[derive(Default)]
-pub struct EitherParser<TA, TB, A, B> {
+pub struct EitherParser<A, B> {
     a: A,
     b: B,
-    _ta: PhantomData<TA>,
-    _tb: PhantomData<TB>,
 }
 
-impl<TA, TB, A, B> EitherParser<TA, TB, A, B>
+impl<A, B> EitherParser<A, B>
 where
-    A: ArgParser<TA>,
-    B: ArgParser<TB>,
+    A: ArgParser,
+    B: ArgParser,
 {
     #[allow(dead_code)]
     pub fn new(a: A, b: B) -> Self {
         EitherParser {
             a,
             b,
-            _ta: PhantomData,
-            _tb: PhantomData,
         }
     }
 }
 
-impl<TA, TB, A, B> ArgParser<EitherValue<TA, TB>> for EitherParser<TA, TB, A, B>
+impl<A, B> ArgParser for EitherParser<A, B>
 where
-    A: ArgParser<TA>,
-    B: ArgParser<TB>,
+    A: ArgParser,
+    B: ArgParser,
 {
+    type Value = EitherValue<A::Value, B::Value>;
     type Error = (A::Error, B::Error);
 
-    fn parse(&self, input: &str) -> Result<EitherValue<TA, TB>, Self::Error> {
+    fn parse(&self, input: &str) -> Result<Self::Value, Self::Error> {
         Ok(loop {
             return Err((
                 match self.a.parse(input) {
@@ -160,7 +163,7 @@ where
             ));
         })
     }
-    fn from_matches_raw<R: From<EitherValue<TA, TB>>>(
+    fn from_matches_raw<R: From<EitherValue<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -180,7 +183,7 @@ where
             )));
         }));
     }
-    fn from_matches_opt_raw<R: From<EitherValue<TA, TB>>>(
+    fn from_matches_opt_raw<R: From<EitherValue<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -203,12 +206,12 @@ where
         .map(From::from));
     }
 
-    fn from_matches_vec<R: From<EitherValue<TA, TB>>>(
+    fn from_matches_vec<R: From<EitherValue<A::Value, B::Value>>>(
         &self,
         matches: &ArgMatches,
         name: &str,
     ) -> Result<Vec<R>, Self::Error> {
-        let x: Box<dyn Iterator<Item = EitherValue<TA, TB>>> = loop {
+        let x: Box<dyn Iterator<Item = EitherValue<A::Value, B::Value>>> = loop {
             return Err((
                 match self.a.from_matches_vec(matches, name) {
                     Ok(v) => break Box::new(v.into_iter().map(EitherValue::A)),
@@ -235,11 +238,12 @@ impl<T: FromStr> FromStrParser<T> {
     }
 }
 
-impl<T> ArgParser<T> for FromStrParser<T>
+impl<T> ArgParser for FromStrParser<T>
 where
     T: FromStr,
     <T as FromStr>::Err: Display,
 {
+    type Value = T;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<T, String> {
@@ -249,7 +253,8 @@ where
 
 pub struct UrlParser;
 
-impl ArgParser<Url> for UrlParser {
+impl ArgParser for UrlParser {
+    type Value = Url;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<Url, String> {
@@ -259,7 +264,8 @@ impl ArgParser<Url> for UrlParser {
 
 pub struct HexParser;
 
-impl ArgParser<Vec<u8>> for HexParser {
+impl ArgParser for HexParser {
+    type Value = Vec<u8>;
     type Error = String;
 
     fn parse(&self, mut input: &str) -> Result<Vec<u8>, String> {
@@ -281,7 +287,8 @@ pub struct FixedHashParser<T> {
     _h: PhantomData<T>,
 }
 
-impl ArgParser<H256> for FixedHashParser<H256> {
+impl ArgParser for FixedHashParser<H256> {
+    type Value = H256;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<H256, String> {
@@ -290,7 +297,8 @@ impl ArgParser<H256> for FixedHashParser<H256> {
     }
 }
 
-impl ArgParser<H160> for FixedHashParser<H160> {
+impl ArgParser for FixedHashParser<H160> {
+    type Value = H160;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<H160, String> {
@@ -304,7 +312,8 @@ pub struct PathParser {
     should_exists: bool,
 }
 
-impl ArgParser<PathBuf> for PathParser {
+impl ArgParser for PathParser {
+    type Value = PathBuf;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
@@ -330,7 +339,8 @@ impl FilePathParser {
     }
 }
 
-impl ArgParser<PathBuf> for FilePathParser {
+impl ArgParser for FilePathParser {
+    type Value = PathBuf;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
@@ -354,7 +364,8 @@ pub struct DirPathParser {
 //     }
 // }
 
-impl ArgParser<PathBuf> for DirPathParser {
+impl ArgParser for DirPathParser {
+    type Value = PathBuf;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
@@ -387,7 +398,8 @@ impl std::ops::Deref for PrivkeyWrapper {
 
 pub struct PrivkeyPathParser;
 
-impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
+impl ArgParser for PrivkeyPathParser {
+    type Value = PrivkeyWrapper;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<PrivkeyWrapper, String> {
@@ -410,7 +422,8 @@ impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
 
 pub struct ExtendedPrivkeyPathParser;
 
-impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
+impl ArgParser for ExtendedPrivkeyPathParser {
+    type Value = MasterPrivKey;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
@@ -439,7 +452,8 @@ impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
 
 pub struct PubkeyHexParser;
 
-impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
+impl ArgParser for PubkeyHexParser {
+    type Value = secp256k1::PublicKey;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<secp256k1::PublicKey, String> {
@@ -531,7 +545,8 @@ impl Default for AddressParser {
     }
 }
 
-impl ArgParser<Address> for AddressParser {
+impl ArgParser for AddressParser {
+    type Value = Address;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<Address, String> {
@@ -630,7 +645,8 @@ impl ArgParser<Address> for AddressParser {
 /// Default unit CKB format: xxx.xxxxx
 pub struct CapacityParser;
 
-impl ArgParser<HumanCapacity> for CapacityParser {
+impl ArgParser for CapacityParser {
+    type Value = HumanCapacity;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<HumanCapacity, String> {
@@ -640,7 +656,8 @@ impl ArgParser<HumanCapacity> for CapacityParser {
 
 pub struct OutPointParser;
 
-impl ArgParser<OutPoint> for OutPointParser {
+impl ArgParser for OutPointParser {
+    type Value = OutPoint;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<OutPoint, String> {
@@ -659,7 +676,8 @@ impl ArgParser<OutPoint> for OutPointParser {
 
 pub struct DurationParser;
 
-impl ArgParser<Duration> for DurationParser {
+impl ArgParser for DurationParser {
+    type Value = Duration;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<Duration, String> {
@@ -687,7 +705,8 @@ impl ArgParser<Duration> for DurationParser {
 
 pub struct DerivationPathParser;
 
-impl ArgParser<DerivationPath> for DerivationPathParser {
+impl ArgParser for DerivationPathParser {
+    type Value = DerivationPath;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<DerivationPath, String> {
@@ -707,7 +726,7 @@ impl ArgParser<DerivationPath> for DerivationPathParser {
 }
 
 #[derive(Default)]
-pub struct AccountIdParser(EitherParser<H160, H256, FixedHashParser<H160>, FixedHashParser<H256>>);
+pub struct AccountIdParser(EitherParser<FixedHashParser<H160>, FixedHashParser<H256>>);
 
 impl From<EitherValue<H160, H256>> for AccountId {
     fn from(val: EitherValue<H160, H256>) -> Self {
@@ -718,11 +737,13 @@ impl From<EitherValue<H160, H256>> for AccountId {
     }
 }
 
-impl ArgParser<AccountId> for AccountIdParser {
+impl ArgParser for AccountIdParser {
+    type Value = AccountId;
     type Error = String;
 
     fn parse(&self, input: &str) -> Result<AccountId, String> {
-        self.0.parse(input)
+        self.0
+            .parse(input)
             .map(From::from)
             .map_err(account_id_error)
     }
