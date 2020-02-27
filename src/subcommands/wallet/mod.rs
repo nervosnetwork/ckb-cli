@@ -15,18 +15,15 @@ use ckb_types::{
 };
 use clap::{App, ArgMatches, SubCommand};
 
-use super::{account::AccountId, CliSubCommand};
+use super::CliSubCommand;
 use crate::utils::{
     arg,
-    arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
-    },
+    arg_parser::{AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser},
     index::IndexController,
-    key_adapter::KeyAdapter,
     other::{
         check_capacity, get_address, get_live_cell_with_cache, get_master_key_signer_raw,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        privkey_or_from_account, read_password,
+        make_address_payload_and_master_key_cap, privkey_or_from_account, read_password,
     },
     printer::{OutputFormat, Printable},
 };
@@ -36,12 +33,9 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{
-        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath,
-        KeyStore,
-    },
+    wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
-    NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
+    NetworkType, SignerFnTrait, Since, SinceType, TxHelper,
 };
 
 // Max derived change address to search
@@ -160,46 +154,12 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String> {
         let from_account = privkey_or_from_account(m)?;
 
-        let (from_address_payload_opt, master_key_cap_opt): (
-            Option<AddressPayload>,
-            Option<
-                Box<
-                    dyn AbstractMasterPrivKey<
-                        Err = String,
-                        Privkey = Box<dyn AbstractPrivKey<Err = String>>,
-                    >,
-                >,
-            >,
-        ) = match from_account {
-            Either::Left(ref from_privkey) => {
-                let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-                (
-                    Some(AddressPayload::from_pubkey(&from_pubkey)),
-                    None,
-                    //Some(Box::new(KeyAdapter(PrivkeyWrapper(from_pubkey.clone())))),
-                )
-            }
-            Either::Right(AccountId::SoftwareMasterKey(ref hash160)) => {
-                let password = read_password(false, None)?;
-                (
-                    Some(AddressPayload::from_pubkey_hash(hash160.clone())),
-                    Some(Box::new(KeyAdapter(
-                        self.key_store
-                            .get_key(&hash160, password.as_bytes())
-                            .map_err(|e| e.to_string())?,
-                    ))),
-                )
-            }
-            Either::Right(AccountId::LedgerId(ref ledger_id)) => (
-                None,
-                Some(Box::new(KeyAdapter(
-                    self.ledger_key_store
-                        .borrow_account(&ledger_id)
-                        .map_err(|e| e.to_string())?
-                        .clone(),
-                ))),
-            ),
-        };
+        let (from_address_payload_opt, master_key_cap_opt) =
+            make_address_payload_and_master_key_cap(
+                &from_account,
+                self.key_store,
+                self.ledger_key_store,
+            )?;
         let from_address_info_opt: Option<(AddressPayload, H160)> =
             from_address_payload_opt.map(|payload| {
                 let hash160 = H160::from_slice(payload.args().as_ref()).unwrap();
@@ -321,7 +281,7 @@ impl<'a> WalletSubCommand<'a> {
 
         let payload_opt = from_address_info_opt.map(|(x, _y)| x);
         if let Either::Left(from_privkey) = from_account {
-            let signer = get_privkey_signer(from_privkey);
+            let signer = get_privkey_signer(from_privkey)?;
             self.transfer_impl(
                 network_type,
                 payload_opt,

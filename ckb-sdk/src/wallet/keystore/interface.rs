@@ -1,14 +1,17 @@
 use std::fmt::Debug;
 
+use bitcoin_hashes::{hash160, Hash};
 use either::Either;
 use failure::Fail;
 use secp256k1::recovery::RecoverableSignature;
+use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use void::Void;
 
-use crate::wallet::bip32::DerivationPath;
-use crate::wallet::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use crate::wallet::bip32::{
+    ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, Fingerprint,
+};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_types::{H160, H256};
@@ -57,11 +60,29 @@ pub trait AbstractMasterPrivKey {
     type Err;
 
     /// Abstract or concrete derived private key
-    type Privkey: AbstractPrivKey;
-
-    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err>;
+    type Privkey: AbstractPrivKey<Err = Self::Err>;
 
     fn extended_privkey(&self, path: &[ChildNumber]) -> Result<Self::Privkey, Self::Err>;
+
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
+        let public_key = self.extended_privkey(path)?.public_key()?;
+        Ok(ExtendedPubKey {
+            depth: path.as_ref().len() as u8,
+            parent_fingerprint: {
+                let mut engine = hash160::Hash::engine();
+                engine
+                    .write_all(b"`parent_fingerprint` currently unused by Nervos.")
+                    .expect("write must ok");
+                Fingerprint::from(&hash160::Hash::from_engine(engine)[0..4])
+            },
+            child_number: path
+                .last()
+                .unwrap_or(&ChildNumber::Hardened { index: 0 })
+                .clone(),
+            public_key,
+            chain_code: ChainCode([0; 32]), // dummy, unused
+        })
+    }
 
     fn derived_pubkey_hash(&self, path: &[ChildNumber]) -> Result<H160, Self::Err> {
         let extended_public_key = self.extended_pubkey(path)?;
@@ -108,12 +129,18 @@ pub trait AbstractPrivKey {
     /// Error type for operations.
     type Err;
 
+    /// Get the corresponding public key
+    fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err>;
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err>;
     fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err>;
 }
 
 impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K> {
     type Err = K::Err;
+
+    fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
+        AsRef::<K>::as_ref(self).public_key()
+    }
 
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err> {
         AsRef::<K>::as_ref(self).sign(message)
@@ -124,8 +151,28 @@ impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K> {
     }
 }
 
+impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for &K {
+    type Err = K::Err;
+
+    fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
+        (*self).public_key()
+    }
+
+    fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err> {
+        (*self).sign(message)
+    }
+
+    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
+        (*self).sign_recoverable(message)
+    }
+}
+
 impl AbstractPrivKey for ExtendedPrivKey {
     type Err = Void;
+
+    fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
+        Ok(ExtendedPubKey::from_private(&SECP256K1, self).public_key)
+    }
 
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Void> {
         let message =

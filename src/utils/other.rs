@@ -37,6 +37,7 @@ use super::arg_parser::{
     PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
+use super::key_adapter::KeyAdapter;
 use crate::subcommands::account::AccountId;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -375,24 +376,21 @@ where
     }
 }
 
-pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> impl SignerFnTrait {
-    let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
+pub fn get_privkey_signer<'a, K>(privkey: K) -> Result<impl SignerFnTrait, String>
+where
+    K: AbstractPrivKey,
+    K::Err: ToString,
+{
+    let pubkey = privkey.public_key().map_err(|err| err.to_string())?;
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed");
-    move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&lock_arg) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                let message = secp256k1::Message::from_slice(message.as_bytes())
-                    .expect("Convert to secp256k1 message failed");
-                let signature = SECP256K1.sign_recoverable(&message, &privkey);
-                Ok(Some(serialize_signature(&signature)))
-            }
-        } else {
+    Ok(move |lock_args: &HashSet<H160>, message: &H256| {
+        if !lock_args.contains(&lock_arg) {
             Ok(None)
+        } else {
+            get_key_signer_raw(&privkey)(lock_args, message)
         }
-    }
+    })
 }
 
 pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
@@ -420,5 +418,55 @@ pub fn privkey_or_from_account(
         (Some(pk), None) => Either::Left(pk),
         (None, Some(aid)) => Either::Right(aid),
         _ => unreachable!("arg parser should prevent both or neithers of --privkey-path and --from--account specified")
+    })
+}
+
+pub fn make_address_payload_and_master_key_cap(
+    from_account: &Either<PrivkeyWrapper, AccountId>,
+    key_store: &mut KeyStore,
+    ledger_key_store: &mut LedgerKeyStore,
+) -> Result<
+    (
+        Option<AddressPayload>,
+        Option<
+            Box<
+                dyn AbstractMasterPrivKey<
+                    Err = String,
+                    Privkey = Box<dyn AbstractPrivKey<Err = String>>,
+                >,
+            >,
+        >,
+    ),
+    String,
+> {
+    Ok(match from_account {
+        Either::Left(ref from_privkey) => {
+            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
+            (
+                Some(AddressPayload::from_pubkey(&from_pubkey)),
+                None,
+                //Some(Box::new(KeyAdapter(PrivkeyWrapper(from_pubkey.clone())))),
+            )
+        }
+        Either::Right(AccountId::SoftwareMasterKey(ref hash160)) => {
+            let password = read_password(false, None)?;
+            (
+                Some(AddressPayload::from_pubkey_hash(hash160.clone())),
+                Some(Box::new(KeyAdapter(
+                    key_store
+                        .get_key(&hash160, password.as_bytes())
+                        .map_err(|e| e.to_string())?,
+                ))),
+            )
+        }
+        Either::Right(AccountId::LedgerId(ref ledger_id)) => (
+            None,
+            Some(Box::new(KeyAdapter(
+                ledger_key_store
+                    .borrow_account(&ledger_id)
+                    .map_err(|e| e.to_string())?
+                    .clone(),
+            ))),
+        ),
     })
 }

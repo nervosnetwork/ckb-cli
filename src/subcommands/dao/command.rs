@@ -1,23 +1,28 @@
-use crate::subcommands::dao::util::{calculate_dao_maximum_withdraw, send_transaction};
-use crate::subcommands::{CliSubCommand, DAOSubCommand};
+use clap::{App, Arg, ArgMatches, SubCommand};
+use either::Either;
+use std::collections::HashSet;
+
+use crate::subcommands::{
+    account::AccountId,
+    dao::util::{calculate_dao_maximum_withdraw, send_transaction},
+    CliSubCommand, DAOSubCommand,
+};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, OutPointParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        ArgParser, CapacityParser, DerivationPathParser, FixedHashParser, OutPointParser,
+        PrivkeyWrapper,
     },
-    other::{get_address, get_network_type},
+    other::{get_address, get_network_type, privkey_or_from_account},
     printer::{OutputFormat, Printable},
 };
-use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
+
+use ckb_sdk::{wallet::DerivationPath, NetworkType};
 use ckb_types::{
     packed::{Byte32, Script},
     prelude::*,
-    H160, H256,
+    H256,
 };
-use clap::{App, Arg, ArgMatches, SubCommand};
-use std::collections::HashSet;
 
 impl<'a> CliSubCommand for DAOSubCommand<'a> {
     fn process(
@@ -32,7 +37,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
             ("deposit", Some(m)) => {
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
                 let transaction = self
-                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)?
                     .deposit(capacity)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
@@ -42,7 +47,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     return Err("Duplicated out-points".to_string());
                 }
                 let transaction = self
-                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)?
                     .prepare(out_points)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
@@ -52,7 +57,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     return Err("Duplicated out-points".to_string());
                 }
                 let transaction = self
-                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)?
                     .withdraw(out_points)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
@@ -126,9 +131,10 @@ pub(crate) struct QueryArgs {
 }
 
 pub(crate) struct TransactArgs {
-    pub(crate) privkey: Option<PrivkeyWrapper>,
-    pub(crate) address: Address,
+    pub(crate) account: Either<PrivkeyWrapper, AccountId>,
+    pub(crate) path: DerivationPath,
     pub(crate) tx_fee: u64,
+    pub(crate) network_type: NetworkType,
 }
 
 impl QueryArgs {
@@ -152,51 +158,28 @@ impl QueryArgs {
 
 impl TransactArgs {
     fn from_matches(m: &ArgMatches, network_type: NetworkType) -> Result<Self, String> {
-        let privkey: Option<PrivkeyWrapper> =
-            PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let address = if let Some(privkey) = privkey.as_ref() {
-            let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, privkey);
-            let payload = AddressPayload::from_pubkey(&pubkey);
-            Address::new(network_type, payload)
-        } else {
-            let account: Option<H160> = FixedHashParser::<H160>::default()
-                .from_matches_opt(m, "from-account", false)
-                .or_else(|err| {
-                    let result: Result<Option<Address>, String> = AddressParser::new_sighash()
-                        .set_network(network_type)
-                        .from_matches_opt(m, "from-account", false);
-                    result
-                        .map(|address_opt| {
-                            address_opt
-                                .map(|address| H160::from_slice(&address.payload().args()).unwrap())
-                        })
-                        .map_err(|_| format!("Invalid value for '--from-account': {}", err))
-                })?;
-            let payload = AddressPayload::from_pubkey_hash(account.clone().unwrap());
-            Address::new(network_type, payload)
+        let account = privkey_or_from_account(m)?;
+        let path = match account {
+            Either::Left(_) => DerivationPath::empty(),
+            _ => DerivationPathParser.from_matches(m, "path")?,
         };
-        assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         Ok(Self {
-            privkey,
-            address,
+            account,
+            path,
             tx_fee,
+            network_type,
         })
     }
 
     fn args<'a, 'b>() -> Vec<Arg<'a, 'b>> {
         vec![
             arg::privkey_path().required_unless(arg::from_account().b.name),
-            arg::from_account().required_unless(arg::privkey_path().b.name),
+            arg::from_account()
+                .required_unless(arg::privkey_path().b.name)
+                .conflicts_with(arg::privkey_path().b.name),
+            arg::derivation_path().conflicts_with(arg::privkey_path().b.name),
             arg::tx_fee().required(true),
         ]
-    }
-
-    pub(crate) fn sighash_args(&self) -> H160 {
-        H160::from_slice(self.address.payload().args().as_ref()).unwrap()
-    }
-
-    pub(crate) fn lock_hash(&self) -> Byte32 {
-        Script::from(self.address.payload()).calc_script_hash()
     }
 }

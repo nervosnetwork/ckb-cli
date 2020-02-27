@@ -2,20 +2,17 @@ use std::path::PathBuf;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io::Write;
 use std::sync::Arc;
 
-use log::debug;
-
-use bitcoin_hashes::{hash160, Hash};
 use byteorder::{BigEndian, WriteBytesExt};
+use log::debug;
+use secp256k1::{key::PublicKey, recovery::RecoverableSignature, recovery::RecoveryId, Signature};
+
 use ckb_sdk::wallet::{
-    is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChainCode,
-    ChildNumber, DerivationPath, ExtendedPubKey, Fingerprint, ScryptType,
+    is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey,
+    ChildNumber, DerivationPath, ScryptType,
 };
 use ckb_types::H256;
-
-use secp256k1::{key::PublicKey, recovery::RecoverableSignature, recovery::RecoveryId, Signature};
 
 use ledger::ApduCommand;
 use ledger::LedgerApp as RawLedgerApp;
@@ -129,46 +126,12 @@ const P1_FIRST: u8 = 0x00;
 const P1_NEXT: u8 = 0x01;
 const P1_LAST: u8 = 0x80;
 
-const WRITE_ERR_MSG: &'static str =
-    "IO error not possible when writing to Vec last I checked";
+const WRITE_ERR_MSG: &'static str = "IO error not possible when writing to Vec last I checked";
 
 impl AbstractMasterPrivKey for LedgerMasterCap {
     type Err = LedgerKeyStoreError;
 
     type Privkey = LedgerCap;
-
-    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
-        let mut data = Vec::new();
-        data.write_u8(path.as_ref().len() as u8)
-            .expect(WRITE_ERR_MSG);
-        for &child_num in path.as_ref().iter() {
-            data.write_u32::<BigEndian>(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
-        let command = apdu::extend_public_key(data);
-        let response = self.ledger_app.exchange(command)?;
-        debug!(
-            "Nervos CBK Ledger app extended pub key raw public key {:?} for path {:?}",
-            &response, &path
-        );
-        let mut resp = &response.data[..];
-        let len = parse::split_first(&mut resp)? as usize;
-        let raw_public_key = parse::split_off_at(&mut resp, len)?;
-        parse::assert_nothing_left(resp)?;
-        Ok(ExtendedPubKey {
-            depth: path.as_ref().len() as u8,
-            parent_fingerprint: {
-                let mut engine = hash160::Hash::engine();
-                engine
-                    .write_all(b"`parent_fingerprint` currently unused by Nervos.")
-                    .expect("write must ok");
-                Fingerprint::from(&hash160::Hash::from_engine(engine)[0..4])
-            },
-            child_number: ChildNumber::from_hardened_idx(0)?,
-            public_key: PublicKey::from_slice(&raw_public_key)?,
-            chain_code: ChainCode([0; 32]), // dummy, unused
-        })
-    }
 
     fn extended_privkey(&self, path: &[ChildNumber]) -> Result<LedgerCap, Self::Err> {
         Ok(LedgerCap {
@@ -187,6 +150,27 @@ pub struct LedgerCap {
 
 impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
+
+    fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
+        let mut data = Vec::new();
+        data.write_u8(self.path.as_ref().len() as u8)
+            .expect(WRITE_ERR_MSG);
+        for &child_num in self.path.as_ref().iter() {
+            data.write_u32::<BigEndian>(From::from(child_num))
+                .expect(WRITE_ERR_MSG);
+        }
+        let command = apdu::extend_public_key(data);
+        let response = self.master.ledger_app.exchange(command)?;
+        debug!(
+            "Nervos CBK Ledger app extended pub key raw public key {:?} for path {:?}",
+            &response, &self.path
+        );
+        let mut resp = &response.data[..];
+        let len = parse::split_first(&mut resp)? as usize;
+        let raw_public_key = parse::split_off_at(&mut resp, len)?;
+        parse::assert_nothing_left(resp)?;
+        Ok(PublicKey::from_slice(&raw_public_key)?)
+    }
 
     fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
         if !is_valid_derivation_path(self.path.as_ref()) {

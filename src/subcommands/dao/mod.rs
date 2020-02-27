@@ -1,19 +1,27 @@
+use byteorder::{ByteOrder, LittleEndian};
+use either::Either;
+use itertools::Itertools;
+use std::collections::HashSet;
+use std::path::PathBuf;
+
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
+use crate::subcommands::account::AccountId;
 use crate::utils::index::IndexController;
+use crate::utils::key_adapter::KeyAdapter;
 use crate::utils::other::{
-    get_keystore_signer, get_max_mature_number, get_network_type, get_privkey_signer, is_mature,
-    read_password,
+    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
 };
-use byteorder::{ByteOrder, LittleEndian};
+
+use ckb_crypto::secp::SECP256K1;
 use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
-    wallet::KeyStore,
-    BoxedSignerFn, GenesisInfo, HttpRpcClient,
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, KeyStore},
+    Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -22,9 +30,6 @@ use ckb_types::{
     prelude::*,
     {H160, H256},
 };
-use itertools::Itertools;
-use std::collections::HashSet;
-use std::path::PathBuf;
 
 mod builder;
 mod command;
@@ -136,20 +141,80 @@ impl<'a> DAOSubCommand<'a> {
     fn with_transact_args<'b>(
         &'b mut self,
         transact_args: TransactArgs,
-    ) -> WithTransactArgs<'a, 'b> {
-        WithTransactArgs {
-            dao: self,
-            transact_args,
-        }
+    ) -> Result<WithTransactArgs<'a, 'b>, String> {
+        WithTransactArgs::from_subcommand(self, transact_args)
     }
 }
 
 struct WithTransactArgs<'a, 'b> {
     dao: &'b mut DAOSubCommand<'a>,
     transact_args: TransactArgs,
+    address_payload: AddressPayload,
+    key_cap: Box<dyn AbstractPrivKey<Err = String>>,
 }
 
 impl<'a, 'b> WithTransactArgs<'a, 'b> {
+    fn from_subcommand(
+        dao: &'b mut DAOSubCommand<'a>,
+        transact_args: TransactArgs,
+    ) -> Result<Self, String> {
+        let (address_payload, key_cap): (AddressPayload, Box<dyn AbstractPrivKey<Err = String>>) =
+            match transact_args.account {
+                Either::Left(ref from_privkey) => {
+                    let from_pubkey =
+                        secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
+                    (
+                        AddressPayload::from_pubkey(&from_pubkey),
+                        Box::new(KeyAdapter(from_privkey.clone())),
+                    )
+                }
+                Either::Right(AccountId::SoftwareMasterKey(ref hash160)) => {
+                    let password = read_password(false, None)?;
+                    (
+                        AddressPayload::from_pubkey_hash(hash160.clone()),
+                        KeyAdapter(
+                            dao.key_store
+                                .get_key(&hash160, password.as_bytes())
+                                .map_err(|e| e.to_string())?,
+                        )
+                        .extended_privkey(transact_args.path.as_ref())?,
+                    )
+                }
+                Either::Right(AccountId::LedgerId(ref ledger_id)) => {
+                    let master = dao
+                        .ledger_key_store
+                        .borrow_account(&ledger_id)
+                        .map_err(|e| e.to_string())?
+                        .clone();
+                    let derived_priv = master
+                        .extended_privkey(transact_args.path.as_ref())
+                        .map_err(|e| e.to_string())?;
+                    let derived_pub = master
+                        .extended_pubkey(transact_args.path.as_ref())
+                        .map_err(|e| e.to_string())?;
+                    (
+                        AddressPayload::from_pubkey(&derived_pub.public_key),
+                        Box::new(KeyAdapter(derived_priv)),
+                    )
+                }
+            };
+        assert_eq!(address_payload.code_hash(), SIGHASH_TYPE_HASH.pack());
+        Ok(Self {
+            dao,
+            transact_args,
+            address_payload,
+            key_cap,
+        })
+    }
+
+    pub(crate) fn sighash_args(&self) -> H160 {
+        H160::from_slice(self.address_payload.args().as_ref()).unwrap()
+    }
+
+    pub(crate) fn lock_hash(&self) -> Byte32 {
+        Script::from(&self.address_payload).calc_script_hash()
+    }
+
     pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
         self.dao.check_db_ready()?;
         let target_capacity = capacity + self.transact_args.tx_fee;
@@ -161,7 +226,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
     pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
         self.dao.check_db_ready()?;
         let tx_fee = self.transact_args.tx_fee;
-        let lock_hash = self.transact_args.lock_hash();
+        let lock_hash = self.lock_hash();
         let cells = {
             let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
             let mut to_prepare = {
@@ -177,7 +242,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
 
     pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
         self.dao.check_db_ready()?;
-        let lock_hash = self.transact_args.lock_hash();
+        let lock_hash = self.lock_hash();
         let cells = {
             let prepare_cells = self.dao.query_prepare_cells(lock_hash)?;
             take_by_out_points(prepare_cells, &out_points)?
@@ -187,7 +252,6 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
     }
 
     fn collect_sighash_cells(&mut self, target_capacity: u64) -> Result<Vec<LiveCellInfo>, String> {
-        let from_address = self.transact_args.address.clone();
         let mut enough = false;
         let mut take_capacity = 0;
         let max_mature_number = get_max_mature_number(self.dao.rpc_client())?;
@@ -208,19 +272,19 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
         };
 
         let cells: Vec<LiveCellInfo> = {
-            self.dao.with_db(|db, _| {
-                db.get_live_cells_by_lock(
-                    Script::from(from_address.payload()).calc_script_hash(),
-                    None,
-                    terminator,
-                )
-            })?
+            let lock_hash = self.lock_hash();
+            self.dao
+                .with_db(|db, _| db.get_live_cells_by_lock(lock_hash, None, terminator))?
         };
 
         if !enough {
             return Err(format!(
                 "Capacity not enough: {} => {}",
-                from_address, take_capacity,
+                Address::new(
+                    self.transact_args.network_type,
+                    self.address_payload.clone()
+                ),
+                take_capacity,
             ));
         }
         Ok(cells)
@@ -242,7 +306,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
     }
 
     fn install_sighash_lock(&self, transaction: TransactionView) -> TransactionView {
-        let sighash_args = self.transact_args.sighash_args();
+        let sighash_args = self.sighash_args();
         let genesis_info = &self.dao.genesis_info;
         let sighash_dep = genesis_info.sighash_dep();
         let sighash_type_hash = genesis_info.sighash_type_hash();
@@ -308,19 +372,8 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
             H256::from(message)
         };
         let signature = {
-            let account = self.transact_args.sighash_args();
-            let mut signer: BoxedSignerFn = {
-                if let Some(ref privkey) = self.transact_args.privkey {
-                    Box::new(get_privkey_signer(privkey.clone()))
-                } else {
-                    let password = read_password(false, None)?;
-                    Box::new(get_keystore_signer(
-                        self.dao.key_store.clone(),
-                        account.clone(),
-                        password,
-                    ))
-                }
-            };
+            let account = self.sighash_args();
+            let mut signer: BoxedSignerFn = Box::new(get_privkey_signer(&self.key_cap)?);
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
             signer(&accounts, &digest)?.expect("signer missed")
         };

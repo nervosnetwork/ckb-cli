@@ -477,7 +477,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
 
                 let signer: BoxedSignerFn = if let Some(privkey) = privkey_opt {
-                    Box::new(get_privkey_signer(privkey))
+                    Box::new(get_privkey_signer(privkey)?)
                 } else {
                     match account_opt.unwrap() {
                         AccountId::SoftwareMasterKey(hash160) => {
