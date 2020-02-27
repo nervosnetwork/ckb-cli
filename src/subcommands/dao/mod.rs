@@ -38,7 +38,6 @@ pub struct DAOSubCommand<'a> {
     genesis_info: GenesisInfo,
     index_dir: PathBuf,
     index_controller: IndexController,
-    transact_args: Option<TransactArgs>,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -57,44 +56,7 @@ impl<'a> DAOSubCommand<'a> {
             genesis_info,
             index_dir,
             index_controller,
-            transact_args: None,
         }
-    }
-
-    pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let target_capacity = capacity + self.transact_args().tx_fee;
-        let cells = self.collect_sighash_cells(target_capacity)?;
-        let raw_transaction = self.build(cells).deposit(capacity)?;
-        self.sign(raw_transaction)
-    }
-
-    pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let tx_fee = self.transact_args().tx_fee;
-        let lock_hash = self.transact_args().lock_hash();
-        let cells = {
-            let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
-            let mut to_prepare = {
-                let deposit_cells = self.query_deposit_cells(lock_hash)?;
-                take_by_out_points(deposit_cells, &out_points)?
-            };
-            to_prepare.append(&mut to_pay_fee);
-            to_prepare
-        };
-        let raw_transaction = self.build(cells).prepare(self.rpc_client())?;
-        self.sign(raw_transaction)
-    }
-
-    pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let lock_hash = self.transact_args().lock_hash();
-        let cells = {
-            let prepare_cells = self.query_prepare_cells(lock_hash)?;
-            take_by_out_points(prepare_cells, &out_points)?
-        };
-        let raw_transaction = self.build(cells).withdraw(self.rpc_client())?;
-        self.sign(raw_transaction)
     }
 
     pub fn query_deposit_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
@@ -140,11 +102,95 @@ impl<'a> DAOSubCommand<'a> {
         })
     }
 
+    fn check_db_ready(&mut self) -> Result<(), String> {
+        self.with_db(|_, _| ())
+    }
+
+    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
+    where
+        F: FnOnce(IndexDatabase, &mut HttpRpcClient) -> T,
+    {
+        let network_type = get_network_type(self.rpc_client)?;
+        let genesis_info = self.genesis_info.clone();
+        let genesis_hash: H256 = genesis_info.header().hash().unpack();
+        with_index_db(&self.index_dir.clone(), genesis_hash, |backend, cf| {
+            let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
+            Ok(func(db, self.rpc_client()))
+        })
+        .map_err(|_err| {
+            format!(
+                "Index database may not ready, sync process: {}",
+                self.index_controller.state().read().to_string()
+            )
+        })
+    }
+
+    fn dao_type_hash(&self) -> &Byte32 {
+        self.genesis_info.dao_type_hash()
+    }
+
+    pub(crate) fn rpc_client(&mut self) -> &mut HttpRpcClient {
+        &mut self.rpc_client
+    }
+
+    fn with_transact_args<'b>(
+        &'b mut self,
+        transact_args: TransactArgs,
+    ) -> WithTransactArgs<'a, 'b> {
+        WithTransactArgs {
+            dao: self,
+            transact_args,
+        }
+    }
+}
+
+struct WithTransactArgs<'a, 'b> {
+    dao: &'b mut DAOSubCommand<'a>,
+    transact_args: TransactArgs,
+}
+
+impl<'a, 'b> WithTransactArgs<'a, 'b> {
+    pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
+        self.dao.check_db_ready()?;
+        let target_capacity = capacity + self.transact_args.tx_fee;
+        let cells = self.collect_sighash_cells(target_capacity)?;
+        let raw_transaction = self.build(cells).deposit(capacity)?;
+        self.sign(raw_transaction)
+    }
+
+    pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
+        self.dao.check_db_ready()?;
+        let tx_fee = self.transact_args.tx_fee;
+        let lock_hash = self.transact_args.lock_hash();
+        let cells = {
+            let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
+            let mut to_prepare = {
+                let deposit_cells = self.dao.query_deposit_cells(lock_hash)?;
+                take_by_out_points(deposit_cells, &out_points)?
+            };
+            to_prepare.append(&mut to_pay_fee);
+            to_prepare
+        };
+        let raw_transaction = self.build(cells).prepare(self.dao.rpc_client())?;
+        self.sign(raw_transaction)
+    }
+
+    pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
+        self.dao.check_db_ready()?;
+        let lock_hash = self.transact_args.lock_hash();
+        let cells = {
+            let prepare_cells = self.dao.query_prepare_cells(lock_hash)?;
+            take_by_out_points(prepare_cells, &out_points)?
+        };
+        let raw_transaction = self.build(cells).withdraw(self.dao.rpc_client())?;
+        self.sign(raw_transaction)
+    }
+
     fn collect_sighash_cells(&mut self, target_capacity: u64) -> Result<Vec<LiveCellInfo>, String> {
-        let from_address = self.transact_args().address.clone();
+        let from_address = self.transact_args.address.clone();
         let mut enough = false;
         let mut take_capacity = 0;
-        let max_mature_number = get_max_mature_number(self.rpc_client())?;
+        let max_mature_number = get_max_mature_number(self.dao.rpc_client())?;
         let terminator = |_, cell: &LiveCellInfo| {
             if !(cell.type_hashes.is_none() && cell.data_bytes == 0)
                 && is_mature(cell, max_mature_number)
@@ -162,7 +208,7 @@ impl<'a> DAOSubCommand<'a> {
         };
 
         let cells: Vec<LiveCellInfo> = {
-            self.with_db(|db, _| {
+            self.dao.with_db(|db, _| {
                 db.get_live_cells_by_lock(
                     Script::from(from_address.payload()).calc_script_hash(),
                     None,
@@ -181,8 +227,8 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     fn build(&self, cells: Vec<LiveCellInfo>) -> DAOBuilder {
-        let tx_fee = self.transact_args().tx_fee;
-        DAOBuilder::new(self.genesis_info.clone(), tx_fee, cells)
+        let tx_fee = self.transact_args.tx_fee;
+        DAOBuilder::new(self.dao.genesis_info.clone(), tx_fee, cells)
     }
 
     fn sign(&mut self, transaction: TransactionView) -> Result<TransactionView, String> {
@@ -196,8 +242,8 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     fn install_sighash_lock(&self, transaction: TransactionView) -> TransactionView {
-        let sighash_args = self.transact_args().sighash_args();
-        let genesis_info = &self.genesis_info;
+        let sighash_args = self.transact_args.sighash_args();
+        let genesis_info = &self.dao.genesis_info;
         let sighash_dep = genesis_info.sighash_dep();
         let sighash_type_hash = genesis_info.sighash_type_hash();
         let lock_script = Script::new_builder()
@@ -262,14 +308,14 @@ impl<'a> DAOSubCommand<'a> {
             H256::from(message)
         };
         let signature = {
-            let account = self.transact_args().sighash_args();
+            let account = self.transact_args.sighash_args();
             let mut signer: BoxedSignerFn = {
-                if let Some(ref privkey) = self.transact_args().privkey {
+                if let Some(ref privkey) = self.transact_args.privkey {
                     Box::new(get_privkey_signer(privkey.clone()))
                 } else {
                     let password = read_password(false, None)?;
                     Box::new(get_keystore_signer(
-                        self.key_store.clone(),
+                        self.dao.key_store.clone(),
                         account.clone(),
                         password,
                     ))
@@ -289,41 +335,6 @@ impl<'a> DAOSubCommand<'a> {
             .as_advanced_builder()
             .set_witnesses(witnesses.into_iter().map(|w| w.pack()).collect::<Vec<_>>())
             .build())
-    }
-
-    fn check_db_ready(&mut self) -> Result<(), String> {
-        self.with_db(|_, _| ())
-    }
-
-    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
-    where
-        F: FnOnce(IndexDatabase, &mut HttpRpcClient) -> T,
-    {
-        let network_type = get_network_type(self.rpc_client)?;
-        let genesis_info = self.genesis_info.clone();
-        let genesis_hash: H256 = genesis_info.header().hash().unpack();
-        with_index_db(&self.index_dir.clone(), genesis_hash, |backend, cf| {
-            let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
-            Ok(func(db, self.rpc_client()))
-        })
-        .map_err(|_err| {
-            format!(
-                "Index database may not ready, sync process: {}",
-                self.index_controller.state().read().to_string()
-            )
-        })
-    }
-
-    fn transact_args(&self) -> &TransactArgs {
-        self.transact_args.as_ref().expect("exist")
-    }
-
-    fn dao_type_hash(&self) -> &Byte32 {
-        self.genesis_info.dao_type_hash()
-    }
-
-    pub(crate) fn rpc_client(&mut self) -> &mut HttpRpcClient {
-        &mut self.rpc_client
     }
 }
 

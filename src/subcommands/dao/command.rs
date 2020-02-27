@@ -30,27 +30,30 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
         let network_type = get_network_type(&mut self.rpc_client)?;
         match matches.subcommand() {
             ("deposit", Some(m)) => {
-                self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-                let transaction = self.deposit(capacity)?;
+                let transaction = self
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .deposit(capacity)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
             ("prepare", Some(m)) => {
-                self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
                 let out_points = OutPointParser.from_matches_vec(m, "out-point")?;
                 if out_points.len() != out_points.iter().collect::<HashSet<_>>().len() {
                     return Err("Duplicated out-points".to_string());
                 }
-                let transaction = self.prepare(out_points)?;
+                let transaction = self
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .prepare(out_points)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
             ("withdraw", Some(m)) => {
-                self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
                 let out_points = OutPointParser.from_matches_vec(m, "out-point")?;
                 if out_points.len() != out_points.iter().collect::<HashSet<_>>().len() {
                     return Err("Duplicated out-points".to_string());
                 }
-                let transaction = self.withdraw(out_points)?;
+                let transaction = self
+                    .with_transact_args(TransactArgs::from_matches(m, network_type)?)
+                    .withdraw(out_points)?;
                 send_transaction(self.rpc_client(), transaction, format, color, debug)
             }
             ("query-deposited-cells", Some(m)) => {
