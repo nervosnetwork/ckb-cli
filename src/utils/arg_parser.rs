@@ -18,18 +18,31 @@ use url::Url;
 use super::arg::account_id_error;
 use crate::subcommands::account::AccountId;
 
-pub trait ArgParser<T> {
-    fn parse(&self, input: &str) -> Result<T, String>;
+pub struct MissingFieldError {
+    name: String,
+}
 
-    fn validate(&self, input: String) -> Result<(), String> {
-        self.parse(&input)
-            .map(|_| ())
-            .map_err(|err| err.to_string())
+fn combine_error(error: EitherValue<String, MissingFieldError>) -> String {
+    match error {
+        EitherValue::A(e) => e,
+        EitherValue::B(MissingFieldError { name }) => format!("<{}> is required", name),
+    }
+}
+
+pub trait ArgParser<T> {
+    type Error;
+
+    fn parse(&self, input: &str) -> Result<T, Self::Error>;
+
+    fn validate(&self, input: String) -> Result<(), Self::Error> {
+        self.parse(&input).map(|_| ())
     }
 
-    fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, String> {
-        self.from_matches_opt(matches, name, true)
-            .map(Option::unwrap)
+    fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, Self::Error>
+    where
+        Self: ArgParser<T, Error = String>,
+    {
+        self.from_matches_raw(matches, name).map_err(combine_error)
     }
 
     fn from_matches_opt<R: From<T>>(
@@ -37,21 +50,47 @@ pub trait ArgParser<T> {
         matches: &ArgMatches,
         name: &str,
         required: bool,
-    ) -> Result<Option<R>, String> {
+    ) -> Result<Option<R>, Self::Error>
+    where
+        Self: ArgParser<T, Error = String>,
+    {
+        self.from_matches_opt_raw(matches, name, required)
+            .map_err(combine_error)
+    }
+
+    fn from_matches_raw<R: From<T>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<R, EitherValue<Self::Error, MissingFieldError>> {
+        self.from_matches_opt_raw(matches, name, true)
+            .map(Option::unwrap)
+    }
+
+    // Need raw versions to combine error types
+    fn from_matches_opt_raw<R: From<T>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+        required: bool,
+    ) -> Result<Option<R>, EitherValue<Self::Error, MissingFieldError>> {
         if required && !matches.is_present(name) {
-            return Err(format!("<{}> is required", name));
+            return Err(EitherValue::B(MissingFieldError {
+                name: name.to_string(),
+            }));
         }
         matches
             .value_of(name)
             .map(|input| self.parse(input).map(Into::into))
             .transpose()
+            .map_err(EitherValue::A)
     }
 
     fn from_matches_vec<R: From<T>>(
         &self,
         matches: &ArgMatches,
         name: &str,
-    ) -> Result<Vec<R>, String> {
+    ) -> Result<Vec<R>, Self::Error> {
         matches
             .values_of_lossy(name)
             .unwrap_or_else(Vec::new)
@@ -64,18 +103,19 @@ pub trait ArgParser<T> {
 #[allow(dead_code)]
 pub struct NullParser;
 impl ArgParser<String> for NullParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<String, String> {
         Ok(input.to_owned())
     }
 }
 
-#[allow(dead_code)]
 pub enum EitherValue<TA, TB> {
     A(TA),
     B(TB),
 }
 
-#[allow(dead_code)]
+#[derive(Default)]
 pub struct EitherParser<TA, TB, A, B> {
     a: A,
     b: B,
@@ -104,11 +144,83 @@ where
     A: ArgParser<TA>,
     B: ArgParser<TB>,
 {
-    fn parse(&self, input: &str) -> Result<EitherValue<TA, TB>, String> {
-        self.a
-            .parse(input)
-            .map(EitherValue::A)
-            .or_else(|_| self.b.parse(input).map(EitherValue::B))
+    type Error = (A::Error, B::Error);
+
+    fn parse(&self, input: &str) -> Result<EitherValue<TA, TB>, Self::Error> {
+        Ok(loop {
+            return Err((
+                match self.a.parse(input) {
+                    Ok(v) => break EitherValue::A(v),
+                    Err(e) => e,
+                },
+                match self.b.parse(input) {
+                    Ok(v) => break EitherValue::B(v),
+                    Err(e) => e,
+                },
+            ));
+        })
+    }
+    fn from_matches_raw<R: From<EitherValue<TA, TB>>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<R, EitherValue<Self::Error, MissingFieldError>> {
+        return Ok(From::from(loop {
+            return Err(EitherValue::A((
+                match self.a.from_matches_raw(matches, name) {
+                    Ok(v) => break EitherValue::A(v),
+                    Err(EitherValue::A(e)) => e,
+                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                },
+                match self.b.from_matches_raw(matches, name) {
+                    Ok(v) => break EitherValue::B(v),
+                    Err(EitherValue::A(e)) => e,
+                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                },
+            )));
+        }));
+    }
+    fn from_matches_opt_raw<R: From<EitherValue<TA, TB>>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+        required: bool,
+    ) -> Result<Option<R>, EitherValue<Self::Error, MissingFieldError>> {
+        return Ok(loop {
+            return Err(EitherValue::A((
+                match self.a.from_matches_opt_raw(matches, name, required) {
+                    Ok(v) => break v.map(EitherValue::A),
+                    Err(EitherValue::A(e)) => e,
+                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                },
+                match self.b.from_matches_opt_raw(matches, name, required) {
+                    Ok(v) => break v.map(EitherValue::B),
+                    Err(EitherValue::A(e)) => e,
+                    Err(EitherValue::B(e)) => return Err(EitherValue::B(e)),
+                },
+            )));
+        }
+        .map(From::from));
+    }
+
+    fn from_matches_vec<R: From<EitherValue<TA, TB>>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<Vec<R>, Self::Error> {
+        let x: Box<dyn Iterator<Item = EitherValue<TA, TB>>> = loop {
+            return Err((
+                match self.a.from_matches_vec(matches, name) {
+                    Ok(v) => break Box::new(v.into_iter().map(EitherValue::A)),
+                    Err(e) => e,
+                },
+                match self.b.from_matches_vec(matches, name) {
+                    Ok(v) => break Box::new(v.into_iter().map(EitherValue::B)),
+                    Err(e) => e,
+                },
+            ));
+        };
+        Ok(x.map(From::from).collect())
     }
 }
 
@@ -128,6 +240,8 @@ where
     T: FromStr,
     <T as FromStr>::Err: Display,
 {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<T, String> {
         T::from_str(input).map_err(|err| err.to_string())
     }
@@ -136,6 +250,8 @@ where
 pub struct UrlParser;
 
 impl ArgParser<Url> for UrlParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<Url, String> {
         Url::parse(input).map_err(|err| err.to_string())
     }
@@ -144,6 +260,8 @@ impl ArgParser<Url> for UrlParser {
 pub struct HexParser;
 
 impl ArgParser<Vec<u8>> for HexParser {
+    type Error = String;
+
     fn parse(&self, mut input: &str) -> Result<Vec<u8>, String> {
         if input.starts_with("0x") || input.starts_with("0X") {
             input = &input[2..];
@@ -164,6 +282,8 @@ pub struct FixedHashParser<T> {
 }
 
 impl ArgParser<H256> for FixedHashParser<H256> {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<H256, String> {
         let bytes = HexParser.parse(input)?;
         H256::from_slice(&bytes).map_err(|err| err.to_string())
@@ -171,6 +291,8 @@ impl ArgParser<H256> for FixedHashParser<H256> {
 }
 
 impl ArgParser<H160> for FixedHashParser<H160> {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<H160, String> {
         let bytes = HexParser.parse(input)?;
         H160::from_slice(&bytes).map_err(|err| err.to_string())
@@ -183,6 +305,8 @@ pub struct PathParser {
 }
 
 impl ArgParser<PathBuf> for PathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
         let path = PathBuf::from(input);
         if self.should_exists && !path.exists() {
@@ -207,6 +331,8 @@ impl FilePathParser {
 }
 
 impl ArgParser<PathBuf> for FilePathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
         let path = self.path_parser.parse(input)?;
         if path.exists() && !path.is_file() {
@@ -229,6 +355,8 @@ pub struct DirPathParser {
 // }
 
 impl ArgParser<PathBuf> for DirPathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
         let path = self.path_parser.parse(input)?;
         if path.exists() && !path.is_dir() {
@@ -260,6 +388,8 @@ impl std::ops::Deref for PrivkeyWrapper {
 pub struct PrivkeyPathParser;
 
 impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<PrivkeyWrapper, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
         let mut content = String::new();
@@ -281,6 +411,8 @@ impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
 pub struct ExtendedPrivkeyPathParser;
 
 impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
         let mut content = String::new();
@@ -308,6 +440,8 @@ impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
 pub struct PubkeyHexParser;
 
 impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<secp256k1::PublicKey, String> {
         let data = HexParser.parse(input)?;
         secp256k1::PublicKey::from_slice(&data)
@@ -398,6 +532,8 @@ impl Default for AddressParser {
 }
 
 impl ArgParser<Address> for AddressParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<Address, String> {
         fn check_code_hash(
             payload: &AddressPayload,
@@ -495,6 +631,8 @@ impl ArgParser<Address> for AddressParser {
 pub struct CapacityParser;
 
 impl ArgParser<HumanCapacity> for CapacityParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<HumanCapacity, String> {
         HumanCapacity::from_str(input)
     }
@@ -503,6 +641,8 @@ impl ArgParser<HumanCapacity> for CapacityParser {
 pub struct OutPointParser;
 
 impl ArgParser<OutPoint> for OutPointParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<OutPoint, String> {
         let parts = input.split('-').collect::<Vec<_>>();
         if parts.len() != 2 {
@@ -520,6 +660,8 @@ impl ArgParser<OutPoint> for OutPointParser {
 pub struct DurationParser;
 
 impl ArgParser<Duration> for DurationParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<Duration, String> {
         if input.is_empty() {
             return Err("Missing input".to_owned());
@@ -546,6 +688,8 @@ impl ArgParser<Duration> for DurationParser {
 pub struct DerivationPathParser;
 
 impl ArgParser<DerivationPath> for DerivationPathParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<DerivationPath, String> {
         FromStrParser::<DerivationPath>::new().parse(input)
     }
@@ -562,61 +706,25 @@ impl ArgParser<DerivationPath> for DerivationPathParser {
     }
 }
 
-pub struct AccountIdParser;
+#[derive(Default)]
+pub struct AccountIdParser(EitherParser<H160, H256, FixedHashParser<H160>, FixedHashParser<H256>>);
+
+impl From<EitherValue<H160, H256>> for AccountId {
+    fn from(val: EitherValue<H160, H256>) -> Self {
+        match val {
+            EitherValue::A(x) => AccountId::SoftwareMasterKey(x),
+            EitherValue::B(x) => AccountId::LedgerId(ckb_ledger::LedgerId(x)),
+        }
+    }
+}
 
 impl ArgParser<AccountId> for AccountIdParser {
+    type Error = String;
+
     fn parse(&self, input: &str) -> Result<AccountId, String> {
-        Ok(loop {
-            let e_0 = match FixedHashParser::<H160>::default().parse(input) {
-                Ok(v) => break AccountId::SoftwareMasterKey(v),
-                Err(e) => e,
-            };
-            let e_1 = match FixedHashParser::<H256>::default().parse(input) {
-                Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
-                Err(e) => e,
-            };
-            return Err(account_id_error(e_0, e_1));
-        })
-    }
-    fn from_matches<R: From<AccountId>>(
-        &self,
-        matches: &ArgMatches,
-        name: &str,
-    ) -> Result<R, String> {
-        return Ok(From::from(loop {
-            let e_0 = match FixedHashParser::<H160>::default().from_matches(matches, name) {
-                Ok(v) => break AccountId::SoftwareMasterKey(v),
-                Err(e) => e,
-            };
-            let e_1 = match FixedHashParser::<H256>::default().from_matches(matches, name) {
-                Ok(v) => break AccountId::LedgerId(ckb_ledger::LedgerId(v)),
-                Err(e) => e,
-            };
-            return Err(account_id_error(e_0, e_1));
-        }));
-    }
-    fn from_matches_opt<R: From<AccountId>>(
-        &self,
-        matches: &ArgMatches,
-        name: &str,
-        required: bool,
-    ) -> Result<Option<R>, String> {
-        return Ok(loop {
-            let e_0 = match FixedHashParser::<H160>::default()
-                .from_matches_opt(matches, name, required)
-            {
-                Ok(v) => break v.map(AccountId::SoftwareMasterKey),
-                Err(e) => e,
-            };
-            let e_1 = match FixedHashParser::<H256>::default()
-                .from_matches_opt(matches, name, required)
-            {
-                Ok(v) => break v.map(|v| AccountId::LedgerId(ckb_ledger::LedgerId(v))),
-                Err(e) => e,
-            };
-            return Err(account_id_error(e_0, e_1));
-        }
-        .map(From::from));
+        self.0.parse(input)
+            .map(From::from)
+            .map_err(account_id_error)
     }
 }
 

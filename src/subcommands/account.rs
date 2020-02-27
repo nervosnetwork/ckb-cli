@@ -369,7 +369,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 Ok(resp.render(format, color))
             }
             ("extended-address", Some(m)) => {
-                let account_id = AccountIdParser.from_matches(m, "account-id")?;
+                let account_id = AccountIdParser::default().from_matches(m, "account-id")?;
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
                 let extended_pubkey = match account_id {
                     AccountId::SoftwareMasterKey(lock_arg) => {
