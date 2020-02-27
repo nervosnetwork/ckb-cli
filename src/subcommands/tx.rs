@@ -7,9 +7,10 @@ use std::str::FromStr;
 
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
+use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::KeyStore,
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
 };
@@ -24,15 +25,15 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::CliSubCommand;
+use super::{account::AccountId, CliSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-        HexParser, PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
+        FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{
-        check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
+        check_capacity, get_genesis_info, get_key_signer_raw, get_keystore_signer, get_live_cell,
         get_live_cell_with_cache, get_network_type, get_privkey_signer, get_to_data, read_password,
     },
     printer::{OutputFormat, Printable},
@@ -41,6 +42,7 @@ use crate::utils::{
 pub struct TxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
+    ledger_key_store: &'a mut LedgerKeyStore,
     genesis_info: Option<GenesisInfo>,
 }
 
@@ -48,11 +50,13 @@ impl<'a> TxSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
         key_store: &'a mut KeyStore,
+        ledger_key_store: &'a mut LedgerKeyStore,
         genesis_info: Option<GenesisInfo>,
     ) -> TxSubCommand<'a> {
         TxSubCommand {
             rpc_client,
             key_store,
+            ledger_key_store,
             genesis_info,
         }
     }
@@ -447,28 +451,40 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account", false)?;
+                let account_opt: Option<AccountId> =
+                    FromAccountParser::default().from_matches_opt(m, "from-account", false)?;
+
+                // destructure-borrow to allow separate access
+                let Self {
+                    ref mut ledger_key_store,
+                    ref mut rpc_client,
+                    ..
+                } = self;
 
                 let signer: BoxedSignerFn = if let Some(privkey) = privkey_opt {
                     Box::new(get_privkey_signer(privkey))
                 } else {
-                    let password = read_password(false, None)?;
-                    let account = account_opt.unwrap();
-                    let key_store = self.key_store.clone();
-                    Box::new(get_keystore_signer(key_store, account, password))
+                    match account_opt.unwrap() {
+                        AccountId::SoftwareMasterKey(hash160) => {
+                            let password = read_password(false, None)?;
+                            let key_store = self.key_store.clone();
+                            Box::new(get_keystore_signer(key_store, hash160, password))
+                        }
+                        AccountId::LedgerId(ref ledger_id) => {
+                            let key = ledger_key_store
+                                .borrow_account(&ledger_id)
+                                .map_err(|e| e.to_string())?;
+                            let path = &[]; // TODO
+                            Box::new(get_key_signer_raw(key, path))
+                        }
+                    }
                 };
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
                 let get_live_cell = |out_point: OutPoint, with_data: bool| {
-                    get_live_cell_with_cache(
-                        &mut live_cell_cache,
-                        self.rpc_client,
-                        out_point,
-                        with_data,
-                    )
-                    .map(|(output, _)| output)
+                    get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
+                        .map(|(output, _)| output)
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {

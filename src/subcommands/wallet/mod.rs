@@ -26,7 +26,7 @@ use crate::utils::{
     other::{
         check_capacity, get_address, get_key_signer_raw, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        read_password,
+        privkey_or_from_account, read_password,
     },
     printer::{OutputFormat, Printable},
 };
@@ -37,8 +37,8 @@ use ckb_sdk::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::{AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, DerivationPath, KeyStore},
-    Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
+    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
+    NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
 };
 
 // Max derived change address to search
@@ -155,15 +155,7 @@ impl<'a> WalletSubCommand<'a> {
         color: bool,
         debug: bool,
     ) -> Result<String, String> {
-        let from_account: EitherValue<PrivkeyWrapper, AccountId> = {
-            let from_privkey_opt = PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-            let from_account_opt = FromAccountParser.from_matches_opt(m, "from-account", false)?;
-            match (from_privkey_opt, from_account_opt) {
-                (Some(pk), None) => EitherValue::A(pk),
-                (None, Some(aid)) => EitherValue::B(aid),
-                _ => unreachable!("arg parser should prevent both or neithers of --privkey-path and --from--account specified")
-            }
-        };
+        let from_account = privkey_or_from_account(m)?;
         let from_address_payload = match from_account {
             EitherValue::A(ref from_privkey) => {
                 let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);

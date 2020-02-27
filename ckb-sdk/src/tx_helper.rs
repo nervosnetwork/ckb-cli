@@ -348,7 +348,7 @@ pub trait SignerFnTrait: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>
 impl<T> SignerFnTrait for T where T: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>
 {}
 
-pub type BoxedSignerFn = Box<dyn SignerFnTrait>;
+pub type BoxedSignerFn<'a> = Box<dyn SignerFnTrait + 'a>;
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {

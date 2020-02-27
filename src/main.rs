@@ -136,14 +136,12 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
-        ("tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            TxSubCommand::new(&mut rpc_client, &mut key_store, None).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
-        }),
+        ("tx", Some(sub_matches)) => {
+            get_all_key_stores(&ckb_cli_dir).and_then(|(mut key_store, mut ledger_key_store)| {
+                TxSubCommand::new(&mut rpc_client, &mut key_store, &mut ledger_key_store, None)
+                    .process(&sub_matches, output_format, color, debug)
+            })
+        }
         ("util", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             UtilSubCommand::new(&mut rpc_client, &mut key_store).process(
                 &sub_matches,
@@ -170,16 +168,19 @@ fn main() -> Result<(), io::Error> {
         }
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
-                get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-                    DAOSubCommand::new(
-                        &mut rpc_client,
-                        &mut key_store,
-                        genesis_info,
-                        index_dir.clone(),
-                        index_controller.clone(),
-                    )
-                    .process(&sub_matches, output_format, color, debug)
-                })
+                get_all_key_stores(&ckb_cli_dir).and_then(
+                    |(mut key_store, mut ledger_key_store)| {
+                        DAOSubCommand::new(
+                            &mut rpc_client,
+                            &mut key_store,
+                            &mut ledger_key_store,
+                            genesis_info,
+                            index_dir.clone(),
+                            index_controller.clone(),
+                        )
+                        .process(&sub_matches, output_format, color, debug)
+                    },
+                )
             })
         }
         _ => {

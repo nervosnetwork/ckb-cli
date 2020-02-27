@@ -9,6 +9,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::JsonBytes;
+use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
     wallet::KeyStore,
@@ -33,6 +34,7 @@ mod util;
 pub struct DAOSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
+    ledger_key_store: &'a mut LedgerKeyStore,
     genesis_info: GenesisInfo,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -43,6 +45,7 @@ impl<'a> DAOSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
         key_store: &'a mut KeyStore,
+        ledger_key_store: &'a mut LedgerKeyStore,
         genesis_info: GenesisInfo,
         index_dir: PathBuf,
         index_controller: IndexController,
@@ -50,6 +53,7 @@ impl<'a> DAOSubCommand<'a> {
         Self {
             rpc_client,
             key_store,
+            ledger_key_store,
             genesis_info,
             index_dir,
             index_controller,
