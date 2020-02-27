@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use self::interface::{AbstractKeyStore, AbstractMasterPrivKey};
+use self::interface::{AbstractKeyStore, AbstractMasterPrivKey, DerivedKeySet, KeyChain};
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
@@ -515,34 +515,6 @@ impl TimedKey {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-#[repr(u8)]
-pub enum KeyChain {
-    External = 0,
-    Change = 1,
-}
-
-pub struct DerivedKeySet {
-    pub external: Vec<(DerivationPath, H160)>,
-    pub change: Vec<(DerivationPath, H160)>,
-}
-
-impl DerivedKeySet {
-    pub fn get_path(&self, hash160: &H160) -> Option<(KeyChain, DerivationPath)> {
-        for (path, pubkey_hash) in &self.external {
-            if pubkey_hash == hash160 {
-                return Some((KeyChain::External, path.clone()));
-            }
-        }
-        for (path, pubkey_hash) in &self.change {
-            if pubkey_hash == hash160 {
-                return Some((KeyChain::Change, path.clone()));
-            }
-        }
-        None
-    }
-}
-
 pub struct Key {
     // randomly generate uuid v4
     id: Uuid,
@@ -555,7 +527,7 @@ pub struct Key {
 impl Key {
     pub fn new(master_privkey: MasterPrivKey) -> Key {
         let id = Uuid::new_v4();
-        let hash160 = master_privkey.hash160(&[]).void_unwrap();
+        let hash160 = master_privkey.derived_pubkey_hash(&[]).void_unwrap();
         Key {
             id,
             hash160,
@@ -565,46 +537,6 @@ impl Key {
 
     pub fn hash160(&self) -> &H160 {
         &self.hash160
-    }
-
-    pub fn derived_key_set(
-        &self,
-        external_max_len: u32,
-        change_last: &H160,
-        change_max_len: u32,
-    ) -> Result<DerivedKeySet, Error> {
-        let mut external_key_set = Vec::new();
-        for i in 0..external_max_len {
-            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
-            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path);
-            external_key_set.push((path, pubkey_hash.clone()));
-        }
-
-        let mut change_key_set = Vec::new();
-        for i in 0..change_max_len {
-            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
-            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path);
-            change_key_set.push((path, pubkey_hash.clone()));
-            if change_last == &pubkey_hash {
-                return Ok(DerivedKeySet {
-                    external: external_key_set,
-                    change: change_key_set,
-                });
-            }
-        }
-        Err(Error::SearchDerivedAddrFailed)
-    }
-
-    pub fn derived_pubkey_hash<P>(&self, path: &P) -> H160
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let extended_pubkey = self.master_privkey.extended_pubkey(path).void_unwrap();
-        let pubkey = extended_pubkey.public_key;
-        H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
-            .expect("Generate hash(H160) from pubkey failed")
     }
 
     pub fn derived_key_set_by_index(
@@ -692,7 +624,7 @@ impl Key {
         key_bytes[..].copy_from_slice(&key_vec[..]);
         let master_privkey = MasterPrivKey::from_bytes(key_bytes)?;
 
-        let hash160 = master_privkey.hash160(&[]).void_unwrap();
+        let hash160 = master_privkey.derived_pubkey_hash(&[]).void_unwrap();
         Ok(Key {
             id,
             hash160,

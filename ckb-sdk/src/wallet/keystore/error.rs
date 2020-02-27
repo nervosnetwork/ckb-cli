@@ -2,6 +2,9 @@ use std::io;
 
 use ckb_types::H160;
 use failure::Fail;
+use void::Void;
+
+use super::interface::SearchDerivedAddrFailed;
 
 #[derive(Debug, Fail, Eq, PartialEq)]
 pub enum Error {
@@ -38,14 +41,20 @@ pub enum Error {
     #[fail(display = "Invalid secp256k1 secret key")]
     InvalidSecpSecret,
 
-    #[fail(display = "Search derived address failed")]
-    SearchDerivedAddrFailed,
+    #[fail(display = "{}", _0)]
+    SearchDerivedAddrFailed(SearchDerivedAddrFailed),
 
     #[fail(display = "IO error: {}", _0)]
     Io(String),
 
     #[fail(display = "Other error: {}", _0)]
     Other(String),
+}
+
+impl From<Void> for Error {
+    fn from(err: Void) -> Error {
+        match err {}
+    }
 }
 
 impl From<String> for Error {
@@ -63,5 +72,11 @@ impl From<&str> for Error {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
         Error::Io(err.to_string())
+    }
+}
+
+impl From<SearchDerivedAddrFailed> for Error {
+    fn from(err: SearchDerivedAddrFailed) -> Error {
+        Error::SearchDerivedAddrFailed(err)
     }
 }
