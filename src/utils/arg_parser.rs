@@ -751,6 +751,7 @@ impl ArgParser for AccountIdParser {
     }
 }
 
+#[derive(Default)]
 pub struct FromAccountParser;
 
 impl From<EitherValue<EitherValue<H160, H256>, EitherValue<Address, Address>>> for AccountId {

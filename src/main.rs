@@ -25,7 +25,7 @@ use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
     index::IndexThreadState,
-    other::{check_alerts, get_key_store, get_ledger_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_all_key_stores, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -118,8 +118,8 @@ fn main() -> Result<(), io::Error> {
         .start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
             .process(&sub_matches, output_format, color, debug),
-        ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            get_ledger_key_store(&ckb_cli_dir).and_then(|mut ledger_key_store| {
+        ("account", Some(sub_matches)) => {
+            get_all_key_stores(&ckb_cli_dir).and_then(|(mut key_store, mut ledger_key_store)| {
                 AccountSubCommand::new(&mut key_store, &mut ledger_key_store).process(
                     &sub_matches,
                     output_format,
@@ -127,7 +127,7 @@ fn main() -> Result<(), io::Error> {
                     debug,
                 )
             })
-        }),
+        }
         ("mock-tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             MockTxSubCommand::new(&mut rpc_client, &mut key_store, None).process(
                 &sub_matches,
@@ -155,16 +155,19 @@ fn main() -> Result<(), io::Error> {
         ("molecule", Some(sub_matches)) => {
             MoleculeSubCommand::new().process(&sub_matches, output_format, color, debug)
         }
-        ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            WalletSubCommand::new(
-                &mut rpc_client,
-                &mut key_store,
-                None,
-                index_dir.clone(),
-                index_controller.clone(),
-            )
-            .process(&sub_matches, output_format, color, debug)
-        }),
+        ("wallet", Some(sub_matches)) => {
+            get_all_key_stores(&ckb_cli_dir).and_then(|(mut key_store, mut ledger_key_store)| {
+                WalletSubCommand::new(
+                    &mut rpc_client,
+                    &mut key_store,
+                    &mut ledger_key_store,
+                    None,
+                    index_dir.clone(),
+                    index_controller.clone(),
+                )
+                .process(&sub_matches, output_format, color, debug)
+            })
+        }
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 get_key_store(&ckb_cli_dir).and_then(|mut key_store| {

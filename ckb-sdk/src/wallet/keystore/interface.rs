@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use either::Either;
 use failure::Fail;
 use secp256k1::recovery::RecoverableSignature;
 use std::path::PathBuf;
@@ -74,21 +75,17 @@ pub trait AbstractMasterPrivKey: Sized {
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>;
 
-    fn derived_key_set<E>(
+    fn derived_key_set(
         &self,
         external_max_len: u32,
         change_last: &H160,
         change_max_len: u32,
-    ) -> Result<DerivedKeySet, E>
-    where
-        E: From<Self::Err>,
-        E: From<SearchDerivedAddrFailed>,
-    {
+    ) -> Result<DerivedKeySet, Either<Self::Err, SearchDerivedAddrFailed>> {
         let mut external_key_set = Vec::new();
         for i in 0..external_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path)?;
+            let pubkey_hash = self.derived_pubkey_hash(&path).map_err(Either::Left)?;
             external_key_set.push((path, pubkey_hash.clone()));
         }
 
@@ -96,7 +93,7 @@ pub trait AbstractMasterPrivKey: Sized {
         for i in 0..change_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path)?;
+            let pubkey_hash = self.derived_pubkey_hash(&path).map_err(Either::Left)?;
             change_key_set.push((path, pubkey_hash.clone()));
             if change_last == &pubkey_hash {
                 return Ok(DerivedKeySet {
@@ -105,7 +102,7 @@ pub trait AbstractMasterPrivKey: Sized {
                 });
             }
         }
-        Err(From::from(SearchDerivedAddrFailed))
+        Err(Either::Right(SearchDerivedAddrFailed))
     }
 }
 

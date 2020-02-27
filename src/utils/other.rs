@@ -12,7 +12,7 @@ use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
-    wallet::{AbstractKeyStore, ChildNumber, KeyStore, ScryptType},
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, KeyStore, ScryptType},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFnTrait,
     SECP256K1,
 };
@@ -62,6 +62,13 @@ pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
 pub fn get_ledger_key_store(ckb_cli_dir: &PathBuf) -> Result<LedgerKeyStore, String> {
     let keystore_dir = get_some_dir("ledger-keystore", ckb_cli_dir)?;
     LedgerKeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
+}
+
+pub fn get_all_key_stores(ckb_cli_dir: &PathBuf) -> Result<(KeyStore, LedgerKeyStore), String> {
+    Ok((
+        get_key_store(ckb_cli_dir)?,
+        get_ledger_key_store(ckb_cli_dir)?,
+    ))
 }
 
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
@@ -313,14 +320,34 @@ pub fn get_keystore_signer_raw<'a>(
     key_store: &'a KeyStore,
     account: &'a H160,
     path: &'a [ChildNumber],
-    password: &'a String,
+    password: &'a str,
 ) -> impl SignerFnTrait + Sized + 'a {
+    move |lock_args: &HashSet<H160>, message: &H256| {
+        if message == &h256!("0x0") {
+            Ok(Some([0u8; 65]))
+        } else {
+            let key = key_store
+                .get_key(account, password.as_bytes())
+                .map_err(|err| err.to_string())?;
+            let res = get_key_signer_raw(&key, path)(lock_args, message);
+            res
+        }
+    }
+}
+
+pub fn get_key_signer_raw<'a, K>(
+    key: &'a K,
+    path: &'a [ChildNumber],
+) -> impl SignerFnTrait + Sized + 'a
+where
+    K: AbstractMasterPrivKey,
+    <K as AbstractMasterPrivKey>::Err: ToString,
+{
     move |_lock_args: &HashSet<H160>, message: &H256| {
         if message == &h256!("0x0") {
             Ok(Some([0u8; 65]))
         } else {
-            key_store
-                .sign_recoverable_with_password(&account, &path, message, password.as_bytes())
+            key.sign_recoverable(message, &path)
                 .map(|signature| Some(serialize_signature(&signature)))
                 .map_err(|err| err.to_string())
         }

@@ -13,12 +13,15 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use self::interface::{AbstractKeyStore, AbstractMasterPrivKey, DerivedKeySet, KeyChain};
+use self::interface::{
+    AbstractKeyStore, AbstractMasterPrivKey, DerivedKeySet, KeyChain, SearchDerivedAddrFailed,
+};
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_types::{H160, H256};
+use either::Either;
 use faster_hex::hex_decode;
 use rand::Rng;
 use secp256k1::recovery::RecoverableSignature;
@@ -116,6 +119,11 @@ impl KeyStore {
         self.files.contains_key(hash160)
     }
 
+    pub fn get_key(&self, hash160: &H160, password: &[u8]) -> Result<Key, Error> {
+        let filepath = self.get_filepath(hash160)?;
+        self.storage.get_key(hash160, &filepath, password)
+    }
+
     pub fn update(
         &mut self,
         hash160: &H160,
@@ -201,15 +209,12 @@ impl KeyStore {
         new_password: &[u8],
         scrypt_type: ScryptType,
     ) -> Result<serde_json::Value, Error> {
-        let filepath = self.get_filepath(hash160)?;
         Ok(self
-            .storage
-            .get_key(hash160, &filepath, password)?
+            .get_key(hash160, password)?
             .to_json(new_password, scrypt_type))
     }
     pub fn export_key(&self, hash160: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.get_key(hash160, password)?;
         Ok(key.master_privkey)
     }
 
@@ -251,8 +256,7 @@ impl KeyStore {
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.get_key(hash160, password)?;
         Ok(key.sign(message, path).void_unwrap())
     }
     pub fn sign_recoverable_with_password<P>(
@@ -265,10 +269,8 @@ impl KeyStore {
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
-        let filepath = self.get_filepath(hash160)?;
         Ok(self
-            .storage
-            .get_key(hash160, &filepath, password)?
+            .get_key(hash160, password)?
             .sign_recoverable(message, path)
             .void_unwrap())
     }
@@ -290,8 +292,7 @@ impl KeyStore {
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.get_key(hash160, password)?;
         let key = key.master_privkey.extended_pubkey(path).void_unwrap();
         Ok(key)
     }
@@ -302,10 +303,13 @@ impl KeyStore {
         external_max_len: u32,
         change_last: &H160,
         change_max_len: u32,
-    ) -> Result<DerivedKeySet, Error> {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+    ) -> Result<DerivedKeySet, Either<Error, SearchDerivedAddrFailed>> {
+        let key = self.get_key(hash160, password).map_err(Either::Left)?;
         key.derived_key_set(external_max_len, change_last, change_max_len)
+            .map_err(|e| match e {
+                Either::Left(e) => match e {},
+                Either::Right(e) => Either::Right(e),
+            })
     }
     pub fn derived_key_set_by_index_with_password(
         &mut self,
@@ -316,8 +320,7 @@ impl KeyStore {
         change_start: u32,
         change_length: u32,
     ) -> Result<DerivedKeySet, Error> {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.get_key(hash160, password)?;
         Ok(key.derived_key_set_by_index(
             external_start,
             external_length,

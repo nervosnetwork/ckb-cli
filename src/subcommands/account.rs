@@ -25,6 +25,7 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
 };
 
+#[derive(Debug, Clone)]
 pub enum AccountId {
     SoftwareMasterKey(H160),
     LedgerId(LedgerId),

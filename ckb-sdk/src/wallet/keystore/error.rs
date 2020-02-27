@@ -4,8 +4,6 @@ use ckb_types::H160;
 use failure::Fail;
 use void::Void;
 
-use super::interface::SearchDerivedAddrFailed;
-
 #[derive(Debug, Fail, Eq, PartialEq)]
 pub enum Error {
     #[fail(display = "Account locked: {:x}", _0)]
@@ -41,9 +39,6 @@ pub enum Error {
     #[fail(display = "Invalid secp256k1 secret key")]
     InvalidSecpSecret,
 
-    #[fail(display = "{}", _0)]
-    SearchDerivedAddrFailed(SearchDerivedAddrFailed),
-
     #[fail(display = "IO error: {}", _0)]
     Io(String),
 
@@ -72,11 +67,5 @@ impl From<&str> for Error {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
         Error::Io(err.to_string())
-    }
-}
-
-impl From<SearchDerivedAddrFailed> for Error {
-    fn from(err: SearchDerivedAddrFailed) -> Error {
-        Error::SearchDerivedAddrFailed(err)
     }
 }

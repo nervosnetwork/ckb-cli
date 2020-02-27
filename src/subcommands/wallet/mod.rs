@@ -3,6 +3,9 @@ mod index;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use either::Either;
+pub use index::start_index_thread;
+
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
@@ -12,31 +15,31 @@ use ckb_types::{
 };
 use clap::{App, ArgMatches, SubCommand};
 
-use super::CliSubCommand;
+use super::{account::AccountId, CliSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, EitherValue, FixedHashParser, FromAccountParser,
+        FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     index::IndexController,
     other::{
-        check_capacity, get_address, get_keystore_signer_raw, get_live_cell_with_cache,
+        check_capacity, get_address, get_key_signer_raw, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
         read_password,
     },
     printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
+use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{ChildNumber, DerivationPath, KeyStore},
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, DerivationPath, KeyStore},
     Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient, HumanCapacity,
     MultisigConfig, NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
 };
-pub use index::start_index_thread;
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
@@ -44,6 +47,7 @@ const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
+    ledger_key_store: &'a mut LedgerKeyStore,
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -53,6 +57,7 @@ impl<'a> WalletSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
         key_store: &'a mut KeyStore,
+        ledger_key_store: &'a mut LedgerKeyStore,
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
@@ -60,6 +65,7 @@ impl<'a> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
             key_store,
+            ledger_key_store,
             genesis_info,
             index_dir,
             index_controller,
@@ -149,41 +155,78 @@ impl<'a> WalletSubCommand<'a> {
         color: bool,
         debug: bool,
     ) -> Result<String, String> {
-        let network_type = get_network_type(self.rpc_client)?;
-
-        let from_privkey_opt: Option<PrivkeyWrapper> =
-            PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-        let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-            .from_matches_opt(m, "from-account", false)
-            .or_else(|err| {
-                let result: Result<Option<Address>, String> = AddressParser::new_sighash()
-                    .set_network(network_type)
-                    .from_matches_opt(m, "from-account", false);
-                result
-                    .map(|address_opt| {
-                        address_opt
-                            .map(|address| H160::from_slice(&address.payload().args()).unwrap())
-                    })
-                    .map_err(|_| err)
-            })?;
-        let to_capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
-
-        let (from_address_payload, password) = if let Some(from_privkey) = from_privkey_opt.as_ref()
-        {
-            let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
-            (AddressPayload::from_pubkey(&from_pubkey), String::new())
-        } else {
-            let password = read_password(false, None)?;
-            (
-                AddressPayload::from_pubkey_hash(from_account_opt.clone().unwrap()),
-                password,
-            )
+        let from_account: EitherValue<PrivkeyWrapper, AccountId> = {
+            let from_privkey_opt = PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+            let from_account_opt = FromAccountParser.from_matches_opt(m, "from-account", false)?;
+            match (from_privkey_opt, from_account_opt) {
+                (Some(pk), None) => EitherValue::A(pk),
+                (None, Some(aid)) => EitherValue::B(aid),
+                _ => unreachable!("arg parser should prevent both or neithers of --privkey-path and --from--account specified")
+            }
         };
+        let from_address_payload = match from_account {
+            EitherValue::A(ref from_privkey) => {
+                let from_pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, from_privkey);
+                AddressPayload::from_pubkey(&from_pubkey)
+            }
+            EitherValue::B(AccountId::SoftwareMasterKey(ref hash160)) => {
+                AddressPayload::from_pubkey_hash(hash160.clone())
+            }
+            EitherValue::B(AccountId::LedgerId(ref ledger_id)) => {
+                return self.transfer_middle(
+                    m,
+                    self.ledger_key_store
+                        .borrow_account(&ledger_id)
+                        .map_err(|e| e.to_string())?,
+                    // TODO
+                    from_account,
+                    unimplemented!(), // from_account
+                    format,
+                    color,
+                    debug,
+                );
+            }
+        };
+        let key_cap = {
+            let from_lock_arg = H160::from_slice(from_address_payload.args().as_ref()).unwrap();
+            let password = read_password(false, None)?;
+            self.key_store
+                .get_key(&from_lock_arg, password.as_bytes())
+                .map_err(|e| e.to_string())?
+        };
+        self.transfer_middle(
+            m,
+            &key_cap,
+            from_account,
+            from_address_payload,
+            format,
+            color,
+            debug,
+        )
+    }
+
+    pub fn transfer_middle<K>(
+        &mut self,
+        m: &ArgMatches,
+        key_cap: &K,
+        from_account: EitherValue<PrivkeyWrapper, AccountId>,
+        from_address_payload: AddressPayload,
+        format: OutputFormat,
+        color: bool,
+        debug: bool,
+    ) -> Result<String, String>
+    where
+        K: AbstractMasterPrivKey,
+        <K as AbstractMasterPrivKey>::Err: ToString,
+    {
+        let network_type = get_network_type(self.rpc_client)?;
 
         let to_address: Address = AddressParser::default()
             .set_network(network_type)
             .from_matches(m, "to-address")?;
+
+        let to_capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+        let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
 
         let from_locked_address_opt: Option<Address> = AddressParser::default()
             .set_network(network_type)
@@ -211,7 +254,8 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         // The lock hashes for search live cells
-        let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
+        let mut lock_hashes = Vec::new();
+        vec![Script::from(&from_address_payload).calc_script_hash()];
 
         let from_lock_arg = H160::from_slice(from_address_payload.args().as_ref()).unwrap();
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
@@ -225,16 +269,17 @@ impl<'a> WalletSubCommand<'a> {
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
             let receiving_address_length: u32 = FromStrParser::<u32>::default()
                 .from_matches(m, "derive-receiving-address-length")?;
-            let key_set = self
-                .key_store
-                .derived_key_set_with_password(
-                    &from_lock_arg,
-                    password.as_bytes(),
+            let key_set = key_cap
+                .derived_key_set(
                     receiving_address_length,
                     &change_last,
                     DERIVE_CHANGE_ADDRESS_MAX_LEN,
                 )
-                .map_err(|err| err.to_string())?;
+                .map_err(|e| match e {
+                    Either::Left(e) => e.to_string(),
+                    Either::Right(e) => e.to_string(),
+                })?;
+            //.map_err(|err: K::Err| err.to_string())?;
             for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                 path_map.insert(hash160.clone(), path.clone());
                 let payload = AddressPayload::from_pubkey_hash(hash160.clone());
@@ -274,34 +319,43 @@ impl<'a> WalletSubCommand<'a> {
                 None
             };
 
-        let signer: BoxedSignerFn = if let Some(from_privkey) = from_privkey_opt {
-            Box::new(get_privkey_signer(from_privkey))
-        } else {
-            Box::new(get_keystore_signer(
-                self.key_store.clone(),
-                path_map,
-                from_lock_arg,
-                password,
-            ))
-        };
-
         let to_data = get_to_data(m)?;
 
-        self.transfer_impl(
-            network_type,
-            from_address_payload,
-            change_address_payload,
-            to_address,
-            to_capacity,
-            to_data,
-            tx_fee,
-            lock_hashes,
-            signer,
-            multisig_config_opt,
-            format,
-            color,
-            debug,
-        )
+        if let EitherValue::A(from_privkey) = from_account {
+            let signer = get_privkey_signer(from_privkey);
+            self.transfer_impl(
+                network_type,
+                from_address_payload,
+                change_address_payload,
+                to_address,
+                to_capacity,
+                to_data,
+                tx_fee,
+                lock_hashes,
+                signer,
+                multisig_config_opt,
+                format,
+                color,
+                debug,
+            )
+        } else {
+            let signer = get_keystore_signer(key_cap, path_map, from_lock_arg);
+            self.transfer_impl(
+                network_type,
+                from_address_payload,
+                change_address_payload,
+                to_address,
+                to_capacity,
+                to_data,
+                tx_fee,
+                lock_hashes,
+                signer,
+                multisig_config_opt,
+                format,
+                color,
+                debug,
+            )
+        }
     }
 
     fn transfer_impl(
@@ -314,7 +368,7 @@ impl<'a> WalletSubCommand<'a> {
         to_data: Bytes,
         tx_fee: u64,
         lock_hashes: Vec<Byte32>,
-        signer: BoxedSignerFn,
+        signer: impl SignerFnTrait,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
@@ -678,12 +732,15 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     }
 }
 
-fn get_keystore_signer(
-    key_store: KeyStore,
+fn get_keystore_signer<K>(
+    key: &K,
     path_map: HashMap<H160, DerivationPath>,
     account: H160,
-    password: String,
-) -> impl SignerFnTrait + 'static {
+) -> impl SignerFnTrait + '_
+where
+    K: AbstractMasterPrivKey,
+    <K as AbstractMasterPrivKey>::Err: ToString,
+{
     move |lock_args: &HashSet<H160>, message: &H256| {
         let path: &[ChildNumber] = if lock_args.contains(&account) {
             &[]
@@ -693,6 +750,6 @@ fn get_keystore_signer(
                 Some(path) => path.as_ref(),
             }
         };
-        get_keystore_signer_raw(&key_store, &account, path, &password)(lock_args, message)
+        get_key_signer_raw::<K>(&key, path)(lock_args, message)
     }
 }

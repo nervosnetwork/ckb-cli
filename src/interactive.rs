@@ -345,6 +345,7 @@ impl InteractiveEnv {
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
                         &mut self.key_store,
+                        &mut self.ledger_key_store,
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
