@@ -392,7 +392,9 @@ pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
         || info.number <= max_mature_number
 }
 
-pub fn privkey_or_from_account(m: &ArgMatches) -> Result<EitherValue<PrivkeyWrapper, AccountId>, String> {
+pub fn privkey_or_from_account(
+    m: &ArgMatches,
+) -> Result<EitherValue<PrivkeyWrapper, AccountId>, String> {
     let from_privkey_opt = PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
     let from_account_opt = FromAccountParser.from_matches_opt(m, "from-account", false)?;
     Ok(match (from_privkey_opt, from_account_opt) {

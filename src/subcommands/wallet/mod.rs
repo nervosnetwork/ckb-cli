@@ -19,8 +19,8 @@ use super::{account::AccountId, CliSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, EitherValue, FixedHashParser, FromAccountParser,
-        FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, EitherValue, FixedHashParser, FromStrParser,
+        PrivkeyWrapper,
     },
     index::IndexController,
     other::{

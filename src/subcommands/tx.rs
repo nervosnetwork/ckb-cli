@@ -10,7 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::{AbstractKeyStore, AbstractMasterPrivKey, KeyStore},
+    wallet::{AbstractKeyStore, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
 };
