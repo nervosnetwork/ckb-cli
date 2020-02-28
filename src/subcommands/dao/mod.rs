@@ -361,7 +361,7 @@ fn get_keystore_signer(
                     ))
                 } else {
                     let mut data_bytes = [0u8; 65];
-                    data_bytes.copy_from_slice(data.as_slice());
+                    data_bytes.copy_from_slice(&data[..]);
                     Ok(Some(data_bytes))
                 }
             }

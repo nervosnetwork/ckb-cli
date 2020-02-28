@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -14,15 +15,15 @@ use ckb_sdk::{
     wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey},
     HttpRpcClient,
 };
-use ckb_types::{core::service::Request, H160, H256};
+use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
 use crossbeam_channel::{bounded, select, Sender};
 
 use super::builtin::{DefaultIndexer, DefaultKeyStore};
 use crate::utils::other::read_password;
 use plugin_protocol::{
-    CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, IndexerResponse,
-    KeyStoreRequest, KeyStoreResponse, LiveCellIndexType, PluginConfig, PluginRequest,
-    PluginResponse, PluginRole, RpcRequest, RpcResponse,
+    CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
+    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,
+    PluginResponse, PluginRole, RpcRequest,
 };
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
@@ -48,10 +49,10 @@ pub struct PluginManager {
     callbacks: HashMap<CallbackName, Vec<String>>,
 
     service_provider: ServiceProvider,
-    jsonrpc_id: Arc<AtomicU64>,
+    _jsonrpc_id: Arc<AtomicU64>,
 }
 
-pub type PluginHandler = Sender<Request<PluginRequest, PluginResponse>>;
+pub type PluginHandler = Sender<Request<(u64, PluginRequest), (u64, PluginResponse)>>;
 pub type ServiceHandler = Sender<Request<ServiceRequest, ServiceResponse>>;
 
 impl PluginManager {
@@ -109,7 +110,7 @@ impl PluginManager {
         for (plugin_name, (plugin, config)) in &plugins {
             for role in &config.roles {
                 match role {
-                    PluginRole::KeyStore(_) => {
+                    PluginRole::KeyStore { .. } => {
                         if plugin.is_active() && keystore_plugin.is_none() {
                             keystore_plugin = Some((plugin.clone(), config.clone()));
                         }
@@ -121,12 +122,12 @@ impl PluginManager {
                         }
                         indexers.push(plugin_name.clone());
                     }
-                    PluginRole::SubCommand(command_name) => {
-                        sub_commands.insert(command_name.clone(), plugin_name.clone());
+                    PluginRole::SubCommand { name } => {
+                        sub_commands.insert(name.clone(), plugin_name.clone());
                     }
-                    PluginRole::Callback(callback_name) => {
+                    PluginRole::Callback { name } => {
                         callbacks
-                            .entry(callback_name.clone())
+                            .entry(name.clone())
                             .or_default()
                             .push(plugin_name.clone());
                     }
@@ -161,7 +162,7 @@ impl PluginManager {
             sub_commands,
             callbacks,
             service_provider,
-            jsonrpc_id,
+            _jsonrpc_id: jsonrpc_id,
         })
     }
 
@@ -174,7 +175,7 @@ impl PluginManager {
                     .filter(|(plugin, _)| plugin.is_active())
                     .map(|(plugin, config)| {
                         for role in &config.roles {
-                            if let PluginRole::KeyStore(require_password) = role {
+                            if let PluginRole::KeyStore { require_password } = role {
                                 return (plugin, config, *require_password);
                             }
                         }
@@ -210,6 +211,7 @@ impl PluginManager {
     pub fn keystore_handler(&self) -> KeyStoreHandler {
         KeyStoreHandler::new(self.service_provider.handler().clone())
     }
+    #[allow(unused)]
     pub fn indexer_handler(&self) -> IndexerHandler {
         IndexerHandler::new(self.service_provider.handler().clone())
     }
@@ -315,19 +317,18 @@ impl PluginManager {
 
         for role in &config.roles {
             match role {
-                PluginRole::KeyStore(_) => {
+                PluginRole::KeyStore { .. } => {
                     self.keystores.push(config.name.clone());
                 }
                 PluginRole::Indexer => {
                     self.indexers.push(config.name.clone());
                 }
-                PluginRole::SubCommand(command_name) => {
-                    self.sub_commands
-                        .insert(command_name.clone(), config.name.clone());
+                PluginRole::SubCommand { name } => {
+                    self.sub_commands.insert(name.clone(), config.name.clone());
                 }
-                PluginRole::Callback(callback_name) => {
+                PluginRole::Callback { name } => {
                     self.callbacks
-                        .entry(callback_name.clone())
+                        .entry(name.clone())
                         .or_default()
                         .push(config.name.clone());
                 }
@@ -344,7 +345,7 @@ impl PluginManager {
             fs::remove_file(plugin.path()).map_err(|err| err.to_string())?;
             for role in &config.roles {
                 match role {
-                    PluginRole::KeyStore(_) => {
+                    PluginRole::KeyStore { .. } => {
                         self.keystores = self
                             .keystores
                             .split_off(0)
@@ -360,10 +361,12 @@ impl PluginManager {
                             .filter(|plugin_name| plugin_name != name)
                             .collect::<Vec<_>>();
                     }
-                    PluginRole::SubCommand(command_name) => {
-                        self.sub_commands.remove(command_name);
+                    PluginRole::SubCommand { name } => {
+                        self.sub_commands.remove(name);
                     }
-                    PluginRole::Callback(callback_name) => {
+                    PluginRole::Callback {
+                        name: callback_name,
+                    } => {
                         if let Some(names) = self.callbacks.get_mut(callback_name) {
                             *names = names
                                 .split_off(0)
@@ -379,6 +382,7 @@ impl PluginManager {
     }
 
     /// Handle sub-command and callback call
+    #[allow(unused)]
     pub fn handle<T, F: FnOnce(&PluginHandler) -> Result<T, String>>(
         &self,
         name: &str,
@@ -425,20 +429,28 @@ impl PluginManager {
             .ok_or_else(|| String::from("Send request to ServiceProvider failed"))?
         {
             ServiceResponse::Ok => Ok(()),
-            _ => Err(format!("Invalid plugin response")),
+            _ => Err(String::from("Invalid plugin response")),
         }
     }
 
+    #[allow(unused)]
     pub fn rpc_url_changed(&self, new_url: String) -> Result<(), String> {
         self.call_service(ServiceRequest::RpcUrlChanged(new_url))
     }
 
-    pub fn sub_command(&self, command_name: &str, rest_args: String) -> Result<String, String> {
+    #[allow(unused)]
+    pub fn sub_command(
+        &self,
+        command_name: &str,
+        rest_args: String,
+    ) -> Result<serde_json::Value, String> {
         if let Some(plugin_name) = self.sub_commands.get(command_name) {
             self.handle(plugin_name.as_str(), |handler| {
                 let request = PluginRequest::SubCommand(rest_args);
-                if let PluginResponse::SubCommand(output) = Request::call(handler, request)
-                    .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
+                let id: u64 = 0;
+                if let (_id, PluginResponse::JsonValue(output)) =
+                    Request::call(handler, (id, request))
+                        .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
                 {
                     Ok(output)
                 } else {
@@ -452,6 +464,7 @@ impl PluginManager {
             ))
         }
     }
+    #[allow(unused)]
     pub fn callback(
         &self,
         callback_name: CallbackName,
@@ -462,8 +475,11 @@ impl PluginManager {
             for plugin_name in plugin_names {
                 let response = self.handle(plugin_name.as_str(), |handler| {
                     let request = PluginRequest::Callback(arguments.clone());
-                    if let PluginResponse::Callback(response) = Request::call(handler, request)
-                        .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
+                    let id: u64 = 0;
+                    if let (_id, PluginResponse::Callback(response)) =
+                        Request::call(handler, (id, request)).ok_or_else(|| {
+                            format!("Send request to plugin {} failed", plugin_name)
+                        })?
                     {
                         Ok(response)
                     } else {
@@ -481,9 +497,6 @@ impl PluginManager {
         }
     }
 
-    pub fn plugin_dir(&self) -> &PathBuf {
-        &self.plugin_dir
-    }
     pub fn plugins(&self) -> &HashMap<String, (Plugin, PluginConfig)> {
         &self.plugins
     }
@@ -498,7 +511,7 @@ fn deserilize_key_set(set: Vec<(String, H160)>) -> Result<Vec<(DerivationPath, H
 
 struct ServiceProvider {
     handler: ServiceHandler,
-    thread: JoinHandle<()>,
+    _thread: JoinHandle<()>,
 }
 
 pub enum ServiceRequest {
@@ -510,6 +523,8 @@ pub enum ServiceRequest {
     },
     KeyStoreChanged(Option<(Plugin, PluginConfig)>),
     IndexerChanged(Option<(Plugin, PluginConfig)>),
+
+    #[allow(unused)]
     RpcUrlChanged(String),
 }
 
@@ -632,11 +647,19 @@ impl ServiceProvider {
                                             .or_else(|| keystore_process.as_ref())
                                             .map(|process| process.handler())
                                             .unwrap_or_else(|| default_keystore.handler());
-                                        Request::call(handler, request.clone()).ok_or_else(|| {
-                                            String::from("Send request to keystore failed")
-                                        })
+                                        Request::call(handler, (0, request.clone()))
+                                            .map(|(_id, response)| response)
+                                            .ok_or_else(|| {
+                                                String::from("Send request to keystore failed")
+                                            })
                                     })
-                                    .unwrap_or_else(|err| PluginResponse::Error(err)),
+                                    .unwrap_or_else(|err| {
+                                        PluginResponse::Error(JsonrpcError {
+                                            code: 0,
+                                            message: err,
+                                            data: None,
+                                        })
+                                    }),
                                 PluginRequest::Indexer { .. } => indexer_plugin
                                     .as_ref()
                                     .filter(|(plugin, config)| plugin.is_active() && !config.daemon)
@@ -654,37 +677,59 @@ impl ServiceProvider {
                                             .or_else(|| indexer_process.as_ref())
                                             .map(|process| process.handler())
                                             .unwrap_or_else(|| default_indexer.handler());
-                                        Request::call(handler, request.clone()).ok_or_else(|| {
-                                            String::from("Send request to indexer failed")
-                                        })
+                                        Request::call(handler, (0, request.clone()))
+                                            .map(|(_id, response)| response)
+                                            .ok_or_else(|| {
+                                                String::from("Send request to indexer failed")
+                                            })
                                     })
-                                    .unwrap_or_else(|err| PluginResponse::Error(err)),
+                                    .unwrap_or_else(|err| {
+                                        PluginResponse::Error(JsonrpcError {
+                                            code: 0,
+                                            message: err,
+                                            data: None,
+                                        })
+                                    }),
                                 PluginRequest::Rpc(rpc_request) => {
                                     let response_result = match rpc_request {
                                         RpcRequest::GetBlock { hash } => {
                                             // TODO: handle error
-                                            rpc_client.get_block(hash).map(RpcResponse::BlockView)
+                                            rpc_client.get_block(hash).map(|data| {
+                                                PluginResponse::BlockViewOpt(Box::new(data))
+                                            })
                                         }
-                                        RpcRequest::GetBlockByNumber { number } => rpc_client
-                                            .get_block_by_number(number)
-                                            .map(RpcResponse::BlockView),
+                                        RpcRequest::GetBlockByNumber { number } => {
+                                            rpc_client.get_block_by_number(number).map(|data| {
+                                                PluginResponse::BlockViewOpt(Box::new(data))
+                                            })
+                                        }
                                         RpcRequest::GetBlockHash { number } => rpc_client
                                             .get_block_hash(number)
-                                            .map(RpcResponse::BlockHash),
+                                            .map(PluginResponse::H256Opt),
                                         RpcRequest::GetCellbaseOutputCapacityDetails { hash } => {
                                             rpc_client
                                                 .get_cellbase_output_capacity_details(hash)
-                                                .map(RpcResponse::BlockReward)
+                                                .map(PluginResponse::BlockRewardOpt)
                                         } // TODO: more rpc methods
                                     };
-                                    response_result
-                                        .map(PluginResponse::Rpc)
-                                        .unwrap_or_else(|err| PluginResponse::Error(err))
+                                    response_result.unwrap_or_else(|err| {
+                                        PluginResponse::Error(JsonrpcError {
+                                            code: 0,
+                                            message: err,
+                                            data: None,
+                                        })
+                                    })
                                 }
                                 PluginRequest::ReadPassword(prompt) => {
                                     read_password(false, Some(prompt.as_str()))
-                                        .map(PluginResponse::Password)
-                                        .unwrap_or_else(|err| PluginResponse::Error(err))
+                                        .map(PluginResponse::String)
+                                        .unwrap_or_else(|err| {
+                                            PluginResponse::Error(JsonrpcError {
+                                                code: 0,
+                                                message: err,
+                                                data: None,
+                                            })
+                                        })
                                 }
                                 PluginRequest::PrintStdout(content) => {
                                     print!("{}", content);
@@ -692,7 +737,11 @@ impl ServiceProvider {
                                         .flush()
                                         .map(|_| PluginResponse::Ok)
                                         .unwrap_or_else(|err| {
-                                            PluginResponse::Error(err.to_string())
+                                            PluginResponse::Error(JsonrpcError {
+                                                code: 0,
+                                                message: err.to_string(),
+                                                data: None,
+                                            })
                                         })
                                 }
                                 PluginRequest::PrintStderr(content) => {
@@ -701,12 +750,19 @@ impl ServiceProvider {
                                         .flush()
                                         .map(|_| PluginResponse::Ok)
                                         .unwrap_or_else(|err| {
-                                            PluginResponse::Error(err.to_string())
+                                            PluginResponse::Error(JsonrpcError {
+                                                code: 0,
+                                                message: err.to_string(),
+                                                data: None,
+                                            })
                                         })
                                 }
-                                _ => PluginResponse::Error(String::from(
-                                    "Invalid request to ServiceProvider",
-                                )),
+                                _ => PluginResponse::Error(JsonrpcError {
+                                    // TODO: define code
+                                    code: 0,
+                                    message: String::from("Invalid request to ServiceProvider"),
+                                    data: None,
+                                }),
                             };
                             ServiceResponse::Response(response)
                         }
@@ -722,7 +778,7 @@ impl ServiceProvider {
             }
         });
         Ok(ServiceProvider {
-            thread: handle,
+            _thread: handle,
             handler: sender,
         })
     }
@@ -734,9 +790,9 @@ impl ServiceProvider {
 
 pub struct PluginProcess {
     // For kill the process
-    child: Child,
-    stdin_thread: JoinHandle<()>,
-    stdout_thread: JoinHandle<()>,
+    _child: Child,
+    _stdin_thread: JoinHandle<()>,
+    _stdout_thread: JoinHandle<()>,
     // Send message to stdin thread, and expect a response from stdout thread
     handler: PluginHandler,
 }
@@ -782,7 +838,10 @@ impl PluginProcess {
                     recv(request_receiver) -> msg_result => {
                         match msg_result {
                             Ok(Request { responder, arguments }) => {
-                                let request_string = serde_json::to_string(&arguments).expect("Serialize request error");
+                                // TODO: use auto increment request id
+                                let jsonrpc_request = JsonrpcRequest::from(arguments);
+                                let request_string = serde_json::to_string(&jsonrpc_request).expect("Serialize request error");
+                                log::debug!("Send request to plugin: {}", request_string);
                                 stdin.write_all(format!("{}\n", request_string).as_bytes()).map_err(|err| err.to_string())?;
                                 stdin.flush().map_err(|err| err.to_string())?;
                                 if let Ok(response) = stdout_receiver.recv() {
@@ -804,8 +863,10 @@ impl PluginProcess {
                     // Send repsonse requested by plugin to ckb-cli (ServiceProvider)
                     recv(service_receiver) -> msg_result => {
                         match msg_result {
-                            Ok(response) => {
-                                let response_string = serde_json::to_string(&response).expect("Serialize response error");
+                            Ok((id, response)) => {
+                                let jsonrpc_response = JsonrpcResponse::from((id, response));
+                                let response_string = serde_json::to_string(&jsonrpc_response).expect("Serialize response error");
+                                log::debug!("Send response to plugin: {}", response_string);
                                 stdin.write_all(format!("{}\n", response_string).as_bytes()).map_err(|err| err.to_string())?;
                                 stdin.flush().map_err(|err| err.to_string())?;
                                 Ok(false)
@@ -844,14 +905,20 @@ impl PluginProcess {
                     // EOF
                     return Ok(true);
                 }
-                let result: Result<PluginResponse, _> = serde_json::from_str(&content);
-                if let Ok(response) = result {
+                let result: Result<JsonrpcResponse, _> = serde_json::from_str(&content);
+                if let Ok(jsonrpc_response) = result {
+                    // Receive response from plugin
+                    log::debug!("Receive response from plugin: {}", content.trim());
+                    let (id, response) = jsonrpc_response.try_into()?;
                     stdout_sender
-                        .send(response)
+                        .send((id, response))
                         .map_err(|err| err.to_string())?;
                 } else {
-                    let request: PluginRequest =
+                    // Handle request from plugin
+                    log::debug!("Receive request from plugin: {}", content.trim());
+                    let jsonrpc_request: JsonrpcRequest =
                         serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                    let (id, request) = jsonrpc_request.try_into()?;
                     let service_request = ServiceRequest::Request {
                         is_from_plugin: true,
                         plugin_name: config.name.clone(),
@@ -862,7 +929,7 @@ impl PluginProcess {
                             .ok_or_else(|| String::from("Send request to ServiceProvider failed"))?
                     {
                         service_sender
-                            .send(response)
+                            .send((id, response))
                             .map_err(|err| err.to_string())?;
                     }
                 }
@@ -884,9 +951,9 @@ impl PluginProcess {
         });
 
         Ok(PluginProcess {
-            child,
-            stdin_thread,
-            stdout_thread,
+            _child: child,
+            _stdin_thread: stdin_thread,
+            _stdout_thread: stdout_thread,
             handler: request_sender,
         })
     }
@@ -928,12 +995,12 @@ impl Plugin {
             .stdout
             .take()
             .ok_or_else(|| String::from("Get stdout failed"))?;
-        let request_string = format!(
-            "{}\n",
-            serde_json::to_string(&PluginRequest::Register).expect("Serialize request error")
-        );
+        let jsonrpc_request = JsonrpcRequest::from((0, PluginRequest::Register));
+        let request_string =
+            serde_json::to_string(&jsonrpc_request).expect("Serialize request error");
+        log::debug!("Send request to plugin: {}", request_string);
         stdin
-            .write_all(request_string.as_bytes())
+            .write_all(format!("{}\n", request_string).as_bytes())
             .map_err(|err| err.to_string())?;
         stdin.flush().map_err(|err| err.to_string())?;
         let mut buf_reader = BufReader::new(stdout);
@@ -941,9 +1008,11 @@ impl Plugin {
         buf_reader
             .read_line(&mut response_string)
             .map_err(|err| err.to_string())?;
+        log::debug!("Receive response from plugin: {}", response_string.trim());
         // TODO: make sure process exit
-        let response: PluginResponse =
+        let jsonrpc_response: JsonrpcResponse =
             serde_json::from_str(&response_string).map_err(|err| err.to_string())?;
+        let (_id, response) = jsonrpc_response.try_into()?;
         if let PluginResponse::PluginConfig(config) = response {
             Ok(config)
         } else {
@@ -984,10 +1053,6 @@ impl KeyStoreHandler {
         KeyStoreHandler { handler }
     }
 
-    pub fn inner(&self) -> &ServiceHandler {
-        &self.handler
-    }
-
     fn call(&self, request: KeyStoreRequest) -> Result<PluginResponse, String> {
         let request = ServiceRequest::Request {
             is_from_plugin: false,
@@ -995,7 +1060,7 @@ impl KeyStoreHandler {
             request: PluginRequest::KeyStore(request),
         };
         match Request::call(&self.handler, request) {
-            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error),
+            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error.message),
             Some(ServiceResponse::Response(response)) => Ok(response),
             Some(_) => Err(String::from("Mismatch plugin response")),
             None => Err(String::from("Send request error")),
@@ -1004,9 +1069,7 @@ impl KeyStoreHandler {
 
     pub fn create_account(&self, password: Option<String>) -> Result<H160, String> {
         let request = KeyStoreRequest::CreateAccount(password);
-        if let PluginResponse::KeyStore(KeyStoreResponse::AccountCreated(hash160)) =
-            self.call(request)?
-        {
+        if let PluginResponse::H160(hash160) = self.call(request)? {
             Ok(hash160)
         } else {
             Err("Mismatch keystore response".to_string())
@@ -1044,9 +1107,7 @@ impl KeyStoreHandler {
             chain_code,
             password,
         };
-        if let PluginResponse::KeyStore(KeyStoreResponse::AccountImported(lock_arg)) =
-            self.call(request)?
-        {
+        if let PluginResponse::H160(lock_arg) = self.call(request)? {
             Ok(lock_arg)
         } else {
             Err("Mismatch keystore response".to_string())
@@ -1058,14 +1119,26 @@ impl KeyStoreHandler {
         password: Option<String>,
     ) -> Result<MasterPrivKey, String> {
         let request = KeyStoreRequest::Export { hash160, password };
-        if let PluginResponse::KeyStore(KeyStoreResponse::AccountExported {
+        if let PluginResponse::MasterPrivateKey {
             privkey,
             chain_code,
-        }) = self.call(request)?
+        } = self.call(request)?
         {
+            if privkey.len() != 32 {
+                return Err(format!(
+                    "Invalid privkey length return from keystore, length={}, expected: 32",
+                    privkey.len()
+                ));
+            }
+            if chain_code.len() != 32 {
+                return Err(format!(
+                    "Invalid chain_code length return from keystore, length={}, expected: 32",
+                    privkey.len()
+                ));
+            }
             let mut data = [0u8; 64];
-            data[0..32].copy_from_slice(&privkey[..]);
-            data[32..64].copy_from_slice(&chain_code[..]);
+            data[0..32].copy_from_slice(privkey.as_bytes());
+            data[32..64].copy_from_slice(chain_code.as_bytes());
             let master_privkey = MasterPrivKey::from_bytes(data).map_err(|err| err.to_string())?;
             Ok(master_privkey)
         } else {
@@ -1087,9 +1160,7 @@ impl KeyStoreHandler {
             change_max_len,
             password,
         };
-        if let PluginResponse::KeyStore(KeyStoreResponse::DerivedKeySet { external, change }) =
-            self.call(request)?
-        {
+        if let PluginResponse::DerivedKeySet { external, change } = self.call(request)? {
             let external = deserilize_key_set(external)?;
             let change = deserilize_key_set(change)?;
             Ok(DerivedKeySet { external, change })
@@ -1114,9 +1185,7 @@ impl KeyStoreHandler {
             change_length,
             password,
         };
-        if let PluginResponse::KeyStore(KeyStoreResponse::DerivedKeySet { external, change }) =
-            self.call(request)?
-        {
+        if let PluginResponse::DerivedKeySet { external, change } = self.call(request)? {
             let external = deserilize_key_set(external)?;
             let change = deserilize_key_set(change)?;
             Ok(DerivedKeySet { external, change })
@@ -1126,9 +1195,7 @@ impl KeyStoreHandler {
     }
     pub fn list_account(&self) -> Result<Vec<H160>, String> {
         let request = KeyStoreRequest::ListAccount;
-        if let PluginResponse::KeyStore(KeyStoreResponse::Accounts(accounts)) =
-            self.call(request)?
-        {
+        if let PluginResponse::H160Vec(accounts) = self.call(request)? {
             Ok(accounts)
         } else {
             Err("Mismatch keystore response".to_string())
@@ -1141,7 +1208,7 @@ impl KeyStoreHandler {
         message: H256,
         password: Option<String>,
         recoverable: bool,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Bytes, String> {
         let path = DerivationPath::from(path.as_ref().to_vec()).to_string();
         let request = KeyStoreRequest::Sign {
             hash160,
@@ -1150,8 +1217,8 @@ impl KeyStoreHandler {
             password,
             recoverable,
         };
-        if let PluginResponse::KeyStore(KeyStoreResponse::Signature(data)) = self.call(request)? {
-            Ok(data)
+        if let PluginResponse::Bytes(data) = self.call(request)? {
+            Ok(data.into_bytes())
         } else {
             Err("Mismatch keystore response".to_string())
         }
@@ -1168,10 +1235,8 @@ impl KeyStoreHandler {
             path,
             password,
         };
-        if let PluginResponse::KeyStore(KeyStoreResponse::ExtendedPubkey(data)) =
-            self.call(request)?
-        {
-            secp256k1::PublicKey::from_slice(&data).map_err(|err| err.to_string())
+        if let PluginResponse::Bytes(data) = self.call(request)? {
+            secp256k1::PublicKey::from_slice(data.as_bytes()).map_err(|err| err.to_string())
         } else {
             Err("Mismatch keystore response".to_string())
         }
@@ -1183,13 +1248,10 @@ pub struct IndexerHandler {
     handler: ServiceHandler,
 }
 
+#[allow(unused)]
 impl IndexerHandler {
     fn new(handler: ServiceHandler) -> IndexerHandler {
         IndexerHandler { handler }
-    }
-
-    pub fn inner(&self) -> &ServiceHandler {
-        &self.handler
     }
 
     fn call(&self, request: PluginRequest) -> Result<PluginResponse, String> {
@@ -1199,34 +1261,30 @@ impl IndexerHandler {
             request,
         };
         match Request::call(&self.handler, request) {
-            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error),
+            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error.message),
             Some(ServiceResponse::Response(response)) => Ok(response),
             Some(_) => Err(String::from("Mismatch plugin response")),
             None => Err(String::from("Send request error")),
         }
     }
 
-    pub fn tip_header(&self, genesis_hash: H256) -> Result<HeaderView, String> {
+    pub fn tip_header(&self, genesis_hash: H256) -> Result<Box<HeaderView>, String> {
         let request = PluginRequest::Indexer {
             genesis_hash,
             request: IndexerRequest::TipHeader,
         };
-        if let PluginResponse::Indexer(IndexerResponse::TipHeader(header_view)) =
-            self.call(request)?
-        {
+        if let PluginResponse::HeaderView(header_view) = self.call(request)? {
             Ok(header_view)
         } else {
             Err("Invalid plugin response".to_string())
         }
     }
-    pub fn last_header(&self, genesis_hash: H256) -> Result<Option<HeaderView>, String> {
+    pub fn last_header(&self, genesis_hash: H256) -> Result<Box<Option<HeaderView>>, String> {
         let request = PluginRequest::Indexer {
             genesis_hash,
             request: IndexerRequest::LastHeader,
         };
-        if let PluginResponse::Indexer(IndexerResponse::LastHeader(header_view_opt)) =
-            self.call(request)?
-        {
+        if let PluginResponse::HeaderViewOpt(header_view_opt) = self.call(request)? {
             Ok(header_view_opt)
         } else {
             Err("Invalid plugin response".to_string())
@@ -1235,9 +1293,9 @@ impl IndexerHandler {
     pub fn get_capacity(&self, genesis_hash: H256, lock_hash: H256) -> Result<u64, String> {
         let request = PluginRequest::Indexer {
             genesis_hash,
-            request: IndexerRequest::Capacity(lock_hash),
+            request: IndexerRequest::GetCapacity(lock_hash),
         };
-        if let PluginResponse::Indexer(IndexerResponse::Capacity(capacity)) = self.call(request)? {
+        if let PluginResponse::Integer64(capacity) = self.call(request)? {
             Ok(capacity)
         } else {
             Err("Invalid plugin response".to_string())
@@ -1262,7 +1320,7 @@ impl IndexerHandler {
                 limit,
             },
         };
-        if let PluginResponse::Indexer(IndexerResponse::LiveCells(infos)) = self.call(request)? {
+        if let PluginResponse::LiveCells(infos) = self.call(request)? {
             Ok(infos)
         } else {
             Err("Invalid plugin response".to_string())
@@ -1277,19 +1335,19 @@ impl IndexerHandler {
             genesis_hash,
             request: IndexerRequest::TopN(n),
         };
-        if let PluginResponse::Indexer(IndexerResponse::TopN(infos)) = self.call(request)? {
+        if let PluginResponse::TopN(infos) = self.call(request)? {
             Ok(infos)
         } else {
             Err("Invalid plugin response".to_string())
         }
     }
     // JSON format indexer status info
-    pub fn get_indexer_info(&self, genesis_hash: H256) -> Result<String, String> {
+    pub fn get_indexer_info(&self, genesis_hash: H256) -> Result<serde_json::Value, String> {
         let request = PluginRequest::Indexer {
             genesis_hash,
             request: IndexerRequest::IndexerInfo,
         };
-        if let PluginResponse::Indexer(IndexerResponse::IndexerInfo(info)) = self.call(request)? {
+        if let PluginResponse::JsonValue(info) = self.call(request)? {
             Ok(info)
         } else {
             Err("Invalid plugin response".to_string())

@@ -3,8 +3,9 @@ use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
-use crate::utils::arg_parser::{ArgParser, FilePathParser};
-use plugin_protocol::PluginRole;
+use crate::utils::{
+    arg_parser::{ArgParser, FilePathParser},
+};
 
 pub struct PluginSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
@@ -95,33 +96,12 @@ impl<'a> CliSubCommand for PluginSubCommand<'a> {
             ("info", Some(m)) => {
                 let name = m.value_of("name").unwrap();
                 if let Some((plugin, config)) = self.plugin_mgr.plugins().get(name) {
-                    let roles = config
-                        .roles
-                        .iter()
-                        .map(|role| match role {
-                            PluginRole::KeyStore(require_password) => serde_json::json!({
-                                "role": "keystore",
-                                "require_password": require_password,
-                            }),
-                            PluginRole::Indexer => serde_json::json!({
-                                "role": "indexer",
-                            }),
-                            PluginRole::SubCommand(name) => serde_json::json!({
-                                "role": "sub_command",
-                                "command_name": name,
-                            }),
-                            PluginRole::Callback(name) => serde_json::json!({
-                                "role": "callback",
-                                "callback_name": name,
-                            }),
-                        })
-                        .collect::<Vec<_>>();
                     let resp = serde_json::json!({
                         "name": config.name,
                         "description": config.description,
                         "daemon": config.daemon,
                         "is_active": plugin.is_active(),
-                        "roles": serde_json::json!(roles),
+                        "roles": serde_json::json!(config.roles),
                     });
                     Ok(Output::new_output(resp))
                 } else {

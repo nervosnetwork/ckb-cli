@@ -1,8 +1,16 @@
+mod convert;
+mod jsonrpc;
+pub mod method;
+
+use std::fmt;
+use std::str::FromStr;
+
 use ckb_index::LiveCellInfo;
-use ckb_sdk::rpc::{BlockReward, BlockView, HeaderView, Script, Transaction};
+use ckb_sdk::rpc::{BlockReward, BlockView, HeaderView, JsonBytes, Script, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
-use std::fmt;
+
+pub use jsonrpc::{JsonrpcError, JsonrpcRequest, JsonrpcResponse, JSONRPC_VERSION};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginConfig {
@@ -30,7 +38,7 @@ impl PluginConfig {
         }
         for role in &self.roles {
             match role {
-                PluginRole::KeyStore(_) => (),
+                PluginRole::KeyStore { .. } => (),
                 PluginRole::Indexer => (),
                 _ => {
                     return true;
@@ -42,20 +50,21 @@ impl PluginConfig {
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "role", rename_all = "snake_case")]
 pub enum PluginRole {
     // The argument is for if keystore need password
-    KeyStore(bool),
+    KeyStore { require_password: bool },
     Indexer,
     // The argument is for where the sub-command is injected to.
-    SubCommand(String),
+    SubCommand { name: String },
     // The argument is for the callback function name
-    Callback(CallbackName),
+    Callback { name: CallbackName },
 }
 
 impl PluginRole {
     pub fn validate(&self) -> Result<(), String> {
         match self {
-            Self::SubCommand(_name) => {
+            Self::SubCommand { .. } => {
                 // TODO: check sub-command name
                 Ok(())
             }
@@ -89,30 +98,43 @@ pub enum PluginRequest {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case", content = "content")]
 pub enum PluginResponse {
-    Error(String),
+    Error(JsonrpcError),
     Ok,
     // For register request
     PluginConfig(PluginConfig),
-    SubCommand(String),
+    JsonValue(serde_json::Value),
+    String(String),
+    Integer64(u64),
+
+    H256Opt(Option<H256>),
+    H160(H160),
+    H160Vec(Vec<H160>),
+    HeaderView(Box<HeaderView>),
+    HeaderViewOpt(Box<Option<HeaderView>>),
+    BlockViewOpt(Box<Option<BlockView>>),
+    BlockRewardOpt(Option<BlockReward>),
+    Bytes(JsonBytes),
+
     Callback(CallbackResponse),
-    Rpc(RpcResponse),
-    Password(String),
-    KeyStore(KeyStoreResponse),
-    Indexer(IndexerResponse),
+    MasterPrivateKey {
+        privkey: JsonBytes,
+        chain_code: JsonBytes,
+    },
+    DerivedKeySet {
+        external: Vec<(String, H160)>,
+        change: Vec<(String, H160)>,
+    },
+
+    LiveCells(Vec<LiveCellInfo>),
+    TopN(Vec<(H256, Option<Script>, u64)>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum CallbackName {
     SendTransaction,
-}
-impl CallbackName {
-    pub fn from_str(name: &str) -> Option<CallbackName> {
-        match name {
-            "send_transaction" => Some(CallbackName::SendTransaction),
-            _ => None,
-        }
-    }
 }
 impl fmt::Display for CallbackName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -127,11 +149,13 @@ pub enum CallbackRequest {
     SendTransaction {
         tx: Transaction,
         // Send in which subcommand: transfer/deposite/withdraw/prepare/tx
-        subcommand: String,
+        sub_command: String,
     },
     // TODO: add more
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case", content = "content")]
 pub enum CallbackResponse {
     SendTransaction {
         accepted: bool,
@@ -141,22 +165,28 @@ pub enum CallbackResponse {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum KeyStoreRequest {
+    // return: PluginResponse::H160
     ListAccount,
+    // return: PluginResponse::H160
     CreateAccount(Option<String>),
+    // return: PluginResponse::Ok
     UpdatePassword {
         hash160: H160,
         password: String,
         new_password: String,
     },
+    // return: PluginResponse::H160
     Import {
         privkey: [u8; 32],
         chain_code: [u8; 32],
         password: Option<String>,
     },
+    // return: PluginResponse::MasterPrivateKey
     Export {
         hash160: H160,
         password: Option<String>,
     },
+    // return: PluginResponse::Bytes
     Sign {
         hash160: H160,
         path: String,
@@ -164,11 +194,13 @@ pub enum KeyStoreRequest {
         recoverable: bool,
         password: Option<String>,
     },
+    // return: PluginResponse::Bytes
     ExtendedPubkey {
         hash160: H160,
         path: String,
         password: Option<String>,
     },
+    // return: PluginResponse::DerivedKeySet
     DerivedKeySet {
         hash160: H160,
         external_max_len: u32,
@@ -176,6 +208,7 @@ pub enum KeyStoreRequest {
         change_max_len: u32,
         password: Option<String>,
     },
+    // return: PluginResponse::DerivedKeySet
     DerivedKeySetByIndex {
         hash160: H160,
         external_start: u32,
@@ -185,24 +218,8 @@ pub enum KeyStoreRequest {
         password: Option<String>,
     },
     // For plugin to use custom keystore
-    Any(Vec<u8>),
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum KeyStoreResponse {
-    AccountCreated(H160),
-    AccountImported(H160),
-    AccountExported {
-        privkey: [u8; 32],
-        chain_code: [u8; 32],
-    },
-    Accounts(Vec<H160>),
-    Signature(Vec<u8>),
-    ExtendedPubkey(Vec<u8>),
-    DerivedKeySet {
-        external: Vec<(String, H160)>,
-        change: Vec<(String, H160)>,
-    },
-    Any(Vec<u8>),
+    // return: PluginResponse::JsonValue
+    Any(serde_json::Value),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -213,26 +230,43 @@ pub enum RpcRequest {
     GetCellbaseOutputCapacityDetails { hash: H256 },
     // TODO: add more
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RpcResponse {
-    BlockView(Option<BlockView>),
-    BlockHash(Option<H256>),
-    BlockReward(Option<BlockReward>),
-}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum LiveCellIndexType {
     LockHash,
     TypeHash,
     // Code hash of type script
     CodeHash,
 }
+impl fmt::Display for LiveCellIndexType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let repr = match self {
+            LiveCellIndexType::LockHash => "lock_hash",
+            LiveCellIndexType::TypeHash => "type_hash",
+            LiveCellIndexType::CodeHash => "code_hash",
+        };
+        write!(f, "{}", repr)
+    }
+}
+impl FromStr for LiveCellIndexType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "lock_hash" => Ok(LiveCellIndexType::LockHash),
+            "type_hash" => Ok(LiveCellIndexType::TypeHash),
+            "code_hash" => Ok(LiveCellIndexType::CodeHash),
+            _ => Err(format!("Invalid index type: {}", s)),
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum IndexerRequest {
     TipHeader,
     LastHeader,
     // Get total capacity by lock hash
-    Capacity(H256),
+    GetCapacity(H256),
     LiveCells {
         index: LiveCellIndexType,
         hash: H256,
@@ -243,16 +277,5 @@ pub enum IndexerRequest {
     TopN(u64),
     IndexerInfo,
     // For plugin to use custom indexer
-    Any(Vec<u8>),
-}
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub enum IndexerResponse {
-    TipHeader(HeaderView),
-    LastHeader(Option<HeaderView>),
-    Capacity(u64),
-    LiveCells(Vec<LiveCellInfo>),
-    // AddressPayload is molecule serialized
-    TopN(Vec<(H256, Option<Script>, u64)>),
-    IndexerInfo(String),
-    Any(Vec<u8>),
+    Any(serde_json::Value),
 }

@@ -2,22 +2,25 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 
-use ckb_sdk::wallet::{DerivationPath, DerivedKeySet, Key, KeyStore, MasterPrivKey};
+use ckb_sdk::{
+    rpc::JsonBytes,
+    wallet::{DerivationPath, DerivedKeySet, Key, KeyStore, MasterPrivKey},
+};
 use ckb_types::core::service::Request;
 use crossbeam_channel::bounded;
-use plugin_protocol::{KeyStoreRequest, KeyStoreResponse, PluginRequest, PluginResponse};
+use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginResponse};
 
 use super::manager::PluginHandler;
 use crate::utils::other::{get_key_store, serialize_signature};
 
 pub(crate) struct DefaultKeyStore {
     handler: PluginHandler,
-    thread: JoinHandle<()>,
+    _thread: JoinHandle<()>,
 }
 
 impl DefaultKeyStore {
     pub(crate) fn start(ckb_cli_dir: &PathBuf) -> Result<DefaultKeyStore, String> {
-        fn serilize_key_set(key_set: DerivedKeySet) -> KeyStoreResponse {
+        fn serilize_key_set(key_set: DerivedKeySet) -> PluginResponse {
             let external = key_set
                 .external
                 .into_iter()
@@ -28,7 +31,7 @@ impl DefaultKeyStore {
                 .into_iter()
                 .map(|(path, hash160)| (path.to_string(), hash160))
                 .collect::<Vec<_>>();
-            KeyStoreResponse::DerivedKeySet { external, change }
+            PluginResponse::DerivedKeySet { external, change }
         }
 
         fn handle_request(
@@ -42,9 +45,7 @@ impl DefaultKeyStore {
                     })?;
                     keystore
                         .new_account(password.as_bytes())
-                        .map(|hash160| {
-                            PluginResponse::KeyStore(KeyStoreResponse::AccountCreated(hash160))
-                        })
+                        .map(PluginResponse::H160)
                         .map_err(|err| err.to_string())
                 }
                 KeyStoreRequest::UpdatePassword {
@@ -74,9 +75,7 @@ impl DefaultKeyStore {
                     let lock_arg = keystore
                         .import_key(&key, password.as_bytes())
                         .map_err(|err| err.to_string())?;
-                    Ok(PluginResponse::KeyStore(KeyStoreResponse::AccountImported(
-                        lock_arg,
-                    )))
+                    Ok(PluginResponse::H160(lock_arg))
                 }
                 KeyStoreRequest::Export { hash160, password } => {
                     let password = password.ok_or_else(|| {
@@ -86,14 +85,14 @@ impl DefaultKeyStore {
                         .export_key(&hash160, password.as_bytes())
                         .map(|master_privkey| {
                             let data = master_privkey.to_bytes();
-                            let mut privkey = [0u8; 32];
-                            let mut chain_code = [0u8; 32];
+                            let mut privkey = vec![0u8; 32];
+                            let mut chain_code = vec![0u8; 32];
                             privkey.copy_from_slice(&data[0..32]);
                             chain_code.copy_from_slice(&data[32..64]);
-                            PluginResponse::KeyStore(KeyStoreResponse::AccountExported {
-                                privkey,
-                                chain_code,
-                            })
+                            PluginResponse::MasterPrivateKey {
+                                privkey: JsonBytes::from_vec(privkey),
+                                chain_code: JsonBytes::from_vec(chain_code),
+                            }
                         })
                         .map_err(|err| err.to_string())
                 }
@@ -115,7 +114,7 @@ impl DefaultKeyStore {
                             &change_last,
                             change_max_len,
                         )
-                        .map(|key_set| PluginResponse::KeyStore(serilize_key_set(key_set)))
+                        .map(serilize_key_set)
                         .map_err(|err| err.to_string())
                 }
                 KeyStoreRequest::DerivedKeySetByIndex {
@@ -140,7 +139,7 @@ impl DefaultKeyStore {
                             change_start,
                             change_length,
                         )
-                        .map(|key_set| PluginResponse::KeyStore(serilize_key_set(key_set)))
+                        .map(serilize_key_set)
                         .map_err(|err| err.to_string())
                 }
                 KeyStoreRequest::ListAccount => {
@@ -150,9 +149,7 @@ impl DefaultKeyStore {
                         .into_iter()
                         .map(|(lock_arg, _)| lock_arg.clone())
                         .collect::<Vec<_>>();
-                    Ok(PluginResponse::KeyStore(KeyStoreResponse::Accounts(
-                        accounts,
-                    )))
+                    Ok(PluginResponse::H160Vec(accounts))
                 }
                 KeyStoreRequest::Sign {
                     hash160,
@@ -187,9 +184,7 @@ impl DefaultKeyStore {
                             .serialize_compact()
                             .to_vec()
                     };
-                    Ok(PluginResponse::KeyStore(KeyStoreResponse::Signature(
-                        signature,
-                    )))
+                    Ok(PluginResponse::Bytes(JsonBytes::from_vec(signature)))
                 }
                 KeyStoreRequest::ExtendedPubkey {
                     hash160,
@@ -206,13 +201,11 @@ impl DefaultKeyStore {
                         .public_key
                         .serialize()
                         .to_vec();
-                    Ok(PluginResponse::KeyStore(KeyStoreResponse::ExtendedPubkey(
-                        data,
-                    )))
+                    Ok(PluginResponse::Bytes(JsonBytes::from_vec(data)))
                 }
                 KeyStoreRequest::Any(_) => {
                     // TODO: handle any request
-                    Ok(PluginResponse::KeyStore(KeyStoreResponse::Any(Vec::new())))
+                    Ok(PluginResponse::JsonValue(serde_json::Value::Null))
                 }
             }
         }
@@ -226,15 +219,27 @@ impl DefaultKeyStore {
                     responder,
                     arguments,
                 }) => {
-                    let response = if let PluginRequest::KeyStore(request) = arguments {
-                        handle_request(&mut keystore, request).unwrap_or_else(PluginResponse::Error)
+                    let (id, plugin_request) = arguments;
+                    let response = if let PluginRequest::KeyStore(request) = plugin_request {
+                        handle_request(&mut keystore, request).unwrap_or_else(|err| {
+                            PluginResponse::Error(JsonrpcError {
+                                code: 0,
+                                message: err,
+                                data: None,
+                            })
+                        })
                     } else {
-                        PluginResponse::Error(format!(
-                            "Invalid request for keystore: {}",
-                            serde_json::to_string(&arguments).expect("Serialize request error")
-                        ))
+                        PluginResponse::Error(JsonrpcError {
+                            code: 0,
+                            message: format!(
+                                "Invalid request for keystore: {}",
+                                serde_json::to_string(&plugin_request)
+                                    .expect("Serialize request error")
+                            ),
+                            data: None,
+                        })
                     };
-                    if let Err(err) = responder.send(response) {
+                    if let Err(err) = responder.send((id, response)) {
                         log::warn!("Default keystore send response err: {:?}", err);
                     }
                 }
@@ -247,7 +252,7 @@ impl DefaultKeyStore {
 
         Ok(DefaultKeyStore {
             handler: keystore_sender,
-            thread: keystore_thread,
+            _thread: keystore_thread,
         })
     }
 
@@ -258,7 +263,7 @@ impl DefaultKeyStore {
 
 pub(crate) struct DefaultIndexer {
     handler: PluginHandler,
-    thread: JoinHandle<()>,
+    _thread: JoinHandle<()>,
 }
 
 impl DefaultIndexer {
@@ -268,7 +273,7 @@ impl DefaultIndexer {
         let thread = thread::spawn(|| {});
         Ok(DefaultIndexer {
             handler: sender,
-            thread,
+            _thread: thread,
         })
     }
 

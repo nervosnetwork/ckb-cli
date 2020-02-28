@@ -612,6 +612,7 @@ fn sign_message(
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), password, false)
+                .map(|bytes| (&bytes[..]).to_vec())
                 .map_err(|err| err.to_string())
         }
         (None, Some((plugin_mgr, account)), true) => {
@@ -623,6 +624,7 @@ fn sign_message(
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), password, true)
+                .map(|bytes| (&bytes[..]).to_vec())
                 .map_err(|err| err.to_string())
         }
         _ => Err(String::from("Both privkey and key store is missing")),
