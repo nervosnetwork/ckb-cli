@@ -376,7 +376,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     AccountId::SoftwareMasterKey(lock_arg) => {
                         let password = read_password(false, None)?;
                         self.key_store
-                            .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
+                            .extended_pubkey_with_password(
+                                &lock_arg,
+                                path.as_ref(),
+                                password.as_bytes(),
+                            )
                             .map_err(|err| err.to_string())?
                     }
                     AccountId::LedgerId(ledger_id) => self

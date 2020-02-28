@@ -219,80 +219,69 @@ impl KeyStore {
         Ok(key.master_privkey)
     }
 
-    pub fn sign<P>(
+    pub fn sign(
         &mut self,
         hash160: &H160,
-        path: &P,
+        path: &[ChildNumber],
         message: &H256,
-    ) -> Result<secp256k1::Signature, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    ) -> Result<secp256k1::Signature, Error> {
         Ok(self
             .borrow_account(hash160)?
-            .sign(message, path)
+            .extended_privkey(path)?
+            .sign(message)
             .void_unwrap())
     }
-    pub fn sign_recoverable<P>(
+    pub fn sign_recoverable(
         &mut self,
         hash160: &H160,
-        path: &P,
+        path: &[ChildNumber],
         message: &H256,
-    ) -> Result<RecoverableSignature, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    ) -> Result<RecoverableSignature, Error> {
         Ok(self
             .borrow_account(hash160)?
-            .sign_recoverable(message, path)
+            .extended_privkey(path)?
+            .sign_recoverable(message)
             .void_unwrap())
     }
-    pub fn sign_with_password<P>(
+    pub fn sign_with_password(
         &self,
         hash160: &H160,
-        path: &P,
+        path: &[ChildNumber],
         message: &H256,
         password: &[u8],
-    ) -> Result<secp256k1::Signature, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    ) -> Result<secp256k1::Signature, Error> {
         let key = self.get_key(hash160, password)?;
-        Ok(key.sign(message, path).void_unwrap())
+        Ok(key.extended_privkey(path)?.sign(message).void_unwrap())
     }
-    pub fn sign_recoverable_with_password<P>(
+    pub fn sign_recoverable_with_password(
         &self,
         hash160: &H160,
-        path: &P,
+        path: &[ChildNumber],
         message: &H256,
         password: &[u8],
-    ) -> Result<RecoverableSignature, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    ) -> Result<RecoverableSignature, Error> {
         Ok(self
             .get_key(hash160, password)?
-            .sign_recoverable(message, path)
+            .extended_privkey(path)?
+            .sign_recoverable(message)
             .void_unwrap())
     }
-    pub fn extended_pubkey<P>(&mut self, hash160: &H160, path: &P) -> Result<ExtendedPubKey, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    pub fn extended_pubkey(
+        &mut self,
+        hash160: &H160,
+        path: &[ChildNumber],
+    ) -> Result<ExtendedPubKey, Error> {
         Ok(self
             .borrow_account(hash160)?
             .extended_pubkey(path)
             .void_unwrap())
     }
-    pub fn extended_pubkey_with_password<P>(
+    pub fn extended_pubkey_with_password(
         &mut self,
         hash160: &H160,
-        path: &P,
+        path: &[ChildNumber],
         password: &[u8],
-    ) -> Result<ExtendedPubKey, Error>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    ) -> Result<ExtendedPubKey, Error> {
         let key = self.get_key(hash160, password)?;
         let key = key.master_privkey.extended_pubkey(path).void_unwrap();
         Ok(key)
@@ -579,7 +568,10 @@ impl Key {
             .map(|i| {
                 let path_string = format!("m/44'/309'/0'/{}/{}", chain as u8, i + start);
                 let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-                let extended_pubkey = self.master_privkey.extended_pubkey(&path).void_unwrap();
+                let extended_pubkey = self
+                    .master_privkey
+                    .extended_pubkey(path.as_ref())
+                    .void_unwrap();
                 (path, extended_pubkey)
             })
             .collect()
@@ -652,34 +644,17 @@ impl Key {
     }
 }
 
-impl AbstractPrivKey for Key {
+impl AbstractMasterPrivKey for Key {
     type Err = Void;
 
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        self.master_privkey.sign(message, path)
-    }
+    type Privkey = ExtendedPrivKey;
 
-    fn sign_recoverable<P>(
-        &self,
-        message: &H256,
-        path: &P,
-    ) -> Result<RecoverableSignature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        self.master_privkey.sign_recoverable(message, path)
-    }
-}
-
-impl AbstractMasterPrivKey for Key {
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
         self.master_privkey.extended_pubkey(path)
+    }
+
+    fn extended_privkey(&self, path: &[ChildNumber]) -> Result<ExtendedPrivKey, Self::Err> {
+        self.master_privkey.extended_privkey(path)
     }
 }
 
@@ -732,10 +707,7 @@ impl MasterPrivKey {
         bytes
     }
 
-    fn sub_privkey<P>(&self, path: &P) -> ExtendedPrivKey
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    fn sub_privkey(&self, path: &[ChildNumber]) -> ExtendedPrivKey {
         let sk = ExtendedPrivKey {
             depth: 0,
             parent_fingerprint: Default::default(),
@@ -748,37 +720,18 @@ impl MasterPrivKey {
     }
 }
 
-impl AbstractPrivKey for MasterPrivKey {
+impl AbstractMasterPrivKey for MasterPrivKey {
     type Err = Void;
 
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Void>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        let sub_sk = self.sub_privkey(path);
-        Ok(SECP256K1.sign(&message, &sub_sk.private_key))
-    }
+    type Privkey = ExtendedPrivKey;
 
-    fn sign_recoverable<P>(&self, message: &H256, path: &P) -> Result<RecoverableSignature, Void>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        let sub_sk = self.sub_privkey(path);
-        Ok(SECP256K1.sign_recoverable(&message, &sub_sk.private_key))
-    }
-}
-
-impl AbstractMasterPrivKey for MasterPrivKey {
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Void>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Void> {
         let sub_sk = self.sub_privkey(path);
         Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
+    }
+
+    fn extended_privkey(&self, path: &[ChildNumber]) -> Result<ExtendedPrivKey, Void> {
+        Ok(self.sub_privkey(path))
     }
 }
 

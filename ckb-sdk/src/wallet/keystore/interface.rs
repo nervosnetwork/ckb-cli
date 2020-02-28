@@ -5,14 +5,18 @@ use failure::Fail;
 use secp256k1::recovery::RecoverableSignature;
 use std::path::PathBuf;
 use std::str::FromStr;
+use void::Void;
 
 use crate::wallet::bip32::DerivationPath;
-use crate::wallet::bip32::{ChildNumber, ExtendedPubKey};
+use crate::wallet::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_types::{H160, H256};
 
 use super::ScryptType;
 
+/// Trait for a key store, i.e. a source of independent signing keys which can be
+/// extended.
 pub trait AbstractKeyStore: Sized {
     const SOURCE_NAME: &'static str;
 
@@ -28,12 +32,7 @@ pub trait AbstractKeyStore: Sized {
     /// underlying keystores, e.g. files vs hardware wallets.
     type AccountId;
 
-    /// Capability for actions one can do with a private key, such as extend
-    /// derived key pairs and sign messages.
-    ///
-    /// For a software key store, would probably be the actual private key, but
-    /// for a hardware wallet would be merely the capability to communicate with
-    /// that wallet.
+    /// Abstract or concrete master private key
     type AccountCap: AbstractMasterPrivKey;
 
     // Just box it because no `impl Trait` in traits for now
@@ -47,31 +46,24 @@ pub trait AbstractKeyStore: Sized {
     ) -> Result<&'a Self::AccountCap, Self::Err>;
 }
 
-pub trait AbstractPrivKey {
-    /// Error type for private key operations.
+/// Capability for deriving (perhaps abstract) signing keys
+/// derived key pairs and sign messages.
+///
+/// For a software key store, would probably be the actual private key, but
+/// for a hardware wallet would be merely the capability to communicate with
+/// that wallet assuming a derivation path.
+pub trait AbstractMasterPrivKey {
+    /// Error type for operations.
     type Err;
 
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-    fn sign_recoverable<P>(
-        &self,
-        message: &H256,
-        path: &P,
-    ) -> Result<RecoverableSignature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-}
+    /// Abstract or concrete derived private key
+    type Privkey: AbstractPrivKey;
 
-pub trait AbstractMasterPrivKey: AbstractPrivKey {
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err>;
 
-    fn derived_pubkey_hash<P>(&self, path: &P) -> Result<H160, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    fn extended_privkey(&self, path: &[ChildNumber]) -> Result<Self::Privkey, Self::Err>;
+
+    fn derived_pubkey_hash(&self, path: &[ChildNumber]) -> Result<H160, Self::Err> {
         let extended_public_key = self.extended_pubkey(path)?;
         Ok(hash_publick_key(&extended_public_key.public_key))
     }
@@ -86,7 +78,9 @@ pub trait AbstractMasterPrivKey: AbstractPrivKey {
         for i in 0..external_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path).map_err(Either::Left)?;
+            let pubkey_hash = self
+                .derived_pubkey_hash(path.as_ref())
+                .map_err(Either::Left)?;
             external_key_set.push((path, pubkey_hash.clone()));
         }
 
@@ -94,7 +88,9 @@ pub trait AbstractMasterPrivKey: AbstractPrivKey {
         for i in 0..change_max_len {
             let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
             let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path).map_err(Either::Left)?;
+            let pubkey_hash = self
+                .derived_pubkey_hash(path.as_ref())
+                .map_err(Either::Left)?;
             change_key_set.push((path, pubkey_hash.clone()));
             if change_last == &pubkey_hash {
                 return Ok(DerivedKeySet {
@@ -104,6 +100,43 @@ pub trait AbstractMasterPrivKey: AbstractPrivKey {
             }
         }
         Err(Either::Right(SearchDerivedAddrFailed))
+    }
+}
+
+/// Trait for signing
+pub trait AbstractPrivKey {
+    /// Error type for operations.
+    type Err;
+
+    fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err>;
+    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err>;
+}
+
+impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K> {
+    type Err = K::Err;
+
+    fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err> {
+        AsRef::<K>::as_ref(self).sign(message)
+    }
+
+    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
+        AsRef::<K>::as_ref(self).sign_recoverable(message)
+    }
+}
+
+impl AbstractPrivKey for ExtendedPrivKey {
+    type Err = Void;
+
+    fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Void> {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        Ok(SECP256K1.sign(&message, &self.private_key))
+    }
+
+    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Void> {
+        let message =
+            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
+        Ok(SECP256K1.sign_recoverable(&message, &self.private_key))
     }
 }
 

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::Write;
+use std::sync::Arc;
 
 use log::debug;
 
@@ -10,7 +11,7 @@ use bitcoin_hashes::{hash160, Hash};
 use byteorder::{BigEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
     is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChainCode,
-    ChildNumber, ExtendedPubKey, Fingerprint, ScryptType,
+    ChildNumber, DerivationPath, ExtendedPubKey, Fingerprint, ScryptType,
 };
 use ckb_types::H256;
 
@@ -34,7 +35,7 @@ mod tests {
 }
 
 pub struct LedgerKeyStore {
-    discovered_devices: HashMap<LedgerId, LedgerCap>,
+    discovered_devices: HashMap<LedgerId, LedgerMasterCap>,
 }
 
 #[derive(Clone, Default, PartialEq, Eq, Hash, Debug)]
@@ -52,7 +53,7 @@ impl LedgerKeyStore {
         self.discovered_devices.clear();
         // TODO fix ledger library so can put in all ledgers
         if let Ok(raw_ledger_app) = RawLedgerApp::new() {
-            let ledger_app = LedgerCap::from_ledger(raw_ledger_app)?;
+            let ledger_app = LedgerMasterCap::from_ledger(raw_ledger_app)?;
             self.discovered_devices
                 .insert(ledger_app.id.clone(), ledger_app);
         }
@@ -67,7 +68,7 @@ impl AbstractKeyStore for LedgerKeyStore {
 
     type AccountId = LedgerId;
 
-    type AccountCap = LedgerCap;
+    type AccountCap = LedgerMasterCap;
 
     fn list_accounts(&mut self) -> Result<Box<dyn Iterator<Item = Self::AccountId>>, Self::Err> {
         self.refresh()?;
@@ -94,12 +95,14 @@ impl AbstractKeyStore for LedgerKeyStore {
 }
 
 /// A ledger device with the Nervos app.
-pub struct LedgerCap {
+#[derive(Clone)]
+pub struct LedgerMasterCap {
     id: LedgerId,
-    ledger_app: RawLedgerApp,
+    // TODO no Arc once we have "generic associated types" and can just borrow the device.
+    ledger_app: Arc<RawLedgerApp>,
 }
 
-impl LedgerCap {
+impl LedgerMasterCap {
     /// Create from a ledger device, checking that a proper version of the
     /// Nervos app is installed.
     fn from_ledger(ledger_app: RawLedgerApp) -> Result<Self, LedgerKeyStoreError> {
@@ -115,9 +118,9 @@ impl LedgerCap {
         let _ = parse::split_off_at(&mut resp, 32)?;
         parse::assert_nothing_left(resp)?;
 
-        Ok(LedgerCap {
+        Ok(LedgerMasterCap {
             id: LedgerId(H256::from_slice(raw_wallet_id).unwrap()),
-            ledger_app: ledger_app,
+            ledger_app: Arc::new(ledger_app),
         })
     }
 }
@@ -126,82 +129,12 @@ const P1_FIRST: u8 = 0x00;
 const P1_NEXT: u8 = 0x01;
 const P1_LAST: u8 = 0x80;
 
-impl AbstractPrivKey for LedgerCap {
+impl AbstractMasterPrivKey for LedgerMasterCap {
     type Err = LedgerKeyStoreError;
 
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<Signature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
+    type Privkey = LedgerCap;
 
-        if !is_valid_derivation_path(path.as_ref()) {
-            return Err(LedgerKeyStoreError::InvalidDerivationPath {
-                path: path.as_ref().iter().cloned().collect(),
-            });
-        }
-
-        let mut raw_path = Vec::new();
-        raw_path
-            .write_u8(path.as_ref().len() as u8)
-            .expect(WRITE_ERR_MSG);
-        for &child_num in path.as_ref().iter() {
-            raw_path
-                .write_u32::<BigEndian>(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
-
-        let mut raw_message = Vec::new();
-        for &child_num in message.as_ref().iter() {
-            raw_message
-                .write_u8(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
-
-        self.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_FIRST,
-            p2: 0,
-            length: raw_path.len() as u8,
-            data: raw_path,
-        })?;
-
-        let response = self.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_LAST | P1_NEXT,
-            p2: 0,
-            length: 32,
-            data: raw_message,
-        })?;
-
-        let mut resp = &response.data[..];
-        let len = parse::split_first(&mut resp)? as usize;
-        let raw_signature = parse::split_off_at(&mut resp, len)?;
-        parse::assert_nothing_left(resp)?;
-
-        Ok(Signature::from_der(raw_signature)?)
-    }
-
-    fn sign_recoverable<P>(
-        &self,
-        _message: &H256,
-        _path: &P,
-    ) -> Result<RecoverableSignature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        unimplemented!()
-    }
-}
-
-impl AbstractMasterPrivKey for LedgerCap {
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
         static WRITE_ERR_MSG: &'static str =
             "IO error not possible when writing to Vec last I checked";
         let mut data = Vec::new();
@@ -234,5 +167,80 @@ impl AbstractMasterPrivKey for LedgerCap {
             public_key: PublicKey::from_slice(&raw_public_key)?,
             chain_code: ChainCode([0; 32]), // dummy, unused
         })
+    }
+
+    fn extended_privkey(&self, path: &[ChildNumber]) -> Result<LedgerCap, Self::Err> {
+        Ok(LedgerCap {
+            master: self.clone(),
+            path: From::from(path.as_ref()),
+        })
+    }
+}
+
+/// A ledger device with the Nervos app constrained to a specific derivation path.
+#[derive(Clone)]
+pub struct LedgerCap {
+    master: LedgerMasterCap,
+    pub path: DerivationPath,
+}
+
+impl AbstractPrivKey for LedgerCap {
+    type Err = LedgerKeyStoreError;
+
+    fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
+        static WRITE_ERR_MSG: &'static str =
+            "IO error not possible when writing to Vec last I checked";
+
+        if !is_valid_derivation_path(self.path.as_ref()) {
+            return Err(LedgerKeyStoreError::InvalidDerivationPath {
+                path: self.path.as_ref().iter().cloned().collect(),
+            });
+        }
+
+        let mut raw_path = Vec::new();
+        raw_path
+            .write_u8(self.path.as_ref().len() as u8)
+            .expect(WRITE_ERR_MSG);
+        for &child_num in self.path.as_ref().iter() {
+            raw_path
+                .write_u32::<BigEndian>(From::from(child_num))
+                .expect(WRITE_ERR_MSG);
+        }
+
+        let mut raw_message = Vec::new();
+        for &child_num in message.as_ref().iter() {
+            raw_message
+                .write_u8(From::from(child_num))
+                .expect(WRITE_ERR_MSG);
+        }
+
+        self.master.ledger_app.exchange(ApduCommand {
+            cla: 0x80,
+            ins: 0x03,
+            p1: P1_FIRST,
+            p2: 0,
+            length: raw_path.len() as u8,
+            data: raw_path,
+        })?;
+
+        let response = self.master.ledger_app.exchange(ApduCommand {
+            cla: 0x80,
+            ins: 0x03,
+            p1: P1_LAST | P1_NEXT,
+            p2: 0,
+            length: 32,
+            data: raw_message,
+        })?;
+
+        let mut resp = &response.data[..];
+        let len = parse::split_first(&mut resp)? as usize;
+        let raw_signature = parse::split_off_at(&mut resp, len)?;
+        parse::assert_nothing_left(resp)?;
+
+        Ok(Signature::from_der(raw_signature)?)
+    }
+
+    fn sign_recoverable(&self, _message: &H256) -> Result<RecoverableSignature, Self::Err> {
+        unimplemented!()
     }
 }

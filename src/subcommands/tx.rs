@@ -33,8 +33,9 @@ use crate::utils::{
         FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{
-        check_capacity, get_genesis_info, get_key_signer_raw, get_keystore_signer, get_live_cell,
-        get_live_cell_with_cache, get_network_type, get_privkey_signer, get_to_data, read_password,
+        check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
+        get_live_cell_with_cache, get_master_key_signer_raw, get_network_type, get_privkey_signer,
+        get_to_data, read_password,
     },
     printer::{OutputFormat, Printable},
 };
@@ -475,7 +476,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                                 .borrow_account(&ledger_id)
                                 .map_err(|e| e.to_string())?;
                             let path = &[]; // TODO
-                            Box::new(get_key_signer_raw(key, path))
+                            Box::new(get_master_key_signer_raw(key, path))
                         }
                     }
                 };

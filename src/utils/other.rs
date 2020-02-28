@@ -335,27 +335,42 @@ pub fn get_keystore_signer_raw<'a>(
             let key = key_store
                 .get_key(account, password.as_bytes())
                 .map_err(|err| err.to_string())?;
-            let res = get_key_signer_raw(&key, path)(lock_args, message);
+            let res = get_master_key_signer_raw(&key, path)(lock_args, message);
             res
         }
     }
 }
 
-pub fn get_key_signer_raw<'a, K>(
+pub fn get_master_key_signer_raw<'a, K>(
     key: &'a K,
     path: &'a [ChildNumber],
 ) -> impl SignerFnTrait + Sized + 'a
 where
+    K: ?Sized,
     K: AbstractMasterPrivKey,
+    <K as AbstractMasterPrivKey>::Err: ToString,
+    <K::Privkey as AbstractPrivKey>::Err: ToString,
+{
+    let derived_key_res = key.extended_privkey(path).map_err(|err| err.to_string());
+    move |lock_args: &HashSet<H160>, message: &H256| {
+        let derived_key = derived_key_res.as_ref()?;
+        get_key_signer_raw(derived_key)(lock_args, message)
+    }
+}
+
+pub fn get_key_signer_raw<'a, K>(key: &'a K) -> impl SignerFnTrait + Sized + 'a
+where
+    K: ?Sized,
+    K: AbstractPrivKey,
     <K as AbstractPrivKey>::Err: ToString,
 {
     move |_lock_args: &HashSet<H160>, message: &H256| {
         if message == &h256!("0x0") {
             Ok(Some([0u8; 65]))
         } else {
-            key.sign_recoverable(message, &path)
-                .map(|signature| Some(serialize_signature(&signature)))
+            key.sign_recoverable(message)
                 .map_err(|err| err.to_string())
+                .map(|signature| Some(serialize_signature(&signature)))
         }
     }
 }
