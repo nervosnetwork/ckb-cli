@@ -142,3 +142,15 @@ pub fn hash_publick_key(public_key: &secp256k1::PublicKey) -> H160 {
     H160::from_slice(&blake2b_256(&public_key.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed")
 }
+
+pub const MANDATORY_PREFIX: &[ChildNumber] = &[
+    ChildNumber::Hardened { index: 44 },
+    ChildNumber::Hardened { index: 309 },
+    ChildNumber::Hardened { index: 0 },
+];
+
+pub fn is_valid_derivation_path(path: &[ChildNumber]) -> bool {
+    path.iter()
+        .zip(MANDATORY_PREFIX.iter())
+        .all(|(x, y)| x == y)
+}
