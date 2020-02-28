@@ -35,7 +35,10 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, DerivationPath, KeyStore},
+    wallet::{
+        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath,
+        KeyStore,
+    },
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
     NetworkType, SignerFnTrait, Since, SinceType, TxHelper, SECP256K1,
 };
@@ -208,7 +211,7 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<String, String>
     where
         K: AbstractMasterPrivKey,
-        <K as AbstractMasterPrivKey>::Err: ToString,
+        <K as AbstractPrivKey>::Err: ToString,
     {
         let network_type = get_network_type(self.rpc_client)?;
 
@@ -730,7 +733,7 @@ fn get_keystore_signer<K>(
 ) -> impl SignerFnTrait + '_
 where
     K: AbstractMasterPrivKey,
-    <K as AbstractMasterPrivKey>::Err: ToString,
+    <K as AbstractPrivKey>::Err: ToString,
 {
     move |lock_args: &HashSet<H160>, message: &H256| {
         let path: &[ChildNumber] = if lock_args.contains(&account) {

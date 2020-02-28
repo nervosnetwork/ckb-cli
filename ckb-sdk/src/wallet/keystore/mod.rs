@@ -14,7 +14,8 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use self::interface::{
-    AbstractKeyStore, AbstractMasterPrivKey, DerivedKeySet, KeyChain, SearchDerivedAddrFailed,
+    AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, DerivedKeySet, KeyChain,
+    SearchDerivedAddrFailed,
 };
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
@@ -651,15 +652,8 @@ impl Key {
     }
 }
 
-impl AbstractMasterPrivKey for Key {
+impl AbstractPrivKey for Key {
     type Err = Void;
-
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        self.master_privkey.extended_pubkey(path)
-    }
 
     fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
     where
@@ -677,6 +671,15 @@ impl AbstractMasterPrivKey for Key {
         P: ?Sized + Debug + AsRef<[ChildNumber]>,
     {
         self.master_privkey.sign_recoverable(message, path)
+    }
+}
+
+impl AbstractMasterPrivKey for Key {
+    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        self.master_privkey.extended_pubkey(path)
     }
 }
 
@@ -745,16 +748,8 @@ impl MasterPrivKey {
     }
 }
 
-impl AbstractMasterPrivKey for MasterPrivKey {
+impl AbstractPrivKey for MasterPrivKey {
     type Err = Void;
-
-    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Void>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>,
-    {
-        let sub_sk = self.sub_privkey(path);
-        Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
-    }
 
     fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Void>
     where
@@ -774,6 +769,16 @@ impl AbstractMasterPrivKey for MasterPrivKey {
             secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
         Ok(SECP256K1.sign_recoverable(&message, &sub_sk.private_key))
+    }
+}
+
+impl AbstractMasterPrivKey for MasterPrivKey {
+    fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Void>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>,
+    {
+        let sub_sk = self.sub_privkey(path);
+        Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
     }
 }
 

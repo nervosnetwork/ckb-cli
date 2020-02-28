@@ -47,10 +47,23 @@ pub trait AbstractKeyStore: Sized {
     ) -> Result<&'a Self::AccountCap, Self::Err>;
 }
 
-pub trait AbstractMasterPrivKey: Sized {
+pub trait AbstractPrivKey {
     /// Error type for private key operations.
     type Err;
 
+    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>;
+    fn sign_recoverable<P>(
+        &self,
+        message: &H256,
+        path: &P,
+    ) -> Result<RecoverableSignature, Self::Err>
+    where
+        P: ?Sized + Debug + AsRef<[ChildNumber]>;
+}
+
+pub trait AbstractMasterPrivKey: AbstractPrivKey {
     fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, Self::Err>
     where
         P: ?Sized + Debug + AsRef<[ChildNumber]>;
@@ -62,18 +75,6 @@ pub trait AbstractMasterPrivKey: Sized {
         let extended_public_key = self.extended_pubkey(path)?;
         Ok(hash_publick_key(&extended_public_key.public_key))
     }
-
-    fn sign<P>(&self, message: &H256, path: &P) -> Result<secp256k1::Signature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
-
-    fn sign_recoverable<P>(
-        &self,
-        message: &H256,
-        path: &P,
-    ) -> Result<RecoverableSignature, Self::Err>
-    where
-        P: ?Sized + Debug + AsRef<[ChildNumber]>;
 
     fn derived_key_set(
         &self,

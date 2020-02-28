@@ -17,7 +17,9 @@ use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
-    wallet::{AbstractKeyStore, AbstractMasterPrivKey, ChildNumber, KeyStore, ScryptType},
+    wallet::{
+        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, KeyStore, ScryptType,
+    },
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFnTrait,
     SECP256K1,
 };
@@ -345,7 +347,7 @@ pub fn get_key_signer_raw<'a, K>(
 ) -> impl SignerFnTrait + Sized + 'a
 where
     K: AbstractMasterPrivKey,
-    <K as AbstractMasterPrivKey>::Err: ToString,
+    <K as AbstractPrivKey>::Err: ToString,
 {
     move |_lock_args: &HashSet<H160>, message: &H256| {
         if message == &h256!("0x0") {
