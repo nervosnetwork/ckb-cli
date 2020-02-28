@@ -10,7 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::{AbstractKeyStore, KeyStore},
+    wallet::{AbstractKeyStore, DerivationPath, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
 };
@@ -29,8 +29,9 @@ use super::{account::AccountId, CliSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
-        FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, DerivationPathParser, FilePathParser,
+        FixedHashParser, FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser,
+        PrivkeyWrapper,
     },
     other::{
         check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
@@ -212,6 +213,16 @@ impl<'a> TxSubCommand<'a> {
                         Arg::with_name("add-signatures")
                             .long("add-signatures")
                             .help("Sign and add signatures"),
+                    )
+                    .arg(
+                        Arg::with_name("path")
+                            .long("path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| {
+                                FromStrParser::<DerivationPath>::new().validate(input)
+                            })
+                            .help("The address path"),
                     ),
                 SubCommand::with_name("send")
                     .about("Send multisig transaction")
@@ -462,6 +473,9 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     ..
                 } = self;
 
+                // TODO: should only be required on ledger accounts
+                let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
+
                 let signer: BoxedSignerFn = if let Some(privkey) = privkey_opt {
                     Box::new(get_privkey_signer(privkey))
                 } else {
@@ -475,8 +489,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                             let key = ledger_key_store
                                 .borrow_account(&ledger_id)
                                 .map_err(|e| e.to_string())?;
-                            let path = &[]; // TODO
-                            Box::new(get_master_key_signer_raw(key, path))
+                            Box::new(get_master_key_signer_raw(key, path.as_ref()))
                         }
                     }
                 };
