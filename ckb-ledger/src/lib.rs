@@ -9,16 +9,15 @@ use log::debug;
 use bitcoin_hashes::{hash160, Hash};
 use byteorder::{BigEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
-    AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber, ExtendedPubKey, Fingerprint,
-    ScryptType,
-    is_valid_derivation_path,
+    is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber,
+    ExtendedPubKey, Fingerprint, ScryptType,
 };
 use ckb_types::H256;
 
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
 
-use ledger::LedgerApp as RawLedgerApp;
 use ledger::ApduCommand;
+use ledger::LedgerApp as RawLedgerApp;
 
 pub mod apdu;
 mod error;
@@ -177,20 +176,24 @@ impl AbstractMasterPrivKey for LedgerCap {
 
         if !is_valid_derivation_path(path.as_ref()) {
             return Err(LedgerKeyStoreError::InvalidDerivationPath {
-                path: path.as_ref().iter().cloned().collect()
+                path: path.as_ref().iter().cloned().collect(),
             });
         }
 
         let mut raw_path = Vec::new();
-        raw_path.write_u8(path.as_ref().len() as u8).expect(WRITE_ERR_MSG);
+        raw_path
+            .write_u8(path.as_ref().len() as u8)
+            .expect(WRITE_ERR_MSG);
         for &child_num in path.as_ref().iter() {
-            raw_path.write_u32::<BigEndian>(From::from(child_num))
+            raw_path
+                .write_u32::<BigEndian>(From::from(child_num))
                 .expect(WRITE_ERR_MSG);
         }
 
         let mut raw_message = Vec::new();
         for &child_num in message.as_ref().iter() {
-            raw_message.write_u8(From::from(child_num))
+            raw_message
+                .write_u8(From::from(child_num))
                 .expect(WRITE_ERR_MSG);
         }
 
