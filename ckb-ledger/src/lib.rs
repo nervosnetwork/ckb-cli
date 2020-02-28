@@ -11,6 +11,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use ckb_sdk::wallet::{
     AbstractKeyStore, AbstractMasterPrivKey, ChainCode, ChildNumber, ExtendedPubKey, Fingerprint,
     ScryptType,
+    is_valid_derivation_path,
 };
 use ckb_types::H256;
 
@@ -173,6 +174,12 @@ impl AbstractMasterPrivKey for LedgerCap {
     {
         static WRITE_ERR_MSG: &'static str =
             "IO error not possible when writing to Vec last I checked";
+
+        if !is_valid_derivation_path(path.as_ref()) {
+            return Err(LedgerKeyStoreError::InvalidDerivationPath {
+                path: path.as_ref().iter().cloned().collect()
+            });
+        }
 
         let mut raw_path = Vec::new();
         raw_path.write_u8(path.as_ref().len() as u8).expect(WRITE_ERR_MSG);

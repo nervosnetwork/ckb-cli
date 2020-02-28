@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use either::Either;
 use clap::ArgMatches;
 use colored::Colorize;
+use either::Either;
 use rpassword::prompt_password_stdout;
 
 use ckb_hash::blake2b_256;
@@ -31,8 +31,8 @@ use ckb_types::{
 };
 
 use super::arg_parser::{
-    AddressParser, ArgParser, FixedHashParser, FromAccountParser, HexParser,
-    PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+    AddressParser, ArgParser, FixedHashParser, FromAccountParser, HexParser, PrivkeyPathParser,
+    PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
 use crate::subcommands::account::AccountId;

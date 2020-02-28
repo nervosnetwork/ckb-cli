@@ -140,7 +140,6 @@ impl<'a> AccountSubCommand<'a> {
                         Arg::with_name("path")
                             .long("path")
                             .takes_value(true)
-                            .required(true)
                             .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
                             .help("The address path")
                     ),
