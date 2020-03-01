@@ -1,6 +1,6 @@
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_types::{
-    bytes::Bytes,
+    bytes::{Bytes, BytesMut},
     core::{ScriptHashType, TransactionBuilder, TransactionView},
     h256,
     packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
@@ -138,16 +138,16 @@ impl TxHelper {
         if lock_arg.len() != 20 && lock_arg.len() != 28 {
             return Err(format!(
                 "Invalid lock_arg(0x{}) length({}) with signature(0x{})",
-                hex_string(lock_arg.as_ref()).unwrap(),
+                hex_string(lock_arg.as_ref()),
                 lock_arg.len(),
-                hex_string(signature.as_ref()).unwrap(),
+                hex_string(signature.as_ref()),
             ));
         }
         if signature.len() != SECP_SIGNATURE_SIZE {
             return Err(format!(
                 "Invalid signature length({}) for lock_arg(0x{})",
                 signature.len(),
-                hex_string(lock_arg.as_ref()).unwrap(),
+                hex_string(lock_arg.as_ref()),
             ));
         }
 
@@ -262,11 +262,11 @@ impl TxHelper {
                 let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
                 let multisig_config = self.multisig_configs.get(&hash160).unwrap();
                 let threshold = multisig_config.threshold() as usize;
-                let mut data = multisig_config.to_witness_data();
+                let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);
                 if signatures.len() != threshold {
                     return Err(format!(
                         "Invalid multisig signature length for lock_arg: 0x{}, got: {}, expected: {}",
-                        hex_string(&lock_arg).unwrap(),
+                        hex_string(&lock_arg),
                         signatures.len(),
                         threshold,
                     ));
@@ -274,12 +274,12 @@ impl TxHelper {
                 for signature in signatures {
                     data.extend_from_slice(signature.as_ref());
                 }
-                data
+                data.freeze()
             } else {
                 if signatures.len() != 1 {
                     return Err(format!(
                         "Invalid secp signature length for lock_arg: 0x{}, got: {}, expected: 1",
-                        hex_string(&lock_arg).unwrap(),
+                        hex_string(&lock_arg),
                         signatures.len(),
                     ));
                 }
@@ -427,9 +427,9 @@ impl MultisigConfig {
         let hash160 = self.hash160();
         if let Some(absolute_epoch_number) = since_absolute_epoch {
             let since_value = Since::new_absolute_epoch(absolute_epoch_number).value();
-            let mut args = Bytes::from(hash160.as_bytes());
+            let mut args = BytesMut::from(hash160.as_bytes());
             args.extend_from_slice(&since_value.to_le_bytes()[..]);
-            AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args)
+            AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args.freeze())
         } else {
             AddressPayload::new_short(CodeHashIndex::Multisig, hash160)
         }
@@ -488,9 +488,9 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     let init_witness = if let Some(multisig_config) = multisig_config_opt {
         let lock_without_sig = {
             let sig_len = (multisig_config.threshold() as usize) * SECP_SIGNATURE_SIZE;
-            let mut data = multisig_config.to_witness_data();
+            let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);
             data.extend_from_slice(vec![0u8; sig_len].as_slice());
-            data
+            data.freeze()
         };
         init_witness
             .as_builder()
@@ -515,5 +515,5 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
     let message = H256::from(message);
-    signer(&message).map(|data| Bytes::from(&data[..]))
+    signer(&message).map(|data| Bytes::from(data.to_vec()))
 }

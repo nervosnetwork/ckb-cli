@@ -66,7 +66,7 @@ impl BlockDeltaInfo {
         reader: &'r T,
         clear_old: bool,
     ) -> BlockDeltaInfo {
-        let block_header: HeaderView = block.header().clone();
+        let block_header: HeaderView = block.header();
         let block_number = block_header.number();
         let timestamp = block_header.timestamp();
 
@@ -200,7 +200,7 @@ impl BlockDeltaInfo {
                 cell_removed += inputs.len();
                 cell_added += outputs.len();
                 RichTxInfo {
-                    tx_hash: tx.hash().clone().unpack(),
+                    tx_hash: tx.hash().unpack(),
                     tx_index: tx_index as u32,
                     block_number,
                     block_timestamp: timestamp,
@@ -225,7 +225,7 @@ impl BlockDeltaInfo {
 
         let capacity_delta = (new_chain_capacity as i128 - old_chain_capacity as i128) as i64;
         let header_info = HeaderInfo {
-            header: block_header.data().as_slice().into(),
+            header: block_header.data().as_slice().to_vec().into(),
             txs_size: block.transactions().len() as u32,
             uncles_size: block.uncle_hashes().len() as u32,
             proposals_size: block.union_proposal_ids().len() as u32,
@@ -555,7 +555,7 @@ impl LockInfo {
     }
 
     fn set_script(&mut self, script: Script) {
-        self.script_opt = Some(script.as_slice().into());
+        self.script_opt = Some(script.as_slice().to_vec().into());
     }
 
     fn add_input(&mut self, input_capacity: u64) {
@@ -691,12 +691,12 @@ impl RichTxInfo {
             inputs: self
                 .inputs
                 .iter()
-                .map(|info| info.out_point().as_slice().into())
+                .map(|info| info.out_point().as_slice().to_vec().into())
                 .collect::<Vec<_>>(),
             outputs: self
                 .outputs
                 .iter()
-                .map(|info| info.out_point().as_slice().into())
+                .map(|info| info.out_point().as_slice().to_vec().into())
                 .collect::<Vec<_>>(),
         }
     }

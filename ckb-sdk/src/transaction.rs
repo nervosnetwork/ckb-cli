@@ -258,7 +258,7 @@ impl<'a> MockTransactionHelper<'a> {
             let mut message = [0u8; 32];
             blake2b.finalize(&mut message);
             let message = H256::from(message);
-            let sig = signer(&lock_arg, &message).map(|data| Bytes::from(data.as_ref()))?;
+            let sig = signer(&lock_arg, &message).map(|data| Bytes::from(data.to_vec()))?;
             witnesses[idxs[0]] = WitnessArgs::new_builder()
                 .lock(Some(sig).pack())
                 .build()
@@ -356,7 +356,7 @@ mod test {
         let lock_script = Script::new_builder()
             .code_hash(genesis_info.sighash_type_hash().clone())
             .hash_type(ScriptHashType::Type.into())
-            .args(Bytes::from(lock_arg.as_bytes()).pack())
+            .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
             .build();
 
         let mut mock_tx = MockTransaction::default();

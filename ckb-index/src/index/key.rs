@@ -267,7 +267,7 @@ impl Key {
                 Key::BlockDelta(number)
             }
             KeyType::LiveCellMap => {
-                let out_point = OutPoint::new_unchecked(args_bytes.into());
+                let out_point = OutPoint::new_unchecked(args_bytes.to_vec().into());
                 Key::LiveCellMap(out_point)
             }
             KeyType::LiveCellIndex => {

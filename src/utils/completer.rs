@@ -79,7 +79,7 @@ impl<'a, 'b> CkbCompleter<'a, 'b> {
                         .map(|aliases| {
                             aliases
                                 .iter()
-                                .map(|(alias, _)| (alias.to_string(), alias.to_string()))
+                                .map(|(alias, _)| ((*alias).to_owned(), (*alias).to_owned()))
                                 .collect::<Vec<(String, String)>>()
                         })
                         .unwrap_or_else(|| vec![]),
@@ -158,7 +158,6 @@ impl<'a, 'b> Completer for CkbCompleter<'a, 'b> {
 
         if word_lower.is_empty() {
             let pairs = tmp_pair
-                .clone()
                 .into_iter()
                 .map(|(display, replacement)| Pair {
                     display,
@@ -182,7 +181,6 @@ impl<'a, 'b> Completer for CkbCompleter<'a, 'b> {
                 .any(|ref mut x| x.replacement.to_lowercase().contains(&word_lower))
             {
                 let pairs = tmp_pair
-                    .clone()
                     .into_iter()
                     .filter(|(_, replacement)| replacement.to_lowercase().contains(&word_lower))
                     .map(|(display, replacement)| Pair {

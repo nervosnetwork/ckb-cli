@@ -170,7 +170,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             "lock_hash": format!("{:#x}", lock_hash),
                             "address": {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                                "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                             },
                         })
                     })
@@ -192,7 +192,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_hash": format!("{:#x}", lock_hash),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -218,7 +218,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -240,7 +240,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -354,7 +354,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))

@@ -111,12 +111,7 @@ fn main() -> Result<(), io::Error> {
     }
     let result = match matches.subcommand() {
         #[cfg(unix)]
-        ("tui", _) => TuiSubCommand::new(
-            api_uri.to_string(),
-            index_dir.clone(),
-            index_controller.clone(),
-        )
-        .start(),
+        ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone()).start(),
         ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
             .process(&sub_matches, output_format, color, debug),
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {

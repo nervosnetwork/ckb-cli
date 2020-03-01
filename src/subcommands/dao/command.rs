@@ -169,7 +169,7 @@ impl TransactArgs {
                         })
                         .map_err(|_| format!("Invalid value for '--from-account': {}", err))
                 })?;
-            let payload = AddressPayload::from_pubkey_hash(account.clone().unwrap());
+            let payload = AddressPayload::from_pubkey_hash(account.unwrap());
             Address::new(network_type, payload)
         };
         assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());

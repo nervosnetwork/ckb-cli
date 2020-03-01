@@ -8,7 +8,7 @@ use ckb_sdk::{
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
-    bytes::Bytes,
+    bytes::BytesMut,
     core::{EpochNumberWithFraction, ScriptHashType},
     packed,
     prelude::*,
@@ -275,7 +275,7 @@ message = "0x"
                     "pubkey": pubkey_string_opt,
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
@@ -511,23 +511,20 @@ message = "0x"
                     DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
                         .map(|dt| dt.timestamp_millis() as u64)
                         .map_err(|err| err.to_string())?;
-                let (tip_epoch, tip_timestamp) = self
-                    .rpc_client
-                    .get_tip_header()
-                    .map(|header_view| {
+                let (tip_epoch, tip_timestamp) =
+                    self.rpc_client.get_tip_header().map(|header_view| {
                         let header = header_view.inner;
                         let epoch = EpochNumberWithFraction::from_full_value(header.epoch.0);
                         let timestamp = header.timestamp;
                         (epoch, timestamp)
-                    })
-                    .map_err(|err| err.to_string())?;
+                    })?;
                 let elapsed = locktime_timestamp.saturating_sub(tip_timestamp.0);
                 let (epoch, multisig_addr) =
                     gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
                 let resp = serde_json::json!({
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, multisig_addr.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, multisig_addr).to_string(),
                     },
                     "target_epoch": epoch.to_string(),
                 });
@@ -594,9 +591,9 @@ fn gen_multisig_addr(
     let args = {
         let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
         multi_script.extend_from_slice(sighash_address_payload.args().as_ref());
-        let mut data = Bytes::from(&blake2b_256(multi_script)[..20]);
-        data.extend(since.to_le_bytes().iter());
-        data
+        let mut data = BytesMut::from(&blake2b_256(multi_script)[..20]);
+        data.extend_from_slice(&since.to_le_bytes()[..]);
+        data.freeze()
     };
     let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
     (epoch_fraction, payload)

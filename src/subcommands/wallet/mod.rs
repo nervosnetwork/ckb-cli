@@ -220,7 +220,7 @@ impl<'a> WalletSubCommand<'a> {
                 read_password(false, None)?
             };
             (
-                AddressPayload::from_pubkey_hash(from_account.clone().unwrap()),
+                AddressPayload::from_pubkey_hash(from_account.unwrap()),
                 password,
             )
         };

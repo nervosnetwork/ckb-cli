@@ -179,7 +179,7 @@ impl<'a> TxSubCommand<'a> {
                             .validator(|input| match HexParser.parse(&input) {
                                 Ok(ref data) if data.len() == 20 || data.len() == 28 => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err.to_string()),
+                                Err(err) => Err(err),
                             })
                             .help("The lock_arg of input lock script (20 bytes or 28 bytes)"),
                     )
@@ -191,7 +191,7 @@ impl<'a> TxSubCommand<'a> {
                             .validator(|input| match HexParser.parse(&input) {
                                 Ok(ref data) if data.len() == SECP_SIGNATURE_SIZE => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err.to_string()),
+                                Err(err) => Err(err),
                             })
                             .help("The signature"),
                     )

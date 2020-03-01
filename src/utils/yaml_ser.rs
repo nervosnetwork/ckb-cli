@@ -805,7 +805,7 @@ where
     T: ser::Serialize,
 {
     let mut vec = Vec::with_capacity(128);
-    to_writer(&mut vec, value, color).map_err(|err| err.to_string())?;
+    to_writer(&mut vec, value, color)?;
     Ok(vec)
 }
 
