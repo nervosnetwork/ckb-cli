@@ -174,7 +174,7 @@ pub fn from_block_number<'a, 'b>() -> Arg<'a, 'b> {
         .long("from")
         .takes_value(true)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .help("From block number")
+        .help("From block number (inclusive)")
 }
 
 pub fn to_block_number<'a, 'b>() -> Arg<'a, 'b> {
@@ -182,7 +182,7 @@ pub fn to_block_number<'a, 'b>() -> Arg<'a, 'b> {
         .long("to")
         .takes_value(true)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .help("To block number")
+        .help("To block number (inclusive)")
 }
 
 pub fn top_n<'a, 'b>() -> Arg<'a, 'b> {

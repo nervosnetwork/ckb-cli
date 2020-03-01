@@ -18,6 +18,10 @@ ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc
 ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
 
 jsonrpc-client-core = "0.5.0"
+jsonrpc-core = "10.1"
+jsonrpc-derive = "10.1"
+jsonrpc-http-server = "10.1"
+jsonrpc-server-utils = "10.1"
 secp256k1 = {version = "0.15.0" }
 faster-hex = "0.3"
 env_logger = "0.6"

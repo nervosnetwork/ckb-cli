@@ -17,8 +17,9 @@ use subcommands::TuiSubCommand;
 use crate::utils::other::get_genesis_info;
 use interactive::InteractiveEnv;
 use subcommands::{
-    start_index_thread, AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
-    MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
+    MockTxSubCommand, MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
+    WalletSubCommand,
 };
 use utils::other::sync_to_tip;
 use utils::{
@@ -150,6 +151,16 @@ fn main() -> Result<(), io::Error> {
                 debug,
             )
         }),
+        ("server", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
+            ApiServerSubCommand::new(
+                &mut rpc_client,
+                &mut key_store,
+                None,
+                index_dir.clone(),
+                index_controller.clone(),
+            )
+            .process(&sub_matches, output_format, color, debug)
+        }),
         ("molecule", Some(sub_matches)) => {
             MoleculeSubCommand::new().process(&sub_matches, output_format, color, debug)
         }
@@ -249,6 +260,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))
+        .subcommand(ApiServerSubCommand::subcommand("server"))
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
         .subcommand(WalletSubCommand::subcommand())

@@ -322,3 +322,10 @@ pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
         || info.number == 0
         || info.number <= max_mature_number
 }
+
+pub fn get_arg_value<'a>(matches: &'a ArgMatches, name: &str) -> Result<String, String> {
+    matches
+        .value_of(name)
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("<{}> is required", name))
+}
