@@ -15,7 +15,7 @@ use ckb_sdk::wallet::{
 };
 use ckb_types::H256;
 
-use secp256k1::{key::PublicKey, recovery::RecoverableSignature, Signature};
+use secp256k1::{key::PublicKey, recovery::RecoverableSignature, recovery::RecoveryId, Signature};
 
 use ledger::ApduCommand;
 use ledger::LedgerApp as RawLedgerApp;
@@ -129,14 +129,15 @@ const P1_FIRST: u8 = 0x00;
 const P1_NEXT: u8 = 0x01;
 const P1_LAST: u8 = 0x80;
 
+const WRITE_ERR_MSG: &'static str =
+    "IO error not possible when writing to Vec last I checked";
+
 impl AbstractMasterPrivKey for LedgerMasterCap {
     type Err = LedgerKeyStoreError;
 
     type Privkey = LedgerCap;
 
     fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
         let mut data = Vec::new();
         data.write_u8(path.as_ref().len() as u8)
             .expect(WRITE_ERR_MSG);
@@ -188,9 +189,6 @@ impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
     fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
-
         if !is_valid_derivation_path(self.path.as_ref()) {
             return Err(LedgerKeyStoreError::InvalidDerivationPath {
                 path: self.path.as_ref().iter().cloned().collect(),
@@ -240,7 +238,65 @@ impl AbstractPrivKey for LedgerCap {
         Ok(Signature::from_der(raw_signature)?)
     }
 
-    fn sign_recoverable(&self, _message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        unimplemented!()
+    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
+        if !is_valid_derivation_path(self.path.as_ref()) {
+            return Err(LedgerKeyStoreError::InvalidDerivationPath {
+                path: self.path.as_ref().iter().cloned().collect(),
+            });
+        }
+
+        let mut raw_path = Vec::new();
+        raw_path
+            .write_u8(self.path.as_ref().len() as u8)
+            .expect(WRITE_ERR_MSG);
+        for &child_num in self.path.as_ref().iter() {
+            raw_path
+                .write_u32::<BigEndian>(From::from(child_num))
+                .expect(WRITE_ERR_MSG);
+        }
+
+        let mut raw_message = Vec::new();
+        for &child_num in message.as_ref().iter() {
+            raw_message
+                .write_u8(From::from(child_num))
+                .expect(WRITE_ERR_MSG);
+        }
+
+        debug!(
+            "Nervos CKB Ledger app request {:?} with length {:?}",
+            &(raw_path),
+            &(raw_path.len() as u8)
+        );
+
+        self.master.ledger_app.exchange(ApduCommand {
+            cla: 0x80,
+            ins: 0x03,
+            p1: P1_FIRST,
+            p2: 0,
+            length: raw_path.len() as u8,
+            data: raw_path,
+        })?;
+
+        let response = self.master.ledger_app.exchange(ApduCommand {
+            cla: 0x80,
+            ins: 0x03,
+            p1: P1_LAST | P1_NEXT,
+            p2: 0,
+            length: 32,
+            data: raw_message,
+        })?;
+
+        let mut resp = &response.data[..];
+        let len = parse::split_first(&mut resp)? as usize;
+        let raw_signature = parse::split_off_at(&mut resp, len)?;
+        parse::assert_nothing_left(resp)?;
+
+        // TODO: determine a real recovery id
+        let recovery_id = RecoveryId::from_i32(27)?;
+
+        Ok(RecoverableSignature::from_compact(
+            raw_signature,
+            recovery_id,
+        )?)
     }
 }
