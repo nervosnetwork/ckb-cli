@@ -129,14 +129,15 @@ const P1_FIRST: u8 = 0x00;
 const P1_NEXT: u8 = 0x01;
 const P1_LAST: u8 = 0x80;
 
+const WRITE_ERR_MSG: &'static str =
+    "IO error not possible when writing to Vec last I checked";
+
 impl AbstractMasterPrivKey for LedgerMasterCap {
     type Err = LedgerKeyStoreError;
 
     type Privkey = LedgerCap;
 
     fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
         let mut data = Vec::new();
         data.write_u8(path.as_ref().len() as u8)
             .expect(WRITE_ERR_MSG);
@@ -188,9 +189,6 @@ impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
     fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
-
         if !is_valid_derivation_path(self.path.as_ref()) {
             return Err(LedgerKeyStoreError::InvalidDerivationPath {
                 path: self.path.as_ref().iter().cloned().collect(),
@@ -241,8 +239,11 @@ impl AbstractPrivKey for LedgerCap {
     }
 
     fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        static WRITE_ERR_MSG: &'static str =
-            "IO error not possible when writing to Vec last I checked";
+        if !is_valid_derivation_path(self.path.as_ref()) {
+            return Err(LedgerKeyStoreError::InvalidDerivationPath {
+                path: self.path.as_ref().iter().cloned().collect(),
+            });
+        }
 
         let mut raw_path = Vec::new();
         raw_path
