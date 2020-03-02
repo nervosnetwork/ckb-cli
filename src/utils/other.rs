@@ -80,7 +80,7 @@ pub fn get_singer(
         let prompt = format!("Password for [{:x}]", lock_arg);
         let password = read_password(false, Some(prompt.as_str()))?;
         let signature = key_store
-            .sign_recoverable_with_password(lock_arg, None, tx_hash_hash, password.as_bytes())
+            .sign_recoverable_with_password(lock_arg, &[], tx_hash_hash, password.as_bytes())
             .map_err(|err| err.to_string())?;
         let (recov_id, data) = signature.serialize_compact();
         let mut signature_bytes = [0u8; 65];

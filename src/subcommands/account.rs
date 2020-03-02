@@ -340,13 +340,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let path: Option<DerivationPath> =
-                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
+                let path: DerivationPath = FromStrParser::<DerivationPath>::new()
+                    .from_matches_opt(m, "path", false)?
+                    .unwrap_or_else(DerivationPath::empty);
 
                 let password = read_password(false, None)?;
                 let extended_pubkey = self
                     .key_store
-                    .extended_pubkey_with_password(&lock_arg, path.as_ref(), password.as_bytes())
+                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
                 let resp = serde_json::json!({

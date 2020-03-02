@@ -721,20 +721,13 @@ fn get_keystore_signer(
     password: String,
 ) -> SignerFn {
     Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        let path = if lock_args.contains(&account) {
-            None
+        let path: &[_] = if lock_args.contains(&account) {
+            &[]
         } else {
-            let mut path_opt = None;
-            for lock_arg in lock_args {
-                if let Some(path) = path_map.get(lock_arg) {
-                    path_opt = Some(path);
-                    break;
-                }
+            match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
+                None => return Ok(None),
+                Some(path) => path.as_ref(),
             }
-            if path_opt.is_none() {
-                return Ok(None);
-            }
-            path_opt
         };
         if message == &h256!("0x0") {
             return Ok(Some([0u8; 65]));
