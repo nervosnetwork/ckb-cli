@@ -38,9 +38,6 @@ use ckb_sdk::{
     NetworkType, SignerFnTrait, Since, SinceType, TxHelper,
 };
 
-// Max derived change address to search
-const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
-
 pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     key_store: &'a mut KeyStore,
@@ -119,6 +116,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::capacity().required(true))
                     .arg(arg::tx_fee().required(true))
                     .arg(arg::derive_receiving_address_length())
+                    .arg(arg::derive_change_address_length())
                     .arg(arg::derive_change_address().conflicts_with(arg::privkey_path().b.name)),
                 SubCommand::with_name("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
@@ -223,11 +221,13 @@ impl<'a> WalletSubCommand<'a> {
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
             let receiving_address_length: u32 = FromStrParser::<u32>::default()
                 .from_matches(m, "derive-receiving-address-length")?;
+            let change_address_length: u32 =
+                FromStrParser::<u32>::default().from_matches(m, "derive-change-address-length")?;
             let key_set = key_cap
                 .derived_key_set(
                     receiving_address_length,
                     &change_last,
-                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                    change_address_length,
                 )
                 .map_err(|e| match e {
                     Either::Left(e) => e.to_string(),

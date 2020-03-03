@@ -62,7 +62,7 @@ pub fn derive_change_address_length<'a, 'b>() -> Arg<'a, 'b> {
     Arg::with_name("derive-change-address-length")
         .long("derive-change-address-length")
         .takes_value(true)
-        .default_value("1000")
+        .default_value("10000")
         .validator(|input| FromStrParser::<u32>::default().validate(input))
         .help("Search derived change address length")
 }
