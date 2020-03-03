@@ -225,13 +225,18 @@ impl AbstractPrivKey for LedgerCap {
             data: raw_message,
         })?;
 
-        let raw_signature = &response.data[..];
+        let mut raw_signature = response.data.clone();
+        let raw_bytes = &mut raw_signature[..];
+
+        // TODO: Figure why this is necessary. For some reason
+        // SECP256k1 doesn’t like 0x31 bytes.
+        raw_bytes[0] = 0x30;
 
         // TODO: determine a real recovery id
         let recovery_id = RecoveryId::from_i32(0)?;
 
         Ok(RecoverableSignature::from_compact(
-            raw_signature,
+            &Signature::serialize_compact(&Signature::from_der(raw_bytes)?),
             recovery_id,
         )?)
     }
