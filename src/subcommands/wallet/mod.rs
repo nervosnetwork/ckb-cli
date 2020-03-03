@@ -221,8 +221,8 @@ impl<'a> WalletSubCommand<'a> {
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
             let receiving_address_length: u32 = FromStrParser::<u32>::default()
                 .from_matches(m, "derive-receiving-address-length")?;
-            let change_address_length: u32 = FromStrParser::<u32>::default()
-                .from_matches(m, "derive-change-address-length")?;
+            let change_address_length: u32 =
+                FromStrParser::<u32>::default().from_matches(m, "derive-change-address-length")?;
             let key_set = key_cap
                 .derived_key_set(
                     receiving_address_length,
