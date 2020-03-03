@@ -344,8 +344,8 @@ impl TxHelper {
 
 // do this until we get aliases
 
-pub trait SignerFnTrait: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String> {}
-impl<T> SignerFnTrait for T where T: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>
+pub trait SignerFnTrait: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; SECP_SIGNATURE_SIZE]>, String> {}
+impl<T> SignerFnTrait for T where T: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; SECP_SIGNATURE_SIZE]>, String>
 {}
 
 pub type BoxedSignerFn<'a> = Box<dyn SignerFnTrait + 'a>;
