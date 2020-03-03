@@ -228,7 +228,7 @@ impl AbstractPrivKey for LedgerCap {
         let raw_signature = &response.data[..];
 
         // TODO: determine a real recovery id
-        let recovery_id = RecoveryId::from_i32(27)?;
+        let recovery_id = RecoveryId::from_i32(0)?;
 
         Ok(RecoverableSignature::from_compact(
             raw_signature,
