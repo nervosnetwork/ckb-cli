@@ -145,15 +145,15 @@ impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K> {
     type SignerSingleShot = K::SignerSingleShot;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
-        AsRef::<K>::as_ref(self).public_key()
+        (&**self).public_key()
     }
 
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err> {
-        AsRef::<K>::as_ref(self).sign(message)
+        (&**self).sign(message)
     }
 
     fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
-        AsRef::<K>::as_ref(self).begin_sign_recoverable()
+        (&**self).begin_sign_recoverable()
     }
 }
 
@@ -176,12 +176,12 @@ impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for &K {
 }
 
 // Only not using impl trait because unstable
-type ExtendedPublicKeyHashClosure = Box<dyn FnOnce(H256) -> Result<RecoverableSignature, Void>>;
+type ExtendedPublicKeySignClosure = Box<dyn FnOnce(H256) -> Result<RecoverableSignature, Void>>;
 
 impl AbstractPrivKey for ExtendedPrivKey {
     type Err = Void;
 
-    type SignerSingleShot = SignPrehashedHelper<ExtendedPublicKeyHashClosure, Self::Err>;
+    type SignerSingleShot = SignPrehashedHelper<ExtendedPublicKeySignClosure, Self::Err>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         Ok(ExtendedPubKey::from_private(&SECP256K1, self).public_key)

@@ -3,6 +3,7 @@ use void::Void;
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::wallet::{zeroize_privkey, AbstractPrivKey};
+use ckb_sdk::SignPrehashedHelper;
 use ckb_types::H256;
 use secp256k1::recovery::RecoverableSignature;
 
@@ -24,9 +25,14 @@ impl std::ops::Deref for PrivkeyWrapper {
     }
 }
 
+// Only not using impl trait because unstable
+type PrivkeyWrapperSignClosure = Box<dyn FnOnce(H256) -> Result<RecoverableSignature, Void>>;
+
 impl AbstractPrivKey for PrivkeyWrapper {
     // TODO `secp256k1::Error`
     type Err = Void;
+
+    type SignerSingleShot = SignPrehashedHelper<PrivkeyWrapperSignClosure, Self::Err>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         Ok(secp256k1::PublicKey::from_secret_key(&SECP256K1, self))
@@ -38,9 +44,12 @@ impl AbstractPrivKey for PrivkeyWrapper {
         Ok(SECP256K1.sign(&message, &self.0))
     }
 
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        Ok(SECP256K1.sign_recoverable(&message, &self.0))
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
+        let cloned_key = self.0.clone();
+        SignPrehashedHelper::new(Box::new(move |message: H256| {
+            let message = secp256k1::Message::from_slice(message.as_bytes())
+                .expect("Convert to message failed");
+            Ok(SECP256K1.sign_recoverable(&message, &cloned_key))
+        }))
     }
 }

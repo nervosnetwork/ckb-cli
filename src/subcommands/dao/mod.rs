@@ -8,7 +8,7 @@ use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use crate::subcommands::account::AccountId;
 use crate::utils::index::IndexController;
-use crate::utils::key_adapter::KeyAdapter;
+use crate::utils::key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter};
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
 };
@@ -150,7 +150,7 @@ struct WithTransactArgs<'a, 'b> {
     dao: &'b mut DAOSubCommand<'a>,
     transact_args: TransactArgs,
     address_payload: AddressPayload,
-    key_cap: Box<dyn AbstractPrivKey<Err = String>>,
+    key_cap: FullyBoxedAbstractPrivkey,
 }
 
 impl<'a, 'b> WithTransactArgs<'a, 'b> {
@@ -158,7 +158,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
         dao: &'b mut DAOSubCommand<'a>,
         transact_args: TransactArgs,
     ) -> Result<Self, String> {
-        let (address_payload, key_cap): (AddressPayload, Box<dyn AbstractPrivKey<Err = String>>) =
+        let (address_payload, key_cap): (AddressPayload, FullyBoxedAbstractPrivkey) =
             match transact_args.account {
                 Either::Left(ref from_privkey) => {
                     let from_pubkey =

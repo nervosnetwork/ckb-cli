@@ -37,7 +37,7 @@ use super::arg_parser::{
     PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
-use super::key_adapter::KeyAdapter;
+use super::key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter};
 use crate::subcommands::account::AccountId;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -428,14 +428,7 @@ pub fn make_address_payload_and_master_key_cap(
 ) -> Result<
     (
         Option<AddressPayload>,
-        Option<
-            Box<
-                dyn AbstractMasterPrivKey<
-                    Err = String,
-                    Privkey = Box<dyn AbstractPrivKey<Err = String>>,
-                >,
-            >,
-        >,
+        Option<Box<dyn AbstractMasterPrivKey<Err = String, Privkey = FullyBoxedAbstractPrivkey>>>,
     ),
     String,
 > {

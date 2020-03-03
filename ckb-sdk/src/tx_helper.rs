@@ -537,5 +537,5 @@ pub fn build_signature<S: SignerSingleShot<Err = String>>(
         signer.append(&(other_witness.len() as u64).to_le_bytes());
         signer.append(&other_witness.raw_data());
     }
-    signer.finalize()
+    Box::new(signer).finalize()
 }
