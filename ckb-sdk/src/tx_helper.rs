@@ -354,8 +354,21 @@ where
     fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot>;
 }
 
+impl<T> SignerFnTrait for Box<T>
+where
+    T: ?Sized + SignerFnTrait,
+{
+    type SingleShot = T::SingleShot;
+
+    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
+        (&mut **self).new_signature_builder(lock_args)
+    }
+}
+
 // Helper write impl via closure
-impl<T, U> SignerFnTrait for T
+pub struct SignerClosureHelper<T>(pub T);
+
+impl<T, U> SignerFnTrait for SignerClosureHelper<T>
 where
     T: FnMut(&HashSet<H160>) -> Option<U>,
     U: SignerSingleShot<Err = String>,
@@ -363,7 +376,7 @@ where
     type SingleShot = U;
 
     fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
-        self(lock_args)
+        self.0(lock_args)
     }
 }
 

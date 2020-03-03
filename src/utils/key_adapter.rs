@@ -55,17 +55,21 @@ where
         self.0.sign(message).map_err(|e| e.to_string())
     }
 
-    fn begin_sign_recoverable(&self) -> Result<RecoverableSignature, Self::Err> {
+    fn begin_sign_recoverable(&self) -> SingerSingleShot {
         Box::new(KeyAdapter(self.0.begin_sign_recoverable()))
     }
 }
 
-impl<T> SignerSingleShot for KeyAdapter<T> {
+impl<T> SignerSingleShot for KeyAdapter<T>
+where
+    Key: SignerSingleShot,
+    Key::Err: ToString,
+{
     type Err = String;
     fn append(&mut self, message_fragment: &[u8]) {
         self.0.append(message_fragment)
     }
     fn finalize(self) -> Result<RecoverableSignature, Self::Err> {
-        self.0.finalize().map_err(|e| e.to_string())
+        Box::new(self.0).finalize().map_err(|e| e.to_string())
     }
 }

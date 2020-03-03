@@ -17,7 +17,9 @@ pub use transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper,
     ReprMockCellDep, ReprMockInfo, ReprMockInput, ReprMockTransaction,
 };
-pub use tx_helper::{build_signature, BoxedSignerFn, MultisigConfig, SignerFnTrait, TxHelper};
+pub use tx_helper::{
+    build_signature, BoxedSignerFn, MultisigConfig, SignerClosureHelper, SignerFnTrait, TxHelper,
+};
 pub use types::{
     Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
     OldAddressFormat, Since, SinceType,

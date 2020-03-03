@@ -401,6 +401,10 @@ pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature
     signature_bytes
 }
 
+pub fn serialize_signature_bytes(signature: &secp256k1::recovery::RecoverableSignature) -> Bytes {
+    Bytes::from(&serialize_signature_bytes(signature)[..])
+}
+
 pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
     // Not cellbase cell
     info.index.tx_index > 0

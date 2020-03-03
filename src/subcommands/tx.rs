@@ -36,7 +36,7 @@ use crate::utils::{
     other::{
         check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
         get_live_cell_with_cache, get_master_key_signer_raw, get_network_type, get_privkey_signer,
-        get_to_data, read_password,
+        get_to_data, read_password, serialize_signature,
     },
     printer::{OutputFormat, Printable},
 };
@@ -504,18 +504,21 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
                     let signatures = helper.sign_inputs(signer, get_live_cell)?;
                     if m.is_present("add-signatures") {
-                        for (lock_arg, signature) in signatures.clone() {
-                            helper.add_signature(lock_arg, signature)?;
+                        for (ref lock_arg, ref signature) in &signatures {
+                            helper.add_signature(
+                                *lock_arg.clone(),
+                                serialize_signature_bytes(signature),
+                            )?;
                         }
                     }
                     Ok(signatures)
                 })?;
                 let resp = signatures
                     .into_iter()
-                    .map(|(lock_arg, signature)| {
+                    .map(|(lock_arg, ref signature)| {
                         serde_json::json!({
                             "lock-arg": format!("0x{}", hex_string(&lock_arg).unwrap()),
-                            "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                            "signature": format!("0x{}", hex_string(serialize_signature_bytes(signature)).unwrap()),
                         })
                     })
                     .collect::<Vec<_>>();

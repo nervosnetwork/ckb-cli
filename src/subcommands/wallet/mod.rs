@@ -24,6 +24,7 @@ use crate::utils::{
         check_capacity, get_address, get_live_cell_with_cache, get_master_key_signer_raw,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
         make_address_payload_and_master_key_cap, privkey_or_from_account, read_password,
+        serialize_signature_bytes,
     },
     printer::{OutputFormat, Printable},
 };
@@ -440,8 +441,8 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        for (lock_arg, signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
-            helper.add_signature(lock_arg, signature)?;
+        for (lock_arg, ref signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
+            helper.add_signature(lock_arg, serialize_signature_bytes(signature))?;
         }
         let tx = helper.build_tx(&mut get_live_cell_fn)?;
         self.send_transaction(tx, format, color, debug)
