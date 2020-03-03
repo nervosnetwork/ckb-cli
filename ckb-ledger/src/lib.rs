@@ -191,65 +191,51 @@ impl AbstractPrivKey for LedgerCap {
     }
 
     fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
-        unimplemented!()
-    }
-    /*
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        let mut raw_path = Vec::new();
-        raw_path
-            .write_u8(self.path.as_ref().len() as u8)
-            .expect(WRITE_ERR_MSG);
-        for &child_num in self.path.as_ref().iter() {
+        let my_self = self.clone();
+
+        SignEntireHelper::new(Box::new(move |message: Vec<u8>| {
+            let mut raw_path = Vec::new();
             raw_path
-                .write_u32::<BigEndian>(From::from(child_num))
+                .write_u8(my_self.path.as_ref().len() as u8)
                 .expect(WRITE_ERR_MSG);
-        }
+            for &child_num in my_self.path.as_ref().iter() {
+                raw_path
+                    .write_u32::<BigEndian>(From::from(child_num))
+                    .expect(WRITE_ERR_MSG);
+            }
 
-        let mut raw_message = Vec::new();
-        for &child_num in message.as_ref().iter() {
-            raw_message
-                .write_u8(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
+            my_self.master.ledger_app.exchange(ApduCommand {
+                cla: 0x80,
+                ins: 0x03,
+                p1: P1_FIRST,
+                p2: 0,
+                length: raw_path.len() as u8,
+                data: raw_path,
+            })?;
 
-        debug!(
-            "Nervos CKB Ledger app request {:?} with length {:?}",
-            &(raw_path),
-            &(raw_path.len() as u8)
-        );
+            let response = my_self.master.ledger_app.exchange(ApduCommand {
+                cla: 0x80,
+                ins: 0x03,
+                p1: P1_LAST | P1_NEXT,
+                p2: 0,
+                length: 32,
+                data: message,
+            })?;
 
-        self.master.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_FIRST,
-            p2: 0,
-            length: raw_path.len() as u8,
-            data: raw_path,
-        })?;
+            let mut raw_signature = response.data.clone();
+            let raw_bytes = &mut raw_signature[..];
 
-        let response = self.master.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_LAST | P1_NEXT,
-            p2: 0,
-            length: 32,
-            data: raw_message,
-        })?;
+            // TODO: Figure why this is necessary. For some reason
+            // SECP256k1 doesn’t like 0x31 bytes.
+            raw_bytes[0] = 0x30;
 
-        let mut raw_signature = response.data.clone();
-        let raw_bytes = &mut raw_signature[..];
+            // TODO: determine a real recovery id
+            let recovery_id = RecoveryId::from_i32(0)?;
 
-        // TODO: Figure why this is necessary. For some reason
-        // SECP256k1 doesn’t like 0x31 bytes.
-        raw_bytes[0] = 0x30;
-
-        // TODO: determine a real recovery id
-        let recovery_id = RecoveryId::from_i32(0)?;
-
-        Ok(RecoverableSignature::from_compact(
-            &Signature::serialize_compact(&Signature::from_der(raw_bytes)?),
-            recovery_id,
-        )?)
+            Ok(RecoverableSignature::from_compact(
+                &Signature::serialize_compact(&Signature::from_der(raw_bytes)?),
+                recovery_id,
+            )?)
+        }))
     }
-    */
 }
