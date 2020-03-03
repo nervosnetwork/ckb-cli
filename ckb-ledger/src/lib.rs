@@ -179,47 +179,8 @@ impl AbstractPrivKey for LedgerCap {
     }
 
     fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
-        let mut raw_path = Vec::new();
-        raw_path
-            .write_u8(self.path.as_ref().len() as u8)
-            .expect(WRITE_ERR_MSG);
-        for &child_num in self.path.as_ref().iter() {
-            raw_path
-                .write_u32::<BigEndian>(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
-
-        let mut raw_message = Vec::new();
-        for &child_num in message.as_ref().iter() {
-            raw_message
-                .write_u8(From::from(child_num))
-                .expect(WRITE_ERR_MSG);
-        }
-
-        self.master.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_FIRST,
-            p2: 0,
-            length: raw_path.len() as u8,
-            data: raw_path,
-        })?;
-
-        let response = self.master.ledger_app.exchange(ApduCommand {
-            cla: 0x80,
-            ins: 0x03,
-            p1: P1_LAST | P1_NEXT,
-            p2: 0,
-            length: 32,
-            data: raw_message,
-        })?;
-
-        let mut resp = &response.data[..];
-        let len = parse::split_first(&mut resp)? as usize;
-        let raw_signature = parse::split_off_at(&mut resp, len)?;
-        parse::assert_nothing_left(resp)?;
-
-        Ok(Signature::from_der(raw_signature)?)
+        let signature = self.sign_recoverable(message)?;
+        Ok(RecoverableSignature::to_standard(&signature))
     }
 
     fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
@@ -264,10 +225,7 @@ impl AbstractPrivKey for LedgerCap {
             data: raw_message,
         })?;
 
-        let mut resp = &response.data[..];
-        let len = parse::split_first(&mut resp)? as usize;
-        let raw_signature = parse::split_off_at(&mut resp, len)?;
-        parse::assert_nothing_left(resp)?;
+        let raw_signature = &response.data[..];
 
         // TODO: determine a real recovery id
         let recovery_id = RecoveryId::from_i32(27)?;
