@@ -20,7 +20,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
-    wallet::{AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, KeyStore},
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, KeyStore},
     Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
