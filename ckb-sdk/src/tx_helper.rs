@@ -1,15 +1,18 @@
-use ckb_hash::{blake2b_256, new_blake2b};
+use secp256k1::recovery::RecoverableSignature;
+
+use std::collections::{HashMap, HashSet};
+
+use ckb_hash::blake2b_256;
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionBuilder, TransactionView},
-    h256,
     packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
-use std::collections::{HashMap, HashSet};
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
+use crate::signing::SignerSingleShot;
 use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
 
 // TODO: Add dao support
@@ -202,7 +205,7 @@ impl TxHelper {
         &self,
         mut signer: S,
         get_live_cell: C,
-    ) -> Result<HashMap<Bytes, Bytes>, String>
+    ) -> Result<HashMap<Bytes, RecoverableSignature>, String>
     where
         S: SignerFnTrait,
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
@@ -214,7 +217,7 @@ impl TxHelper {
             .collect::<HashMap<_, _>>();
 
         let witnesses = self.init_witnesses();
-        let mut signatures: HashMap<Bytes, Bytes> = Default::default();
+        let mut signatures: HashMap<Bytes, RecoverableSignature> = Default::default();
         for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
@@ -227,13 +230,13 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if signer(&lock_args, &h256!("0x0"))?.is_some() {
+            if let Some(builder) = signer.new_signature_builder(&lock_args) {
                 let signature = build_signature(
                     &self.transaction.hash(),
                     &idxs,
                     &witnesses,
                     self.multisig_configs.get(&multisig_hash160),
-                    |message: &H256| signer(&lock_args, message).map(|sig| sig.unwrap()),
+                    builder,
                 )?;
                 signatures.insert(lock_arg, signature);
             }
@@ -342,13 +345,30 @@ impl TxHelper {
     }
 }
 
-// do this until we get aliases
+pub trait SignerFnTrait
+where
+    Self::SingleShot: SignerSingleShot<Err = String>,
+{
+    type SingleShot;
 
-pub trait SignerFnTrait: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; SECP_SIGNATURE_SIZE]>, String> {}
-impl<T> SignerFnTrait for T where T: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; SECP_SIGNATURE_SIZE]>, String>
-{}
+    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot>;
+}
 
-pub type BoxedSignerFn<'a> = Box<dyn SignerFnTrait + 'a>;
+// Helper write impl via closure
+impl<T, U> SignerFnTrait for T
+where
+    T: FnMut(&HashSet<H160>) -> Option<U>,
+    U: SignerSingleShot<Err = String>,
+{
+    type SingleShot = U;
+
+    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
+        self(lock_args)
+    }
+}
+
+pub type BoxedSignerFn<'a> =
+    Box<dyn SignerFnTrait<SingleShot = Box<dyn SignerSingleShot<Err = String>>> + 'a>;
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {
@@ -476,13 +496,13 @@ pub fn check_lock_script(lock: &Script) -> Result<(), String> {
     }
 }
 
-pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>>(
+pub fn build_signature<S: SignerSingleShot<Err = String>>(
     tx_hash: &Byte32,
     input_group_idxs: &[usize],
     witnesses: &[packed::Bytes],
     multisig_config_opt: Option<&MultisigConfig>,
     mut signer: S,
-) -> Result<Bytes, String> {
+) -> Result<RecoverableSignature, String> {
     let init_witness_idx = input_group_idxs[0];
     let init_witness = if witnesses[init_witness_idx].raw_data().is_empty() {
         WitnessArgs::default()
@@ -509,17 +529,13 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
             .build()
     };
 
-    let mut blake2b = new_blake2b();
-    blake2b.update(tx_hash.as_slice());
-    blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
-    blake2b.update(&init_witness.as_bytes());
+    signer.append(tx_hash.as_slice());
+    signer.append(&(init_witness.as_bytes().len() as u64).to_le_bytes());
+    signer.append(&init_witness.as_bytes());
     for idx in input_group_idxs.iter().skip(1).cloned() {
         let other_witness: &packed::Bytes = &witnesses[idx];
-        blake2b.update(&(other_witness.len() as u64).to_le_bytes());
-        blake2b.update(&other_witness.raw_data());
+        signer.append(&(other_witness.len() as u64).to_le_bytes());
+        signer.append(&other_witness.raw_data());
     }
-    let mut message = [0u8; 32];
-    blake2b.finalize(&mut message);
-    let message = H256::from(message);
-    signer(&message).map(|data| Bytes::from(&data[..]))
+    signer.finalize()
 }

@@ -18,6 +18,7 @@ use self::interface::{
     SearchDerivedAddrFailed,
 };
 use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
+use crate::signing::SignPrehashedHelper;
 use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
@@ -237,11 +238,11 @@ impl KeyStore {
         path: &[ChildNumber],
         message: &H256,
     ) -> Result<RecoverableSignature, Error> {
-        Ok(self
+        let SignPrehashedHelper { signer, .. } = self
             .borrow_account(hash160)?
             .extended_privkey(path)?
-            .sign_recoverable(message)
-            .void_unwrap())
+            .begin_sign_recoverable();
+        Ok(signer(message.clone()).void_unwrap())
     }
     pub fn sign_with_password(
         &self,
@@ -260,11 +261,11 @@ impl KeyStore {
         message: &H256,
         password: &[u8],
     ) -> Result<RecoverableSignature, Error> {
-        Ok(self
+        let SignPrehashedHelper { signer, .. } = self
             .get_key(hash160, password)?
             .extended_privkey(path)?
-            .sign_recoverable(message)
-            .void_unwrap())
+            .begin_sign_recoverable();
+        Ok(signer(message.clone()).void_unwrap())
     }
     pub fn extended_pubkey(
         &mut self,

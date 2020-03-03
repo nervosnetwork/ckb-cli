@@ -12,6 +12,7 @@ use ckb_sdk::wallet::{
     is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey,
     ChildNumber, DerivationPath, ScryptType,
 };
+use ckb_sdk::SignEntireHelper;
 use ckb_types::H256;
 
 use ledger::ApduCommand;
@@ -154,8 +155,13 @@ pub struct LedgerCap {
     pub path: DerivationPath,
 }
 
+// Only not using impl trait because unstable
+type LedgerClosure = Box<dyn FnOnce(Vec<u8>) -> Result<RecoverableSignature, LedgerKeyStoreError>>;
+
 impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
+
+    type SignerSingleShot = SignEntireHelper<LedgerClosure, Self::Err>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         let mut data = Vec::new();
@@ -179,10 +185,15 @@ impl AbstractPrivKey for LedgerCap {
     }
 
     fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
-        let signature = self.sign_recoverable(message)?;
-        Ok(RecoverableSignature::to_standard(&signature))
+        unimplemented!("Need to generalize method to not take hash")
+        //let signature = self.sign_recoverable(message)?;
+        //Ok(RecoverableSignature::to_standard(&signature))
     }
 
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
+        unimplemented!()
+    }
+    /*
     fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
         let mut raw_path = Vec::new();
         raw_path
@@ -240,4 +251,5 @@ impl AbstractPrivKey for LedgerCap {
             recovery_id,
         )?)
     }
+    */
 }
