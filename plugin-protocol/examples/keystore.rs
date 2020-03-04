@@ -58,6 +58,14 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                 KeyStoreRequest::CreateAccount(_) => {
                     PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
                 }
+                KeyStoreRequest::UpdatePassword { .. } => PluginResponse::Ok,
+                KeyStoreRequest::Import { .. } => {
+                    PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
+                }
+                KeyStoreRequest::Export { .. } => PluginResponse::MasterPrivateKey {
+                    privkey: JsonBytes::from_vec(vec![3u8; 32]),
+                    chain_code: JsonBytes::from_vec(vec![4u8; 32]),
+                },
                 KeyStoreRequest::Sign { recoverable, .. } => {
                     let signature = if recoverable {
                         vec![1u8; 65]
@@ -66,9 +74,56 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     };
                     PluginResponse::Bytes(JsonBytes::from_vec(signature))
                 }
-                KeyStoreRequest::Export { .. } => PluginResponse::MasterPrivateKey {
-                    privkey: JsonBytes::from_vec(vec![3u8; 32]),
-                    chain_code: JsonBytes::from_vec(vec![4u8; 32]),
+                KeyStoreRequest::ExtendedPubkey { .. } => {
+                    PluginResponse::Bytes(JsonBytes::from_vec(vec![
+                        0x02, 0x53, 0x1f, 0xe6, 0x06, 0x81, 0x34, 0x50, 0x3d, 0x27, 0x23, 0x13,
+                        0x32, 0x27, 0xc8, 0x67, 0xac, 0x8f, 0xa6, 0xc8, 0x3c, 0x53, 0x7e, 0x9a,
+                        0x44, 0xc3, 0xc5, 0xbd, 0xbd, 0xcb, 0x1f, 0xe3, 0x37,
+                    ]))
+                }
+                KeyStoreRequest::DerivedKeySet { .. } => PluginResponse::DerivedKeySet {
+                    external: vec![
+                        (
+                            "m/44'/309'/0'/0/19".to_owned(),
+                            h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
+                        ),
+                        (
+                            "m/44'/309'/0'/0/20".to_owned(),
+                            h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
+                        ),
+                    ],
+                    change: vec![
+                        (
+                            "m/44'/309'/0'/1/19".to_owned(),
+                            h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
+                        ),
+                        (
+                            "m/44'/309'/0'/1/20".to_owned(),
+                            h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
+                        ),
+                    ],
+                },
+                KeyStoreRequest::DerivedKeySetByIndex { .. } => PluginResponse::DerivedKeySet {
+                    external: vec![
+                        (
+                            "m/44'/309'/0'/0/19".to_owned(),
+                            h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
+                        ),
+                        (
+                            "m/44'/309'/0'/0/20".to_owned(),
+                            h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
+                        ),
+                    ],
+                    change: vec![
+                        (
+                            "m/44'/309'/0'/1/19".to_owned(),
+                            h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
+                        ),
+                        (
+                            "m/44'/309'/0'/1/20".to_owned(),
+                            h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
+                        ),
+                    ],
                 },
                 _ => {
                     return Some(PluginResponse::Error(JsonrpcError {

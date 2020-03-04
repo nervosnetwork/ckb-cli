@@ -10,6 +10,7 @@ pub struct JsonrpcError {
     /// A string describing the error
     pub message: String,
     /// Additional data specific to the error
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
 }
 
@@ -34,7 +35,9 @@ pub struct JsonrpcResponse {
     /// Identifier for this Request, which should match that of the request
     pub id: serde_json::Value,
     /// A result if there is one, or null
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<serde_json::Value>,
     /// An error if there is one, or null
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonrpcError>,
 }
