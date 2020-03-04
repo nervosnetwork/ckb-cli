@@ -180,7 +180,7 @@ impl AbstractPrivKey for LedgerCap {
         Ok(PublicKey::from_slice(&raw_public_key)?)
     }
 
-    fn sign(&self, message: &H256) -> Result<Signature, Self::Err> {
+    fn sign(&self, _message: &H256) -> Result<Signature, Self::Err> {
         unimplemented!("Need to generalize method to not take hash")
         //let signature = self.sign_recoverable(message)?;
         //Ok(RecoverableSignature::to_standard(&signature))
