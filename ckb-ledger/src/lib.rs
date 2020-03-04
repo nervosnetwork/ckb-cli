@@ -221,29 +221,34 @@ impl AbstractPrivKey for LedgerCap {
                 data: raw_path,
             })?;
 
-            for i in 0..(message.len() / 64) {
-                let mut chunk = Vec::new();
+            // for i in 0..(message.len() / 64) {
+            //     let mut chunk = Vec::new();
 
-                for j in 0..64 {
-                    if i * 64 + j >= message.len() {
-                        break;
-                    }
-                    chunk.write_u8(message[i * 64 + j]).expect(WRITE_ERR_MSG);
-                }
+            //     for j in 0..64 {
+            //         if i * 64 + j >= message.len() {
+            //             break;
+            //         }
+            //         debug!("index: {:?}", i * 64 + j);
+            //         chunk.write_u8(message[i * 64 + j]).expect(WRITE_ERR_MSG);
+            //     }
 
-                my_self.master.ledger_app.exchange(ApduCommand {
-                    cla: 0x80,
-                    ins: 0x03,
-                    p1: 0x01,
-                    p2: 0,
-                    length: chunk.len() as u8,
-                    data: chunk,
-                })?;
+            //     my_self.master.ledger_app.exchange(ApduCommand {
+            //         cla: 0x80,
+            //         ins: 0x03,
+            //         p1: 0x01,
+            //         p2: 0,
+            //         length: chunk.len() as u8,
+            //         data: chunk,
+            //     })?;
+            // }
+
+            if message.len() > 230 {
+                panic!("Can't handle more than 230 bytes message");
             }
 
             let mut last_chunk = Vec::new();
 
-            for index in ((message.len() / 64) * 64)..message.len() {
+            for index in 0..message.len() {
                 last_chunk.write_u8(message[index]).expect(WRITE_ERR_MSG);
             }
 
