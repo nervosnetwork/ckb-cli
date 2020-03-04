@@ -34,7 +34,7 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath, KeyStore},
+    wallet::{AbstractMasterPrivKey, AbstractPrivKey, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
     NetworkType, SignerClosureHelper, SignerFnTrait, Since, SinceType, TxHelper,
 };

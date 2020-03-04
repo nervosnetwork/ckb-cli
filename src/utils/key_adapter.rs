@@ -1,7 +1,7 @@
 use dyn_clone::DynClone;
 use secp256k1::recovery::RecoverableSignature;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use ckb_types::{H160, H256};
 

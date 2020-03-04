@@ -18,8 +18,8 @@ use ckb_sdk::{
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{
-        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath,
-        FullyBoxedAbstractMasterPrivkey, FullyBoxedAbstractPrivkey, KeyStore, ScryptType,
+        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, DerivationPath,
+        FullyBoxedAbstractMasterPrivkey, KeyStore, ScryptType,
     },
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
     SignerClosureHelper, SignerFnTrait, SECP256K1,
@@ -27,7 +27,6 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
-    h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
     H160, H256,
@@ -364,7 +363,7 @@ pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature
 }
 
 pub fn serialize_signature_bytes(signature: &secp256k1::recovery::RecoverableSignature) -> Bytes {
-    Bytes::from(&serialize_signature_bytes(signature)[..])
+    Bytes::from(&serialize_signature(signature)[..])
 }
 
 pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {

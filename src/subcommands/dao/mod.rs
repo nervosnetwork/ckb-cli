@@ -15,7 +15,6 @@ use crate::utils::other::{
 };
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
@@ -362,7 +361,8 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
 
         let mut single_signer = {
             let account = self.sighash_args();
-            let mut signer: BoxedSignerFn = Box::new(KeyAdapter(get_privkey_signer(self.key_cap.clone())?));
+            let mut signer: BoxedSignerFn =
+                Box::new(KeyAdapter(get_privkey_signer(self.key_cap.clone())?));
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
             signer
                 .new_signature_builder(&accounts)?
