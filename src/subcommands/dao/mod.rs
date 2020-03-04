@@ -11,6 +11,7 @@ use crate::utils::index::IndexController;
 use crate::utils::key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter};
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
+    serialize_signature_bytes,
 };
 
 use ckb_crypto::secp::SECP256K1;
@@ -150,7 +151,7 @@ struct WithTransactArgs<'a, 'b> {
     dao: &'b mut DAOSubCommand<'a>,
     transact_args: TransactArgs,
     address_payload: AddressPayload,
-    key_cap: FullyBoxedAbstractPrivkey,
+    key_cap: FullyBoxedAbstractPrivkey<'static>,
 }
 
 impl<'a, 'b> WithTransactArgs<'a, 'b> {
@@ -358,29 +359,29 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
                 .lock(Some(Bytes::from(&[0u8; 65][..])).pack())
                 .build()
         };
-        let digest = {
-            let mut blake2b = new_blake2b();
-            blake2b.update(&transaction.hash().raw_data());
-            blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
-            blake2b.update(&init_witness.as_bytes());
-            for other_witness in witnesses.iter().skip(1) {
-                blake2b.update(&(other_witness.len() as u64).to_le_bytes());
-                blake2b.update(&other_witness);
-            }
-            let mut message = [0u8; 32];
-            blake2b.finalize(&mut message);
-            H256::from(message)
+
+        let single_signer = {
+            let account = self.sighash_args();
+            let mut signer: BoxedSignerFn = Box::new(KeyAdapter(get_privkey_signer(self.key_cap)?));
+            let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
+            signer
+                .new_signature_builder(&accounts)
+                .expect("signer missed")
         };
         let signature = {
-            let account = self.sighash_args();
-            let mut signer: BoxedSignerFn = Box::new(get_privkey_signer(&self.key_cap)?);
-            let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
-            signer(&accounts, &digest)?.expect("signer missed")
+            single_signer.append(&transaction.hash().raw_data());
+            single_signer.append(&(init_witness.as_bytes().len() as u64).to_le_bytes());
+            single_signer.append(&init_witness.as_bytes());
+            for other_witness in witnesses.iter().skip(1) {
+                single_signer.append(&(other_witness.len() as u64).to_le_bytes());
+                single_signer.append(&other_witness);
+            }
+            single_signer.finalize()?
         };
 
         witnesses[0] = init_witness
             .as_builder()
-            .lock(Some(Bytes::from(&signature[..])).pack())
+            .lock(Some(serialize_signature_bytes(&signature)).pack())
             .build()
             .as_bytes();
 

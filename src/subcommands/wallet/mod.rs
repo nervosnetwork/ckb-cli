@@ -36,7 +36,7 @@ use ckb_sdk::{
     },
     wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
-    NetworkType, SignerFnTrait, Since, SinceType, TxHelper,
+    NetworkType, SignerClosureHelper, SignerFnTrait, Since, SinceType, TxHelper,
 };
 
 pub struct WalletSubCommand<'a> {
@@ -299,7 +299,7 @@ impl<'a> WalletSubCommand<'a> {
                 debug,
             )
         } else if let Some(key_cap) = master_key_cap_opt {
-            let signer = get_keystore_signer(&*key_cap, path_map);
+            let signer = get_keystore_signer(&*key_cap, path_map)?;
             self.transfer_impl(
                 network_type,
                 payload_opt,
@@ -701,19 +701,19 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 fn get_keystore_signer<K>(
     key: &K,
     path_map: HashMap<H160, DerivationPath>,
-) -> impl SignerFnTrait + '_
+) -> Result<impl SignerFnTrait + '_, String>
 where
     K: ?Sized,
     K: AbstractMasterPrivKey,
     <K as AbstractMasterPrivKey>::Err: ToString,
     <K::Privkey as AbstractPrivKey>::Err: ToString,
 {
-    move |lock_args: &HashSet<H160>, message: &H256| {
+    SignerClosureHelper(move |lock_args: &HashSet<H160>| {
         let path: &[ChildNumber] =
             match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
                 None => return Ok(None),
                 Some(path) => path.as_ref(),
             };
-        get_master_key_signer_raw::<K>(&key, path)(lock_args, message)
-    }
+        get_master_key_signer_raw::<K>(&key, path).new_signature_builder(lock_args)
+    })
 }

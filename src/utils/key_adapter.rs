@@ -1,28 +1,35 @@
 use secp256k1::recovery::RecoverableSignature;
 
+use std::collections::{HashMap, HashSet};
+
 use ckb_types::{H160, H256};
 
 use ckb_sdk::wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, ExtendedPubKey};
-use ckb_sdk::SignerSingleShot;
+use ckb_sdk::{SignerFnTrait, SignerSingleShot};
 
 /// This takes an existing key and forces its errors to be strings so different
 /// types of keys can be the same same sort of trait object.
-pub struct KeyAdapter<Key>(pub Key);
+#[repr(transparent)]
+pub struct KeyAdapter<Key: ?Sized>(pub Key);
 
-pub type FullyBoxedAbstractPrivkey = Box<
-    dyn AbstractPrivKey<SignerSingleShot = Box<dyn SignerSingleShot<Err = String>>, Err = String>,
+pub type FullyBoxedAbstractMasterPrivkey<'a> =
+    Box<dyn AbstractMasterPrivKey<Privkey = FullyBoxedAbstractPrivkey<'a>, Err = String> + 'a>;
+
+pub type FullyBoxedAbstractPrivkey<'a> = Box<
+    dyn AbstractPrivKey<SignerSingleShot = FullyAbstractSingleShotSigner<'a>, Err = String> + 'a,
 >;
+
+pub type FullyAbstractSingleShotSigner<'a> = Box<dyn SignerSingleShot<Err = String> + 'a>;
 
 impl<Key> AbstractMasterPrivKey for KeyAdapter<Key>
 where
-    Key: AbstractMasterPrivKey,
+    Key: ?Sized + AbstractMasterPrivKey + 'static,
     Key::Err: ToString,
-    Key::Privkey: 'static,
     <Key::Privkey as AbstractPrivKey>::Err: ToString,
 {
     type Err = String;
 
-    type Privkey = FullyBoxedAbstractPrivkey;
+    type Privkey = FullyBoxedAbstractPrivkey<'static>;
 
     fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
         self.0.extended_pubkey(path).map_err(|e| e.to_string())
@@ -40,12 +47,14 @@ where
 
 impl<Key> AbstractPrivKey for KeyAdapter<Key>
 where
-    Key: AbstractPrivKey,
+    Key: ?Sized + AbstractPrivKey,
     Key::Err: ToString,
+    Key::SignerSingleShot: 'static,
+    <Key::SignerSingleShot as SignerSingleShot>::Err: ToString,
 {
     type Err = String;
 
-    type SignerSingleShot = Box<dyn SignerSingleShot<Err = String>>;
+    type SignerSingleShot = FullyAbstractSingleShotSigner<'static>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         self.0.public_key().map_err(|e| e.to_string())
@@ -55,21 +64,40 @@ where
         self.0.sign(message).map_err(|e| e.to_string())
     }
 
-    fn begin_sign_recoverable(&self) -> SingerSingleShot {
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
         Box::new(KeyAdapter(self.0.begin_sign_recoverable()))
+    }
+}
+
+impl<T> SignerFnTrait for KeyAdapter<T>
+where
+    T: ?Sized + SignerFnTrait,
+    T::SingleShot: 'static,
+{
+    type SingleShot = FullyAbstractSingleShotSigner<'static>;
+
+    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
+        match self.0.new_signature_builder(lock_args) {
+            None => None,
+            Some(v) => Some(Box::new(KeyAdapter(v))),
+        }
     }
 }
 
 impl<T> SignerSingleShot for KeyAdapter<T>
 where
-    Key: SignerSingleShot,
-    Key::Err: ToString,
+    T: ?Sized + SignerSingleShot,
+    T::Err: ToString,
 {
     type Err = String;
+
     fn append(&mut self, message_fragment: &[u8]) {
         self.0.append(message_fragment)
     }
-    fn finalize(self) -> Result<RecoverableSignature, Self::Err> {
-        Box::new(self.0).finalize().map_err(|e| e.to_string())
+
+    fn finalize(self: Box<Self>) -> Result<RecoverableSignature, Self::Err> {
+        // cannot do something safe and easy like reallocating because might be DST
+        let inner: Box<T> = unsafe { Box::from_raw(&mut (*Box::into_raw(self)).0 as *mut _) };
+        inner.finalize().map_err(|e| e.to_string())
     }
 }

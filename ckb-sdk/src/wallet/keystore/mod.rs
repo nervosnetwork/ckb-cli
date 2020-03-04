@@ -509,6 +509,7 @@ impl TimedKey {
     }
 }
 
+#[derive(Clone)]
 pub struct Key {
     // randomly generate uuid v4
     id: Uuid,
@@ -659,6 +660,7 @@ impl AbstractMasterPrivKey for Key {
     }
 }
 
+#[derive(Clone)]
 pub struct MasterPrivKey {
     secp_secret_key: secp256k1::SecretKey,
     chain_code: [u8; 32],

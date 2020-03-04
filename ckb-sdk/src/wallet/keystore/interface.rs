@@ -130,7 +130,7 @@ pub trait AbstractPrivKey {
     /// Error type for operations.
     type Err;
 
-    type SignerSingleShot: SignerSingleShot;
+    type SignerSingleShot: SignerSingleShot<Err = Self::Err>;
 
     /// Get the corresponding public key
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err>;

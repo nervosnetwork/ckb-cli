@@ -20,8 +20,8 @@ use ckb_sdk::{
     wallet::{
         AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, KeyStore, ScryptType,
     },
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFnTrait,
-    SECP256K1,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
+    SignerClosureHelper, SignerFnTrait, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -37,7 +37,7 @@ use super::arg_parser::{
     PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
-use super::key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter};
+use super::key_adapter::{FullyBoxedAbstractMasterPrivkey, FullyBoxedAbstractPrivkey, KeyAdapter};
 use crate::subcommands::account::AccountId;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -313,67 +313,25 @@ pub fn get_keystore_signer(
     key_store: KeyStore,
     account: H160,
     password: String,
-) -> impl SignerFnTrait + 'static {
-    move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            get_keystore_signer_raw(&key_store, &account, &[], &password)(lock_args, message)
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-pub fn get_keystore_signer_raw<'a>(
-    key_store: &'a KeyStore,
-    account: &'a H160,
-    path: &'a [ChildNumber],
-    password: &'a str,
-) -> impl SignerFnTrait + Sized + 'a {
-    move |lock_args: &HashSet<H160>, message: &H256| {
-        if message == &h256!("0x0") {
-            Ok(Some([0u8; 65]))
-        } else {
-            let key = key_store
-                .get_key(account, password.as_bytes())
-                .map_err(|err| err.to_string())?;
-            let res = get_master_key_signer_raw(&key, path)(lock_args, message);
-            res
-        }
-    }
+) -> Result<impl SignerFnTrait + 'static, String> {
+    let key = key_store
+        .get_key(&account, password.as_bytes())
+        .map_err(|err| err.to_string())?
+        .clone();
+    get_master_key_signer_raw(key, &[])
 }
 
 pub fn get_master_key_signer_raw<'a, K>(
-    key: &'a K,
-    path: &'a [ChildNumber],
-) -> impl SignerFnTrait + Sized + 'a
+    key: K,
+    path: DerivationPath,
+) -> Result<impl SignerFnTrait + Sized + 'a, String>
 where
-    K: ?Sized,
     K: AbstractMasterPrivKey,
     <K as AbstractMasterPrivKey>::Err: ToString,
     <K::Privkey as AbstractPrivKey>::Err: ToString,
 {
-    let derived_key_res = key.extended_privkey(path).map_err(|err| err.to_string());
-    move |lock_args: &HashSet<H160>, message: &H256| {
-        let derived_key = derived_key_res.as_ref()?;
-        get_key_signer_raw(derived_key)(lock_args, message)
-    }
-}
-
-pub fn get_key_signer_raw<'a, K>(key: &'a K) -> impl SignerFnTrait + Sized + 'a
-where
-    K: ?Sized,
-    K: AbstractPrivKey,
-    <K as AbstractPrivKey>::Err: ToString,
-{
-    move |_lock_args: &HashSet<H160>, message: &H256| {
-        if message == &h256!("0x0") {
-            Ok(Some([0u8; 65]))
-        } else {
-            key.sign_recoverable(message)
-                .map_err(|err| err.to_string())
-                .map(|signature| Some(serialize_signature(&signature)))
-        }
-    }
+    let derived_key = key.extended_privkey(path).map_err(|err| err.to_string())?;
+    get_privkey_signer(derived_key)
 }
 
 pub fn get_privkey_signer<'a, K>(privkey: K) -> Result<impl SignerFnTrait, String>
@@ -384,13 +342,13 @@ where
     let pubkey = privkey.public_key().map_err(|err| err.to_string())?;
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed");
-    Ok(move |lock_args: &HashSet<H160>, message: &H256| {
+    Ok(SignerClosureHelper(move |_lock_args: &HashSet<H160>| {
         if !lock_args.contains(&lock_arg) {
-            Ok(None)
+            None
         } else {
-            get_key_signer_raw(&privkey)(lock_args, message)
+            Some(key.begin_sign_recoverable())
         }
-    })
+    }))
 }
 
 pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
@@ -425,14 +383,14 @@ pub fn privkey_or_from_account(
     })
 }
 
-pub fn make_address_payload_and_master_key_cap(
-    from_account: &Either<PrivkeyWrapper, AccountId>,
-    key_store: &mut KeyStore,
-    ledger_key_store: &mut LedgerKeyStore,
+pub fn make_address_payload_and_master_key_cap<'a>(
+    from_account: &'a Either<PrivkeyWrapper, AccountId>,
+    key_store: &'a mut KeyStore,
+    ledger_key_store: &'a mut LedgerKeyStore,
 ) -> Result<
     (
         Option<AddressPayload>,
-        Option<Box<dyn AbstractMasterPrivKey<Err = String, Privkey = FullyBoxedAbstractPrivkey>>>,
+        Option<FullyBoxedAbstractMasterPrivkey<'static>>,
     ),
     String,
 > {
@@ -460,7 +418,7 @@ pub fn make_address_payload_and_master_key_cap(
             None,
             Some(Box::new(KeyAdapter(
                 ledger_key_store
-                    .borrow_account(&ledger_id)
+                    .borrow_account(ledger_id)
                     .map_err(|e| e.to_string())?
                     .clone(),
             ))),
