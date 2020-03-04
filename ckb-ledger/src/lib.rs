@@ -123,10 +123,6 @@ impl LedgerMasterCap {
     }
 }
 
-const P1_FIRST: u8 = 0x00;
-const P1_NEXT: u8 = 0x01;
-const P1_LAST: u8 = 0x80;
-
 const WRITE_ERR_MSG: &'static str = "IO error not possible when writing to Vec last I checked";
 
 impl AbstractMasterPrivKey for LedgerMasterCap {
@@ -204,22 +200,60 @@ impl AbstractPrivKey for LedgerCap {
                     .expect(WRITE_ERR_MSG);
             }
 
+            debug!(
+                "Nervos CKB Ledger app path {:x?} with length {:?}",
+                (raw_path),
+                (raw_path.len() as u8)
+            );
+
+            debug!(
+                "Nervos CKB Ledger app message {:x?} with length {:?}",
+                (message),
+                (message.len() as u8)
+            );
+
             my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,
                 ins: 0x03,
-                p1: P1_FIRST,
+                p1: 0x0,
                 p2: 0,
                 length: raw_path.len() as u8,
                 data: raw_path,
             })?;
 
+            for i in 0..(message.len() / 64) {
+                let mut chunk = Vec::new();
+
+                for j in 0..64 {
+                    if i * 64 + j >= message.len() {
+                        break;
+                    }
+                    chunk.write_u8(message[i * 64 + j]).expect(WRITE_ERR_MSG);
+                }
+
+                my_self.master.ledger_app.exchange(ApduCommand {
+                    cla: 0x80,
+                    ins: 0x03,
+                    p1: 0x01,
+                    p2: 0,
+                    length: chunk.len() as u8,
+                    data: chunk,
+                })?;
+            }
+
+            let mut last_chunk = Vec::new();
+
+            for index in ((message.len() / 64) * 64)..message.len() {
+                last_chunk.write_u8(message[index]).expect(WRITE_ERR_MSG);
+            }
+
             let response = my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,
                 ins: 0x03,
-                p1: P1_LAST | P1_NEXT,
+                p1: 0x81,
                 p2: 0,
-                length: 32,
-                data: message,
+                length: last_chunk.len() as u8,
+                data: last_chunk,
             })?;
 
             let mut raw_signature = response.data.clone();
