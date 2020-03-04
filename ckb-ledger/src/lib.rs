@@ -161,7 +161,7 @@ type LedgerClosure = Box<dyn FnOnce(Vec<u8>) -> Result<RecoverableSignature, Led
 impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
-    type SignerSingleShot = SignEntireHelper<LedgerClosure, Self::Err>;
+    type SignerSingleShot = SignEntireHelper<LedgerClosure>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         let mut data = Vec::new();

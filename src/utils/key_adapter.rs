@@ -1,25 +1,28 @@
+use dyn_clone::DynClone;
 use secp256k1::recovery::RecoverableSignature;
 
 use std::collections::{HashMap, HashSet};
 
 use ckb_types::{H160, H256};
 
-use ckb_sdk::wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, ExtendedPubKey};
-use ckb_sdk::{SignerFnTrait, SignerSingleShot};
+use ckb_sdk::{
+    wallet::{
+        AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, ExtendedPubKey,
+        FullyBoxedAbstractPrivkey,
+    },
+    FullyAbstractSingleShotSigner, SignerFnTrait, SignerSingleShot,
+};
 
 /// This takes an existing key and forces its errors to be strings so different
 /// types of keys can be the same same sort of trait object.
 #[repr(transparent)]
 pub struct KeyAdapter<Key: ?Sized>(pub Key);
 
-pub type FullyBoxedAbstractMasterPrivkey<'a> =
-    Box<dyn AbstractMasterPrivKey<Privkey = FullyBoxedAbstractPrivkey<'a>, Err = String> + 'a>;
-
-pub type FullyBoxedAbstractPrivkey<'a> = Box<
-    dyn AbstractPrivKey<SignerSingleShot = FullyAbstractSingleShotSigner<'a>, Err = String> + 'a,
->;
-
-pub type FullyAbstractSingleShotSigner<'a> = Box<dyn SignerSingleShot<Err = String> + 'a>;
+impl<T: ?Sized + DynClone> DynClone for KeyAdapter<T> {
+    unsafe fn clone_box(&self) -> *mut () {
+        Box::into_raw(dyn_clone::clone_box(&self.0)) as *mut _
+    }
+}
 
 impl<Key> AbstractMasterPrivKey for KeyAdapter<Key>
 where
@@ -76,11 +79,16 @@ where
 {
     type SingleShot = FullyAbstractSingleShotSigner<'static>;
 
-    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
-        match self.0.new_signature_builder(lock_args) {
-            None => None,
-            Some(v) => Some(Box::new(KeyAdapter(v))),
-        }
+    fn new_signature_builder(
+        &mut self,
+        lock_args: &HashSet<H160>,
+    ) -> Result<Option<Self::SingleShot>, String> {
+        self.0.new_signature_builder(lock_args).map(|v| {
+            v.map(|v| {
+                let x: Self::SingleShot = Box::new(KeyAdapter(v));
+                x
+            })
+        })
     }
 }
 

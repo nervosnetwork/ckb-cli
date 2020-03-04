@@ -18,7 +18,8 @@ use ckb_sdk::{
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
     rpc::AlertMessage,
     wallet::{
-        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, KeyStore, ScryptType,
+        AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath,
+        FullyBoxedAbstractMasterPrivkey, FullyBoxedAbstractPrivkey, KeyStore, ScryptType,
     },
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType,
     SignerClosureHelper, SignerFnTrait, SECP256K1,
@@ -37,7 +38,7 @@ use super::arg_parser::{
     PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
-use super::key_adapter::{FullyBoxedAbstractMasterPrivkey, FullyBoxedAbstractPrivkey, KeyAdapter};
+use super::key_adapter::KeyAdapter;
 use crate::subcommands::account::AccountId;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -318,36 +319,39 @@ pub fn get_keystore_signer(
         .get_key(&account, password.as_bytes())
         .map_err(|err| err.to_string())?
         .clone();
-    get_master_key_signer_raw(key, &[])
+    get_master_key_signer_raw(key, DerivationPath::empty())
 }
 
 pub fn get_master_key_signer_raw<'a, K>(
     key: K,
     path: DerivationPath,
-) -> Result<impl SignerFnTrait + Sized + 'a, String>
+) -> Result<impl SignerFnTrait + Sized, String>
 where
-    K: AbstractMasterPrivKey,
+    K: AbstractMasterPrivKey + Clone,
+    K::Privkey: Clone,
     <K as AbstractMasterPrivKey>::Err: ToString,
     <K::Privkey as AbstractPrivKey>::Err: ToString,
 {
-    let derived_key = key.extended_privkey(path).map_err(|err| err.to_string())?;
+    let derived_key = key
+        .extended_privkey(path.as_ref())
+        .map_err(|err| err.to_string())?;
     get_privkey_signer(derived_key)
 }
 
 pub fn get_privkey_signer<'a, K>(privkey: K) -> Result<impl SignerFnTrait, String>
 where
-    K: AbstractPrivKey,
+    K: AbstractPrivKey + Clone,
     K::Err: ToString,
 {
     let pubkey = privkey.public_key().map_err(|err| err.to_string())?;
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed");
-    Ok(SignerClosureHelper(move |_lock_args: &HashSet<H160>| {
-        if !lock_args.contains(&lock_arg) {
+    Ok(SignerClosureHelper(move |lock_args: &HashSet<H160>| {
+        Ok(if !lock_args.contains(&lock_arg) {
             None
         } else {
-            Some(key.begin_sign_recoverable())
-        }
+            Some(KeyAdapter(privkey.begin_sign_recoverable()))
+        })
     }))
 }
 

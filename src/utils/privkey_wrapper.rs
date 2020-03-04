@@ -32,7 +32,7 @@ impl AbstractPrivKey for PrivkeyWrapper {
     // TODO `secp256k1::Error`
     type Err = Void;
 
-    type SignerSingleShot = SignPrehashedHelper<PrivkeyWrapperSignClosure, Self::Err>;
+    type SignerSingleShot = SignPrehashedHelper<PrivkeyWrapperSignClosure>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         Ok(secp256k1::PublicKey::from_secret_key(&SECP256K1, self))

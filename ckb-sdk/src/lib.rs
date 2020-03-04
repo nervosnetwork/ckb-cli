@@ -12,7 +12,9 @@ pub mod wallet;
 pub use chain::{calc_max_mature_number, GenesisInfo};
 pub use error::Error;
 pub use rpc::HttpRpcClient;
-pub use signing::{SignEntireHelper, SignPrehashedHelper, SignerSingleShot};
+pub use signing::{
+    FullyAbstractSingleShotSigner, SignEntireHelper, SignPrehashedHelper, SignerSingleShot,
+};
 pub use transaction::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, MockTransactionHelper,
     ReprMockCellDep, ReprMockInfo, ReprMockInput, ReprMockTransaction,

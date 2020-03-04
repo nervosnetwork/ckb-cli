@@ -11,6 +11,8 @@ pub trait SignerSingleShot {
     fn finalize(self: Box<Self>) -> Result<RecoverableSignature, Self::Err>;
 }
 
+pub type FullyAbstractSingleShotSigner<'a> = Box<dyn SignerSingleShot<Err = String> + 'a>;
+
 impl<T> SignerSingleShot for Box<T>
 where
     T: ?Sized + SignerSingleShot,
@@ -40,15 +42,13 @@ where
 //     }
 // }
 
-pub struct SignPrehashedHelper<T, Err>
-where
-    T: FnOnce(H256) -> Result<RecoverableSignature, Err>,
-{
+//#[derive(Clone)] // can't clone Blake2b
+pub struct SignPrehashedHelper<T> {
     pub hasher: Blake2b,
     pub signer: T,
 }
 
-impl<T, Err> SignPrehashedHelper<T, Err>
+impl<T, Err> SignPrehashedHelper<T>
 where
     T: FnOnce(H256) -> Result<RecoverableSignature, Err>,
 {
@@ -60,7 +60,7 @@ where
     }
 }
 
-impl<T, Err> SignerSingleShot for SignPrehashedHelper<T, Err>
+impl<T, Err> SignerSingleShot for SignPrehashedHelper<T>
 where
     T: FnOnce(H256) -> Result<RecoverableSignature, Err>,
 {
@@ -77,15 +77,13 @@ where
     }
 }
 
-pub struct SignEntireHelper<T, Err>
-where
-    T: FnOnce(Vec<u8>) -> Result<RecoverableSignature, Err>,
-{
+#[derive(Clone)]
+pub struct SignEntireHelper<T> {
     pub buffer: Vec<u8>,
     pub signer: T,
 }
 
-impl<T, Err> SignEntireHelper<T, Err>
+impl<T, Err> SignEntireHelper<T>
 where
     T: FnOnce(Vec<u8>) -> Result<RecoverableSignature, Err>,
 {
@@ -97,7 +95,7 @@ where
     }
 }
 
-impl<T, Err> SignerSingleShot for SignEntireHelper<T, Err>
+impl<T, Err> SignerSingleShot for SignEntireHelper<T>
 where
     T: FnOnce(Vec<u8>) -> Result<RecoverableSignature, Err>,
 {

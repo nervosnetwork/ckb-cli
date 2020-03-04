@@ -8,7 +8,7 @@ use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use crate::subcommands::account::AccountId;
 use crate::utils::index::IndexController;
-use crate::utils::key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter};
+use crate::utils::key_adapter::KeyAdapter;
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
     serialize_signature_bytes,
@@ -21,7 +21,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
-    wallet::{AbstractKeyStore, AbstractMasterPrivKey, KeyStore},
+    wallet::{AbstractKeyStore, AbstractMasterPrivKey, FullyBoxedAbstractPrivkey, KeyStore},
     Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
@@ -365,7 +365,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
             let mut signer: BoxedSignerFn = Box::new(KeyAdapter(get_privkey_signer(self.key_cap)?));
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
             signer
-                .new_signature_builder(&accounts)
+                .new_signature_builder(&accounts)?
                 .expect("signer missed")
         };
         let signature = {

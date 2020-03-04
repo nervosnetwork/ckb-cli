@@ -10,7 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::{AbstractKeyStore, DerivationPath, KeyStore},
+    wallet::{AbstractKeyStore, DerivationPath, FullyBoxedAbstractPrivkey, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
 };
@@ -33,7 +33,7 @@ use crate::utils::{
         FixedHashParser, FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser,
         PrivkeyWrapper,
     },
-    key_adapter::{FullyBoxedAbstractPrivkey, KeyAdapter},
+    key_adapter::KeyAdapter,
     other::{
         check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
         get_live_cell_with_cache, get_master_key_signer_raw, get_network_type, get_privkey_signer,
@@ -493,7 +493,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                                 .borrow_account(&ledger_id)
                                 .map_err(|e| e.to_string())?
                                 .clone();
-                            Box::new(KeyAdapter(get_master_key_signer_raw(key, &path)?))
+                            Box::new(KeyAdapter(get_master_key_signer_raw(key, path)?))
                         }
                     }
                 };

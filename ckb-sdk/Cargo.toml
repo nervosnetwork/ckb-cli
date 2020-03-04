@@ -28,6 +28,7 @@ chrono = "0.4.6"
 failure = "0.1.5"
 lazy_static = "1.4.0"
 void = "^1.0.2"
+dyn-clone = "1.0.1"
 
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }
 ckb-script = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.27.1-rc1" }

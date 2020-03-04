@@ -1,5 +1,7 @@
 use secp256k1::recovery::RecoverableSignature;
 
+use dyn_clone::DynClone;
+
 use std::collections::{HashMap, HashSet};
 
 use ckb_hash::blake2b_256;
@@ -12,7 +14,7 @@ use ckb_types::{
 };
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
-use crate::signing::SignerSingleShot;
+use crate::signing::{FullyAbstractSingleShotSigner, SignerSingleShot};
 use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
 
 // TODO: Add dao support
@@ -230,7 +232,7 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if let Some(builder) = signer.new_signature_builder(&lock_args) {
+            if let Some(builder) = signer.new_signature_builder(&lock_args)? {
                 let signature = build_signature(
                     &self.transaction.hash(),
                     &idxs,
@@ -345,37 +347,50 @@ impl TxHelper {
     }
 }
 
-pub trait SignerFnTrait
+pub trait SignerFnTrait: DynClone
 where
     Self::SingleShot: SignerSingleShot<Err = String>,
 {
     type SingleShot;
 
-    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot>;
+    fn new_signature_builder(
+        &mut self,
+        lock_args: &HashSet<H160>,
+    ) -> Result<Option<Self::SingleShot>, String>;
 }
+
+dyn_clone::clone_trait_object!(<'a> SignerFnTrait<SingleShot = FullyAbstractSingleShotSigner<'a>>);
 
 impl<T> SignerFnTrait for Box<T>
 where
+    Box<T>: Clone,
     T: ?Sized + SignerFnTrait,
 {
     type SingleShot = T::SingleShot;
 
-    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
+    fn new_signature_builder(
+        &mut self,
+        lock_args: &HashSet<H160>,
+    ) -> Result<Option<Self::SingleShot>, String> {
         (&mut **self).new_signature_builder(lock_args)
     }
 }
 
 // Helper write impl via closure
+#[derive(Clone)]
 pub struct SignerClosureHelper<T>(pub T);
 
 impl<T, U> SignerFnTrait for SignerClosureHelper<T>
 where
-    T: FnMut(&HashSet<H160>) -> Option<U>,
+    T: FnMut(&HashSet<H160>) -> Result<Option<U>, String> + Clone,
     U: SignerSingleShot<Err = String>,
 {
     type SingleShot = U;
 
-    fn new_signature_builder(&mut self, lock_args: &HashSet<H160>) -> Option<Self::SingleShot> {
+    fn new_signature_builder(
+        &mut self,
+        lock_args: &HashSet<H160>,
+    ) -> Result<Option<Self::SingleShot>, String> {
         self.0(lock_args)
     }
 }

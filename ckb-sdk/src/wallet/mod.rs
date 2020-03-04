@@ -10,7 +10,8 @@ pub use error::Error as WalletError;
 pub use keystore::{
     interface::{
         is_valid_derivation_path, AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey,
-        DerivedKeySet, KeyChain, MANDATORY_PREFIX,
+        DerivedKeySet, FullyBoxedAbstractMasterPrivkey, FullyBoxedAbstractPrivkey, KeyChain,
+        MANDATORY_PREFIX,
     },
     zeroize_privkey, zeroize_slice, CipherParams, Crypto, Error as KeyStoreError, KdfParams, Key,
     KeyStore, KeyTimeout, MasterPrivKey, ScryptParams, ScryptType,

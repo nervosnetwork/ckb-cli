@@ -299,7 +299,7 @@ impl<'a> WalletSubCommand<'a> {
                 debug,
             )
         } else if let Some(key_cap) = master_key_cap_opt {
-            let signer = get_keystore_signer(&*key_cap, path_map)?;
+            let signer = get_keystore_signer(key_cap, path_map);
             self.transfer_impl(
                 network_type,
                 payload_opt,
@@ -698,22 +698,18 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     }
 }
 
-fn get_keystore_signer<K>(
-    key: &K,
-    path_map: HashMap<H160, DerivationPath>,
-) -> Result<impl SignerFnTrait + '_, String>
+fn get_keystore_signer<K>(key: K, path_map: HashMap<H160, DerivationPath>) -> impl SignerFnTrait
 where
-    K: ?Sized,
-    K: AbstractMasterPrivKey,
+    K: AbstractMasterPrivKey + Clone,
+    K::Privkey: Clone,
     <K as AbstractMasterPrivKey>::Err: ToString,
     <K::Privkey as AbstractPrivKey>::Err: ToString,
 {
     SignerClosureHelper(move |lock_args: &HashSet<H160>| {
-        let path: &[ChildNumber] =
-            match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
-                None => return Ok(None),
-                Some(path) => path.as_ref(),
-            };
-        get_master_key_signer_raw::<K>(&key, path).new_signature_builder(lock_args)
+        let path = match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
+            None => return Ok(None),
+            Some(path) => path.clone(),
+        };
+        get_master_key_signer_raw(key.clone(), path)?.new_signature_builder(lock_args)
     })
 }
