@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use bitcoin_hashes::{hash160, Hash};
+use dyn_clone::{self, DynClone};
 use either::Either;
 use failure::Fail;
 use secp256k1::recovery::RecoverableSignature;
@@ -9,6 +10,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use void::Void;
 
+use crate::signing::{FullyAbstractSingleShotSigner, SignPrehashedHelper, SignerSingleShot};
 use crate::wallet::bip32::{
     ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, Fingerprint,
 };
@@ -55,7 +57,7 @@ pub trait AbstractKeyStore: Sized {
 /// For a software key store, would probably be the actual private key, but
 /// for a hardware wallet would be merely the capability to communicate with
 /// that wallet assuming a derivation path.
-pub trait AbstractMasterPrivKey {
+pub trait AbstractMasterPrivKey: DynClone {
     /// Error type for operations.
     type Err;
 
@@ -124,35 +126,73 @@ pub trait AbstractMasterPrivKey {
     }
 }
 
+dyn_clone::clone_trait_object!(<'a> AbstractMasterPrivKey<Privkey = FullyBoxedAbstractPrivkey<'a>, Err = String>);
+
+pub type FullyBoxedAbstractMasterPrivkey<'a> =
+    Box<dyn AbstractMasterPrivKey<Privkey = FullyBoxedAbstractPrivkey<'a>, Err = String> + 'a>;
+
+impl<K: ?Sized + AbstractMasterPrivKey> AbstractMasterPrivKey for Box<K>
+where
+    Box<K>: Clone,
+{
+    type Err = K::Err;
+
+    type Privkey = K::Privkey;
+
+    fn extended_privkey(&self, path: &[ChildNumber]) -> Result<Self::Privkey, Self::Err> {
+        (&**self).extended_privkey(path)
+    }
+
+    fn extended_pubkey(&self, path: &[ChildNumber]) -> Result<ExtendedPubKey, Self::Err> {
+        (&**self).extended_pubkey(path)
+    }
+}
+
 /// Trait for signing
-pub trait AbstractPrivKey {
+pub trait AbstractPrivKey: DynClone {
     /// Error type for operations.
     type Err;
 
+    type SignerSingleShot: SignerSingleShot<Err = Self::Err>;
+
     /// Get the corresponding public key
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err>;
+    // TODO make this not take a hash
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err>;
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err>;
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot;
 }
 
-impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K> {
+dyn_clone::clone_trait_object!(<'a> AbstractPrivKey<SignerSingleShot = FullyAbstractSingleShotSigner<'a>, Err = String>);
+
+pub type FullyBoxedAbstractPrivkey<'a> = Box<
+    dyn AbstractPrivKey<SignerSingleShot = FullyAbstractSingleShotSigner<'a>, Err = String> + 'a,
+>;
+
+impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for Box<K>
+where
+    Box<K>: Clone,
+{
     type Err = K::Err;
 
+    type SignerSingleShot = K::SignerSingleShot;
+
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
-        AsRef::<K>::as_ref(self).public_key()
+        (&**self).public_key()
     }
 
     fn sign(&self, message: &H256) -> Result<secp256k1::Signature, Self::Err> {
-        AsRef::<K>::as_ref(self).sign(message)
+        (&**self).sign(message)
     }
 
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        AsRef::<K>::as_ref(self).sign_recoverable(message)
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
+        (&**self).begin_sign_recoverable()
     }
 }
 
 impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for &K {
     type Err = K::Err;
+
+    type SignerSingleShot = K::SignerSingleShot;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         (*self).public_key()
@@ -162,13 +202,19 @@ impl<K: ?Sized + AbstractPrivKey> AbstractPrivKey for &K {
         (*self).sign(message)
     }
 
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Self::Err> {
-        (*self).sign_recoverable(message)
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
+        (*self).begin_sign_recoverable()
     }
 }
 
+// Only not using impl trait because unstable
+type ExtendedPublicKeySignClosure<'a> =
+    Box<dyn FnOnce(H256) -> Result<RecoverableSignature, Void> + 'a>;
+
 impl AbstractPrivKey for ExtendedPrivKey {
     type Err = Void;
+
+    type SignerSingleShot = SignPrehashedHelper<ExtendedPublicKeySignClosure<'static>>;
 
     fn public_key(&self) -> Result<secp256k1::PublicKey, Self::Err> {
         Ok(ExtendedPubKey::from_private(&SECP256K1, self).public_key)
@@ -180,10 +226,13 @@ impl AbstractPrivKey for ExtendedPrivKey {
         Ok(SECP256K1.sign(&message, &self.private_key))
     }
 
-    fn sign_recoverable(&self, message: &H256) -> Result<RecoverableSignature, Void> {
-        let message =
-            secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
-        Ok(SECP256K1.sign_recoverable(&message, &self.private_key))
+    fn begin_sign_recoverable(&self) -> Self::SignerSingleShot {
+        let cloned_key = self.private_key.clone();
+        SignPrehashedHelper::new(Box::new(move |message: H256| {
+            let message = secp256k1::Message::from_slice(message.as_bytes())
+                .expect("Convert to message failed");
+            Ok(SECP256K1.sign_recoverable(&message, &cloned_key))
+        }))
     }
 }
 

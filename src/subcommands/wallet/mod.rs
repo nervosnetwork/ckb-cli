@@ -24,6 +24,7 @@ use crate::utils::{
         check_capacity, get_address, get_live_cell_with_cache, get_master_key_signer_raw,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
         make_address_payload_and_master_key_cap, privkey_or_from_account, read_password,
+        serialize_signature_bytes,
     },
     printer::{OutputFormat, Printable},
 };
@@ -33,9 +34,9 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::{AbstractMasterPrivKey, AbstractPrivKey, ChildNumber, DerivationPath, KeyStore},
+    wallet::{AbstractMasterPrivKey, AbstractPrivKey, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
-    NetworkType, SignerFnTrait, Since, SinceType, TxHelper,
+    NetworkType, SignerClosureHelper, SignerFnTrait, Since, SinceType, TxHelper,
 };
 
 pub struct WalletSubCommand<'a> {
@@ -298,7 +299,7 @@ impl<'a> WalletSubCommand<'a> {
                 debug,
             )
         } else if let Some(key_cap) = master_key_cap_opt {
-            let signer = get_keystore_signer(&*key_cap, path_map);
+            let signer = get_keystore_signer(key_cap, path_map);
             self.transfer_impl(
                 network_type,
                 payload_opt,
@@ -440,8 +441,8 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        for (lock_arg, signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
-            helper.add_signature(lock_arg, signature)?;
+        for (ref lock_arg, ref signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
+            helper.add_signature(lock_arg.clone(), serialize_signature_bytes(signature))?;
         }
         let tx = helper.build_tx(&mut get_live_cell_fn)?;
         self.send_transaction(tx, format, color, debug)
@@ -697,22 +698,18 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
     }
 }
 
-fn get_keystore_signer<K>(
-    key: &K,
-    path_map: HashMap<H160, DerivationPath>,
-) -> impl SignerFnTrait + '_
+fn get_keystore_signer<K>(key: K, path_map: HashMap<H160, DerivationPath>) -> impl SignerFnTrait
 where
-    K: ?Sized,
-    K: AbstractMasterPrivKey,
+    K: AbstractMasterPrivKey + Clone,
+    K::Privkey: Clone,
     <K as AbstractMasterPrivKey>::Err: ToString,
     <K::Privkey as AbstractPrivKey>::Err: ToString,
 {
-    move |lock_args: &HashSet<H160>, message: &H256| {
-        let path: &[ChildNumber] =
-            match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
-                None => return Ok(None),
-                Some(path) => path.as_ref(),
-            };
-        get_master_key_signer_raw::<K>(&key, path)(lock_args, message)
-    }
+    SignerClosureHelper(move |lock_args: &HashSet<H160>| {
+        let path = match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
+            None => return Ok(None),
+            Some(path) => path.clone(),
+        };
+        get_master_key_signer_raw(key.clone(), path)?.new_signature_builder(lock_args)
+    })
 }

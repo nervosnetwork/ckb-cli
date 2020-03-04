@@ -33,10 +33,11 @@ use crate::utils::{
         FixedHashParser, FromAccountParser, FromStrParser, HexParser, PrivkeyPathParser,
         PrivkeyWrapper,
     },
+    key_adapter::KeyAdapter,
     other::{
         check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
         get_live_cell_with_cache, get_master_key_signer_raw, get_network_type, get_privkey_signer,
-        get_to_data, read_password,
+        get_to_data, read_password, serialize_signature, serialize_signature_bytes,
     },
     printer::{OutputFormat, Printable},
 };
@@ -477,19 +478,22 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
 
                 let signer: BoxedSignerFn = if let Some(privkey) = privkey_opt {
-                    Box::new(get_privkey_signer(privkey)?)
+                    Box::new(KeyAdapter(get_privkey_signer(privkey)?))
                 } else {
                     match account_opt.unwrap() {
                         AccountId::SoftwareMasterKey(hash160) => {
                             let password = read_password(false, None)?;
                             let key_store = self.key_store.clone();
-                            Box::new(get_keystore_signer(key_store, hash160, password))
+                            Box::new(KeyAdapter(get_keystore_signer(
+                                key_store, hash160, password,
+                            )?))
                         }
                         AccountId::LedgerId(ref ledger_id) => {
                             let key = ledger_key_store
                                 .borrow_account(&ledger_id)
-                                .map_err(|e| e.to_string())?;
-                            Box::new(get_master_key_signer_raw(key, path.as_ref()))
+                                .map_err(|e| e.to_string())?
+                                .clone();
+                            Box::new(KeyAdapter(get_master_key_signer_raw(key, path)?))
                         }
                     }
                 };
@@ -504,18 +508,21 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
                     let signatures = helper.sign_inputs(signer, get_live_cell)?;
                     if m.is_present("add-signatures") {
-                        for (lock_arg, signature) in signatures.clone() {
-                            helper.add_signature(lock_arg, signature)?;
+                        for (ref lock_arg, ref signature) in &signatures {
+                            helper.add_signature(
+                                (*lock_arg).clone(),
+                                serialize_signature_bytes(signature),
+                            )?;
                         }
                     }
                     Ok(signatures)
                 })?;
                 let resp = signatures
                     .into_iter()
-                    .map(|(lock_arg, signature)| {
+                    .map(|(ref lock_arg, ref signature)| {
                         serde_json::json!({
-                            "lock-arg": format!("0x{}", hex_string(&lock_arg).unwrap()),
-                            "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                            "lock-arg": format!("0x{}", hex_string(lock_arg).unwrap()),
+                            "signature": format!("0x{}", hex_string(&serialize_signature(signature)).unwrap()),
                         })
                     })
                     .collect::<Vec<_>>();
