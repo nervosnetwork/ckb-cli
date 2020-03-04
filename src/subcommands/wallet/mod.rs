@@ -441,8 +441,8 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        for (lock_arg, ref signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
-            helper.add_signature(lock_arg, serialize_signature_bytes(signature))?;
+        for (ref lock_arg, ref signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
+            helper.add_signature(lock_arg.clone(), serialize_signature_bytes(signature))?;
         }
         let tx = helper.build_tx(&mut get_live_cell_fn)?;
         self.send_transaction(tx, format, color, debug)

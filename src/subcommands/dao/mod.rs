@@ -360,9 +360,9 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
                 .build()
         };
 
-        let single_signer = {
+        let mut single_signer = {
             let account = self.sighash_args();
-            let mut signer: BoxedSignerFn = Box::new(KeyAdapter(get_privkey_signer(self.key_cap)?));
+            let mut signer: BoxedSignerFn = Box::new(KeyAdapter(get_privkey_signer(self.key_cap.clone())?));
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
             signer
                 .new_signature_builder(&accounts)?

@@ -510,7 +510,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     if m.is_present("add-signatures") {
                         for (ref lock_arg, ref signature) in &signatures {
                             helper.add_signature(
-                                *lock_arg.clone(),
+                                (*lock_arg).clone(),
                                 serialize_signature_bytes(signature),
                             )?;
                         }
@@ -519,9 +519,9 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 })?;
                 let resp = signatures
                     .into_iter()
-                    .map(|(lock_arg, ref signature)| {
+                    .map(|(ref lock_arg, ref signature)| {
                         serde_json::json!({
-                            "lock-arg": format!("0x{}", hex_string(&lock_arg).unwrap()),
+                            "lock-arg": format!("0x{}", hex_string(lock_arg).unwrap()),
                             "signature": format!("0x{}", hex_string(&serialize_signature(signature)).unwrap()),
                         })
                     })
