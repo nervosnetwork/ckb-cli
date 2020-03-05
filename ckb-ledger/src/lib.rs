@@ -154,6 +154,8 @@ pub struct LedgerCap {
 // Only not using impl trait because unstable
 type LedgerClosure = Box<dyn FnOnce(Vec<u8>) -> Result<RecoverableSignature, LedgerKeyStoreError>>;
 
+const MAX_APDU_SIZE: usize = 230;
+
 impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
@@ -202,14 +204,14 @@ impl AbstractPrivKey for LedgerCap {
 
             debug!(
                 "Nervos CKB Ledger app path {:x?} with length {:?}",
-                (raw_path),
-                (raw_path.len() as u8)
+                raw_path,
+                raw_path.len()
             );
 
             debug!(
                 "Nervos CKB Ledger app message {:x?} with length {:?}",
-                (message),
-                (message.len() as u8)
+                message,
+                message.len()
             );
 
             my_self.master.ledger_app.exchange(ApduCommand {
@@ -221,34 +223,32 @@ impl AbstractPrivKey for LedgerCap {
                 data: raw_path,
             })?;
 
-            // for i in 0..(message.len() / 64) {
-            //     let mut chunk = Vec::new();
+            for i in 0..(message.len() / MAX_APDU_SIZE) {
+                let mut chunk = Vec::new();
 
-            //     for j in 0..64 {
-            //         if i * 64 + j >= message.len() {
-            //             break;
-            //         }
-            //         debug!("index: {:?}", i * 64 + j);
-            //         chunk.write_u8(message[i * 64 + j]).expect(WRITE_ERR_MSG);
-            //     }
+                for j in 0..MAX_APDU_SIZE {
+                    if i * MAX_APDU_SIZE + j >= message.len() {
+                        break;
+                    }
+                    chunk
+                        .write_u8(message[i * MAX_APDU_SIZE + j])
+                        .expect(WRITE_ERR_MSG);
+                }
 
-            //     my_self.master.ledger_app.exchange(ApduCommand {
-            //         cla: 0x80,
-            //         ins: 0x03,
-            //         p1: 0x01,
-            //         p2: 0,
-            //         length: chunk.len() as u8,
-            //         data: chunk,
-            //     })?;
-            // }
-
-            if message.len() > 230 {
-                panic!("Can't handle more than 230 bytes message");
+                my_self.master.ledger_app.exchange(ApduCommand {
+                    cla: 0x80,
+                    ins: 0x03,
+                    p1: 0x01,
+                    p2: 0,
+                    length: chunk.len() as u8,
+                    data: chunk,
+                })?;
             }
 
             let mut last_chunk = Vec::new();
+            let last_offset = (message.len() / MAX_APDU_SIZE) * MAX_APDU_SIZE;
 
-            for index in 0..message.len() {
+            for index in last_offset..message.len() {
                 last_chunk.write_u8(message[index]).expect(WRITE_ERR_MSG);
             }
 
