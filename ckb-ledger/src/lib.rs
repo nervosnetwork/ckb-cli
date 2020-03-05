@@ -261,6 +261,12 @@ impl AbstractPrivKey for LedgerCap {
                 data: last_chunk,
             })?;
 
+            debug!(
+                "Nervos CKB Ledger result is {:02x?} with length {:?}",
+                response.data,
+                response.data.len()
+            );
+
             let mut raw_signature = response.data.clone();
             let raw_bytes = &mut raw_signature[..];
 
