@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use either::Either;
 pub use index::start_index_thread;
 
+use super::account::AccountId;
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
@@ -280,6 +281,15 @@ impl<'a> WalletSubCommand<'a> {
 
         let to_data = get_to_data(m)?;
 
+        let is_ledger = if let Either::Right(account) = from_account.clone() {
+            match account {
+                AccountId::SoftwareMasterKey(_) => false,
+                AccountId::LedgerId(_) => true,
+            }
+        } else {
+            false
+        };
+
         let payload_opt = from_address_info_opt.map(|(x, _y)| x);
         if let Either::Left(from_privkey) = from_account {
             let signer = get_privkey_signer(from_privkey)?;
@@ -293,6 +303,7 @@ impl<'a> WalletSubCommand<'a> {
                 tx_fee,
                 lock_hashes,
                 signer,
+                false,
                 multisig_config_opt,
                 format,
                 color,
@@ -310,6 +321,7 @@ impl<'a> WalletSubCommand<'a> {
                 tx_fee,
                 lock_hashes,
                 signer,
+                is_ledger,
                 multisig_config_opt,
                 format,
                 color,
@@ -331,6 +343,7 @@ impl<'a> WalletSubCommand<'a> {
         tx_fee: u64,
         lock_hashes: Vec<Byte32>,
         signer: impl SignerFnTrait,
+        is_ledger: bool,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
@@ -441,7 +454,9 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        for (ref lock_arg, ref signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
+        for (ref lock_arg, ref signature) in
+            helper.sign_inputs(signer, &mut get_live_cell_fn, is_ledger)?
+        {
             helper.add_signature(lock_arg.clone(), serialize_signature_bytes(signature))?;
         }
         let tx = helper.build_tx(&mut get_live_cell_fn)?;

@@ -207,6 +207,7 @@ impl TxHelper {
         &self,
         mut signer: S,
         get_live_cell: C,
+        is_ledger: bool,
     ) -> Result<HashMap<Bytes, RecoverableSignature>, String>
     where
         S: SignerFnTrait,
@@ -232,15 +233,30 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if let Some(builder) = signer.new_signature_builder(&lock_args)? {
-                let signature = build_signature(
-                    &self.transaction.hash(),
-                    &idxs,
-                    &witnesses,
-                    self.multisig_configs.get(&multisig_hash160),
-                    builder,
-                )?;
-                signatures.insert(lock_arg, signature);
+            if let Some(mut builder) = signer.new_signature_builder(&lock_args)? {
+                if is_ledger {
+                    builder.append(
+                        packed::RawTransaction::new_builder()
+                            .version(self.transaction.version().pack())
+                            .cell_deps(self.transaction.cell_deps())
+                            .header_deps(self.transaction.header_deps())
+                            .inputs(self.transaction.inputs())
+                            .outputs(self.transaction.outputs())
+                            .outputs_data(self.transaction.outputs_data())
+                            .build()
+                            .as_slice(),
+                    );
+                    signatures.insert(lock_arg, Box::new(builder).finalize()?);
+                } else {
+                    let signature = build_signature(
+                        &self.transaction.hash(),
+                        &idxs,
+                        &witnesses,
+                        self.multisig_configs.get(&multisig_hash160),
+                        builder,
+                    )?;
+                    signatures.insert(lock_arg, signature);
+                }
             }
         }
         Ok(signatures)
