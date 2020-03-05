@@ -280,7 +280,7 @@ pub const MANDATORY_PREFIX: &[ChildNumber] = &[
 ];
 
 pub fn is_valid_derivation_path(path: &[ChildNumber]) -> bool {
-    path.iter()
+    path.iter().map(Some).chain(std::iter::repeat(None))
         .zip(MANDATORY_PREFIX.iter())
-        .all(|(x, y)| x == y)
+        .all(|(x, y)| x == Some(y))
 }
