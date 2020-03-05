@@ -106,7 +106,7 @@ impl LedgerMasterCap {
     fn from_ledger(ledger_app: RawLedgerApp) -> Result<Self, LedgerKeyStoreError> {
         let command = apdu::get_wallet_id();
         let response = ledger_app.exchange(command)?;
-        debug!("Nervos CKB Ledger app wallet id: {:?}", response);
+        debug!("Nervos CKB Ledger app wallet id: {:02x?}", response);
 
         let mut resp = &response.data[..];
         // TODO: The ledger app gives us 64 bytes but we only use 32
@@ -172,7 +172,7 @@ impl AbstractPrivKey for LedgerCap {
         let command = apdu::extend_public_key(data);
         let response = self.master.ledger_app.exchange(command)?;
         debug!(
-            "Nervos CBK Ledger app extended pub key raw public key {:?} for path {:?}",
+            "Nervos CBK Ledger app extended pub key raw public key {:02x?} for path {:?}",
             &response, &self.path
         );
         let mut resp = &response.data[..];
@@ -203,13 +203,13 @@ impl AbstractPrivKey for LedgerCap {
             }
 
             debug!(
-                "Nervos CKB Ledger app path {:x?} with length {:?}",
+                "Nervos CKB Ledger app path {:02x?} with length {:?}",
                 raw_path,
                 raw_path.len()
             );
 
             debug!(
-                "Nervos CKB Ledger app message {:x?} with length {:?}",
+                "Nervos CKB Ledger app message {:02x?} with length {:?}",
                 message,
                 message.len()
             );
