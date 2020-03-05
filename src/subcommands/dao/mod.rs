@@ -26,7 +26,7 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
-    packed::{Byte32, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{Byte32, CellOutput, OutPoint, Script, WitnessArgs, RawTransaction},
     prelude::*,
     {H160, H256},
 };
@@ -368,7 +368,27 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
                 .new_signature_builder(&accounts)?
                 .expect("signer missed")
         };
-        let signature = {
+
+        let is_ledger = match self.transact_args.account {
+            Either::Left(_) => { false }
+            Either::Right(AccountId::SoftwareMasterKey(_)) => { false }
+            Either::Right(AccountId::LedgerId(_)) => { true }
+        };
+
+        let signature = if is_ledger {
+            single_signer.append(
+                RawTransaction::new_builder()
+                    .version(transaction.version().pack())
+                    .cell_deps(transaction.cell_deps())
+                    .header_deps(transaction.header_deps())
+                    .inputs(transaction.inputs())
+                    .outputs(transaction.outputs())
+                    .outputs_data(transaction.outputs_data())
+                    .build()
+                    .as_slice(),
+            );
+            single_signer.finalize()?
+        } else {
             single_signer.append(&transaction.hash().raw_data());
             single_signer.append(&(init_witness.as_bytes().len() as u64).to_le_bytes());
             single_signer.append(&init_witness.as_bytes());
