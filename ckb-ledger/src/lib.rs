@@ -271,14 +271,11 @@ impl AbstractPrivKey for LedgerCap {
             let mut resp = &raw_signature[..];
 
             let data = parse::split_off_at(&mut resp, 64)?;
-            let recovery_id = RecoveryId::from_i32((parse::split_first(&mut resp)? - 1) as i32)?;
+            let recovery_id = RecoveryId::from_i32(parse::split_first(&mut resp)? as i32)?;
             debug!("Recovery id is {:?}", recovery_id);
             parse::assert_nothing_left(resp)?;
 
-            Ok(RecoverableSignature::from_compact(
-                data,
-                recovery_id,
-            )?)
+            Ok(RecoverableSignature::from_compact(data, recovery_id)?)
         }))
     }
 }

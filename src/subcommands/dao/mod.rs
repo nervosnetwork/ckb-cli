@@ -26,7 +26,7 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
-    packed::{Byte32, CellOutput, OutPoint, Script, WitnessArgs, RawTransaction},
+    packed::{Byte32, CellOutput, OutPoint, RawTransaction, Script, WitnessArgs},
     prelude::*,
     {H160, H256},
 };
@@ -370,9 +370,9 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
         };
 
         let is_ledger = match self.transact_args.account {
-            Either::Left(_) => { false }
-            Either::Right(AccountId::SoftwareMasterKey(_)) => { false }
-            Either::Right(AccountId::LedgerId(_)) => { true }
+            Either::Left(_) => false,
+            Either::Right(AccountId::SoftwareMasterKey(_)) => false,
+            Either::Right(AccountId::LedgerId(_)) => true,
         };
 
         let signature = if is_ledger {
