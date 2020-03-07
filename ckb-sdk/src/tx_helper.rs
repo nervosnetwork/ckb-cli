@@ -14,6 +14,7 @@ use ckb_types::{
 };
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
+use crate::rpc::Transaction;
 use crate::signing::{FullyAbstractSingleShotSigner, SignerSingleShot};
 use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
 
@@ -81,14 +82,15 @@ impl TxHelper {
         self.multisig_configs.clear()
     }
 
-    pub fn add_input<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
+    pub fn add_input<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &mut self,
         out_point: OutPoint,
         since_absolute_epoch_opt: Option<u64>,
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
     ) -> Result<(), String> {
-        let lock = get_live_cell(out_point.clone(), false)?.lock();
+        let (cell_output, _) = get_live_cell(out_point.clone(), false)?;
+        let lock = cell_output.lock();
         check_lock_script(&lock)?;
 
         let since = if let Some(number) = since_absolute_epoch_opt {
@@ -166,13 +168,14 @@ impl TxHelper {
         self.multisig_configs.insert(config.hash160(), config);
     }
 
-    pub fn input_group<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
+    pub fn input_group<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
         mut get_live_cell: F,
     ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
-            let lock = get_live_cell(input.previous_output(), false)?.lock();
+            let (cell_output, _) = get_live_cell(input.previous_output(), false)?;
+            let lock = cell_output.lock();
             check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
 
             let lock_arg = lock.args().raw_data();
@@ -211,7 +214,7 @@ impl TxHelper {
     ) -> Result<HashMap<Bytes, RecoverableSignature>, String>
     where
         S: SignerFnTrait,
-        C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
+        C: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>,
     {
         let all_sighash_lock_args = self
             .multisig_configs
@@ -262,7 +265,7 @@ impl TxHelper {
         Ok(signatures)
     }
 
-    pub fn build_tx<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
+    pub fn build_tx<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
         get_live_cell: F,
     ) -> Result<TransactionView, String> {
@@ -327,7 +330,7 @@ impl TxHelper {
             .build())
     }
 
-    pub fn check_tx<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
+    pub fn check_tx<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
         mut get_live_cell: F,
     ) -> Result<(u64, u64), String> {
@@ -341,7 +344,7 @@ impl TxHelper {
             } else {
                 previous_outputs.insert(out_point.clone());
             }
-            let output = get_live_cell(out_point, false)?;
+            let (output, _) = get_live_cell(out_point, false)?;
             let capacity: u64 = output.capacity().unpack();
             input_total += capacity;
 

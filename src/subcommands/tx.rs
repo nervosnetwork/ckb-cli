@@ -10,6 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
+    rpc::Transaction,
     wallet::{AbstractKeyStore, DerivationPath, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
@@ -390,8 +391,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("info", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
                         &mut live_cell_cache,
@@ -409,7 +412,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
 
                 let mut input_total = 0;
                 for input in tx.inputs().into_iter() {
-                    let (output, data) = get_live_cell(input.previous_output(), true)?;
+                    let ((output, _), data) = get_live_cell(input.previous_output(), true)?;
                     let capacity: u64 = output.capacity().unpack();
                     input_total += capacity;
 
@@ -503,8 +506,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                 };
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
                 let get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
                         .map(|(output, _)| output)
@@ -537,8 +542,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
                 let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
                         &mut live_cell_cache,

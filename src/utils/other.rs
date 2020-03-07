@@ -16,7 +16,7 @@ use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    rpc::AlertMessage,
+    rpc::{AlertMessage, Transaction},
     wallet::{
         AbstractKeyStore, AbstractMasterPrivKey, AbstractPrivKey, DerivationPath,
         FullyBoxedAbstractMasterPrivkey, KeyStore, ScryptType,
@@ -160,11 +160,11 @@ pub fn get_genesis_info(
 }
 
 pub fn get_live_cell_with_cache(
-    cache: &mut HashMap<(OutPoint, bool), (CellOutput, Bytes)>,
+    cache: &mut HashMap<(OutPoint, bool), ((CellOutput, Transaction), Bytes)>,
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
-) -> Result<(CellOutput, Bytes), String> {
+) -> Result<((CellOutput, Transaction), Bytes), String> {
     if let Some(output) = cache.get(&(out_point.clone(), with_data)).cloned() {
         Ok(output)
     } else {
@@ -178,7 +178,7 @@ pub fn get_live_cell(
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
-) -> Result<(CellOutput, Bytes), String> {
+) -> Result<((CellOutput, Transaction), Bytes), String> {
     let cell = client.get_live_cell(out_point.clone(), with_data)?;
     if cell.status != "live" {
         return Err(format!(
@@ -187,21 +187,26 @@ pub fn get_live_cell(
         ));
     }
     let cell_status = cell.status.clone();
-    cell.cell
-        .map(|cell| {
-            (
-                cell.output.into(),
-                cell.data
-                    .map(|data| data.content.into_bytes())
-                    .unwrap_or_default(),
-            )
-        })
-        .ok_or_else(|| {
-            format!(
-                "Invalid input cell, status: {}, out_point: {}",
-                cell_status, out_point
-            )
-        })
+    let cell = cell.cell.ok_or_else(|| {
+        format!(
+            "Invalid input cell, status: {}, out_point: {}",
+            cell_status, out_point
+        )
+    })?;
+    let tx_hash = H256::from_slice(out_point.tx_hash().as_slice()).expect("should be 32 bytes");
+    Ok((
+        (
+            cell.output.into(),
+            client
+                .get_transaction(tx_hash.clone())?
+                .ok_or_else(|| format!("transaction with given hash {} should exist.", &tx_hash))?
+                .transaction
+                .inner,
+        ),
+        cell.data
+            .map(|data| data.content.into_bytes())
+            .unwrap_or_default(),
+    ))
 }
 
 // Get max mature block number

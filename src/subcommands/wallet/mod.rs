@@ -35,6 +35,7 @@ use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
+    rpc::Transaction,
     wallet::{AbstractMasterPrivKey, AbstractPrivKey, DerivationPath, KeyStore},
     Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
     NetworkType, SignerClosureHelper, SignerFnTrait, Since, SinceType, TxHelper,
@@ -432,7 +433,7 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_multisig_config(multisig_config)
         }
 
-        let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+        let mut live_cell_cache: HashMap<(OutPoint, bool), ((CellOutput, Transaction), Bytes)> =
             Default::default();
         let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
             get_live_cell_with_cache(&mut live_cell_cache, self.rpc_client, out_point, with_data)
