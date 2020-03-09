@@ -225,7 +225,7 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, RecoverableSignature> = Default::default();
-        for ((code_hash, lock_arg), (_transaction, idxs)) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), (transaction, idxs)) in self.input_group(get_live_cell)?.into_iter() {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -239,6 +239,17 @@ impl TxHelper {
             };
             if let Some(mut builder) = signer.new_signature_builder(&lock_args)? {
                 if is_ledger {
+                    builder.append(
+                        packed::RawTransaction::new_builder()
+                            .version(transaction.version.pack())
+                            .cell_deps(transaction.cell_deps.into_iter().map(Into::into).pack())
+                            .header_deps(transaction.header_deps.iter().map(Pack::pack).pack())
+                            .inputs(transaction.inputs.into_iter().map(Into::into).pack())
+                            .outputs(transaction.outputs.into_iter().map(Into::into).pack())
+                            .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
+                            .build()
+                            .as_slice(),
+                    );
                     builder.append(
                         packed::RawTransaction::new_builder()
                             .version(self.transaction.version().pack())
