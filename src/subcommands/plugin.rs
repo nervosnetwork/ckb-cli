@@ -3,9 +3,7 @@ use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
-use crate::utils::{
-    arg_parser::{ArgParser, FilePathParser},
-};
+use crate::utils::arg_parser::{ArgParser, FilePathParser};
 
 pub struct PluginSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,

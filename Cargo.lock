@@ -361,11 +361,13 @@ dependencies = [
  "byteorder",
  "chrono",
  "ckb-build-info",
+ "ckb-cli-plugin-protocol",
  "ckb-crypto",
  "ckb-dao-utils",
  "ckb-hash",
  "ckb-index",
  "ckb-jsonrpc-types",
+ "ckb-resource",
  "ckb-sdk",
  "ckb-types",
  "ckb-util",
@@ -387,7 +389,6 @@ dependencies = [
  "jsonrpc-server-utils",
  "log 0.4.8",
  "parity-multiaddr",
- "plugin-protocol",
  "regex",
  "rpassword",
  "rustyline",
@@ -401,6 +402,19 @@ dependencies = [
  "tui",
  "url 1.7.2",
  "yaml-rust",
+]
+
+[[package]]
+name = "ckb-cli-plugin-protocol"
+version = "0.1.0"
+dependencies = [
+ "ckb-index",
+ "ckb-sdk",
+ "ckb-types",
+ "faster-hex 0.3.1",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]
@@ -2116,19 +2130,6 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
-
-[[package]]
-name = "plugin-protocol"
-version = "0.1.0"
-dependencies = [
- "ckb-index",
- "ckb-sdk",
- "ckb-types",
- "faster-hex 0.3.1",
- "serde",
- "serde_derive",
- "serde_json",
-]
 
 [[package]]
 name = "ppv-lite86"

@@ -1,10 +1,10 @@
 use ckb_types::{h160, H160};
 
-use ckb_sdk::rpc::JsonBytes;
-use plugin_protocol::{
+use ckb_cli_plugin_protocol::{
     JsonrpcError, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginConfig, PluginRequest,
     PluginResponse, PluginRole,
 };
+use ckb_sdk::rpc::JsonBytes;
 use std::convert::TryInto;
 use std::io::{self, Write};
 

@@ -1,5 +1,5 @@
 [package]
-name = "plugin-protocol"
+name = "ckb-cli-plugin-protocol"
 version = "0.1.0"
 authors = ["Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
