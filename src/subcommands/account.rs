@@ -372,26 +372,31 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let account_id = AccountIdParser::default().from_matches(m, "account-id")?;
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
-                let extended_pubkey = match account_id {
-                    AccountId::SoftwareMasterKey(lock_arg) => {
-                        let password = read_password(false, None)?;
-                        self.key_store
-                            .extended_pubkey_with_password(
-                                &lock_arg,
-                                path.as_ref(),
-                                password.as_bytes(),
-                            )
+                let (extended_pubkey, account_source) = match account_id {
+                    AccountId::SoftwareMasterKey(lock_arg) => (
+                        {
+                            let password = read_password(false, None)?;
+                            self.key_store
+                                .extended_pubkey_with_password(
+                                    &lock_arg,
+                                    path.as_ref(),
+                                    password.as_bytes(),
+                                )
+                                .map_err(|err| err.to_string())?
+                        },
+                        KeyStore::SOURCE_NAME,
+                    ),
+                    AccountId::LedgerId(ledger_id) => (
+                        self.ledger_key_store
+                            .borrow_account(&ledger_id)
                             .map_err(|err| err.to_string())?
-                    }
-                    AccountId::LedgerId(ledger_id) => self
-                        .ledger_key_store
-                        .borrow_account(&ledger_id)
-                        .map_err(|err| err.to_string())?
-                        .extended_pubkey(path.as_ref())
-                        .map_err(|err| err.to_string())?,
+                            .extended_pubkey(path.as_ref())
+                            .map_err(|err| err.to_string())?,
+                        LedgerKeyStore::SOURCE_NAME,
+                    ),
                 };
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
-                let resp = address_resp::<KeyStore>(&address_payload);
+                let resp = address_resp(account_source, &address_payload);
                 Ok(resp.render(format, color))
             }
             _ => Err(matches.usage().to_owned()),
@@ -399,12 +404,13 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
     }
 }
 
-fn address_resp<KS: AbstractKeyStore>(
+fn address_resp(
+    account_source: &'static str,
     address_payload: &AddressPayload,
 ) -> serde_json::value::Value {
     serde_json::json!({
         "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
-        "account_source": KS::SOURCE_NAME,
+        "account_source": account_source,
         "address": {
             "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
             "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
