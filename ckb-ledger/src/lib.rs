@@ -256,12 +256,11 @@ impl AbstractPrivKey for LedgerCap {
                     let response = my_self.master.ledger_app.exchange(ApduCommand {
                         cla: 0x80,
                         ins: 0x03,
-                        p1: (base
-                            | if rest_length > 0 {
-                                !SignP1::LAST_MARKER
-                            } else {
-                                SignP1::LAST_MARKER
-                            })
+                        p1: (if rest_length > 0 {
+                            base
+                        } else {
+                            base | SignP1::LAST_MARKER
+                        })
                         .bits,
                         p2: 0,
                         length: chunk.len() as u8,
