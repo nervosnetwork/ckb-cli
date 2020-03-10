@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use bitflags;
-use byteorder::{BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use log::debug;
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, recovery::RecoveryId, Signature};
 
@@ -231,7 +231,7 @@ impl AbstractPrivKey for LedgerCap {
 
             let mut message = message.as_ref();
 
-            let ctx_len = parse::split_first(&mut message)?;
+            let ctx_len = parse::split_off_at(&mut message, 2)?.read_u16::<BigEndian>().unwrap();
             debug!("Nervos CKB Ledger ctx raw tx length {:?}", ctx_len);
 
             let ctx_tx = parse::split_off_at(&mut message, ctx_len as usize)?;

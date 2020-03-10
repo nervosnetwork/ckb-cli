@@ -3,6 +3,7 @@ use secp256k1::recovery::RecoverableSignature;
 use dyn_clone::DynClone;
 
 use std::collections::{HashMap, HashSet};
+use byteorder::{BigEndian, WriteBytesExt};
 
 use ckb_hash::blake2b_256;
 use ckb_types::{
@@ -251,10 +252,9 @@ impl TxHelper {
                     .outputs(transaction.outputs.into_iter().map(Into::into).pack())
                     .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
                     .build();
-                if ctx_raw_tx.as_slice().len() > 255 {
-                    panic!("Raw transaction cannot be more than 255 in length.");
-                }
-                builder.append(&[ctx_raw_tx.as_slice().len() as u8]);
+                let mut length = Vec::new();
+                length.write_u16::<BigEndian>(ctx_raw_tx.as_slice().len() as u16);
+                builder.append(&length);
                 builder.append(ctx_raw_tx.as_slice());
             }
             builder.append(
