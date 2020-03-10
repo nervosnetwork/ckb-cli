@@ -10,6 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
+    rpc::Transaction,
     wallet::{AbstractKeyStore, DerivationPath, KeyStore},
     Address, AddressPayload, BoxedSignerFn, CodeHashIndex, GenesisInfo, HttpRpcClient,
     HumanCapacity, MultisigConfig, NetworkType, TxHelper,
@@ -303,14 +304,14 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .tx_hash(tx_hash.pack())
                     .index(index.pack())
                     .build();
-                let get_live_cell = |out_point, with_data| {
+                let mut get_live_cell = |out_point, with_data| {
                     get_live_cell(self.rpc_client, out_point, with_data).map(|(output, _)| output)
                 };
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_input(
                         out_point,
                         since_absolute_epoch_opt,
-                        get_live_cell,
+                        &mut get_live_cell,
                         &genesis_info,
                     )
                 })?;
@@ -390,8 +391,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("info", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
                         &mut live_cell_cache,
@@ -409,7 +412,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
 
                 let mut input_total = 0;
                 for input in tx.inputs().into_iter() {
-                    let (output, data) = get_live_cell(input.previous_output(), true)?;
+                    let ((output, _), data) = get_live_cell(input.previous_output(), true)?;
                     let capacity: u64 = output.capacity().unpack();
                     input_total += capacity;
 
@@ -503,15 +506,17 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                 };
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
-                let get_live_cell = |out_point: OutPoint, with_data: bool| {
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
+                let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
                         .map(|(output, _)| output)
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, get_live_cell, is_ledger)?;
+                    let signatures = helper.sign_inputs(signer, &mut get_live_cell, is_ledger)?;
                     if m.is_present("add-signatures") {
                         for (ref lock_arg, ref signature) in &signatures {
                             helper.add_signature(
@@ -537,8 +542,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
                 let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-                    Default::default();
+                let mut live_cell_cache: HashMap<
+                    (OutPoint, bool),
+                    ((CellOutput, Transaction), Bytes),
+                > = Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
                         &mut live_cell_cache,
