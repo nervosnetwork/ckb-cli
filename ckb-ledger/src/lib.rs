@@ -223,27 +223,32 @@ impl AbstractPrivKey for LedgerCap {
                 data: raw_path,
             })?;
 
-            for i in 0..(message.len() / MAX_APDU_SIZE) {
-                let mut chunk = Vec::new();
+            let chunk = |p1: u8, message: &[u8]| -> Result<(), Self::Err> {
+                for i in 0..(message.len() / MAX_APDU_SIZE) {
+                    let mut chunk = Vec::new();
 
-                for j in 0..MAX_APDU_SIZE {
-                    if i * MAX_APDU_SIZE + j >= message.len() {
-                        break;
+                    for j in 0..MAX_APDU_SIZE {
+                        if i * MAX_APDU_SIZE + j >= message.len() {
+                            break;
+                        }
+                        chunk
+                            .write_u8(message[i * MAX_APDU_SIZE + j])
+                            .expect(WRITE_ERR_MSG);
                     }
-                    chunk
-                        .write_u8(message[i * MAX_APDU_SIZE + j])
-                        .expect(WRITE_ERR_MSG);
-                }
 
-                my_self.master.ledger_app.exchange(ApduCommand {
-                    cla: 0x80,
-                    ins: 0x03,
-                    p1: 0x01,
-                    p2: 0,
-                    length: chunk.len() as u8,
-                    data: chunk,
-                })?;
-            }
+                    my_self.master.ledger_app.exchange(ApduCommand {
+                        cla: 0x80,
+                        ins: 0x03,
+                        p1, //: 0x01,
+                        p2: 0,
+                        length: chunk.len() as u8,
+                        data: chunk,
+                    })?;
+                }
+                Ok(())
+            };
+
+            chunk(0x01, message.as_ref())?;
 
             let mut last_chunk = Vec::new();
             let last_offset = (message.len() / MAX_APDU_SIZE) * MAX_APDU_SIZE;
@@ -251,6 +256,15 @@ impl AbstractPrivKey for LedgerCap {
             for index in last_offset..message.len() {
                 last_chunk.write_u8(message[index]).expect(WRITE_ERR_MSG);
             }
+
+            //my_self.master.ledger_app.exchange(ApduCommand {
+            //    cla: 0x80,
+            //    ins: 0x03,
+            //    p1: 0xA1,
+            //    p2: 0,
+            //    length: last_chunk.len() as u8,
+            //    data: last_chunk,
+            //})?;
 
             let response = my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,

@@ -238,18 +238,20 @@ impl TxHelper {
                 lock_args
             };
             if let Some(mut builder) = signer.new_signature_builder(&lock_args)? {
+                // TODO no `is_ledger` hack that makes this code aware of the
+                // ledger or hardware wallets, no packing both of these into 1
+                // array just to parse them apart.
                 if is_ledger {
-                    builder.append(
-                        packed::RawTransaction::new_builder()
-                            .version(transaction.version.pack())
-                            .cell_deps(transaction.cell_deps.into_iter().map(Into::into).pack())
-                            .header_deps(transaction.header_deps.iter().map(Pack::pack).pack())
-                            .inputs(transaction.inputs.into_iter().map(Into::into).pack())
-                            .outputs(transaction.outputs.into_iter().map(Into::into).pack())
-                            .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
-                            .build()
-                            .as_slice(),
-                    );
+                    let ctx_raw_tx = packed::RawTransaction::new_builder()
+                        .version(transaction.version.pack())
+                        .cell_deps(transaction.cell_deps.into_iter().map(Into::into).pack())
+                        .header_deps(transaction.header_deps.iter().map(Pack::pack).pack())
+                        .inputs(transaction.inputs.into_iter().map(Into::into).pack())
+                        .outputs(transaction.outputs.into_iter().map(Into::into).pack())
+                        .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
+                        .build();
+                    builder.append(&[ctx_raw_tx.as_slice().len() as u8]);
+                    builder.append(ctx_raw_tx.as_slice());
                     builder.append(
                         packed::RawTransaction::new_builder()
                             .version(self.transaction.version().pack())
