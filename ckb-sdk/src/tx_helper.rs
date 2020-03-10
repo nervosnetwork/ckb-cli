@@ -251,6 +251,9 @@ impl TxHelper {
                     .outputs(transaction.outputs.into_iter().map(Into::into).pack())
                     .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
                     .build();
+                if ctx_raw_tx.as_slice().len() > 255 {
+                    panic!("Raw transaction cannot be more than 255 in length.");
+                }
                 builder.append(&[ctx_raw_tx.as_slice().len() as u8]);
                 builder.append(ctx_raw_tx.as_slice());
             }
