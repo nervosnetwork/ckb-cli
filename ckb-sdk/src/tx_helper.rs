@@ -172,7 +172,8 @@ impl TxHelper {
         &self,
         mut get_live_cell: F,
     ) -> Result<HashMap<(Byte32, Bytes), (Transaction, Vec<usize>)>, String> {
-        let mut input_group: HashMap<(Byte32, Bytes), (Transaction, Vec<usize>)> = HashMap::default();
+        let mut input_group: HashMap<(Byte32, Bytes), (Transaction, Vec<usize>)> =
+            HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let (cell_output, cell_transaction) = get_live_cell(input.previous_output(), false)?;
             let lock = cell_output.lock();
@@ -225,7 +226,9 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, RecoverableSignature> = Default::default();
-        for ((code_hash, lock_arg), (transaction, idxs)) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), (transaction, idxs)) in
+            self.input_group(get_live_cell)?.into_iter()
+        {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -284,7 +287,9 @@ impl TxHelper {
         get_live_cell: F,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), (_transaction, idxs)) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), (_transaction, idxs)) in
+            self.input_group(get_live_cell)?.into_iter()
+        {
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
                 let lock_script = Script::new_builder()
                     .hash_type(ScriptHashType::Type.into())

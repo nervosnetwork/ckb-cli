@@ -214,6 +214,15 @@ impl AbstractPrivKey for LedgerCap {
                 message.len()
             );
 
+            let mut message = message.as_ref();
+
+            let ctx_len = parse::split_first(&mut message)?;
+            debug!("Nervos CKB Ledger ctx raw tx length {:?}", ctx_len);
+
+            let ctx_tx = parse::split_off_at(&mut message, ctx_len as usize)?;
+            debug!("Nervos CKB Ledger ctx raw tx {:?}", ctx_tx);
+            debug!("Nervos CKB Ledger new raw tx {:?}", message);
+
             my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,
                 ins: 0x03,
@@ -223,57 +232,29 @@ impl AbstractPrivKey for LedgerCap {
                 data: raw_path,
             })?;
 
-            let chunk = |p1: u8, message: &[u8]| -> Result<(), Self::Err> {
-                for i in 0..(message.len() / MAX_APDU_SIZE) {
-                    let mut chunk = Vec::new();
-
-                    for j in 0..MAX_APDU_SIZE {
-                        if i * MAX_APDU_SIZE + j >= message.len() {
-                            break;
-                        }
-                        chunk
-                            .write_u8(message[i * MAX_APDU_SIZE + j])
-                            .expect(WRITE_ERR_MSG);
-                    }
-
-                    my_self.master.ledger_app.exchange(ApduCommand {
+            let chunk = |init_p1: u8, last_p1: u8, mut message: &[u8]| -> Result<_, Self::Err> {
+                assert!(message.len() > 0, "initial message must be non-empty");
+                loop {
+                    let length = ::std::cmp::min(message.len(), MAX_APDU_SIZE);
+                    let chunk = parse::split_off_at(&mut message, length)?;
+                    let rest_length = message.len();
+                    let response = my_self.master.ledger_app.exchange(ApduCommand {
                         cla: 0x80,
                         ins: 0x03,
-                        p1, //: 0x01,
+                        p1: if rest_length > 0 { init_p1 } else { last_p1 },
                         p2: 0,
                         length: chunk.len() as u8,
-                        data: chunk,
+                        data: chunk.to_vec(),
                     })?;
+                    if rest_length == 0 {
+                        return Ok(response);
+                    }
                 }
-                Ok(())
             };
 
-            chunk(0x01, message.as_ref())?;
+            chunk(0x01, 0xA1, ctx_tx.as_ref())?;
 
-            let mut last_chunk = Vec::new();
-            let last_offset = (message.len() / MAX_APDU_SIZE) * MAX_APDU_SIZE;
-
-            for index in last_offset..message.len() {
-                last_chunk.write_u8(message[index]).expect(WRITE_ERR_MSG);
-            }
-
-            //my_self.master.ledger_app.exchange(ApduCommand {
-            //    cla: 0x80,
-            //    ins: 0x03,
-            //    p1: 0xA1,
-            //    p2: 0,
-            //    length: last_chunk.len() as u8,
-            //    data: last_chunk,
-            //})?;
-
-            let response = my_self.master.ledger_app.exchange(ApduCommand {
-                cla: 0x80,
-                ins: 0x03,
-                p1: 0x81,
-                p2: 0,
-                length: last_chunk.len() as u8,
-                data: last_chunk,
-            })?;
+            let response = chunk(0x01, 0x81, message.as_ref())?;
 
             debug!(
                 "Nervos CKB Ledger result is {:02x?} with length {:?}",
