@@ -1,4 +1,4 @@
-use byteorder::{ByteOrder, LittleEndian};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use either::Either;
 use itertools::Itertools;
 use std::collections::HashSet;
@@ -10,8 +10,8 @@ use crate::subcommands::account::AccountId;
 use crate::utils::index::IndexController;
 use crate::utils::key_adapter::KeyAdapter;
 use crate::utils::other::{
-    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    serialize_signature_bytes,
+    get_live_cell, get_max_mature_number, get_network_type, get_privkey_signer, is_mature,
+    read_password, serialize_signature_bytes,
 };
 
 use ckb_crypto::secp::SECP256K1;
@@ -20,13 +20,14 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_ledger::LedgerKeyStore;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
+    rpc::Transaction,
     wallet::{AbstractKeyStore, AbstractMasterPrivKey, FullyBoxedAbstractPrivkey, KeyStore},
     Address, AddressPayload, BoxedSignerFn, GenesisInfo, HttpRpcClient,
 };
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
-    packed::{Byte32, CellOutput, OutPoint, RawTransaction, Script, WitnessArgs},
+    packed::{self, Byte32, CellOutput, OutPoint, RawTransaction, Script, WitnessArgs},
     prelude::*,
     {H160, H256},
 };
@@ -328,7 +329,7 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
     }
 
     fn install_sighash_witness(
-        &self,
+        &mut self,
         transaction: TransactionView,
     ) -> Result<TransactionView, String> {
         for output in transaction.outputs() {
@@ -376,6 +377,51 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
         };
 
         let signature = if is_ledger {
+            let input_transactions: Vec<Transaction> = {
+                let mut txs = Vec::new();
+                for (_idx, input) in transaction.inputs().into_iter().enumerate() {
+                    let ((_cell_output, cell_transaction), _) =
+                        get_live_cell(self.dao.rpc_client, input.previous_output(), false)?;
+                    txs.push(cell_transaction);
+                }
+                txs
+            };
+            {
+                let mut length = Vec::new();
+                length
+                    .write_u16::<BigEndian>(input_transactions.len() as u16)
+                    .expect("vec as write will never fail");
+                single_signer.append(&length);
+            }
+            for input_transaction in input_transactions.iter() {
+                let input_transaction = input_transaction.clone();
+                let ctx_raw_tx = packed::RawTransaction::new_builder()
+                    .version(input_transaction.version.pack())
+                    .cell_deps(
+                        input_transaction
+                            .cell_deps
+                            .into_iter()
+                            .map(Into::into)
+                            .pack(),
+                    )
+                    .header_deps(input_transaction.header_deps.iter().map(Pack::pack).pack())
+                    .inputs(input_transaction.inputs.into_iter().map(Into::into).pack())
+                    .outputs(input_transaction.outputs.into_iter().map(Into::into).pack())
+                    .outputs_data(
+                        input_transaction
+                            .outputs_data
+                            .into_iter()
+                            .map(Into::into)
+                            .pack(),
+                    )
+                    .build();
+                let mut length = Vec::new();
+                length
+                    .write_u16::<BigEndian>(ctx_raw_tx.as_slice().len() as u16)
+                    .expect("vec as write will never fail");
+                single_signer.append(&length);
+                single_signer.append(ctx_raw_tx.as_slice());
+            }
             single_signer.append(
                 RawTransaction::new_builder()
                     .version(transaction.version().pack())
