@@ -2,8 +2,8 @@ use secp256k1::recovery::RecoverableSignature;
 
 use dyn_clone::DynClone;
 
-use std::collections::{HashMap, HashSet};
 use byteorder::{BigEndian, WriteBytesExt};
+use std::collections::{HashMap, HashSet};
 
 use ckb_hash::blake2b_256;
 use ckb_types::{
@@ -242,6 +242,13 @@ impl TxHelper {
         let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> = self.input_group(get_live_cell)?;
         let input_transactions = self.input_group_cell_order(get_live_cell)?;
         let make_ledger_info = |mut builder: S::SingleShot| -> Result<_, String> {
+            {
+                let mut length = Vec::new();
+                length
+                    .write_u16::<BigEndian>(input_transactions.len() as u16)
+                    .expect("vec as write will never fail");
+                builder.append(&length);
+            }
             for transaction in input_transactions.iter() {
                 let transaction = transaction.clone();
                 let ctx_raw_tx = packed::RawTransaction::new_builder()
@@ -253,7 +260,9 @@ impl TxHelper {
                     .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
                     .build();
                 let mut length = Vec::new();
-                length.write_u16::<BigEndian>(ctx_raw_tx.as_slice().len() as u16);
+                length
+                    .write_u16::<BigEndian>(ctx_raw_tx.as_slice().len() as u16)
+                    .expect("vec as write will never fail");
                 builder.append(&length);
                 builder.append(ctx_raw_tx.as_slice());
             }
