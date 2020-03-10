@@ -304,14 +304,14 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .tx_hash(tx_hash.pack())
                     .index(index.pack())
                     .build();
-                let get_live_cell = |out_point, with_data| {
+                let mut get_live_cell = |out_point, with_data| {
                     get_live_cell(self.rpc_client, out_point, with_data).map(|(output, _)| output)
                 };
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_input(
                         out_point,
                         since_absolute_epoch_opt,
-                        get_live_cell,
+                        &mut get_live_cell,
                         &genesis_info,
                     )
                 })?;
@@ -510,13 +510,13 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     (OutPoint, bool),
                     ((CellOutput, Transaction), Bytes),
                 > = Default::default();
-                let get_live_cell = |out_point: OutPoint, with_data: bool| {
+                let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
                         .map(|(output, _)| output)
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, get_live_cell, is_ledger)?;
+                    let signatures = helper.sign_inputs(signer, &mut get_live_cell, is_ledger)?;
                     if m.is_present("add-signatures") {
                         for (ref lock_arg, ref signature) in &signatures {
                             helper.add_signature(

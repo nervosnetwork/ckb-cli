@@ -86,7 +86,7 @@ impl TxHelper {
         &mut self,
         out_point: OutPoint,
         since_absolute_epoch_opt: Option<u64>,
-        mut get_live_cell: F,
+        get_live_cell: &mut F,
         genesis_info: &GenesisInfo,
     ) -> Result<(), String> {
         let (cell_output, _) = get_live_cell(out_point.clone(), false)?;
@@ -168,14 +168,27 @@ impl TxHelper {
         self.multisig_configs.insert(config.hash160(), config);
     }
 
+    pub fn input_group_cell_order<
+        F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>,
+    >(
+        &self,
+        get_live_cell: &mut F,
+    ) -> Result<Vec<Transaction>, String> {
+        let mut transactions = Vec::new();
+        for (_idx, input) in self.transaction.inputs().into_iter().enumerate() {
+            let (_cell_output, cell_transaction) = get_live_cell(input.previous_output(), false)?;
+            transactions.push(cell_transaction);
+        }
+        Ok(transactions)
+    }
+
     pub fn input_group<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
-        mut get_live_cell: F,
-    ) -> Result<HashMap<(Byte32, Bytes), (Transaction, Vec<usize>)>, String> {
-        let mut input_group: HashMap<(Byte32, Bytes), (Transaction, Vec<usize>)> =
-            HashMap::default();
+        get_live_cell: &mut F,
+    ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
+        let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
-            let (cell_output, cell_transaction) = get_live_cell(input.previous_output(), false)?;
+            let (cell_output, _cell_transaction) = get_live_cell(input.previous_output(), false)?;
             let lock = cell_output.lock();
             check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
 
@@ -193,8 +206,7 @@ impl TxHelper {
             }
             input_group
                 .entry((code_hash, lock_arg))
-                .or_insert_with(|| (cell_transaction, Vec::new()))
-                .1
+                .or_default()
                 .push(idx);
         }
         Ok(input_group)
@@ -211,7 +223,7 @@ impl TxHelper {
     pub fn sign_inputs<S, C>(
         &self,
         mut signer: S,
-        get_live_cell: C,
+        get_live_cell: &mut C,
         is_ledger: bool,
     ) -> Result<HashMap<Bytes, RecoverableSignature>, String>
     where
@@ -226,9 +238,37 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, RecoverableSignature> = Default::default();
-        for ((code_hash, lock_arg), (transaction, idxs)) in
-            self.input_group(get_live_cell)?.into_iter()
-        {
+        let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> =
+            self.input_group(get_live_cell)?;
+        let input_transactions = self.input_group_cell_order(get_live_cell)?;
+        let make_ledger_info = |mut builder: S::SingleShot| -> Result<_, String> {
+            for transaction in input_transactions.iter() {
+                let transaction = transaction.clone();
+                let ctx_raw_tx = packed::RawTransaction::new_builder()
+                    .version(transaction.version.pack())
+                    .cell_deps(transaction.cell_deps.into_iter().map(Into::into).pack())
+                    .header_deps(transaction.header_deps.iter().map(Pack::pack).pack())
+                    .inputs(transaction.inputs.into_iter().map(Into::into).pack())
+                    .outputs(transaction.outputs.into_iter().map(Into::into).pack())
+                    .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
+                    .build();
+                builder.append(&[ctx_raw_tx.as_slice().len() as u8]);
+                builder.append(ctx_raw_tx.as_slice());
+            }
+            builder.append(
+                packed::RawTransaction::new_builder()
+                    .version(self.transaction.version().pack())
+                    .cell_deps(self.transaction.cell_deps())
+                    .header_deps(self.transaction.header_deps())
+                    .inputs(self.transaction.inputs())
+                    .outputs(self.transaction.outputs())
+                    .outputs_data(self.transaction.outputs_data())
+                    .build()
+                    .as_slice(),
+            );
+            Box::new(builder).finalize()
+        };
+        for ((code_hash, lock_arg), idxs) in input_cells.into_iter() {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -240,33 +280,12 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if let Some(mut builder) = signer.new_signature_builder(&lock_args)? {
+            if let Some(builder) = signer.new_signature_builder(&lock_args)? {
                 // TODO no `is_ledger` hack that makes this code aware of the
                 // ledger or hardware wallets, no packing both of these into 1
                 // array just to parse them apart.
                 if is_ledger {
-                    let ctx_raw_tx = packed::RawTransaction::new_builder()
-                        .version(transaction.version.pack())
-                        .cell_deps(transaction.cell_deps.into_iter().map(Into::into).pack())
-                        .header_deps(transaction.header_deps.iter().map(Pack::pack).pack())
-                        .inputs(transaction.inputs.into_iter().map(Into::into).pack())
-                        .outputs(transaction.outputs.into_iter().map(Into::into).pack())
-                        .outputs_data(transaction.outputs_data.into_iter().map(Into::into).pack())
-                        .build();
-                    builder.append(&[ctx_raw_tx.as_slice().len() as u8]);
-                    builder.append(ctx_raw_tx.as_slice());
-                    builder.append(
-                        packed::RawTransaction::new_builder()
-                            .version(self.transaction.version().pack())
-                            .cell_deps(self.transaction.cell_deps())
-                            .header_deps(self.transaction.header_deps())
-                            .inputs(self.transaction.inputs())
-                            .outputs(self.transaction.outputs())
-                            .outputs_data(self.transaction.outputs_data())
-                            .build()
-                            .as_slice(),
-                    );
-                    signatures.insert(lock_arg, Box::new(builder).finalize()?);
+                    signatures.insert(lock_arg, make_ledger_info(builder)?);
                 } else {
                     let signature = build_signature(
                         &self.transaction.hash(),
@@ -284,10 +303,10 @@ impl TxHelper {
 
     pub fn build_tx<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
-        get_live_cell: F,
+        get_live_cell: &mut F,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), (_transaction, idxs)) in
+        for ((code_hash, lock_arg), idxs) in
             self.input_group(get_live_cell)?.into_iter()
         {
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
@@ -351,7 +370,7 @@ impl TxHelper {
 
     pub fn check_tx<F: FnMut(OutPoint, bool) -> Result<(CellOutput, Transaction), String>>(
         &self,
-        mut get_live_cell: F,
+        get_live_cell: &mut F,
     ) -> Result<(u64, u64), String> {
         // Check inputs
         let mut previous_outputs: HashSet<OutPoint> = HashSet::default();
