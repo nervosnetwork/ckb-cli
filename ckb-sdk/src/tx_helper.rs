@@ -238,8 +238,7 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, RecoverableSignature> = Default::default();
-        let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> =
-            self.input_group(get_live_cell)?;
+        let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> = self.input_group(get_live_cell)?;
         let input_transactions = self.input_group_cell_order(get_live_cell)?;
         let make_ledger_info = |mut builder: S::SingleShot| -> Result<_, String> {
             for transaction in input_transactions.iter() {
@@ -306,9 +305,7 @@ impl TxHelper {
         get_live_cell: &mut F,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), idxs) in
-            self.input_group(get_live_cell)?.into_iter()
-        {
+        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
                 let lock_script = Script::new_builder()
                     .hash_type(ScriptHashType::Type.into())
