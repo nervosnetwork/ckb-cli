@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use bitflags;
 use byteorder::{BigEndian, WriteBytesExt};
 use log::debug;
 use secp256k1::{key::PublicKey, recovery::RecoverableSignature, recovery::RecoveryId, Signature};
@@ -156,6 +157,20 @@ type LedgerClosure = Box<dyn FnOnce(Vec<u8>) -> Result<RecoverableSignature, Led
 
 const MAX_APDU_SIZE: usize = 230;
 
+bitflags::bitflags! {
+    struct SignP1: u8 {
+        // for the path
+        const FIRST = 0b_0000_0000;
+        // for the tx
+        const NEXT  = 0b_0000_0001;
+        //const HASH_ONLY_NEXT  = 0b_000_0010 | Self::NEXT.bits; // You only need it once
+        const IS_CONTEXT = 0b_0010_0000;
+        const NO_FALLBACK = 0b_0100_0000;
+        const LAST_MARKER = 0b_1000_0000;
+        const MASK = Self::LAST_MARKER.bits | Self::NO_FALLBACK.bits | Self::IS_CONTEXT.bits;
+    }
+}
+
 impl AbstractPrivKey for LedgerCap {
     type Err = LedgerKeyStoreError;
 
@@ -226,13 +241,13 @@ impl AbstractPrivKey for LedgerCap {
             my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,
                 ins: 0x03,
-                p1: 0x0,
+                p1: SignP1::FIRST.bits,
                 p2: 0,
                 length: raw_path.len() as u8,
                 data: raw_path,
             })?;
 
-            let chunk = |init_p1: u8, last_p1: u8, mut message: &[u8]| -> Result<_, Self::Err> {
+            let chunk = |base: SignP1, mut message: &[u8]| -> Result<_, Self::Err> {
                 assert!(message.len() > 0, "initial message must be non-empty");
                 loop {
                     let length = ::std::cmp::min(message.len(), MAX_APDU_SIZE);
@@ -241,7 +256,13 @@ impl AbstractPrivKey for LedgerCap {
                     let response = my_self.master.ledger_app.exchange(ApduCommand {
                         cla: 0x80,
                         ins: 0x03,
-                        p1: if rest_length > 0 { init_p1 } else { last_p1 },
+                        p1: (base
+                            | if rest_length > 0 {
+                                !SignP1::LAST_MARKER
+                            } else {
+                                SignP1::LAST_MARKER
+                            })
+                        .bits,
                         p2: 0,
                         length: chunk.len() as u8,
                         data: chunk.to_vec(),
@@ -252,9 +273,9 @@ impl AbstractPrivKey for LedgerCap {
                 }
             };
 
-            chunk(0x01, 0xA1, ctx_tx.as_ref())?;
+            chunk(SignP1::NEXT | SignP1::IS_CONTEXT, ctx_tx.as_ref())?;
 
-            let response = chunk(0x01, 0x81, message.as_ref())?;
+            let response = chunk(SignP1::NEXT, message.as_ref())?;
 
             debug!(
                 "Nervos CKB Ledger result is {:02x?} with length {:?}",
