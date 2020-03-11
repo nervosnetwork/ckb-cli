@@ -2,23 +2,36 @@
     url = "https://github.com/NixOS/nixpkgs/archive/e02fb6eaf70d4f6db37ce053edf79b731f13c838.tar.gz";
     sha256 = "1dbjbak57vl7kcgpm1y1nm4s74gjfzpfgk33xskdxj9hjphi6mws";
   }) {}
-, rustChannelOf ? (import ("${builtins.fetchTarball { # 2020-02-07
-    url = "https://github.com/mozilla/nixpkgs-mozilla/archive/969a1e467abbb91affbf0c24ddf773d2bdf70ccd.tar.gz";
-    sha256 = "13j54pzd9sfyimcmzl0hahzhvr930kiqj839nyk7yxp3nr0zy2xx";
-  }}/rust-overlay.nix") pkgs pkgs).rustChannelOf
+
+, fetch ? { private ? false, fetchSubmodules ? false, owner, repo, rev, sha256, ... }:
+    if !fetchSubmodules && !private then builtins.fetchTarball {
+      url = "https://github.com/${owner}/${repo}/archive/${rev}.tar.gz"; inherit sha256;
+    } else (import <nixpkgs> {}).fetchFromGitHub {
+      inherit owner repo rev sha256 fetchSubmodules private;
+    }
+
+, rustOverlay ? import
+    "${fetch (builtins.fromJSON (builtins.readFile ./nix/nixpkgs-mozilla/github.json))}/rust-overlay.nix"
+    pkgs
+    pkgs
 
 # Rust manifest hash must be updated when rust-toolchain file changes.
-, rustPackages ? rustChannelOf { # channel-rust-1.38.0.toml
+, rustPackages ? rustOverlay.rustChannelOf { # channel-rust-1.38.0.toml
     dist_root = "https://static.rust-lang.org/dist";
     rustToolchain = ./rust-toolchain;
     sha256 = "1x22rf6ahb4cniykfz3ml7w0hh226pcig154xbcf5cg7j4k72rig";
-  } }:
+  }
+
+, gitignoreNix ? fetch (builtins.fromJSON (builtins.readFile ./nix/gitignore.nix/github.json))
+
+}:
+
 let
   rustPlatform = pkgs.makeRustPlatform {
     inherit (rustPackages) cargo;
     rustc = rustPackages.rust;
   };
-  inherit (import ./nix/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
+  inherit (import gitignoreNix { inherit (pkgs) lib; }) gitignoreSource;
 in rustPlatform.buildRustPackage {
   name = "ckb-cli";
   src = gitignoreSource ./.;
