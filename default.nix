@@ -16,8 +16,8 @@
     pkgs
 
 # Rust manifest hash must be updated when rust-toolchain file changes.
-, rustPackages ? rustOverlay.rustChannelOf { # channel-rust-1.38.0.toml
-    dist_root = "https://static.rust-lang.org/dist";
+, rustPackages ? rustOverlay.rustChannelOf {
+    date = "2019-09-26";
     rustToolchain = ./rust-toolchain;
     sha256 = "1x22rf6ahb4cniykfz3ml7w0hh226pcig154xbcf5cg7j4k72rig";
   }
