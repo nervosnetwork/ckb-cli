@@ -18,12 +18,10 @@ let
     inherit (rustPackages) cargo;
     rustc = rustPackages.rust;
   };
+  inherit (import ./nix/gitignore.nix { inherit (pkgs) lib; }) gitignoreSource;
 in rustPlatform.buildRustPackage {
   name = "ckb-cli";
-  src = pkgs.lib.cleanSourceWith {
-    filter = path: type: !(builtins.any (x: x == baseNameOf path) ["target" "result" ".git" "tags" "TAGS"]);
-    src = ./.;
-  };
+  src = gitignoreSource ./.;
   nativeBuildInputs = [ pkgs.pkgconfig ];
   buildInputs = [ rustPackages.rust-std pkgs.openssl pkgs.libudev ];
   verifyCargoDeps = true;

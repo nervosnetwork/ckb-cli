@@ -3,3 +3,7 @@ test/target
 test/Cargo.lock
 **/*.rs.bk
 /devtools/ci/travis-secret.asc
+
+# nix
+result
+result-*
