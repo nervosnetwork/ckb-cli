@@ -386,6 +386,10 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
                 }
                 txs
             };
+
+            // no change path provided
+            single_signer.append(&[0]);
+
             {
                 let mut length = Vec::new();
                 length

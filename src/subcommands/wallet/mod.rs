@@ -215,7 +215,8 @@ impl<'a> WalletSubCommand<'a> {
         let last_change_address_opt: Option<Address> = AddressParser::default()
             .set_network(network_type)
             .from_matches_opt(m, "derive-change-address", false)?;
-        let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
+
+        let (change_address_payload, change_path) = if let Some(last_change_address) = last_change_address_opt {
             let key_cap = master_key_cap_opt.as_ref().expect(
                 "Shouldn't be allowed to pass --derive-change-address with --privkey-path.",
             );
@@ -242,9 +243,9 @@ impl<'a> WalletSubCommand<'a> {
                 let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                 lock_hashes.push(Script::from(&payload).calc_script_hash());
             }
-            last_change_address.payload().clone()
+            (last_change_address.payload().clone(), path_map.get(&change_last))
         } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
-            from_address_payload.clone()
+            (from_address_payload.clone(), None)
         } else {
             return Err(
                 "Need to pass --derive-change-address when using hardware wallet".to_string(),
@@ -305,13 +306,14 @@ impl<'a> WalletSubCommand<'a> {
                 lock_hashes,
                 signer,
                 false,
+                change_path,
                 multisig_config_opt,
                 format,
                 color,
                 debug,
             )
         } else if let Some(key_cap) = master_key_cap_opt {
-            let signer = get_keystore_signer(key_cap, path_map);
+            let signer = get_keystore_signer(key_cap, path_map.clone());
             self.transfer_impl(
                 network_type,
                 payload_opt,
@@ -323,6 +325,7 @@ impl<'a> WalletSubCommand<'a> {
                 lock_hashes,
                 signer,
                 is_ledger,
+                change_path,
                 multisig_config_opt,
                 format,
                 color,
@@ -345,6 +348,7 @@ impl<'a> WalletSubCommand<'a> {
         lock_hashes: Vec<Byte32>,
         signer: impl SignerFnTrait,
         is_ledger: bool,
+        change_path: Option<&DerivationPath>,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
@@ -456,7 +460,7 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         for (ref lock_arg, ref signature) in
-            helper.sign_inputs(signer, &mut get_live_cell_fn, is_ledger)?
+            helper.sign_inputs(signer, &mut get_live_cell_fn, is_ledger, change_path)?
         {
             helper.add_signature(lock_arg.clone(), serialize_signature_bytes(signature))?;
         }
