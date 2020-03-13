@@ -248,7 +248,9 @@ impl<'a> WalletSubCommand<'a> {
                 }
                 (
                     last_change_address.payload().clone(),
-                    path_map.get(&change_last).expect("Last address not found"),
+                    path_map.get(&change_last).expect(
+                        "should have already errored out if we didn't find the last change address",
+                    ),
                 )
             } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
                 (from_address_payload.clone(), &my_path)

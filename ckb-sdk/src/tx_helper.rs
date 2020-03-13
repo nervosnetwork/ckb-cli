@@ -247,17 +247,18 @@ impl TxHelper {
         let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> = self.input_group(get_live_cell)?;
         let input_transactions = self.input_group_cell_order(get_live_cell)?;
         let make_ledger_info = |mut builder: S::SingleShot| -> Result<_, String> {
-            let my_change_path = change_path.clone();
-            let mut path_data = Vec::new();
-            path_data
-                .write_u8(my_change_path.as_ref().len() as u8)
-                .expect(WRITE_ERR_MSG);
-            for &child_num in my_change_path.as_ref().iter() {
+            {
+                let mut path_data = Vec::new();
                 path_data
-                    .write_u32::<BigEndian>(From::from(child_num))
+                    .write_u8(change_path.as_ref().len() as u8)
                     .expect(WRITE_ERR_MSG);
+                for &child_num in change_path.as_ref().iter() {
+                    path_data
+                        .write_u32::<BigEndian>(From::from(child_num))
+                        .expect(WRITE_ERR_MSG);
+                }
+                builder.append(&path_data);
             }
-            builder.append(&path_data);
 
             {
                 let mut length = Vec::new();
