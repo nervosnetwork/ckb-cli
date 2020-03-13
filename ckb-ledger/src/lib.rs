@@ -221,7 +221,12 @@ impl AbstractPrivKey for LedgerCap {
 
             let change_path_len = parse::split_first(&mut message)?;
             let raw_change_path = if change_path_len > 0 {
-                parse::split_off_at(&mut message, change_path_len as usize)?.to_vec()
+                let my_change_path = parse::split_off_at(&mut message, 4 * change_path_len as usize)?.to_vec();
+                debug!("Change path is {:02x?}", my_change_path);
+                let mut path = Vec::new();
+                path.push(change_path_len);
+                path.extend(my_change_path);
+                path
             } else {
                 raw_path.clone()
             };
@@ -238,7 +243,7 @@ impl AbstractPrivKey for LedgerCap {
             my_self.master.ledger_app.exchange(ApduCommand {
                 cla: 0x80,
                 ins: 0x03,
-                p1: (SignP1::FIRST | SignP1::CHANGE_PATH).bits,
+                p1: 0x11,
                 p2: 0,
                 length: raw_change_path.len() as u8,
                 data: raw_change_path.to_vec(),
