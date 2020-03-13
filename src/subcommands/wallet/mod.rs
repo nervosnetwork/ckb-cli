@@ -216,41 +216,45 @@ impl<'a> WalletSubCommand<'a> {
             .set_network(network_type)
             .from_matches_opt(m, "derive-change-address", false)?;
 
-        let (change_address_payload, change_path) = if let Some(last_change_address) = last_change_address_opt {
-            let key_cap = master_key_cap_opt.as_ref().expect(
-                "Shouldn't be allowed to pass --derive-change-address with --privkey-path.",
-            );
-            // Behave like HD wallet
-            let change_last =
-                H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
-            let receiving_address_length: u32 = FromStrParser::<u32>::default()
-                .from_matches(m, "derive-receiving-address-length")?;
-            let change_address_length: u32 =
-                FromStrParser::<u32>::default().from_matches(m, "derive-change-address-length")?;
-            let key_set = key_cap
-                .derived_key_set(
-                    receiving_address_length,
-                    &change_last,
-                    change_address_length,
+        let (change_address_payload, change_path) =
+            if let Some(last_change_address) = last_change_address_opt {
+                let key_cap = master_key_cap_opt.as_ref().expect(
+                    "Shouldn't be allowed to pass --derive-change-address with --privkey-path.",
+                );
+                // Behave like HD wallet
+                let change_last =
+                    H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
+                let receiving_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-receiving-address-length")?;
+                let change_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-change-address-length")?;
+                let key_set = key_cap
+                    .derived_key_set(
+                        receiving_address_length,
+                        &change_last,
+                        change_address_length,
+                    )
+                    .map_err(|e| match e {
+                        Either::Left(e) => e.to_string(),
+                        Either::Right(e) => e.to_string(),
+                    })?;
+                //.map_err(|err: K::Err| err.to_string())?;
+                for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                    path_map.insert(hash160.clone(), path.clone());
+                    let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                    lock_hashes.push(Script::from(&payload).calc_script_hash());
+                }
+                (
+                    last_change_address.payload().clone(),
+                    path_map.get(&change_last),
                 )
-                .map_err(|e| match e {
-                    Either::Left(e) => e.to_string(),
-                    Either::Right(e) => e.to_string(),
-                })?;
-            //.map_err(|err: K::Err| err.to_string())?;
-            for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                path_map.insert(hash160.clone(), path.clone());
-                let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                lock_hashes.push(Script::from(&payload).calc_script_hash());
-            }
-            (last_change_address.payload().clone(), path_map.get(&change_last))
-        } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
-            (from_address_payload.clone(), None)
-        } else {
-            return Err(
-                "Need to pass --derive-change-address when using hardware wallet".to_string(),
-            );
-        };
+            } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
+                (from_address_payload.clone(), None)
+            } else {
+                return Err(
+                    "Need to pass --derive-change-address when using hardware wallet".to_string(),
+                );
+            };
 
         let multisig_config_opt =
             if let Some(from_locked_address) = from_locked_address_opt.as_ref() {

@@ -250,9 +250,12 @@ impl TxHelper {
             match change_path.clone() {
                 Some(my_change_path) => {
                     let mut path_data = Vec::new();
-                    path_data.write_u8(my_change_path.as_ref().len() as u8).expect(WRITE_ERR_MSG);
+                    path_data
+                        .write_u8(my_change_path.as_ref().len() as u8)
+                        .expect(WRITE_ERR_MSG);
                     for &child_num in my_change_path.as_ref().iter() {
-                        path_data.write_u32::<BigEndian>(From::from(child_num))
+                        path_data
+                            .write_u32::<BigEndian>(From::from(child_num))
                             .expect(WRITE_ERR_MSG);
                     }
                     builder.append(&path_data);

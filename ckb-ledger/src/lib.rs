@@ -221,7 +221,8 @@ impl AbstractPrivKey for LedgerCap {
 
             let change_path_len = parse::split_first(&mut message)?;
             let raw_change_path = if change_path_len > 0 {
-                let my_change_path = parse::split_off_at(&mut message, 4 * change_path_len as usize)?.to_vec();
+                let my_change_path =
+                    parse::split_off_at(&mut message, 4 * change_path_len as usize)?.to_vec();
                 debug!("Change path is {:02x?}", my_change_path);
                 let mut path = Vec::new();
                 path.push(change_path_len);
