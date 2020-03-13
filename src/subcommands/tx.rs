@@ -518,12 +518,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(
-                        signer,
-                        &mut get_live_cell,
-                        is_ledger,
-                        Some(&my_path),
-                    )?;
+                    let signatures =
+                        helper.sign_inputs(signer, &mut get_live_cell, is_ledger, &my_path)?;
                     if m.is_present("add-signatures") {
                         for (ref lock_arg, ref signature) in &signatures {
                             helper.add_signature(

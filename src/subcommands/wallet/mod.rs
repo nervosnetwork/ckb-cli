@@ -216,6 +216,8 @@ impl<'a> WalletSubCommand<'a> {
             .set_network(network_type)
             .from_matches_opt(m, "derive-change-address", false)?;
 
+        let my_path = DerivationPath::empty();
+
         let (change_address_payload, change_path) =
             if let Some(last_change_address) = last_change_address_opt {
                 let key_cap = master_key_cap_opt.as_ref().expect(
@@ -246,12 +248,10 @@ impl<'a> WalletSubCommand<'a> {
                 }
                 (
                     last_change_address.payload().clone(),
-                    Some(path_map.get(&change_last).expect(
-                        "should have already errored out if we didn't find the last change address",
-                    )),
+                    path_map.get(&change_last).expect("Last address not found"),
                 )
             } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
-                (from_address_payload.clone(), None)
+                (from_address_payload.clone(), &my_path)
             } else {
                 return Err(
                     "Need to pass --derive-change-address when using hardware wallet".to_string(),
@@ -354,7 +354,7 @@ impl<'a> WalletSubCommand<'a> {
         lock_hashes: Vec<Byte32>,
         signer: impl SignerFnTrait,
         is_ledger: bool,
-        change_path: Option<&DerivationPath>,
+        change_path: &DerivationPath,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
