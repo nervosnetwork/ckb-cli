@@ -408,8 +408,12 @@ fn address_resp(
     account_source: &'static str,
     address_payload: &AddressPayload,
 ) -> serde_json::value::Value {
+    let lock_hash: H256 = Script::from(address_payload)
+        .calc_script_hash()
+        .unpack();
     serde_json::json!({
         "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
+        "lock_hash": lock_hash,
         "account_source": account_source,
         "address": {
             "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
