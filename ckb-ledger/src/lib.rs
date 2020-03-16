@@ -163,6 +163,7 @@ bitflags::bitflags! {
         // for the tx
         const NEXT  = 0b_0000_0001;
         //const HASH_ONLY_NEXT  = 0b_000_0010 | Self::NEXT.bits; // You only need it once
+        const CHANGE_PATH = 0b_0001_0000;
         const IS_CONTEXT = 0b_0010_0000;
         const NO_FALLBACK = 0b_0100_0000;
         const LAST_MARKER = 0b_1000_0000;
@@ -206,6 +207,8 @@ impl AbstractPrivKey for LedgerCap {
         let my_self = self.clone();
 
         SignEntireHelper::new(Box::new(move |message: Vec<u8>| {
+            let mut message = message.as_ref();
+
             let mut raw_path = Vec::new();
             raw_path
                 .write_u8(my_self.path.as_ref().len() as u8)
@@ -216,11 +219,36 @@ impl AbstractPrivKey for LedgerCap {
                     .expect(WRITE_ERR_MSG);
             }
 
-            debug!(
-                "Nervos CKB Ledger app path {:02x?} with length {:?}",
-                raw_path,
-                raw_path.len()
-            );
+            let change_path_len = parse::split_first(&mut message)?;
+            let raw_change_path = if change_path_len > 0 {
+                let my_change_path =
+                    parse::split_off_at(&mut message, 4 * change_path_len as usize)?.to_vec();
+                debug!("Change path is {:02x?}", my_change_path);
+                let mut path = Vec::new();
+                path.push(change_path_len);
+                path.extend(my_change_path);
+                path
+            } else {
+                raw_path.clone()
+            };
+
+            my_self.master.ledger_app.exchange(ApduCommand {
+                cla: 0x80,
+                ins: 0x03,
+                p1: SignP1::FIRST.bits,
+                p2: 0,
+                length: raw_path.len() as u8,
+                data: raw_path,
+            })?;
+
+            my_self.master.ledger_app.exchange(ApduCommand {
+                cla: 0x80,
+                ins: 0x03,
+                p1: 0x11,
+                p2: 0,
+                length: raw_change_path.len() as u8,
+                data: raw_change_path.to_vec(),
+            })?;
 
             let chunk = |base: SignP1, mut message: &[u8]| -> Result<_, Self::Err> {
                 assert!(message.len() > 0, "initial message must be non-empty");
@@ -252,17 +280,6 @@ impl AbstractPrivKey for LedgerCap {
                 message,
                 message.len()
             );
-
-            my_self.master.ledger_app.exchange(ApduCommand {
-                cla: 0x80,
-                ins: 0x03,
-                p1: SignP1::FIRST.bits,
-                p2: 0,
-                length: raw_path.len() as u8,
-                data: raw_path,
-            })?;
-
-            let mut message = message.as_ref();
 
             let ctx_count = parse::split_off_at(&mut message, 2)?
                 .read_u16::<BigEndian>()

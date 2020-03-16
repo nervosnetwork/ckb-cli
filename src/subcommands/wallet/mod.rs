@@ -215,41 +215,50 @@ impl<'a> WalletSubCommand<'a> {
         let last_change_address_opt: Option<Address> = AddressParser::default()
             .set_network(network_type)
             .from_matches_opt(m, "derive-change-address", false)?;
-        let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
-            let key_cap = master_key_cap_opt.as_ref().expect(
-                "Shouldn't be allowed to pass --derive-change-address with --privkey-path.",
-            );
-            // Behave like HD wallet
-            let change_last =
-                H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
-            let receiving_address_length: u32 = FromStrParser::<u32>::default()
-                .from_matches(m, "derive-receiving-address-length")?;
-            let change_address_length: u32 =
-                FromStrParser::<u32>::default().from_matches(m, "derive-change-address-length")?;
-            let key_set = key_cap
-                .derived_key_set(
-                    receiving_address_length,
-                    &change_last,
-                    change_address_length,
+
+        let my_path = DerivationPath::empty();
+
+        let (change_address_payload, change_path) =
+            if let Some(last_change_address) = last_change_address_opt {
+                let key_cap = master_key_cap_opt.as_ref().expect(
+                    "Shouldn't be allowed to pass --derive-change-address with --privkey-path.",
+                );
+                // Behave like HD wallet
+                let change_last =
+                    H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
+                let receiving_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-receiving-address-length")?;
+                let change_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-change-address-length")?;
+                let key_set = key_cap
+                    .derived_key_set(
+                        receiving_address_length,
+                        &change_last,
+                        change_address_length,
+                    )
+                    .map_err(|e| match e {
+                        Either::Left(e) => e.to_string(),
+                        Either::Right(e) => e.to_string(),
+                    })?;
+                //.map_err(|err: K::Err| err.to_string())?;
+                for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                    path_map.insert(hash160.clone(), path.clone());
+                    let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                    lock_hashes.push(Script::from(&payload).calc_script_hash());
+                }
+                (
+                    last_change_address.payload().clone(),
+                    path_map.get(&change_last).expect(
+                        "should have already errored out if we didn't find the last change address",
+                    ),
                 )
-                .map_err(|e| match e {
-                    Either::Left(e) => e.to_string(),
-                    Either::Right(e) => e.to_string(),
-                })?;
-            //.map_err(|err: K::Err| err.to_string())?;
-            for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                path_map.insert(hash160.clone(), path.clone());
-                let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                lock_hashes.push(Script::from(&payload).calc_script_hash());
-            }
-            last_change_address.payload().clone()
-        } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
-            from_address_payload.clone()
-        } else {
-            return Err(
-                "Need to pass --derive-change-address when using hardware wallet".to_string(),
-            );
-        };
+            } else if let Some((ref from_address_payload, _)) = from_address_info_opt {
+                (from_address_payload.clone(), &my_path)
+            } else {
+                return Err(
+                    "Need to pass --derive-change-address when using hardware wallet".to_string(),
+                );
+            };
 
         let multisig_config_opt =
             if let Some(from_locked_address) = from_locked_address_opt.as_ref() {
@@ -305,13 +314,14 @@ impl<'a> WalletSubCommand<'a> {
                 lock_hashes,
                 signer,
                 false,
+                change_path,
                 multisig_config_opt,
                 format,
                 color,
                 debug,
             )
         } else if let Some(key_cap) = master_key_cap_opt {
-            let signer = get_keystore_signer(key_cap, path_map);
+            let signer = get_keystore_signer(key_cap, path_map.clone());
             self.transfer_impl(
                 network_type,
                 payload_opt,
@@ -323,6 +333,7 @@ impl<'a> WalletSubCommand<'a> {
                 lock_hashes,
                 signer,
                 is_ledger,
+                change_path,
                 multisig_config_opt,
                 format,
                 color,
@@ -345,6 +356,7 @@ impl<'a> WalletSubCommand<'a> {
         lock_hashes: Vec<Byte32>,
         signer: impl SignerFnTrait,
         is_ledger: bool,
+        change_path: &DerivationPath,
         multisig_config_opt: Option<MultisigConfig>,
         format: OutputFormat,
         color: bool,
@@ -456,7 +468,7 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         for (ref lock_arg, ref signature) in
-            helper.sign_inputs(signer, &mut get_live_cell_fn, is_ledger)?
+            helper.sign_inputs(signer, &mut get_live_cell_fn, is_ledger, change_path)?
         {
             helper.add_signature(lock_arg.clone(), serialize_signature_bytes(signature))?;
         }

@@ -14,6 +14,8 @@ use ckb_types::{
     H160, H256,
 };
 
+use crate::wallet::DerivationPath;
+
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
 use crate::rpc::Transaction;
 use crate::signing::{FullyAbstractSingleShotSigner, SignerSingleShot};
@@ -41,6 +43,8 @@ impl Default for TxHelper {
         }
     }
 }
+
+const WRITE_ERR_MSG: &'static str = "IO error not possible when writing to Vec last I checked";
 
 impl TxHelper {
     pub fn new(transaction: TransactionView) -> TxHelper {
@@ -226,6 +230,7 @@ impl TxHelper {
         mut signer: S,
         get_live_cell: &mut C,
         is_ledger: bool,
+        change_path: &DerivationPath,
     ) -> Result<HashMap<Bytes, RecoverableSignature>, String>
     where
         S: SignerFnTrait,
@@ -242,6 +247,19 @@ impl TxHelper {
         let input_cells: HashMap<(Byte32, Bytes), Vec<usize>> = self.input_group(get_live_cell)?;
         let input_transactions = self.input_group_cell_order(get_live_cell)?;
         let make_ledger_info = |mut builder: S::SingleShot| -> Result<_, String> {
+            {
+                let mut path_data = Vec::new();
+                path_data
+                    .write_u8(change_path.as_ref().len() as u8)
+                    .expect(WRITE_ERR_MSG);
+                for &child_num in change_path.as_ref().iter() {
+                    path_data
+                        .write_u32::<BigEndian>(From::from(child_num))
+                        .expect(WRITE_ERR_MSG);
+                }
+                builder.append(&path_data);
+            }
+
             {
                 let mut length = Vec::new();
                 length

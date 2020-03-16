@@ -480,6 +480,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 // TODO: should only be required on ledger accounts
                 let path: DerivationPath = DerivationPathParser.from_matches(m, "path")?;
 
+                let my_path = path.clone();
+
                 let is_ledger = match account_opt.clone().unwrap() {
                     AccountId::SoftwareMasterKey(_) => false,
                     AccountId::LedgerId(_) => true,
@@ -516,7 +518,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, &mut get_live_cell, is_ledger)?;
+                    let signatures =
+                        helper.sign_inputs(signer, &mut get_live_cell, is_ledger, &my_path)?;
                     if m.is_present("add-signatures") {
                         for (ref lock_arg, ref signature) in &signatures {
                             helper.add_signature(
