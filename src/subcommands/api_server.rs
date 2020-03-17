@@ -261,7 +261,7 @@ impl ApiRpc for ApiRpcImpl {
         log::info!("[call]: tranfer({:?})", args);
         if let Some(privkey_path) = self.privkey_path.clone() {
             self.with_wallet(|cmd| {
-                cmd.transfer(args.into_full_args(privkey_path))
+                cmd.transfer(args.into_full_args(privkey_path), false)
                     .map_err(RpcError::invalid_params)
             })
             .map(|tx| tx.hash().unpack())

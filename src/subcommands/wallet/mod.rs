@@ -152,7 +152,11 @@ impl<'a> WalletSubCommand<'a> {
             ])
     }
 
-    pub fn transfer(&mut self, args: TransferArgs) -> Result<TransactionView, String> {
+    pub fn transfer(
+        &mut self,
+        args: TransferArgs,
+        skip_check: bool,
+    ) -> Result<TransactionView, String> {
         let TransferArgs {
             privkey_path,
             from_account,
@@ -378,7 +382,13 @@ impl<'a> WalletSubCommand<'a> {
                 .map(|(output, _)| output)
         };
         for info in &infos {
-            helper.add_input(info.out_point(), None, &mut get_live_cell_fn, &genesis_info)?;
+            helper.add_input(
+                info.out_point(),
+                None,
+                &mut get_live_cell_fn,
+                &genesis_info,
+                skip_check,
+            )?;
         }
         let to_output = CellOutput::new_builder()
             .capacity(Capacity::shannons(to_capacity).pack())
@@ -398,10 +408,12 @@ impl<'a> WalletSubCommand<'a> {
         } else {
             get_keystore_signer(key_store, path_map, from_lock_arg, password)
         };
-        for (lock_arg, signature) in helper.sign_inputs(signer, &mut get_live_cell_fn)? {
+        for (lock_arg, signature) in
+            helper.sign_inputs(signer, &mut get_live_cell_fn, skip_check)?
+        {
             helper.add_signature(lock_arg, signature)?;
         }
-        let tx = helper.build_tx(&mut get_live_cell_fn)?;
+        let tx = helper.build_tx(&mut get_live_cell_fn, skip_check)?;
         let tx_hash = self
             .rpc_client
             .send_transaction(tx.data())
@@ -530,7 +542,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: get_arg_value(m, "to-address")?,
                     to_data: Some(to_data),
                 };
-                let tx = self.transfer(args)?;
+                let tx = self.transfer(args, false)?;
                 if debug {
                     Ok(ckb_jsonrpc_types::TransactionView::from(tx).render(format, color))
                 } else {

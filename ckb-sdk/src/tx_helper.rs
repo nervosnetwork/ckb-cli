@@ -82,9 +82,12 @@ impl TxHelper {
         since_absolute_epoch_opt: Option<u64>,
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
+        skip_check: bool,
     ) -> Result<(), String> {
         let lock = get_live_cell(out_point.clone(), false)?.lock();
-        check_lock_script(&lock)?;
+        if !skip_check {
+            check_lock_script(&lock)?;
+        }
 
         let since = if let Some(number) = since_absolute_epoch_opt {
             Since::new_absolute_epoch(number).value()
@@ -106,7 +109,7 @@ impl TxHelper {
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
         let mut cell_deps: HashSet<CellDep> = HashSet::default();
-        for ((code_hash, _), _) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, _), _) in self.input_group(get_live_cell, skip_check)?.into_iter() {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
                 cell_deps.insert(genesis_info.sighash_dep());
@@ -164,11 +167,14 @@ impl TxHelper {
     pub fn input_group<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
         &self,
         mut get_live_cell: F,
+        skip_check: bool,
     ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let lock = get_live_cell(input.previous_output(), false)?.lock();
-            check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
+            if !skip_check {
+                check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
+            }
 
             let lock_arg = lock.args().raw_data();
             let code_hash = lock.code_hash();
@@ -202,6 +208,7 @@ impl TxHelper {
         &self,
         mut signer: S,
         get_live_cell: C,
+        skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
         S: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>,
@@ -215,7 +222,9 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
-        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
+        {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -244,9 +253,15 @@ impl TxHelper {
     pub fn build_tx<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
         &self,
         get_live_cell: F,
+        skip_check: bool,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
+        {
+            if skip_check && !self.signatures.contains_key(&lock_arg) {
+                continue;
+            }
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
                 let lock_script = Script::new_builder()
                     .hash_type(ScriptHashType::Type.into())
