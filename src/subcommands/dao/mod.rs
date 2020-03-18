@@ -426,14 +426,18 @@ impl<'a, 'b> WithTransactArgs<'a, 'b> {
                 single_signer.append(&length);
                 single_signer.append(ctx_raw_tx.as_slice());
             }
+            let raw_tx = RawTransaction::new_builder()
+                .version(transaction.version().pack())
+                .cell_deps(transaction.cell_deps())
+                .header_deps(transaction.header_deps())
+                .inputs(transaction.inputs())
+                .outputs(transaction.outputs())
+                .outputs_data(transaction.outputs_data())
+                .build();
             single_signer.append(
-                RawTransaction::new_builder()
-                    .version(transaction.version().pack())
-                    .cell_deps(transaction.cell_deps())
-                    .header_deps(transaction.header_deps())
-                    .inputs(transaction.inputs())
-                    .outputs(transaction.outputs())
-                    .outputs_data(transaction.outputs_data())
+                packed::Transaction::new_builder()
+                    .raw(raw_tx)
+                    .witnesses(transaction.witnesses().into_iter().map(Into::into).pack())
                     .build()
                     .as_slice(),
             );

@@ -284,14 +284,24 @@ impl TxHelper {
                 builder.append(&length);
                 builder.append(ctx_raw_tx.as_slice());
             }
+            let raw_tx = packed::RawTransaction::new_builder()
+                .version(self.transaction.version().pack())
+                .cell_deps(self.transaction.cell_deps())
+                .header_deps(self.transaction.header_deps())
+                .inputs(self.transaction.inputs())
+                .outputs(self.transaction.outputs())
+                .outputs_data(self.transaction.outputs_data())
+                .build();
             builder.append(
-                packed::RawTransaction::new_builder()
-                    .version(self.transaction.version().pack())
-                    .cell_deps(self.transaction.cell_deps())
-                    .header_deps(self.transaction.header_deps())
-                    .inputs(self.transaction.inputs())
-                    .outputs(self.transaction.outputs())
-                    .outputs_data(self.transaction.outputs_data())
+                packed::Transaction::new_builder()
+                    .raw(raw_tx)
+                    .witnesses(
+                        self.transaction
+                            .witnesses()
+                            .into_iter()
+                            .map(Into::into)
+                            .pack(),
+                    )
                     .build()
                     .as_slice(),
             );
