@@ -199,7 +199,7 @@ impl<'a> DAOSubCommand<'a> {
         let lock_script = Script::new_builder()
             .hash_type(ScriptHashType::Type.into())
             .code_hash(sighash_type_hash.clone())
-            .args(Bytes::from(sighash_args.as_bytes()).pack())
+            .args(Bytes::from(sighash_args.as_bytes().to_vec()).pack())
             .build();
         let outputs = transaction
             .outputs()
@@ -273,7 +273,7 @@ impl<'a> DAOSubCommand<'a> {
 
         witnesses[0] = init_witness
             .as_builder()
-            .lock(Some(Bytes::from(&signature[..])).pack())
+            .lock(Some(Bytes::from(signature[..].to_vec())).pack())
             .build()
             .as_bytes();
 

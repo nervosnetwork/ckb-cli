@@ -214,8 +214,8 @@ impl CliSubCommand for MoleculeSubCommand {
 
                 let binary = binary_result?;
                 let output = match output_type {
-                    "binary" => format!("0x{}", hex_string(&binary).unwrap()),
-                    "hash" => format!("0x{}", hex_string(&blake2b_256(&binary)).unwrap()),
+                    "binary" => format!("0x{}", hex_string(&binary)),
+                    "hash" => format!("0x{}", hex_string(&blake2b_256(&binary))),
                     _ => panic!("Invalid output type"),
                 };
                 Ok(output)

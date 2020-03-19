@@ -155,7 +155,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     Script::new_builder()
                         .code_hash(sighash_type_hash.clone())
                         .hash_type(ScriptHashType::Type.into())
-                        .args(Bytes::from(lock_arg.as_ref()).pack())
+                        .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
                         .build()
                 };
                 let mock_cell_dep = MockCellDep {
@@ -244,7 +244,6 @@ impl<'a> MockResourceLoader for Loader<'a> {
         self.rpc_client
             .get_header(hash)
             .map(|header_opt| header_opt.map(Into::into))
-            .map_err(|err| err.to_string())
     }
 
     fn get_live_cell(
