@@ -1,12 +1,12 @@
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
-use self::util::blake2b_args;
-use crate::subcommands::dao::util::is_mature;
 use crate::utils::index::IndexController;
 use crate::utils::other::{
-    get_max_mature_number, get_network_type, get_privkey_signer, read_password, serialize_signature,
+    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
+    serialize_signature,
 };
 use byteorder::{ByteOrder, LittleEndian};
+use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
@@ -199,7 +199,7 @@ impl<'a> DAOSubCommand<'a> {
         let lock_script = Script::new_builder()
             .hash_type(ScriptHashType::Type.into())
             .code_hash(sighash_type_hash.clone())
-            .args(Bytes::from(sighash_args.as_bytes()).pack())
+            .args(Bytes::from(sighash_args.as_bytes().to_vec()).pack())
             .build();
         let outputs = transaction
             .outputs()
@@ -244,19 +244,18 @@ impl<'a> DAOSubCommand<'a> {
                 .lock(Some(Bytes::from(&[0u8; 65][..])).pack())
                 .build()
         };
-        let message = {
-            let mut sign_args = vec![
-                transaction.hash().raw_data().to_vec(),
-                (init_witness.as_bytes().len() as u64)
-                    .to_le_bytes()
-                    .to_vec(),
-                init_witness.as_bytes().to_vec(),
-            ];
+        let digest = {
+            let mut blake2b = new_blake2b();
+            blake2b.update(&transaction.hash().raw_data());
+            blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
+            blake2b.update(&init_witness.as_bytes());
             for other_witness in witnesses.iter().skip(1) {
-                sign_args.push((other_witness.len() as u64).to_le_bytes().to_vec());
-                sign_args.push(other_witness.to_vec());
+                blake2b.update(&(other_witness.len() as u64).to_le_bytes());
+                blake2b.update(&other_witness);
             }
-            sign_args
+            let mut message = [0u8; 32];
+            blake2b.finalize(&mut message);
+            H256::from(message)
         };
         let signature = {
             let account = self.transact_args().sighash_args();
@@ -268,14 +267,13 @@ impl<'a> DAOSubCommand<'a> {
                     get_keystore_signer(self.key_store.clone(), account.clone(), password)
                 }
             };
-            let digest = H256::from_slice(&blake2b_args(&message)).unwrap();
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
             signer(&accounts, &digest)?.expect("signer missed")
         };
 
         witnesses[0] = init_witness
             .as_builder()
-            .lock(Some(Bytes::from(&signature[..])).pack())
+            .lock(Some(Bytes::from(signature[..].to_vec())).pack())
             .build()
             .as_bytes();
 
@@ -329,7 +327,7 @@ fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> 
                 Ok(Some([0u8; 65]))
             } else {
                 key_store
-                    .sign_recoverable_with_password(&account, None, message, password.as_bytes())
+                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
                     .map(|signature| Some(serialize_signature(&signature)))
                     .map_err(|err| err.to_string())
             }

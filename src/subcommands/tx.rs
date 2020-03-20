@@ -89,6 +89,9 @@ impl<'a> TxSubCommand<'a> {
             .takes_value(true)
             .validator(|input| FromStrParser::<u64>::default().validate(input))
             .help("Since absolute epoch number");
+        let arg_skip_check = Arg::with_name("skip-check")
+            .long("skip-check")
+            .help("Send transaction without any check, be cautious to use this flag");
 
         SubCommand::with_name(name)
             .about("Handle common sighash/multisig transaction")
@@ -132,7 +135,8 @@ impl<'a> TxSubCommand<'a> {
                             .help("Transaction output index"),
                     )
                     .arg(arg_since_absolute_epoch.clone())
-                    .arg(arg_tx_file.clone()),
+                    .arg(arg_tx_file.clone())
+                    .arg(arg_skip_check.clone()),
                 SubCommand::with_name("add-output")
                     .about("Add cell output")
                     .arg(
@@ -179,7 +183,7 @@ impl<'a> TxSubCommand<'a> {
                             .validator(|input| match HexParser.parse(&input) {
                                 Ok(ref data) if data.len() == 20 || data.len() == 28 => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err.to_string()),
+                                Err(err) => Err(err),
                             })
                             .help("The lock_arg of input lock script (20 bytes or 28 bytes)"),
                     )
@@ -191,7 +195,7 @@ impl<'a> TxSubCommand<'a> {
                             .validator(|input| match HexParser.parse(&input) {
                                 Ok(ref data) if data.len() == SECP_SIGNATURE_SIZE => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err.to_string()),
+                                Err(err) => Err(err),
                             })
                             .help("The signature"),
                     )
@@ -208,7 +212,8 @@ impl<'a> TxSubCommand<'a> {
                         Arg::with_name("add-signatures")
                             .long("add-signatures")
                             .help("Sign and add signatures"),
-                    ),
+                    )
+                    .arg(arg_skip_check.clone()),
                 SubCommand::with_name("send")
                     .about("Send multisig transaction")
                     .arg(arg_tx_file.clone())
@@ -219,7 +224,8 @@ impl<'a> TxSubCommand<'a> {
                             .default_value("1.0")
                             .validator(|input| CapacityParser.validate(input))
                             .help("Max transaction fee (unit: CKB)"),
-                    ),
+                    )
+                    .arg(arg_skip_check),
                 SubCommand::with_name("build-multisig-address")
                     .about(
                         "Build multisig address with multisig config and since(optional) argument",
@@ -282,6 +288,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let since_absolute_epoch_opt: Option<u64> = FromStrParser::<u64>::default()
                     .from_matches_opt(m, "since-absolute-epoch", false)?;
 
+                let skip_check: bool = m.is_present("skip-check");
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -296,6 +303,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         since_absolute_epoch_opt,
                         get_live_cell,
                         &genesis_info,
+                        skip_check,
                     )
                 })?;
 
@@ -450,6 +458,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let account_opt: Option<H160> = FixedHashParser::<H160>::default()
                     .from_matches_opt(m, "from-account", false)?;
+                let skip_check: bool = m.is_present("skip-check");
 
                 let signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
@@ -473,7 +482,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, get_live_cell)?;
+                    let signatures = helper.sign_inputs(signer, get_live_cell, skip_check)?;
                     if m.is_present("add-signatures") {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
@@ -495,6 +504,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("send", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
                 let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
+                let skip_check: bool = m.is_present("skip-check");
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -513,16 +523,18 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
                 let helper = TxHelper::try_from(repr)?;
 
-                let (input_total, output_total) = helper.check_tx(&mut get_live_cell)?;
-                let tx_fee = input_total - output_total;
-                if tx_fee > max_tx_fee {
-                    return Err(format!(
-                        "Too much transaction fee: {:#}, max: {:#}",
-                        HumanCapacity(tx_fee),
-                        HumanCapacity(max_tx_fee),
-                    ));
+                if !skip_check {
+                    let (input_total, output_total) = helper.check_tx(&mut get_live_cell)?;
+                    let tx_fee = input_total - output_total;
+                    if tx_fee > max_tx_fee {
+                        return Err(format!(
+                            "Too much transaction fee: {:#}, max: {:#}",
+                            HumanCapacity(tx_fee),
+                            HumanCapacity(max_tx_fee),
+                        ));
+                    }
                 }
-                let tx = helper.build_tx(&mut get_live_cell)?;
+                let tx = helper.build_tx(&mut get_live_cell, skip_check)?;
                 let rpc_tx = json_types::Transaction::from(tx.data());
                 if debug {
                     println!("[send transaction]:\n{}", rpc_tx.render(format, color));
@@ -602,7 +614,7 @@ fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> 
                 Ok(Some([0u8; 65]))
             } else {
                 key_store
-                    .sign_recoverable_with_password(&account, None, message, password.as_bytes())
+                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
                     .map(|signature| Some(serialize_signature(&signature)))
                     .map_err(|err| err.to_string())
             }

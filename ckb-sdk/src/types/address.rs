@@ -116,7 +116,7 @@ impl AddressPayload {
 
     pub fn args(&self) -> Bytes {
         match self {
-            AddressPayload::Short { hash, .. } => Bytes::from(hash.as_bytes()),
+            AddressPayload::Short { hash, .. } => Bytes::from(hash.as_bytes().to_vec()),
             AddressPayload::Full { args, .. } => args.clone(),
         }
     }
@@ -284,7 +284,7 @@ impl FromStr for Address {
                     ScriptHashType::Type
                 };
                 let code_hash = Byte32::from_slice(&data[1..33]).unwrap();
-                let args = Bytes::from(&data[33..]);
+                let args = Bytes::from(data[33..].to_vec());
                 let payload = AddressPayload::Full {
                     hash_type,
                     code_hash,

@@ -288,7 +288,7 @@ impl<'a> IndexDatabase<'a> {
         log::debug!("Block: {} => {:x}", header.number(), block_hash);
 
         // TODO: should forbid query when Init
-        self.last_header = Some(header.clone());
+        self.last_header = Some(header);
         let blocks = if self.last_number().unwrap() < self.tip_header.number().saturating_sub(256) {
             self.init_block_buf.push(block);
             if self.init_block_buf.len() >= 200 {

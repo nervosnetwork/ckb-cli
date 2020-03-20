@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
-use ckb_index::VERSION;
+use ckb_index::{LiveCellInfo, VERSION};
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
@@ -80,7 +80,7 @@ pub fn get_singer(
         let prompt = format!("Password for [{:x}]", lock_arg);
         let password = read_password(false, Some(prompt.as_str()))?;
         let signature = key_store
-            .sign_recoverable_with_password(lock_arg, None, tx_hash_hash, password.as_bytes())
+            .sign_recoverable_with_password(lock_arg, &[], tx_hash_hash, password.as_bytes())
             .map_err(|err| err.to_string())?;
         let (recov_id, data) = signature.serialize_compact();
         let mut signature_bytes = [0u8; 65];
@@ -313,4 +313,19 @@ pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature
     signature_bytes[0..64].copy_from_slice(&data[0..64]);
     signature_bytes[64] = recov_id.to_i32() as u8;
     signature_bytes
+}
+
+pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
+    // Not cellbase cell
+    info.index.tx_index > 0
+    // Live cells in genesis are all mature
+        || info.number == 0
+        || info.number <= max_mature_number
+}
+
+pub fn get_arg_value<'a>(matches: &'a ArgMatches, name: &str) -> Result<String, String> {
+    matches
+        .value_of(name)
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("<{}> is required", name))
 }

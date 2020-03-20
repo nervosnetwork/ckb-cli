@@ -3,7 +3,6 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
 };
 use ckb_dao_utils::extract_dao_data;
-use ckb_hash::new_blake2b;
 use ckb_index::LiveCellInfo;
 use ckb_sdk::HttpRpcClient;
 use ckb_types::core::{Capacity, TransactionView};
@@ -13,24 +12,6 @@ use ckb_types::{
     packed,
     prelude::*,
 };
-
-pub(crate) fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
-    // Not cellbase cell
-    info.index.tx_index > 0
-        // Live cells in genesis are all mature
-        || info.number == 0
-        || info.number <= max_mature_number
-}
-
-pub(crate) fn blake2b_args(args: &[Vec<u8>]) -> [u8; 32] {
-    let mut blake2b = new_blake2b();
-    for arg in args.iter() {
-        blake2b.update(&arg);
-    }
-    let mut digest = [0u8; 32];
-    blake2b.finalize(&mut digest);
-    digest
-}
 
 pub(crate) fn calculate_dao_maximum_withdraw(
     rpc_client: &mut HttpRpcClient,

@@ -36,7 +36,7 @@ pub struct TabsState {
 
 impl TabsState {
     pub fn new(titles: Vec<&str>) -> TabsState {
-        let titles = titles.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let titles = titles.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         TabsState { titles, index: 0 }
     }
     pub fn fixed_titles(&self) -> Vec<String> {
@@ -111,7 +111,6 @@ impl Events {
             })
         };
         let tick_handle = {
-            let tx = tx.clone();
             thread::spawn(move || {
                 let tx = tx.clone();
                 loop {

@@ -12,6 +12,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use super::CliSubCommand;
 use crate::utils::{
+    arg::lock_arg,
     arg_parser::{
         ArgParser, DurationParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser,
         FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
@@ -30,12 +31,6 @@ impl<'a> AccountSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> App<'static, 'static> {
-        let arg_lock_arg = Arg::with_name("lock-arg")
-            .long("lock-arg")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H160>::default().validate(input))
-            .required(true)
-            .help("The lock_arg (identifier) of the account");
         let arg_privkey_path = Arg::with_name("privkey-path")
             .long("privkey-path")
             .takes_value(true);
@@ -74,7 +69,7 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 SubCommand::with_name("unlock")
                     .about("Unlock an account")
-                    .arg(arg_lock_arg.clone())
+                    .arg(lock_arg().required(true))
                     .arg(
                         Arg::with_name("keep")
                             .long("keep")
@@ -85,10 +80,10 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 SubCommand::with_name("update")
                     .about("Update password of an account")
-                    .arg(arg_lock_arg.clone()),
+                    .arg(lock_arg().required(true)),
                 SubCommand::with_name("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
-                    .arg(arg_lock_arg.clone())
+                    .arg(lock_arg().required(true))
                     .arg(
                         arg_extended_privkey_path
                             .clone()
@@ -129,10 +124,10 @@ impl<'a> AccountSubCommand<'a> {
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .help("Change addresses length")
                     )
-                    .arg(arg_lock_arg.clone()),
+                    .arg(lock_arg().required(true)),
                 SubCommand::with_name("extended-address")
                     .about("Extended address (see: BIP-44)")
-                    .arg(arg_lock_arg.clone())
+                    .arg(lock_arg().required(true))
                     .arg(
                         Arg::with_name("path")
                             .long("path")
@@ -175,7 +170,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             "lock_hash": format!("{:#x}", lock_hash),
                             "address": {
                                 "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                                "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                             },
                         })
                     })
@@ -197,7 +192,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_hash": format!("{:#x}", lock_hash),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -223,7 +218,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -245,7 +240,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))
@@ -345,20 +340,21 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let path: Option<DerivationPath> =
-                    FromStrParser::<DerivationPath>::new().from_matches_opt(m, "path", false)?;
+                let path: DerivationPath = FromStrParser::<DerivationPath>::new()
+                    .from_matches_opt(m, "path", false)?
+                    .unwrap_or_else(DerivationPath::empty);
 
                 let password = read_password(false, None)?;
                 let extended_pubkey = self
                     .key_store
-                    .extended_pubkey_with_password(&lock_arg, path.as_ref(), password.as_bytes())
+                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey.public_key);
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
                 Ok(resp.render(format, color))

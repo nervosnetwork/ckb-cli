@@ -1,6 +1,6 @@
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_types::{
-    bytes::Bytes,
+    bytes::{Bytes, BytesMut},
     core::{ScriptHashType, TransactionBuilder, TransactionView},
     h256,
     packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
@@ -82,9 +82,12 @@ impl TxHelper {
         since_absolute_epoch_opt: Option<u64>,
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
+        skip_check: bool,
     ) -> Result<(), String> {
         let lock = get_live_cell(out_point.clone(), false)?.lock();
-        check_lock_script(&lock)?;
+        if !skip_check {
+            check_lock_script(&lock)?;
+        }
 
         let since = if let Some(number) = since_absolute_epoch_opt {
             Since::new_absolute_epoch(number).value()
@@ -106,7 +109,7 @@ impl TxHelper {
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
         let mut cell_deps: HashSet<CellDep> = HashSet::default();
-        for ((code_hash, _), _) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, _), _) in self.input_group(get_live_cell, skip_check)?.into_iter() {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
                 cell_deps.insert(genesis_info.sighash_dep());
@@ -138,16 +141,16 @@ impl TxHelper {
         if lock_arg.len() != 20 && lock_arg.len() != 28 {
             return Err(format!(
                 "Invalid lock_arg(0x{}) length({}) with signature(0x{})",
-                hex_string(lock_arg.as_ref()).unwrap(),
+                hex_string(lock_arg.as_ref()),
                 lock_arg.len(),
-                hex_string(signature.as_ref()).unwrap(),
+                hex_string(signature.as_ref()),
             ));
         }
         if signature.len() != SECP_SIGNATURE_SIZE {
             return Err(format!(
                 "Invalid signature length({}) for lock_arg(0x{})",
                 signature.len(),
-                hex_string(lock_arg.as_ref()).unwrap(),
+                hex_string(lock_arg.as_ref()),
             ));
         }
 
@@ -164,11 +167,14 @@ impl TxHelper {
     pub fn input_group<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
         &self,
         mut get_live_cell: F,
+        skip_check: bool,
     ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let lock = get_live_cell(input.previous_output(), false)?.lock();
-            check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
+            if !skip_check {
+                check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
+            }
 
             let lock_arg = lock.args().raw_data();
             let code_hash = lock.code_hash();
@@ -202,6 +208,7 @@ impl TxHelper {
         &self,
         mut signer: S,
         get_live_cell: C,
+        skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
         S: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>,
@@ -215,7 +222,9 @@ impl TxHelper {
 
         let witnesses = self.init_witnesses();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
-        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
+        {
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -244,9 +253,15 @@ impl TxHelper {
     pub fn build_tx<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
         &self,
         get_live_cell: F,
+        skip_check: bool,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), idxs) in self.input_group(get_live_cell)?.into_iter() {
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
+        {
+            if skip_check && !self.signatures.contains_key(&lock_arg) {
+                continue;
+            }
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
                 let lock_script = Script::new_builder()
                     .hash_type(ScriptHashType::Type.into())
@@ -262,11 +277,11 @@ impl TxHelper {
                 let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
                 let multisig_config = self.multisig_configs.get(&hash160).unwrap();
                 let threshold = multisig_config.threshold() as usize;
-                let mut data = multisig_config.to_witness_data();
+                let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);
                 if signatures.len() != threshold {
                     return Err(format!(
                         "Invalid multisig signature length for lock_arg: 0x{}, got: {}, expected: {}",
-                        hex_string(&lock_arg).unwrap(),
+                        hex_string(&lock_arg),
                         signatures.len(),
                         threshold,
                     ));
@@ -274,12 +289,12 @@ impl TxHelper {
                 for signature in signatures {
                     data.extend_from_slice(signature.as_ref());
                 }
-                data
+                data.freeze()
             } else {
                 if signatures.len() != 1 {
                     return Err(format!(
                         "Invalid secp signature length for lock_arg: 0x{}, got: {}, expected: 1",
-                        hex_string(&lock_arg).unwrap(),
+                        hex_string(&lock_arg),
                         signatures.len(),
                     ));
                 }
@@ -427,9 +442,9 @@ impl MultisigConfig {
         let hash160 = self.hash160();
         if let Some(absolute_epoch_number) = since_absolute_epoch {
             let since_value = Since::new_absolute_epoch(absolute_epoch_number).value();
-            let mut args = Bytes::from(hash160.as_bytes());
+            let mut args = BytesMut::from(hash160.as_bytes());
             args.extend_from_slice(&since_value.to_le_bytes()[..]);
-            AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args)
+            AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args.freeze())
         } else {
             AddressPayload::new_short(CodeHashIndex::Multisig, hash160)
         }
@@ -488,9 +503,9 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     let init_witness = if let Some(multisig_config) = multisig_config_opt {
         let lock_without_sig = {
             let sig_len = (multisig_config.threshold() as usize) * SECP_SIGNATURE_SIZE;
-            let mut data = multisig_config.to_witness_data();
+            let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);
             data.extend_from_slice(vec![0u8; sig_len].as_slice());
-            data
+            data.freeze()
         };
         init_witness
             .as_builder()
@@ -515,5 +530,5 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
     let message = H256::from(message);
-    signer(&message).map(|data| Bytes::from(&data[..]))
+    signer(&message).map(|data| Bytes::from(data.to_vec()))
 }

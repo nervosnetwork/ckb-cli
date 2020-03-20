@@ -8,7 +8,7 @@ use ckb_sdk::{
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
-    bytes::Bytes,
+    bytes::BytesMut,
     core::{EpochNumberWithFraction, ScriptHashType},
     packed,
     prelude::*,
@@ -69,11 +69,6 @@ impl<'a> UtilSubCommand<'a> {
             .validator(|input| AddressParser::default().validate(input))
             .required(true)
             .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
-        let arg_lock_arg = Arg::with_name("lock-arg")
-            .long("lock-arg")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H160>::default().validate(input))
-            .help("Lock argument (account identifier, blake2b(pubkey)[0..20])");
 
         let binary_hex_arg = Arg::with_name("binary-hex")
             .long("binary-hex")
@@ -111,7 +106,7 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(arg_privkey.clone().conflicts_with("pubkey"))
                     .arg(arg_pubkey.clone().required(false))
                     .arg(arg_address.clone().required(false))
-                    .arg(arg_lock_arg.clone()),
+                    .arg(arg::lock_arg().clone()),
                 SubCommand::with_name("sign-data")
                     .about("Sign data with secp256k1 signature ")
                     .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
@@ -280,7 +275,7 @@ message = "0x"
                     "pubkey": pubkey_string_opt,
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
@@ -389,7 +384,7 @@ message = "0x"
                 } else if let Some(account) = from_account_opt {
                     let password = read_password(false, None)?;
                     self.key_store
-                        .extended_pubkey_with_password(&account, None, password.as_bytes())
+                        .extended_pubkey_with_password(&account, &[], password.as_bytes())
                         .map_err(|err| err.to_string())?
                         .public_key
                 } else {
@@ -516,23 +511,20 @@ message = "0x"
                     DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
                         .map(|dt| dt.timestamp_millis() as u64)
                         .map_err(|err| err.to_string())?;
-                let (tip_epoch, tip_timestamp) = self
-                    .rpc_client
-                    .get_tip_header()
-                    .map(|header_view| {
+                let (tip_epoch, tip_timestamp) =
+                    self.rpc_client.get_tip_header().map(|header_view| {
                         let header = header_view.inner;
                         let epoch = EpochNumberWithFraction::from_full_value(header.epoch.0);
                         let timestamp = header.timestamp;
                         (epoch, timestamp)
-                    })
-                    .map_err(|err| err.to_string())?;
+                    })?;
                 let elapsed = locktime_timestamp.saturating_sub(tip_timestamp.0);
                 let (epoch, multisig_addr) =
                     gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
                 let resp = serde_json::json!({
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, multisig_addr.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, multisig_addr).to_string(),
                     },
                     "target_epoch": epoch.to_string(),
                 });
@@ -564,14 +556,14 @@ fn sign_message(
         (None, Some((key_store, account)), false) => {
             let password = read_password(false, None)?;
             key_store
-                .sign_with_password(account, None, message, password.as_bytes())
+                .sign_with_password(account, &[], message, password.as_bytes())
                 .map(|sig| sig.serialize_compact().to_vec())
                 .map_err(|err| err.to_string())
         }
         (None, Some((key_store, account)), true) => {
             let password = read_password(false, None)?;
             key_store
-                .sign_recoverable_with_password(account, None, message, password.as_bytes())
+                .sign_recoverable_with_password(account, &[], message, password.as_bytes())
                 .map(|sig| serialize_signature(&sig).to_vec())
                 .map_err(|err| err.to_string())
         }
@@ -599,9 +591,9 @@ fn gen_multisig_addr(
     let args = {
         let mut multi_script = vec![0u8, 0, 1, 1]; // [S, R, M, N]
         multi_script.extend_from_slice(sighash_address_payload.args().as_ref());
-        let mut data = Bytes::from(&blake2b_256(multi_script)[..20]);
-        data.extend(since.to_le_bytes().iter());
-        data
+        let mut data = BytesMut::from(&blake2b_256(multi_script)[..20]);
+        data.extend_from_slice(&since.to_le_bytes()[..]);
+        data.freeze()
     };
     let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
     (epoch_fraction, payload)
