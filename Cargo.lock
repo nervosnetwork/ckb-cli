@@ -677,7 +677,7 @@ dependencies = [
  "jsonrpc-client-http",
  "lazy_static",
  "log 0.4.8",
- "rand 0.6.5",
+ "rand 0.7.3",
  "scrypt",
  "secp256k1",
  "serde",
