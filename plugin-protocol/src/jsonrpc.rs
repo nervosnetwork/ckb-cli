@@ -4,6 +4,7 @@ pub const JSONRPC_VERSION: &str = "2.0";
 
 /// A JSONRPC error object
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct JsonrpcError {
     /// The integer identifier of the error
     pub code: i32,
@@ -16,6 +17,7 @@ pub struct JsonrpcError {
 
 /// A JSONRPC request object
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct JsonrpcRequest {
     /// jsonrpc field, MUST be "2.0"
     pub jsonrpc: String,
@@ -29,6 +31,7 @@ pub struct JsonrpcRequest {
 
 /// A JSONRPC response object
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct JsonrpcResponse {
     /// jsonrpc field, MUST be "2.0"
     pub jsonrpc: String,

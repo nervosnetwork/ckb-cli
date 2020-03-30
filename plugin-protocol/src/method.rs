@@ -1,5 +1,5 @@
 pub const QUIT: &str = "quit";
-pub const REGISTER: &str = "register";
+pub const GET_CONFIG: &str = "get_config";
 pub const READ_PASSWORD: &str = "read_password";
 pub const PRINT_STDOUT: &str = "print_stdout";
 pub const PRINT_STDERR: &str = "print_stderr";

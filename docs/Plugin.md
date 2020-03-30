@@ -21,7 +21,7 @@ The `sub_command` role plugin will add a top level sub-command in ckb-cli, the p
 
 The `callback` role plugin will be called when certain event happend (send transaction for example).
 
-Here is the config return as the response of `register` method.
+Here is the config return as the response of `get_config` method.
 
 ```rust
 struct PluginConfig {
@@ -41,13 +41,13 @@ The plugin can access rpc request by `rpc_` prefixed methods, they are just prox
 # RPC protocol
 The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package provide a more semantic interface.
 
-## Register a plugin
+## Get config of the plugin
 
 #### Request
 ```javascript
 {
     "params": [],
-    "method": "register",
+    "method": "get_config",
     "id": 0,
     "jsonrpc": "2.0"
 }

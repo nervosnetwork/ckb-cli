@@ -34,7 +34,7 @@ fn main() {
 fn handle(request: PluginRequest) -> Option<PluginResponse> {
     match request {
         PluginRequest::Quit => None,
-        PluginRequest::Register => {
+        PluginRequest::GetConfig => {
             let config = PluginConfig {
                 name: String::from("demo_keystore"),
                 description: String::from("It's a keystore for demo"),
@@ -48,6 +48,28 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
         PluginRequest::KeyStore(keystore_request) => {
             let response = match keystore_request {
                 KeyStoreRequest::ListAccount => {
+                    let req = PluginRequest::ReadPassword("Your Password:".to_string());
+                    let jsonrpc_request = JsonrpcRequest::from((0, req));
+                    let request_string =
+                        format!("{}\n", serde_json::to_string(&jsonrpc_request).unwrap());
+                    // Write message to stderr for plugin debugging
+                    eprintln!("Request: {}", request_string);
+                    io::stdout().write_all(request_string.as_bytes()).unwrap();
+                    io::stdout().flush().unwrap();
+                    let mut line = String::new();
+                    io::stdin().read_line(&mut line).unwrap();
+                    let jsonrpc_response: JsonrpcResponse = serde_json::from_str(&line).unwrap();
+                    let (_id, response) = jsonrpc_response.try_into().unwrap();
+                    if let PluginResponse::String(password) = response {
+                        if password == "bad" {
+                            return Some(PluginResponse::Error(JsonrpcError {
+                                code: 0,
+                                message: String::from("Error password"),
+                                data: None,
+                            }));
+                        }
+                    }
+
                     let accounts = vec![
                         h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"),
                         h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),

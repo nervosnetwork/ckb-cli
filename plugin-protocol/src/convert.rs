@@ -13,7 +13,7 @@ impl From<(u64, PluginRequest)> for JsonrpcRequest {
     fn from((id, request): (u64, PluginRequest)) -> JsonrpcRequest {
         let (method, params) = match request {
             PluginRequest::Quit => (method::QUIT, Vec::new()),
-            PluginRequest::Register => (method::REGISTER, Vec::new()),
+            PluginRequest::GetConfig => (method::GET_CONFIG, Vec::new()),
             PluginRequest::ReadPassword(prompt) => {
                 (method::READ_PASSWORD, vec![serde_json::json!(prompt)])
             }
@@ -59,7 +59,7 @@ impl TryFrom<JsonrpcRequest> for (u64, PluginRequest) {
 
         let request = match data.method.as_str() {
             method::QUIT => PluginRequest::Quit,
-            method::REGISTER => PluginRequest::Register,
+            method::GET_CONFIG => PluginRequest::GetConfig,
             method::READ_PASSWORD => PluginRequest::ReadPassword(parse_param(&data, 0, "prompt")?),
             method::PRINT_STDOUT => PluginRequest::PrintStdout(parse_param(&data, 0, "content")?),
             method::PRINT_STDERR => PluginRequest::PrintStderr(parse_param(&data, 0, "content")?),

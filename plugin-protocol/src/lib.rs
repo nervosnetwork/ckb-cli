@@ -78,7 +78,7 @@ pub enum PluginRequest {
     // == Send from ckb-cli to plugin
     // Tell a daemon plugin to quit
     Quit,
-    Register,
+    GetConfig,
     // Notify all daemon plugins and indexer when rpc url changed
     RpcUrlChanged(String),
     // The plugin need to parse the rest command line arguments
@@ -102,7 +102,7 @@ pub enum PluginRequest {
 pub enum PluginResponse {
     Error(JsonrpcError),
     Ok,
-    // For register request
+    // For get_config request
     PluginConfig(PluginConfig),
     JsonValue(serde_json::Value),
     String(String),

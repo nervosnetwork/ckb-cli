@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -76,7 +76,7 @@ impl PluginManager {
                         .unwrap_or(false)
                 {
                     let plugin = Plugin::new(path.clone(), Vec::new(), *is_active);
-                    match plugin.register() {
+                    match plugin.get_config() {
                         Ok(config) => {
                             if let Err(err) = config.validate() {
                                 log::warn!("Invalid plugin config: {:?}, error: {}", config, err);
@@ -86,7 +86,7 @@ impl PluginManager {
                             }
                         }
                         Err(err) => {
-                            log::warn!("register error: {}, path: {:?}", err, path);
+                            log::warn!("get_config error: {}, path: {:?}", err, path);
                         }
                     }
                 }
@@ -295,7 +295,7 @@ impl PluginManager {
     }
     pub fn install(&mut self, tmp_path: PathBuf, active: bool) -> Result<PluginConfig, String> {
         let tmp_plugin = Plugin::new(tmp_path, Vec::new(), active);
-        let config = tmp_plugin.register()?;
+        let config = tmp_plugin.get_config()?;
         config.validate()?;
         if self.plugins.contains_key(&config.name) {
             return Err(format!(
@@ -514,6 +514,7 @@ struct ServiceProvider {
     _thread: JoinHandle<()>,
 }
 
+#[derive(Debug)]
 pub enum ServiceRequest {
     Request {
         // The request is from plugin or ckb-cli
@@ -569,6 +570,7 @@ impl ServiceProvider {
                     responder,
                     arguments,
                 }) => {
+                    log::debug!("ServiceProvider received a request: {:?}", arguments);
                     let response = match arguments {
                         ServiceRequest::KeyStoreChanged(Some((plugin, config))) => {
                             if Some(&config.name)
@@ -630,66 +632,114 @@ impl ServiceProvider {
                         }
                         ServiceRequest::Request { request, .. } => {
                             let response = match request {
-                                PluginRequest::KeyStore(_) => keystore_plugin
-                                    .as_ref()
-                                    .filter(|(plugin, config)| plugin.is_active() && !config.daemon)
-                                    .map(|(plugin, config)| {
-                                        PluginProcess::start(
-                                            plugin.clone(),
-                                            config.clone(),
-                                            inner_sender.clone(),
-                                        )
-                                    })
-                                    .transpose()
-                                    .and_then(|keystore_process| {
-                                        let handler = keystore_daemon
-                                            .as_ref()
-                                            .or_else(|| keystore_process.as_ref())
-                                            .map(|process| process.handler())
-                                            .unwrap_or_else(|| default_keystore.handler());
-                                        Request::call(handler, (0, request.clone()))
-                                            .map(|(_id, response)| response)
-                                            .ok_or_else(|| {
-                                                String::from("Send request to keystore failed")
-                                            })
-                                    })
-                                    .unwrap_or_else(|err| {
-                                        PluginResponse::Error(JsonrpcError {
+                                PluginRequest::KeyStore(_) => {
+                                    match keystore_plugin
+                                        .as_ref()
+                                        .filter(|(plugin, config)| {
+                                            plugin.is_active() && !config.daemon
+                                        })
+                                        .map(|(plugin, config)| {
+                                            PluginProcess::start(
+                                                plugin.clone(),
+                                                config.clone(),
+                                                inner_sender.clone(),
+                                            )
+                                        })
+                                        .transpose()
+                                    {
+                                        Ok(keystore_process) => {
+                                            let handler = keystore_daemon
+                                                .as_ref()
+                                                .or_else(|| keystore_process.as_ref())
+                                                .map(|process| process.handler())
+                                                .unwrap_or_else(|| default_keystore.handler())
+                                                .clone();
+                                            thread::spawn(move || {
+                                                let response =
+                                                    Request::call(&handler, (0, request.clone()))
+                                                        .map(|(_id, response)| response)
+                                                        .unwrap_or_else(|| {
+                                                            PluginResponse::Error(JsonrpcError {
+                                                        code: 0,
+                                                        message: String::from(
+                                                            "Send request to keystore failed",
+                                                        ),
+                                                        data: None,
+                                                    })
+                                                        });
+                                                if let Err(err) = responder
+                                                    .send(ServiceResponse::Response(response))
+                                                {
+                                                    log::warn!(
+                                                        "Send ServiceResponse failed: {:?}",
+                                                        err
+                                                    );
+                                                }
+                                            });
+                                            // Otherwise, if plugin send request to ServiceProvider, will case a dead loop
+                                            continue;
+                                        }
+                                        Err(err) => PluginResponse::Error(JsonrpcError {
                                             code: 0,
                                             message: err,
                                             data: None,
+                                        }),
+                                    }
+                                }
+                                PluginRequest::Indexer { .. } => {
+                                    match indexer_plugin
+                                        .as_ref()
+                                        .filter(|(plugin, config)| {
+                                            plugin.is_active() && !config.daemon
                                         })
-                                    }),
-                                PluginRequest::Indexer { .. } => indexer_plugin
-                                    .as_ref()
-                                    .filter(|(plugin, config)| plugin.is_active() && !config.daemon)
-                                    .map(|(plugin, config)| {
-                                        PluginProcess::start(
-                                            plugin.clone(),
-                                            config.clone(),
-                                            inner_sender.clone(),
-                                        )
-                                    })
-                                    .transpose()
-                                    .and_then(|indexer_process| {
-                                        let handler = indexer_daemon
-                                            .as_ref()
-                                            .or_else(|| indexer_process.as_ref())
-                                            .map(|process| process.handler())
-                                            .unwrap_or_else(|| default_indexer.handler());
-                                        Request::call(handler, (0, request.clone()))
-                                            .map(|(_id, response)| response)
-                                            .ok_or_else(|| {
-                                                String::from("Send request to indexer failed")
-                                            })
-                                    })
-                                    .unwrap_or_else(|err| {
-                                        PluginResponse::Error(JsonrpcError {
+                                        .map(|(plugin, config)| {
+                                            PluginProcess::start(
+                                                plugin.clone(),
+                                                config.clone(),
+                                                inner_sender.clone(),
+                                            )
+                                        })
+                                        .transpose()
+                                    {
+                                        Ok(indexer_process) => {
+                                            let handler = indexer_daemon
+                                                .as_ref()
+                                                .or_else(|| indexer_process.as_ref())
+                                                .map(|process| process.handler())
+                                                .unwrap_or_else(|| default_indexer.handler())
+                                                .clone();
+                                            thread::spawn(move || {
+                                                let response =
+                                                    Request::call(&handler, (0, request.clone()))
+                                                        .map(|(_id, response)| response)
+                                                        .unwrap_or_else(|| {
+                                                            PluginResponse::Error(JsonrpcError {
+                                                        code: 0,
+                                                        message: String::from(
+                                                            "Send request to indexer failed",
+                                                        ),
+                                                        data: None,
+                                                    })
+                                                        });
+                                                if let Err(err) = responder
+                                                    .send(ServiceResponse::Response(response))
+                                                {
+                                                    log::warn!(
+                                                        "Send ServiceResponse failed: {:?}",
+                                                        err
+                                                    );
+                                                }
+                                            });
+                                            // Otherwise, if plugin send request to ServiceProvider, will case a dead loop
+                                            continue;
+                                        }
+                                        Err(err) => PluginResponse::Error(JsonrpcError {
                                             code: 0,
                                             message: err,
                                             data: None,
-                                        })
-                                    }),
+                                        }),
+                                    }
+                                }
                                 PluginRequest::Rpc(rpc_request) => {
                                     let response_result = match rpc_request {
                                         RpcRequest::GetBlock { hash } => {
@@ -832,6 +882,18 @@ impl PluginProcess {
 
         let stdin_plugin_name = config.name.clone();
         let stdin_thread = thread::spawn(move || {
+            let handle_service_msgs =
+                |stdin: &mut ChildStdin, (id, response)| -> Result<bool, String> {
+                    let jsonrpc_response = JsonrpcResponse::from((id, response));
+                    let response_string =
+                        serde_json::to_string(&jsonrpc_response).expect("Serialize response error");
+                    log::debug!("Send response to plugin: {}", response_string);
+                    stdin
+                        .write_all(format!("{}\n", response_string).as_bytes())
+                        .map_err(|err| err.to_string())?;
+                    stdin.flush().map_err(|err| err.to_string())?;
+                    Ok(false)
+                };
             let mut do_select = || -> Result<bool, String> {
                 select! {
                     // Send response requested by ckb-cli to plugin
@@ -844,17 +906,35 @@ impl PluginProcess {
                                 log::debug!("Send request to plugin: {}", request_string);
                                 stdin.write_all(format!("{}\n", request_string).as_bytes()).map_err(|err| err.to_string())?;
                                 stdin.flush().map_err(|err| err.to_string())?;
-                                if let Ok(response) = stdout_receiver.recv() {
-                                    responder.send(response).map_err(|err| err.to_string())?;
-                                    if !daemon {
-                                        stop_sender.send(()).map_err(|err| err.to_string())?;
-                                        Ok(true)
-                                    } else {
-                                        Ok(false)
+                                loop {
+                                    select!{
+                                        recv(service_receiver) -> msg_result => {
+                                            match msg_result {
+                                                Ok(msg) => {
+                                                    handle_service_msgs(&mut stdin, msg)?;
+                                                },
+                                                Err(err) => {
+                                                    return Err(err.to_string());
+                                                }
+                                            }
+                                        },
+                                        recv(stdout_receiver) -> msg_result => {
+                                            match msg_result {
+                                                Ok(response) => {
+                                                    responder.send(response).map_err(|err| err.to_string())?;
+                                                    if !daemon {
+                                                        stop_sender.send(()).map_err(|err| err.to_string())?;
+                                                        return Ok(true);
+                                                    } else {
+                                                        return Ok(false);
+                                                    }
+                                                }
+                                                Err(err) => {
+                                                    return Err(err.to_string());
+                                                }
+                                            }
+                                        }
                                     }
-                                } else {
-                                    // TODO: error handling
-                                    Ok(true)
                                 }
                             }
                             Err(err) => Err(err.to_string())
@@ -863,14 +943,7 @@ impl PluginProcess {
                     // Send repsonse requested by plugin to ckb-cli (ServiceProvider)
                     recv(service_receiver) -> msg_result => {
                         match msg_result {
-                            Ok((id, response)) => {
-                                let jsonrpc_response = JsonrpcResponse::from((id, response));
-                                let response_string = serde_json::to_string(&jsonrpc_response).expect("Serialize response error");
-                                log::debug!("Send response to plugin: {}", response_string);
-                                stdin.write_all(format!("{}\n", response_string).as_bytes()).map_err(|err| err.to_string())?;
-                                stdin.flush().map_err(|err| err.to_string())?;
-                                Ok(false)
-                            }
+                            Ok(msg) => handle_service_msgs(&mut stdin, msg),
                             Err(err) => Err(err.to_string())
                         }
                     }
@@ -924,10 +997,12 @@ impl PluginProcess {
                         plugin_name: config.name.clone(),
                         request,
                     };
+                    log::debug!("Sending request to ServiceProvider");
                     if let ServiceResponse::Response(response) =
                         Request::call(&service_handler, service_request)
                             .ok_or_else(|| String::from("Send request to ServiceProvider failed"))?
                     {
+                        log::debug!("Received response from ServiceProvider");
                         service_sender
                             .send((id, response))
                             .map_err(|err| err.to_string())?;
@@ -981,7 +1056,7 @@ impl Plugin {
     }
 
     // TODO: Try read from {plugin-name}.json file first
-    pub fn register(&self) -> Result<PluginConfig, String> {
+    pub fn get_config(&self) -> Result<PluginConfig, String> {
         let mut child = Command::new(&self.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -995,7 +1070,7 @@ impl Plugin {
             .stdout
             .take()
             .ok_or_else(|| String::from("Get stdout failed"))?;
-        let jsonrpc_request = JsonrpcRequest::from((0, PluginRequest::Register));
+        let jsonrpc_request = JsonrpcRequest::from((0, PluginRequest::GetConfig));
         let request_string =
             serde_json::to_string(&jsonrpc_request).expect("Serialize request error");
         log::debug!("Send request to plugin: {}", request_string);
@@ -1017,7 +1092,7 @@ impl Plugin {
             Ok(config)
         } else {
             Err(format!(
-                "Invalid response for register call to plugin {:?}, response: {}",
+                "Invalid response for get_config call to plugin {:?}, response: {}",
                 self.path, response_string
             ))
         }
