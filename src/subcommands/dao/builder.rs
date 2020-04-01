@@ -1,7 +1,7 @@
 use super::util::minimal_unlock_point;
 use crate::subcommands::dao::util::calculate_dao_maximum_withdraw4;
 use ckb_index::LiveCellInfo;
-use ckb_sdk::{GenesisInfo, HttpRpcClient, Since, SinceType};
+use ckb_sdk::{constants::MIN_SECP_CELL_CAPACITY, GenesisInfo, HttpRpcClient, Since, SinceType};
 use ckb_types::core::Capacity;
 use ckb_types::{
     bytes::Bytes,
@@ -62,7 +62,7 @@ impl DAOBuilder {
 
         let input_capacity = self.live_cells.iter().map(|txo| txo.capacity).sum::<u64>();
         let change_capacity = input_capacity - deposit_capacity - self.tx_fee;
-        if change_capacity > 0 {
+        if change_capacity >= MIN_SECP_CELL_CAPACITY {
             let change = CellOutput::new_builder()
                 .capacity(change_capacity.pack())
                 .build();
