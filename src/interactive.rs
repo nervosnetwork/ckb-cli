@@ -117,13 +117,28 @@ impl InteractiveEnv {
             }
         };
 
+        let mut plugin_sub_cmds = Vec::new();
+        let mut parser = self.parser.clone();
+        for (cmd_name, plugin_name) in self.plugin_mgr.sub_commands() {
+            if let Some((_, config)) = self.plugin_mgr.plugins().get(plugin_name.as_str()) {
+                plugin_sub_cmds
+                    .push((cmd_name.clone(), format!("[plugin] {}", config.description)));
+            }
+        }
+        for (cmd_name, description) in &plugin_sub_cmds {
+            parser = parser.subcommand(
+                // FIXME: when clap updated add `clap::AppSettings::DisableHelpFlags` back
+                clap::App::new(cmd_name.as_str()).about(description.as_str()),
+            );
+        }
+
         let rl_config = Config::builder()
             .history_ignore_space(true)
             .completion_type(CompletionType::List)
             .edit_mode(EditMode::Emacs)
             .build();
-        let helper = CkbCompleter::new(self.parser.clone());
         let mut rl = Editor::with_config(rl_config);
+        let helper = CkbCompleter::new(parser.clone());
         rl.set_helper(Some(helper));
         rl.bind_sequence(KeyPress::Meta('N'), Cmd::HistorySearchForward);
         rl.bind_sequence(KeyPress::Meta('P'), Cmd::HistorySearchBackward);
@@ -144,7 +159,7 @@ impl InteractiveEnv {
             );
             match rl.readline(&prompt) {
                 Ok(line) => {
-                    match self.handle_command(line.as_str(), &env_regex) {
+                    match self.handle_command(&parser, line.as_str(), &env_regex) {
                         Ok(true) => {
                             break;
                         }
@@ -216,7 +231,12 @@ impl InteractiveEnv {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    fn handle_command(&mut self, line: &str, env_regex: &Regex) -> Result<bool, String> {
+    fn handle_command(
+        &mut self,
+        parser: &clap::App,
+        line: &str,
+        env_regex: &Regex,
+    ) -> Result<bool, String> {
         let args = match shell_words::split(self.config.replace_cmd(&env_regex, line).as_str()) {
             Ok(args) => args,
             Err(e) => return Err(e.to_string()),
@@ -226,7 +246,23 @@ impl InteractiveEnv {
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
         let wait_for_sync = !self.config.no_sync();
-        match self.parser.clone().try_get_matches_from(args) {
+
+        let current_cmd_name = &args[0];
+        if self
+            .plugin_mgr
+            .sub_commands()
+            .contains_key(current_cmd_name.as_str())
+        {
+            let rest_args = line[current_cmd_name.len()..].to_string();
+            log::debug!("[call sub command]: {} {}", current_cmd_name, rest_args);
+            let resp = self
+                .plugin_mgr
+                .sub_command(current_cmd_name.as_str(), rest_args)?;
+            println!("{}", resp.render(format, color));
+            return Ok(false);
+        }
+
+        match parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
                     m.value_of("url").and_then(|url| {

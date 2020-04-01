@@ -43,9 +43,9 @@ pub struct PluginManager {
     keystores: Vec<String>,
     // The indexer plugins currently actived
     indexers: Vec<String>,
-    // The key is sub-command name
+    // The actived sub command plugins. The key is sub-command name
     sub_commands: HashMap<String, String>,
-    // The key is callback name
+    // The actived callback plugins. The key is callback name
     callbacks: HashMap<CallbackName, Vec<String>>,
 
     service_provider: ServiceProvider,
@@ -56,18 +56,20 @@ pub type PluginHandler = Sender<Request<(u64, PluginRequest), (u64, PluginRespon
 pub type ServiceHandler = Sender<Request<ServiceRequest, ServiceResponse>>;
 
 impl PluginManager {
-    pub fn init(ckb_cli_dir: &PathBuf, rpc_url: String) -> Result<PluginManager, String> {
+    pub fn load(
+        ckb_cli_dir: &PathBuf,
+    ) -> Result<HashMap<String, (Plugin, PluginConfig)>, io::Error> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let inactive_plugin_dir = plugin_dir.join(INACTIVE_DIRNAME);
 
         if !inactive_plugin_dir.exists() {
-            fs::create_dir_all(&inactive_plugin_dir).map_err(|err| err.to_string())?;
+            fs::create_dir_all(&inactive_plugin_dir)?;
         }
 
         let mut plugins = HashMap::default();
         for (dir, is_active) in &[(&plugin_dir, true), (&inactive_plugin_dir, false)] {
-            for entry in fs::read_dir(dir).map_err(|err| err.to_string())? {
-                let entry = entry.map_err(|err| err.to_string())?;
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
                 let path = entry.path();
                 if path.is_file()
                     && path
@@ -92,7 +94,12 @@ impl PluginManager {
                 }
             }
         }
+        Ok(plugins)
+    }
 
+    pub fn init(ckb_cli_dir: &PathBuf, rpc_url: String) -> Result<PluginManager, String> {
+        let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
+        let plugins = Self::load(ckb_cli_dir).map_err(|err| err.to_string())?;
         let default_keystore = DefaultKeyStore::start(ckb_cli_dir)?;
         // TODO: impl indexer thread
         let default_indexer = DefaultIndexer::start()?;
@@ -166,6 +173,16 @@ impl PluginManager {
         })
     }
 
+    pub fn plugins(&self) -> &HashMap<String, (Plugin, PluginConfig)> {
+        &self.plugins
+    }
+    pub fn sub_commands(&self) -> &HashMap<String, String> {
+        &self.sub_commands
+    }
+    #[allow(unused)]
+    pub fn callbacks(&self) -> &HashMap<CallbackName, Vec<String>> {
+        &self.callbacks
+    }
     pub fn actived_keystore(&self) -> Option<(&Plugin, &PluginConfig, bool)> {
         self.keystores
             .iter()
@@ -235,6 +252,25 @@ impl PluginManager {
                 None
             }
         }) {
+            for role in &config.roles {
+                match role {
+                    PluginRole::KeyStore { .. } => {
+                        self.keystores.push(config.name.clone());
+                    }
+                    PluginRole::Indexer => {
+                        self.indexers.push(config.name.clone());
+                    }
+                    PluginRole::SubCommand { name } => {
+                        self.sub_commands.insert(name.clone(), config.name.clone());
+                    }
+                    PluginRole::Callback { name } => {
+                        self.callbacks
+                            .entry(name.clone())
+                            .or_default()
+                            .push(config.name.clone());
+                    }
+                }
+            }
             if config.is_normal_daemon() {
                 log::info!("Starting daemon process: {}", config.name);
                 let process = PluginProcess::start(
@@ -276,6 +312,40 @@ impl PluginManager {
                 None
             }
         }) {
+            for role in &config.roles {
+                match role {
+                    PluginRole::KeyStore { .. } => {
+                        self.keystores = self
+                            .keystores
+                            .split_off(0)
+                            .into_iter()
+                            .filter(|plugin_name| plugin_name != name)
+                            .collect::<Vec<_>>();
+                    }
+                    PluginRole::Indexer => {
+                        self.indexers = self
+                            .indexers
+                            .split_off(0)
+                            .into_iter()
+                            .filter(|plugin_name| plugin_name != name)
+                            .collect::<Vec<_>>();
+                    }
+                    PluginRole::SubCommand { name } => {
+                        self.sub_commands.remove(name);
+                    }
+                    PluginRole::Callback {
+                        name: callback_name,
+                    } => {
+                        if let Some(names) = self.callbacks.get_mut(callback_name) {
+                            *names = names
+                                .split_off(0)
+                                .into_iter()
+                                .filter(|plugin_name| plugin_name != name)
+                                .collect::<Vec<_>>();
+                        }
+                    }
+                }
+            }
             if config.is_normal_daemon() {
                 log::info!("Stopping daemon process: {}", config.name);
                 self.daemon_processes.remove(name);
@@ -314,26 +384,6 @@ impl PluginManager {
         let plugin = Plugin::new(path, Vec::new(), false);
         self.plugins
             .insert(config.name.clone(), (plugin, config.clone()));
-
-        for role in &config.roles {
-            match role {
-                PluginRole::KeyStore { .. } => {
-                    self.keystores.push(config.name.clone());
-                }
-                PluginRole::Indexer => {
-                    self.indexers.push(config.name.clone());
-                }
-                PluginRole::SubCommand { name } => {
-                    self.sub_commands.insert(name.clone(), config.name.clone());
-                }
-                PluginRole::Callback { name } => {
-                    self.callbacks
-                        .entry(name.clone())
-                        .or_default()
-                        .push(config.name.clone());
-                }
-            }
-        }
         if active {
             self.active(&config.name)?;
         }
@@ -341,42 +391,8 @@ impl PluginManager {
     }
     pub fn uninstall(&mut self, name: &str) -> Result<(), String> {
         self.deactive(name)?;
-        if let Some((plugin, config)) = self.plugins.remove(name) {
+        if let Some((plugin, _config)) = self.plugins.remove(name) {
             fs::remove_file(plugin.path()).map_err(|err| err.to_string())?;
-            for role in &config.roles {
-                match role {
-                    PluginRole::KeyStore { .. } => {
-                        self.keystores = self
-                            .keystores
-                            .split_off(0)
-                            .into_iter()
-                            .filter(|plugin_name| plugin_name != name)
-                            .collect::<Vec<_>>();
-                    }
-                    PluginRole::Indexer => {
-                        self.indexers = self
-                            .indexers
-                            .split_off(0)
-                            .into_iter()
-                            .filter(|plugin_name| plugin_name != name)
-                            .collect::<Vec<_>>();
-                    }
-                    PluginRole::SubCommand { name } => {
-                        self.sub_commands.remove(name);
-                    }
-                    PluginRole::Callback {
-                        name: callback_name,
-                    } => {
-                        if let Some(names) = self.callbacks.get_mut(callback_name) {
-                            *names = names
-                                .split_off(0)
-                                .into_iter()
-                                .filter(|plugin_name| plugin_name != name)
-                                .collect::<Vec<_>>();
-                        }
-                    }
-                }
-            }
         }
         Ok(())
     }
@@ -438,7 +454,6 @@ impl PluginManager {
         self.call_service(ServiceRequest::RpcUrlChanged(new_url))
     }
 
-    #[allow(unused)]
     pub fn sub_command(
         &self,
         command_name: &str,
@@ -448,13 +463,14 @@ impl PluginManager {
             self.handle(plugin_name.as_str(), |handler| {
                 let request = PluginRequest::SubCommand(rest_args);
                 let id: u64 = 0;
-                if let (_id, PluginResponse::JsonValue(output)) =
-                    Request::call(handler, (id, request))
-                        .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
+                match Request::call(handler, (id, request))
+                    .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
                 {
-                    Ok(output)
-                } else {
-                    Err("Invalid plugin response".to_string())
+                    (_id, PluginResponse::JsonValue(output)) => Ok(output),
+                    (_id, PluginResponse::Error(rpc_err)) => {
+                        Err(format!("ERROR: {}", rpc_err.message))
+                    }
+                    _ => Err("Invalid plugin response".to_string()),
                 }
             })
         } else {
@@ -495,10 +511,6 @@ impl PluginManager {
                 callback_name
             ))
         }
-    }
-
-    pub fn plugins(&self) -> &HashMap<String, (Plugin, PluginConfig)> {
-        &self.plugins
     }
 }
 
