@@ -58,7 +58,7 @@ impl InteractiveEnv {
         let mut index_dir = ckb_cli_dir.clone();
         index_dir.push(index_dirname());
 
-        let mut env_file = ckb_cli_dir.clone();
+        let mut env_file = ckb_cli_dir;
         env_file.push("env_vars");
         if env_file.as_path().exists() {
             let file = fs::File::open(&env_file).map_err(|err| err.to_string())?;

@@ -85,9 +85,7 @@ pub fn get_signer(
         } else {
             None
         };
-        let data = keystore
-            .sign(lock_arg.clone(), &[], tx_hash_hash.clone(), password, true)
-            .map_err(|err| err.to_string())?;
+        let data = keystore.sign(lock_arg.clone(), &[], tx_hash_hash.clone(), password, true)?;
         if data.len() != 65 {
             Err(format!(
                 "Invalid signature data lenght: {}, data: {:?}",

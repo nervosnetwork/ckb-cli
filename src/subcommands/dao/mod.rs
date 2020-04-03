@@ -344,15 +344,13 @@ fn get_keystore_signer(
             if message == &h256!("0x0") {
                 Ok(Some([0u8; 65]))
             } else {
-                let data = keystore
-                    .sign(
-                        account.clone(),
-                        &[],
-                        message.clone(),
-                        password.clone(),
-                        true,
-                    )
-                    .map_err(|err| err.to_string())?;
+                let data = keystore.sign(
+                    account.clone(),
+                    &[],
+                    message.clone(),
+                    password.clone(),
+                    true,
+                )?;
                 if data.len() != 65 {
                     Err(format!(
                         "Invalid signature data lenght: {}, data: {:?}",

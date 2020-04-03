@@ -293,17 +293,13 @@ impl<'a> WalletSubCommand<'a> {
             // Behave like HD wallet
             let change_last =
                 H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
-            let key_set = self
-                .plugin_mgr
-                .keystore_handler()
-                .derived_key_set(
-                    from_lock_arg.clone(),
-                    receiving_address_length,
-                    change_last,
-                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
-                    password.clone(),
-                )
-                .map_err(|err| err.to_string())?;
+            let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
+                from_lock_arg.clone(),
+                receiving_address_length,
+                change_last,
+                DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                password.clone(),
+            )?;
             for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                 path_map.insert(hash160.clone(), path.clone());
                 let payload = AddressPayload::from_pubkey_hash(hash160.clone());
@@ -598,8 +594,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 0,
                                 change_address_length,
                                 password,
-                            )
-                            .map_err(|err| err.to_string())?;
+                            )?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             lock_hashes.push(Script::from(&payload).calc_script_hash());
@@ -758,15 +753,13 @@ fn get_keystore_signer(
         if message == &h256!("0x0") {
             return Ok(Some([0u8; 65]));
         }
-        let data = keystore
-            .sign(
-                account.clone(),
-                path,
-                message.clone(),
-                password.clone(),
-                true,
-            )
-            .map_err(|err| err.to_string())?;
+        let data = keystore.sign(
+            account.clone(),
+            path,
+            message.clone(),
+            password.clone(),
+            true,
+        )?;
         if data.len() != 65 {
             Err(format!(
                 "Invalid signature data lenght: {}, data: {:?}",

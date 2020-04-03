@@ -166,8 +166,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_arg = self
                     .plugin_mgr
                     .keystore_handler()
-                    .create_account(password)
-                    .map_err(|err| err.to_string())?;
+                    .create_account(password)?;
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let lock_hash: H256 = Script::from(&address_payload).calc_script_hash().unpack();
                 let resp = serde_json::json!({
@@ -202,8 +201,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_arg = self
                     .plugin_mgr
                     .keystore_handler()
-                    .import_key(master_privkey, password)
-                    .map_err(|err| err.to_string())?;
+                    .import_key(master_privkey, password)?;
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
@@ -233,8 +231,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_arg = self
                     .plugin_mgr
                     .keystore_handler()
-                    .import_key(master_privkey, new_password)
-                    .map_err(|err| err.to_string())?;
+                    .import_key(master_privkey, new_password)?;
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
@@ -250,10 +247,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let old_password = read_password(false, Some("Old password"))?;
                 let new_passsword = read_password(true, Some("New password"))?;
-                self.plugin_mgr
-                    .keystore_handler()
-                    .update_password(lock_arg, old_password, new_passsword)
-                    .map_err(|err| err.to_string())?;
+                self.plugin_mgr.keystore_handler().update_password(
+                    lock_arg,
+                    old_password,
+                    new_passsword,
+                )?;
                 Ok(Output::new_success())
             }
             ("export", Some(m)) => {
@@ -272,8 +270,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let master_privkey = self
                     .plugin_mgr
                     .keystore_handler()
-                    .export_key(lock_arg, password)
-                    .map_err(|err| err.to_string())?;
+                    .export_key(lock_arg, password)?;
                 let bytes = master_privkey.to_bytes();
                 let privkey = H256::from_slice(&bytes[0..32]).unwrap();
                 let chain_code = H256::from_slice(&bytes[32..64]).unwrap();
@@ -317,8 +314,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         from_change_index,
                         change_length,
                         password,
-                    )
-                    .map_err(|err| err.to_string())?;
+                    )?;
                 let get_addresses = |set: &[(DerivationPath, H160)]| {
                     set.iter()
                         .map(|(path, hash160)| {
@@ -351,8 +347,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let extended_pubkey = self
                     .plugin_mgr
                     .keystore_handler()
-                    .extended_pubkey(lock_arg, &path, password)
-                    .map_err(|err| err.to_string())?;
+                    .extended_pubkey(lock_arg, &path, password)?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey);
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),

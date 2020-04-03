@@ -143,7 +143,7 @@ fn main() -> Result<(), io::Error> {
             &mut rpc_client,
             plugin_mgr,
             None,
-            index_dir.clone(),
+            index_dir,
             index_controller.clone(),
         )
         .process(&sub_matches, debug),
@@ -155,7 +155,7 @@ fn main() -> Result<(), io::Error> {
             &mut rpc_client,
             &mut plugin_mgr,
             None,
-            index_dir.clone(),
+            index_dir,
             index_controller.clone(),
             wait_for_sync,
         )

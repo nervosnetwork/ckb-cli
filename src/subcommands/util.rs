@@ -400,8 +400,7 @@ message = "0x"
                     };
                     self.plugin_mgr
                         .keystore_handler()
-                        .extended_pubkey(account, &[], password)
-                        .map_err(|err| err.to_string())?
+                        .extended_pubkey(account, &[], password)?
                 } else {
                     return Err(String::from(
                         "Missing <pubkey> or <privkey-path> or <from-account> argument",
@@ -613,7 +612,6 @@ fn sign_message(
                 .keystore_handler()
                 .sign(account, &[], message.clone(), password, false)
                 .map(|bytes| (&bytes[..]).to_vec())
-                .map_err(|err| err.to_string())
         }
         (None, Some((plugin_mgr, account)), true) => {
             let password = if plugin_mgr.keystore_require_password() {
@@ -625,7 +623,6 @@ fn sign_message(
                 .keystore_handler()
                 .sign(account, &[], message.clone(), password, true)
                 .map(|bytes| (&bytes[..]).to_vec())
-                .map_err(|err| err.to_string())
         }
         _ => Err(String::from("Both privkey and key store is missing")),
     }
