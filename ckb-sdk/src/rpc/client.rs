@@ -4,54 +4,108 @@ use ckb_jsonrpc_types::{
     LockHashIndexState, Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus,
     TxPoolInfo, Uint64, Version,
 };
-use jsonrpc_client_core::{expand_params, jsonrpc_client};
-use jsonrpc_client_http::{HttpHandle, HttpTransport};
 
 use super::types;
 use ckb_types::{packed, H256};
 
-jsonrpc_client!(pub struct RawRpcClient {
+macro_rules! jsonrpc {
+    (
+        $(#[$struct_attr:meta])*
+        pub struct $struct_name:ident {$(
+            $(#[$attr:meta])*
+            pub fn $method:ident(&mut $selff:ident $(, $arg_name:ident: $arg_ty:ty)*)
+                -> $return_ty:ty;
+        )*}
+    ) => (
+        $(#[$struct_attr])*
+        pub struct $struct_name {
+            pub client: reqwest::Client,
+            pub url: reqwest::Url,
+            pub id: u64,
+        }
+
+        impl $struct_name {
+            pub fn new(uri: &str) -> Self {
+                let url = reqwest::Url::parse(uri).expect("ckb uri, e.g. \"http://127.0.0.1:8114\"");
+                $struct_name { url, id: 0, client: reqwest::Client::new(), }
+            }
+
+            $(
+                $(#[$attr])*
+                pub fn $method(&mut $selff $(, $arg_name: $arg_ty)*) -> Result<$return_ty, failure::Error> {
+                    let method = String::from(stringify!($method));
+                    let params = serialize_parameters!($($arg_name,)*);
+                    $selff.id += 1;
+
+                    let mut req_json = serde_json::Map::new();
+                    req_json.insert("id".to_owned(), serde_json::json!($selff.id));
+                    req_json.insert("jsonrpc".to_owned(), serde_json::json!("2.0"));
+                    req_json.insert("method".to_owned(), serde_json::json!(method));
+                    req_json.insert("params".to_owned(), params);
+
+                    let mut resp = $selff.client.post($selff.url.clone()).json(&req_json).send()?;
+                    let output = resp.json::<ckb_jsonrpc_types::response::Output>()?;
+                    match output {
+                        ckb_jsonrpc_types::response::Output::Success(success) => {
+                            serde_json::from_value(success.result).map_err(Into::into)
+                        },
+                        ckb_jsonrpc_types::response::Output::Failure(failure) => {
+                            Err(failure.error.into())
+                        }
+                    }
+                }
+            )*
+        }
+    )
+}
+
+macro_rules! serialize_parameters {
+    () => ( serde_json::Value::Null );
+    ($($arg_name:ident,)+) => ( serde_json::to_value(($($arg_name,)+))?)
+}
+
+jsonrpc!(pub struct RawHttpRpcClient {
     // Chain
-    pub fn get_block(&mut self, hash: H256) -> RpcRequest<Option<BlockView>>;
-    pub fn get_block_by_number(&mut self, number: BlockNumber) -> RpcRequest<Option<BlockView>>;
-    pub fn get_block_hash(&mut self, number: BlockNumber) -> RpcRequest<Option<H256>>;
-    pub fn get_cellbase_output_capacity_details(&mut self, hash: H256) -> RpcRequest<Option<BlockReward>>;
-    pub fn get_cells_by_lock_hash(&mut self, lock_hash: H256, from: BlockNumber, to: BlockNumber) -> RpcRequest<Vec<CellOutputWithOutPoint>>;
-    pub fn get_current_epoch(&mut self) -> RpcRequest<EpochView>;
-    pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> RpcRequest<Option<EpochView>>;
-    pub fn get_header(&mut self, hash: H256) -> RpcRequest<Option<HeaderView>>;
-    pub fn get_header_by_number(&mut self, number: BlockNumber) -> RpcRequest<Option<HeaderView>>;
-    pub fn get_live_cell(&mut self, out_point: OutPoint, with_data: bool) -> RpcRequest<CellWithStatus>;
-    pub fn get_tip_block_number(&mut self) -> RpcRequest<BlockNumber>;
-    pub fn get_tip_header(&mut self) -> RpcRequest<HeaderView>;
-    pub fn get_transaction(&mut self, hash: H256) -> RpcRequest<Option<TransactionWithStatus>>;
+    pub fn get_block(&mut self, hash: H256) -> Option<BlockView>;
+    pub fn get_block_by_number(&mut self, number: BlockNumber) -> Option<BlockView>;
+    pub fn get_block_hash(&mut self, number: BlockNumber) -> Option<H256>;
+    pub fn get_cellbase_output_capacity_details(&mut self, hash: H256) -> Option<BlockReward>;
+    pub fn get_cells_by_lock_hash(&mut self, lock_hash: H256, from: BlockNumber, to: BlockNumber) -> Vec<CellOutputWithOutPoint>;
+    pub fn get_current_epoch(&mut self) -> EpochView;
+    pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> Option<EpochView>;
+    pub fn get_header(&mut self, hash: H256) -> Option<HeaderView>;
+    pub fn get_header_by_number(&mut self, number: BlockNumber) -> Option<HeaderView>;
+    pub fn get_live_cell(&mut self, out_point: OutPoint, with_data: bool) -> CellWithStatus;
+    pub fn get_tip_block_number(&mut self) -> BlockNumber;
+    pub fn get_tip_header(&mut self) -> HeaderView;
+    pub fn get_transaction(&mut self, hash: H256) -> Option<TransactionWithStatus>;
 
     // Indexer
-    pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> RpcRequest<()>;
+    pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> ();
     pub fn get_live_cells_by_lock_hash(
         &mut self,
         lock_hash: H256,
         page: Uint64,
         per_page: Uint64,
         reverse_order: Option<bool>
-    ) -> RpcRequest<Vec<LiveCell>>;
+    ) -> Vec<LiveCell>;
     pub fn get_transactions_by_lock_hash(
         &mut self,
         lock_hash: H256,
         page: Uint64,
         per_page: Uint64,
         reverse_order: Option<bool>
-    ) -> RpcRequest<Vec<CellTransaction>>;
+    ) -> Vec<CellTransaction>;
     pub fn index_lock_hash(
         &mut self,
         lock_hash: H256,
         index_from: Option<BlockNumber>
-    ) -> RpcRequest<LockHashIndexState>;
+    ) -> LockHashIndexState;
 
     // Net
-    pub fn get_banned_addresses(&mut self) -> RpcRequest<Vec<BannedAddr>>;
-    pub fn get_peers(&mut self) -> RpcRequest<Vec<Node>>;
-    pub fn local_node_info(&mut self) -> RpcRequest<Node>;
+    pub fn get_banned_addresses(&mut self) -> Vec<BannedAddr>;
+    pub fn get_peers(&mut self) -> Vec<Node>;
+    pub fn local_node_info(&mut self) -> Node;
     pub fn set_ban(
         &mut self,
         address: String,
@@ -59,35 +113,25 @@ jsonrpc_client!(pub struct RawRpcClient {
         ban_time: Option<Timestamp>,
         absolute: Option<bool>,
         reason: Option<String>
-    ) -> RpcRequest<()>;
+    ) -> ();
 
     // Pool
-    pub fn send_transaction(&mut self, tx: Transaction) -> RpcRequest<H256>;
-    pub fn tx_pool_info(&mut self) -> RpcRequest<TxPoolInfo>;
+    pub fn send_transaction(&mut self, tx: Transaction) -> H256;
+    pub fn tx_pool_info(&mut self) -> TxPoolInfo;
 
     // Stats
-    pub fn get_blockchain_info(&mut self) -> RpcRequest<ChainInfo>;
-    pub fn get_peers_state(&mut self) -> RpcRequest<Vec<PeerState>>;
+    pub fn get_blockchain_info(&mut self) -> ChainInfo;
+    pub fn get_peers_state(&mut self) -> Vec<PeerState>;
 
     // IntegrationTest
-    pub fn add_node(&mut self, peer_id: String, address: String) -> RpcRequest<()>;
-    pub fn remove_node(&mut self, peer_id: String) -> RpcRequest<()>;
-    pub fn broadcast_transaction(&mut self, tx: Transaction) -> RpcRequest<H256>;
+    pub fn add_node(&mut self, peer_id: String, address: String) -> ();
+    pub fn remove_node(&mut self, peer_id: String) -> ();
+    pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
 
     // Miner
-    pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> RpcRequest<BlockTemplate>;
-    pub fn submit_block(&mut self, _work_id: String, _data: Block) -> RpcRequest<H256>;
+    pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> BlockTemplate;
+    pub fn submit_block(&mut self, _work_id: String, _data: Block) -> H256;
 });
-
-impl RawRpcClient<HttpHandle> {
-    pub fn from_uri(server: &str) -> RawRpcClient<HttpHandle> {
-        let transport = HttpTransport::new().standalone().unwrap();
-        let transport_handle = transport.handle(server).unwrap();
-        RawRpcClient::new(transport_handle)
-    }
-}
-
-pub type RawHttpRpcClient = RawRpcClient<HttpHandle>;
 
 pub struct HttpRpcClient {
     url: String,
@@ -96,7 +140,7 @@ pub struct HttpRpcClient {
 
 impl HttpRpcClient {
     pub fn new(url: String) -> HttpRpcClient {
-        let client = RawHttpRpcClient::from_uri(url.as_str());
+        let client = RawHttpRpcClient::new(url.as_str());
         HttpRpcClient { url, client }
     }
 
@@ -113,21 +157,18 @@ impl HttpRpcClient {
     pub fn get_block(&mut self, hash: H256) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block(hash)
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_block_by_number(&mut self, number: u64) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block_by_number(BlockNumber::from(number))
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_block_hash(&mut self, number: u64) -> Result<Option<H256>, String> {
         self.client
             .get_block_hash(BlockNumber::from(number))
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -137,7 +178,6 @@ impl HttpRpcClient {
     ) -> Result<Option<types::BlockReward>, String> {
         self.client
             .get_cellbase_output_capacity_details(hash)
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -149,28 +189,24 @@ impl HttpRpcClient {
     ) -> Result<Vec<types::CellOutputWithOutPoint>, String> {
         self.client
             .get_cells_by_lock_hash(lock_hash, BlockNumber::from(from), BlockNumber::from(to))
-            .call()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
     pub fn get_current_epoch(&mut self) -> Result<types::EpochView, String> {
         self.client
             .get_current_epoch()
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
     pub fn get_epoch_by_number(&mut self, number: u64) -> Result<Option<types::EpochView>, String> {
         self.client
             .get_epoch_by_number(EpochNumber::from(number))
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_header(&mut self, hash: H256) -> Result<Option<types::HeaderView>, String> {
         self.client
             .get_header(hash)
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -180,7 +216,6 @@ impl HttpRpcClient {
     ) -> Result<Option<types::HeaderView>, String> {
         self.client
             .get_header_by_number(BlockNumber::from(number))
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -192,20 +227,17 @@ impl HttpRpcClient {
     ) -> Result<CellWithStatus, String> {
         self.client
             .get_live_cell(out_point.into(), with_data)
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn get_tip_block_number(&mut self) -> Result<u64, String> {
         self.client
             .get_tip_block_number()
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
     pub fn get_tip_header(&mut self) -> Result<types::HeaderView, String> {
         self.client
             .get_tip_header()
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
@@ -215,7 +247,6 @@ impl HttpRpcClient {
     ) -> Result<Option<types::TransactionWithStatus>, String> {
         self.client
             .get_transaction(hash)
-            .call()
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -224,7 +255,6 @@ impl HttpRpcClient {
     pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> Result<(), String> {
         self.client
             .deindex_lock_hash(lock_hash)
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn get_live_cells_by_lock_hash(
@@ -241,7 +271,6 @@ impl HttpRpcClient {
                 Uint64::from(per_page),
                 reverse_order,
             )
-            .call()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
@@ -259,7 +288,6 @@ impl HttpRpcClient {
                 Uint64::from(per_page),
                 reverse_order,
             )
-            .call()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
@@ -270,7 +298,6 @@ impl HttpRpcClient {
     ) -> Result<types::LockHashIndexState, String> {
         self.client
             .index_lock_hash(lock_hash, index_from.map(BlockNumber::from))
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
@@ -279,23 +306,20 @@ impl HttpRpcClient {
     pub fn get_banned_addresses(&mut self) -> Result<Vec<types::BannedAddr>, String> {
         self.client
             .get_banned_addresses()
-            .call()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
     pub fn get_peers(&mut self) -> Result<Vec<types::Node>, String> {
         self.client
             .get_peers()
-            .call()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
     pub fn local_node_info(&mut self) -> Result<types::Node, String> {
         self.client
             .local_node_info()
-            .call()
             .map(Into::into)
-            .map_err(|err| err.description().to_string())
+            .map_err(|err| err.to_string())
     }
     pub fn set_ban(
         &mut self,
@@ -307,21 +331,18 @@ impl HttpRpcClient {
     ) -> Result<(), String> {
         self.client
             .set_ban(address, command, ban_time.map(Into::into), absolute, reason)
-            .call()
-            .map_err(|err| err.description().to_string())
+            .map_err(|err| err.to_string())
     }
 
     // Pool
     pub fn send_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client
             .send_transaction(tx.into())
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn tx_pool_info(&mut self) -> Result<types::TxPoolInfo, String> {
         self.client
             .tx_pool_info()
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
@@ -330,34 +351,27 @@ impl HttpRpcClient {
     pub fn get_blockchain_info(&mut self) -> Result<types::ChainInfo, String> {
         self.client
             .get_blockchain_info()
-            .call()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
     pub fn get_peers_state(&mut self) -> Result<Vec<PeerState>, String> {
-        self.client
-            .get_peers_state()
-            .call()
-            .map_err(|err| err.to_string())
+        self.client.get_peers_state().map_err(|err| err.to_string())
     }
 
     // IntegrationTest
     pub fn add_node(&mut self, peer_id: String, address: String) -> Result<(), String> {
         self.client
             .add_node(peer_id, address)
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn remove_node(&mut self, peer_id: String) -> Result<(), String> {
         self.client
             .remove_node(peer_id)
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client
             .broadcast_transaction(tx.into())
-            .call()
             .map_err(|err| err.to_string())
     }
 
@@ -374,13 +388,11 @@ impl HttpRpcClient {
                 proposals_limit.map(Into::into),
                 max_version.map(Into::into),
             )
-            .call()
             .map_err(|err| err.to_string())
     }
     pub fn submit_block(&mut self, work_id: String, data: packed::Block) -> Result<H256, String> {
         self.client
             .submit_block(work_id, data.into())
-            .call()
             .map_err(|err| err.to_string())
     }
 }

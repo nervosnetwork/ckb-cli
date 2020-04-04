@@ -268,7 +268,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_block(hash)
-                        .call()
                         .map(RawOptionBlockView)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -285,7 +284,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_block_by_number(BlockNumber::from(number))
-                        .call()
                         .map(RawOptionBlockView)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -311,7 +309,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_cellbase_output_capacity_details(hash)
-                        .call()
                         .map(RawOptionBlockReward)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -337,7 +334,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                             BlockNumber::from(from_number),
                             BlockNumber::from(to_number),
                         )
-                        .call()
                         .map(RawCellOutputWithOutPoints)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -355,7 +351,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_current_epoch()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -371,7 +366,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_epoch_by_number(EpochNumber::from(number))
-                        .call()
                         .map(RawOptionEpochView)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -391,7 +385,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_header(hash)
-                        .call()
                         .map(RawOptionHeaderView)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -408,7 +401,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_header_by_number(BlockNumber::from(number))
-                        .call()
                         .map(RawOptionHeaderView)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -435,7 +427,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_live_cell(out_point.into(), with_data)
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -449,7 +440,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_tip_block_number()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -466,7 +456,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_tip_header()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -482,7 +471,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_transaction(hash)
-                        .call()
                         .map(RawOptionTransactionWithStatus)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -516,7 +504,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                             Uint64::from(u64::from(perpage)),
                             Some(reverse_order),
                         )
-                        .call()
                         .map(RawLiveCells)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -549,7 +536,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                             Uint64::from(u64::from(perpage)),
                             Some(reverse_order),
                         )
-                        .call()
                         .map(RawCellTransactions)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -576,7 +562,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .index_lock_hash(hash, index_from.map(BlockNumber::from))
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -591,7 +576,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_banned_addresses()
-                        .call()
                         .map(RawBannedAddrList)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -606,7 +590,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_peers()
-                        .call()
                         .map(RawNodes)
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
@@ -621,7 +604,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .local_node_info()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -654,7 +636,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .tx_pool_info()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
@@ -669,7 +650,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_blockchain_info()
-                        .call()
                         .map_err(|err| err.to_string())?;
                     Ok(resp.render(format, color))
                 } else {
