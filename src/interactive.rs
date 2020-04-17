@@ -69,7 +69,7 @@ impl InteractiveEnv {
 
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
-        let raw_rpc_client = RawHttpRpcClient::from_uri(config.get_url());
+        let raw_rpc_client = RawHttpRpcClient::new(config.get_url());
         let key_store = get_key_store(&ckb_cli_dir)?;
         Ok(InteractiveEnv {
             config,
@@ -232,7 +232,7 @@ impl InteractiveEnv {
                         Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
                         self.rpc_client = HttpRpcClient::new(self.config.get_url().to_string());
-                        self.raw_rpc_client = RawHttpRpcClient::from_uri(self.config.get_url());
+                        self.raw_rpc_client = RawHttpRpcClient::new(self.config.get_url());
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;

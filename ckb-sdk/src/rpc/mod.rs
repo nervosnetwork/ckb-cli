@@ -2,7 +2,7 @@ mod client;
 mod primitive;
 mod types;
 
-pub use client::{HttpRpcClient, RawHttpRpcClient, RawRpcClient};
+pub use client::{HttpRpcClient, RawHttpRpcClient};
 pub use primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
 pub use types::{
     Alert, AlertMessage, BannedAddr, Block, BlockReward, BlockView, Byte32, CellDep, CellInput,

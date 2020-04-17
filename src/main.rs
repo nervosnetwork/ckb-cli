@@ -89,7 +89,7 @@ fn main() -> Result<(), io::Error> {
     let api_uri = config.get_url().to_string();
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::new(api_uri.clone());
-    let mut raw_rpc_client = RawHttpRpcClient::from_uri(api_uri.as_str());
+    let mut raw_rpc_client = RawHttpRpcClient::new(api_uri.as_str());
     check_alerts(&mut rpc_client);
     config.set_network(get_network_type(&mut rpc_client).ok());
 
