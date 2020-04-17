@@ -133,11 +133,11 @@ impl CliSubCommand for MoleculeSubCommand {
                     "Header" => {
                         decode_to_json::<packed::Header, json_types::Header>(&binary, format, color)
                     }
-                    "UncleBlock" => {
-                        decode_to_json::<packed::WitnessArgs, WitnessArgs>(&binary, format, color)
-                    }
+                    "UncleBlock" => decode_to_json::<packed::UncleBlock, json_types::UncleBlock>(
+                        &binary, format, color,
+                    ),
                     "Block" => {
-                        decode_to_json::<packed::WitnessArgs, WitnessArgs>(&binary, format, color)
+                        decode_to_json::<packed::Block, json_types::Block>(&binary, format, color)
                     }
                     "CellbaseWitness" => {
                         decode_to_json::<packed::CellbaseWitness, CellbaseWitness>(
@@ -191,11 +191,11 @@ impl CliSubCommand for MoleculeSubCommand {
                     "Header" => {
                         encode_from_json::<packed::Header, json_types::Header>(content.as_str())
                     }
-                    "UncleBlock" => {
-                        encode_from_json::<packed::WitnessArgs, WitnessArgs>(content.as_str())
-                    }
+                    "UncleBlock" => encode_from_json::<packed::UncleBlock, json_types::UncleBlock>(
+                        content.as_str(),
+                    ),
                     "Block" => {
-                        encode_from_json::<packed::WitnessArgs, WitnessArgs>(content.as_str())
+                        encode_from_json::<packed::Block, json_types::Block>(content.as_str())
                     }
                     "CellbaseWitness" => {
                         encode_from_json::<packed::CellbaseWitness, CellbaseWitness>(
