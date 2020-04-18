@@ -211,7 +211,7 @@ fn main() -> Result<(), io::Error> {
     Ok(())
 }
 
-fn get_version() -> Version {
+pub fn get_version() -> Version {
     let major = env!("CARGO_PKG_VERSION_MAJOR")
         .parse::<u8>()
         .expect("CARGO_PKG_VERSION_MAJOR parse success");
