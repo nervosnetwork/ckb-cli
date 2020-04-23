@@ -19,13 +19,16 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use std::fs;
+use std::io::Read;
+use std::path::PathBuf;
 
 use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
+        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, read_password, serialize_signature},
     printer::{OutputFormat, Printable},
@@ -151,10 +154,17 @@ impl<'a> UtilSubCommand<'a> {
                     ),
                 SubCommand::with_name("eaglesong")
                     .about("Hash binary use eaglesong algorithm")
-                    .arg(binary_hex_arg.clone()),
+                    .arg(binary_hex_arg.clone().help("The binary in hex format to hash")),
                 SubCommand::with_name("blake2b")
                     .about("Hash binary use blake2b algorithm (personalization: 'ckb-default-hash')")
-                    .arg(binary_hex_arg.clone())
+                    .arg(binary_hex_arg.clone().required(false).help("The binary in hex format to hash"))
+                    .arg(
+                        Arg::with_name("binary-path")
+                            .long("binary-path")
+                            .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .help("The binary file path")
+                    )
                     .arg(
                         Arg::with_name("prefix-160")
                             .long("prefix-160")
@@ -431,7 +441,20 @@ message = "0x"
                 Ok(format!("{:#x}", H256::from(builder.finalize())))
             }
             ("blake2b", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let binary: Vec<u8> = HexParser
+                    .from_matches_opt(m, "binary-hex", false)?
+                    .ok_or_else(String::new)
+                    .or_else(|_| -> Result<_, String> {
+                        let path: PathBuf = FilePathParser::new(true)
+                            .from_matches(m, "binary-path")
+                            .map_err(|err| {
+                                format!("<binary-hex> or <binary-path> is required: {}", err)
+                            })?;
+                        let mut data = Vec::new();
+                        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                        file.read_to_end(&mut data).map_err(|err| err.to_string())?;
+                        Ok(data)
+                    })?;
                 let hash_data = blake2b_256(&binary);
                 let slice = if m.is_present("prefix-160") {
                     &hash_data[0..20]
