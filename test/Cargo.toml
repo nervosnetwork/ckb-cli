@@ -1,6 +1,6 @@
 [package]
 name = "cli-test"
-version = "0.31.0"
+version = "0.32.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>"]
 edition = "2018"
 
@@ -14,11 +14,11 @@ env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
 ckb-sdk = { path = "../ckb-sdk" }
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-rc1" }
-ckb-app-config = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-rc1" }
-ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-rc1" }
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-rc1", features = ["secp"] }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.31.0-rc1" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1" }
+ckb-app-config = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1" }
+ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1", features = ["secp"] }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1" }
 regex = "1.1.6"
 
 # Prevent this from interfering with workspaces
