@@ -16,7 +16,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -45,37 +45,37 @@ impl<'a> MockTxSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static, 'static> {
+    pub fn subcommand(name: &'static str) -> App<'static> {
         let arg_tx_file = Arg::with_name("tx-file")
             .long("tx-file")
             .takes_value(true)
             .required(true)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .help("Mock transaction data file (format: json)");
+            .about("Mock transaction data file (format: json)");
         let arg_output_file = Arg::with_name("output-file")
             .long("output-file")
             .takes_value(true)
             .validator(|input| FilePathParser::new(false).validate(input))
-            .help("Completed mock transaction data file (format: json)");
-        SubCommand::with_name(name)
+            .about("Completed mock transaction data file (format: json)");
+        App::new(name)
             .about("Handle mock transactions (verify/send)")
             .subcommands(vec![
-                SubCommand::with_name("template")
+                App::new("template")
                     .about("Print mock transaction template")
                     .arg(lock_arg().required(true).clone().required(false))
-                    .arg(arg_output_file.clone().help("Save to a output file")),
-                SubCommand::with_name("complete")
+                    .arg(arg_output_file.clone().about("Save to a output file")),
+                App::new("complete")
                     .about("Complete the mock transaction")
                     .arg(arg_tx_file.clone())
                     .arg(
                         arg_output_file
                             .clone()
-                            .help("Completed mock transaction data file (format: json)"),
+                            .about("Completed mock transaction data file (format: json)"),
                     ),
-                SubCommand::with_name("verify")
+                App::new("verify")
                     .about("Verify a mock transaction in local")
                     .arg(arg_tx_file.clone()),
-                SubCommand::with_name("send")
+                App::new("send")
                     .about("Complete then send a transaction")
                     .arg(arg_tx_file.clone()),
             ])
@@ -230,7 +230,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand("mock-tx").generate_usage()),
         }
     }
 }

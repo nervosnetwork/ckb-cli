@@ -8,7 +8,7 @@ use ckb_sdk::{
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 
 use super::CliSubCommand;
 use crate::utils::{
@@ -30,34 +30,34 @@ impl<'a> AccountSubCommand<'a> {
         AccountSubCommand { key_store }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static, 'static> {
+    pub fn subcommand(name: &'static str) -> App<'static> {
         let arg_privkey_path = Arg::with_name("privkey-path")
             .long("privkey-path")
             .takes_value(true);
         let arg_extended_privkey_path = Arg::with_name("extended-privkey-path")
             .long("extended-privkey-path")
             .takes_value(true)
-            .help("Extended private key path (include master private key and chain code)");
-        SubCommand::with_name(name)
+            .about("Extended private key path (include master private key and chain code)");
+        App::new(name)
             .about("Manage accounts")
             .subcommands(vec![
-                SubCommand::with_name("list").about("List all accounts"),
-                SubCommand::with_name("new").about("Create a new account and print related information."),
-                SubCommand::with_name("import")
+                App::new("list").about("List all accounts"),
+                App::new("new").about("Create a new account and print related information."),
+                App::new("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
                     .arg(
                         arg_privkey_path
                             .clone()
                             .required_unless("extended-privkey-path")
                             .validator(|input| PrivkeyPathParser.validate(input))
-                            .help("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
+                            .about("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
                     )
                     .arg(arg_extended_privkey_path
                          .clone()
                          .required_unless("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
                     ),
-                SubCommand::with_name("import-keystore")
+                App::new("import-keystore")
                     .about("Import key from encrypted keystore json file and create a new account.")
                     .arg(
                         Arg::with_name("path")
@@ -65,9 +65,9 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .required(true)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("The keystore file path (json format)")
+                            .about("The keystore file path (json format)")
                     ),
-                SubCommand::with_name("unlock")
+                App::new("unlock")
                     .about("Unlock an account")
                     .arg(lock_arg().required(true))
                     .arg(
@@ -76,21 +76,21 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| DurationParser.validate(input))
                             .required(true)
-                            .help("How long before the key expired, format: 30s, 15m, 1h (repeat unlock will increase the time)")
+                            .about("How long before the key expired, format: 30s, 15m, 1h (repeat unlock will increase the time)")
                     ),
-                SubCommand::with_name("update")
+                App::new("update")
                     .about("Update password of an account")
                     .arg(lock_arg().required(true)),
-                SubCommand::with_name("export")
+                App::new("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
                     .arg(lock_arg().required(true))
                     .arg(
                         arg_extended_privkey_path
                             .clone()
                             .required(true)
-                            .help("Output extended private key path (PrivKey + ChainCode)")
+                            .about("Output extended private key path (PrivKey + ChainCode)")
                     ),
-                SubCommand::with_name("bip44-addresses")
+                App::new("bip44-addresses")
                     .about("Extended receiving/change Addresses (see: BIP-44)")
                     .arg(
                         Arg::with_name("from-receiving-index")
@@ -98,7 +98,7 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .default_value("0")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Start from receiving path index")
+                            .about("Start from receiving path index")
                     )
                     .arg(
                         Arg::with_name("receiving-length")
@@ -106,7 +106,7 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .default_value("20")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Receiving addresses length")
+                            .about("Receiving addresses length")
                     )
                     .arg(
                         Arg::with_name("from-change-index")
@@ -114,7 +114,7 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .default_value("0")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Start from change path index")
+                            .about("Start from change path index")
                     )
                     .arg(
                         Arg::with_name("change-length")
@@ -122,10 +122,10 @@ impl<'a> AccountSubCommand<'a> {
                             .takes_value(true)
                             .default_value("10")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Change addresses length")
+                            .about("Change addresses length")
                     )
                     .arg(lock_arg().required(true)),
-                SubCommand::with_name("extended-address")
+                App::new("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(lock_arg().required(true))
                     .arg(
@@ -133,7 +133,7 @@ impl<'a> AccountSubCommand<'a> {
                             .long("path")
                             .takes_value(true)
                             .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-                            .help("The address path")
+                            .about("The address path")
                     ),
             ])
     }
@@ -359,7 +359,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 });
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand("account").generate_usage()),
         }
     }
 }

@@ -16,7 +16,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
 impl<'a> CliSubCommand for DAOSubCommand<'a> {
@@ -86,32 +86,32 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                 });
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand().generate_usage()),
         }
     }
 }
 
 impl<'a> DAOSubCommand<'a> {
-    pub fn subcommand() -> App<'static, 'static> {
-        SubCommand::with_name("dao")
+    pub fn subcommand() -> App<'static> {
+        App::new("dao")
             .about("Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils")
             .subcommands(vec![
-                SubCommand::with_name("deposit")
+                App::new("deposit")
                     .about("Deposit capacity into NervosDAO")
                     .args(&TransactArgs::args())
                     .arg(arg::capacity().required(true)),
-                SubCommand::with_name("prepare")
+                App::new("prepare")
                     .about("Prepare specified cells from NervosDAO")
                     .args(&TransactArgs::args())
                     .arg(arg::out_point().required(true).multiple(true)),
-                SubCommand::with_name("withdraw")
+                App::new("withdraw")
                     .about("Withdraw specified cells from NervosDAO")
                     .args(&TransactArgs::args())
                     .arg(arg::out_point().required(true).multiple(true)),
-                SubCommand::with_name("query-deposited-cells")
+                App::new("query-deposited-cells")
                     .about("Query NervosDAO deposited capacity by lock script hash or address")
                     .args(&QueryArgs::args()),
-                SubCommand::with_name("query-prepared-cells")
+                App::new("query-prepared-cells")
                     .about("Query NervosDAO prepared capacity by lock script hash or address")
                     .args(&QueryArgs::args())
             ])
@@ -142,7 +142,7 @@ impl QueryArgs {
         Ok(Self { lock_hash })
     }
 
-    fn args<'a, 'b>() -> Vec<Arg<'a, 'b>> {
+    fn args<'a>() -> Vec<Arg<'a>> {
         vec![arg::lock_hash(), arg::address()]
     }
 }
@@ -181,10 +181,10 @@ impl TransactArgs {
         })
     }
 
-    fn args<'a, 'b>() -> Vec<Arg<'a, 'b>> {
+    fn args<'a>() -> Vec<Arg<'a>> {
         vec![
-            arg::privkey_path().required_unless(arg::from_account().b.name),
-            arg::from_account().required_unless(arg::privkey_path().b.name),
+            arg::privkey_path().required_unless(arg::from_account().get_name()),
+            arg::from_account().required_unless(arg::privkey_path().get_name()),
             arg::tx_fee().required(true),
         ]
     }

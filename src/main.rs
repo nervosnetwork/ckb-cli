@@ -10,7 +10,7 @@ use ckb_build_info::Version;
 use ckb_sdk::{rpc::RawHttpRpcClient, HttpRpcClient};
 use ckb_util::RwLock;
 use clap::crate_version;
-use clap::{App, AppSettings, Arg, SubCommand};
+use clap::{App, AppSettings, Arg};
 #[cfg(unix)]
 use subcommands::TuiSubCommand;
 
@@ -245,7 +245,7 @@ pub fn get_version() -> Version {
     }
 }
 
-pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, 'a> {
+pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
     let app = App::new("ckb-cli")
         .version(version_short)
         .long_version(version_long)
@@ -265,7 +265,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .long("url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .help("RPC API server url"),
+                .about("RPC API server url"),
         )
         .arg(
             Arg::with_name("output-format")
@@ -274,36 +274,36 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a, '
                 .possible_values(&["yaml", "json"])
                 .default_value("yaml")
                 .global(true)
-                .help("Select output format"),
+                .about("Select output format"),
         )
         .arg(
             Arg::with_name("no-color")
                 .long("no-color")
                 .global(true)
-                .help("Do not highlight(color) output json"),
+                .about("Do not highlight(color) output json"),
         )
         .arg(
             Arg::with_name("debug")
                 .long("debug")
                 .global(true)
-                .help("Display request parameters"),
+                .about("Display request parameters"),
         )
         .arg(
             Arg::with_name("wait-for-sync")
                 .long("wait-for-sync")
                 .global(true)
-                .help(
+                .about(
                     "Ensure the index-store synchronizes completely before command being executed",
                 ),
         );
 
     #[cfg(unix)]
-    let app = app.subcommand(SubCommand::with_name("tui").about("Enter TUI mode"));
+    let app = app.subcommand(App::new("tui").about("Enter TUI mode"));
 
     app
 }
 
-pub fn build_interactive() -> App<'static, 'static> {
+pub fn build_interactive() -> App<'static> {
     App::new("interactive")
         .version(crate_version!())
         .global_setting(AppSettings::NoBinaryName)
@@ -311,24 +311,24 @@ pub fn build_interactive() -> App<'static, 'static> {
         .global_setting(AppSettings::DeriveDisplayOrder)
         .global_setting(AppSettings::DisableVersion)
         .subcommand(
-            SubCommand::with_name("config")
+            App::new("config")
                 .about("Config environment")
                 .arg(
                     Arg::with_name("url")
                         .long("url")
                         .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
-                        .help("Config RPC API url"),
+                        .about("Config RPC API url"),
                 )
                 .arg(
                     Arg::with_name("color")
                         .long("color")
-                        .help("Switch color for rpc interface"),
+                        .about("Switch color for rpc interface"),
                 )
                 .arg(
                     Arg::with_name("debug")
                         .long("debug")
-                        .help("Switch debug mode"),
+                        .about("Switch debug mode"),
                 )
                 .arg(
                     Arg::with_name("output-format")
@@ -336,22 +336,22 @@ pub fn build_interactive() -> App<'static, 'static> {
                         .takes_value(true)
                         .possible_values(&["yaml", "json"])
                         .default_value("yaml")
-                        .help("Select output format"),
+                        .about("Select output format"),
                 )
                 .arg(
                     Arg::with_name("completion_style")
                         .long("completion_style")
-                        .help("Switch completion style"),
+                        .about("Switch completion style"),
                 )
                 .arg(
                     Arg::with_name("edit_style")
                         .long("edit_style")
-                        .help("Switch edit style"),
+                        .about("Switch edit style"),
                 ),
         )
-        .subcommand(SubCommand::with_name("info").about("Display global variables"))
+        .subcommand(App::new("info").about("Display global variables"))
         .subcommand(
-            SubCommand::with_name("exit")
+            App::new("exit")
                 .visible_alias("quit")
                 .about("Exit the interactive interface"),
         )
