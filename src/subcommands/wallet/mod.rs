@@ -11,7 +11,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
+use clap::{App, AppSettings, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
 use super::CliSubCommand;
@@ -99,17 +99,17 @@ impl<'a> WalletSubCommand<'a> {
         })
     }
 
-    pub fn subcommand() -> App<'static, 'static> {
-        SubCommand::with_name("wallet")
+    pub fn subcommand() -> App<'static> {
+        App::new("wallet")
             .about("Transfer / query balance (with local index) / key utils")
             .subcommands(vec![
-                SubCommand::with_name("transfer")
+                App::new("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(
                         arg::from_account()
-                            .required_unless(arg::privkey_path().b.name)
-                            .conflicts_with(arg::privkey_path().b.name),
+                            .required_unless(arg::privkey_path().get_name())
+                            .conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(arg::from_locked_address())
                     .arg(arg::to_address().required(true))
@@ -118,8 +118,10 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::capacity().required(true))
                     .arg(arg::tx_fee().required(true))
                     .arg(arg::derive_receiving_address_length())
-                    .arg(arg::derive_change_address().conflicts_with(arg::privkey_path().b.name)),
-                SubCommand::with_name("get-capacity")
+                    .arg(
+                        arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
+                    ),
+                App::new("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
                     .arg(arg::lock_hash())
                     .arg(arg::address())
@@ -127,8 +129,8 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::lock_arg())
                     .arg(arg::derive_receiving_address_length())
                     .arg(arg::derive_change_address_length())
-                    .arg(arg::derived().conflicts_with(arg::lock_hash().b.name)),
-                SubCommand::with_name("get-live-cells")
+                    .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
+                App::new("get-live-cells")
                     .about("Get live cells by lock/type/code  hash")
                     .arg(arg::lock_hash())
                     .arg(arg::type_hash())
@@ -140,13 +142,13 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(
                         Arg::with_name("fast-mode")
                             .long("fast-mode")
-                            .help("Only visit current range (by --from and --to) of live cells"),
+                            .about("Only visit current range (by --from and --to) of live cells"),
                     ),
                 // Move to index subcommand
-                SubCommand::with_name("db-metrics")
+                App::new("db-metrics")
                     .about("Show index database metrics")
                     .setting(AppSettings::Hidden),
-                SubCommand::with_name("top-capacity")
+                App::new("top-capacity")
                     .about("Show top n capacity owned by lock script hash")
                     .arg(arg::top_n()),
             ])
@@ -721,7 +723,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let resp = serde_json::to_value(metrcis).map_err(|err| err.to_string())?;
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand().generate_usage()),
         }
     }
 }

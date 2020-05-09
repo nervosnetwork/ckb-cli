@@ -27,21 +27,18 @@ static DEFAULT_BREAK_CHARS: [u8; 17] = [
 #[cfg(windows)]
 static ESCAPE_CHAR: Option<char> = None;
 
-pub struct CkbCompleter<'a, 'b>
-where
-    'a: 'b,
-{
-    clap_app: Arc<clap::App<'a, 'b>>,
+pub struct CkbCompleter<'a> {
+    clap_app: Arc<clap::App<'a>>,
 }
 
-impl<'a, 'b> CkbCompleter<'a, 'b> {
-    pub fn new(clap_app: clap::App<'a, 'b>) -> Self {
+impl<'a> CkbCompleter<'a> {
+    pub fn new(clap_app: clap::App<'a>) -> Self {
         CkbCompleter {
             clap_app: Arc::new(clap_app),
         }
     }
 
-    pub fn get_completions(app: &Arc<clap::App<'a, 'b>>, args: &[String]) -> Vec<(String, String)> {
+    pub fn get_completions(app: &Arc<clap::App<'a>>, args: &[String]) -> Vec<(String, String)> {
         let args_set = args.iter().collect::<HashSet<&String>>();
         let switched_completions =
             |short: Option<char>, long: Option<&str>, multiple: bool, required: bool| {
@@ -67,39 +64,23 @@ impl<'a, 'b> CkbCompleter<'a, 'b> {
                     names
                 }
             };
-        app.p
-            .subcommands()
+        app.get_subcommands()
+            .iter()
             .map(|app| {
                 [
-                    vec![(app.p.meta.name.clone(), app.p.meta.name.clone())],
-                    app.p
-                        .meta
-                        .aliases
-                        .as_ref()
-                        .map(|aliases| {
-                            aliases
-                                .iter()
-                                .map(|(alias, _)| ((*alias).to_owned(), (*alias).to_owned()))
-                                .collect::<Vec<(String, String)>>()
-                        })
-                        .unwrap_or_else(|| vec![]),
+                    vec![(app.get_name().to_owned(), app.get_name().to_owned())],
+                    app.get_all_aliases()
+                        .map(|alias| (alias.to_owned(), alias.to_owned()))
+                        .collect::<Vec<_>>(),
                 ]
                 .concat()
             })
-            .chain(app.p.flags().map(|a| {
+            .chain(app.get_arguments().iter().map(|a| {
                 switched_completions(
-                    a.s.short,
-                    a.s.long,
-                    a.b.is_set(clap::ArgSettings::Multiple),
-                    a.b.is_set(clap::ArgSettings::Required),
-                )
-            }))
-            .chain(app.p.opts().map(|a| {
-                switched_completions(
-                    a.s.short,
-                    a.s.long,
-                    a.b.is_set(clap::ArgSettings::Multiple),
-                    a.b.is_set(clap::ArgSettings::Required),
+                    a.get_short(),
+                    a.get_long(),
+                    a.is_set(clap::ArgSettings::MultipleValues),
+                    a.is_set(clap::ArgSettings::Required),
                 )
             }))
             .collect::<Vec<Vec<(String, String)>>>()
@@ -107,19 +88,13 @@ impl<'a, 'b> CkbCompleter<'a, 'b> {
     }
 
     pub fn find_subcommand<'s, Iter: iter::Iterator<Item = &'s str>>(
-        app: Arc<clap::App<'a, 'b>>,
+        app: Arc<clap::App<'a>>,
         mut prefix_names: iter::Peekable<Iter>,
-    ) -> Option<Arc<clap::App<'a, 'b>>> {
+    ) -> Option<Arc<clap::App<'a>>> {
         if let Some(name) = prefix_names.next() {
-            for inner_app in &(app.p.subcommands) {
-                if inner_app.p.meta.name == name
-                    || inner_app
-                        .p
-                        .meta
-                        .aliases
-                        .as_ref()
-                        .map(|aliases| aliases.iter().any(|&(alias, _)| alias == name))
-                        .unwrap_or(false)
+            for inner_app in app.get_subcommands().iter() {
+                if inner_app.get_name() == name
+                    || inner_app.get_all_aliases().any(|alias| alias == name)
                 {
                     return if prefix_names.peek().is_none() {
                         Some(Arc::new(inner_app.to_owned()))
@@ -129,7 +104,7 @@ impl<'a, 'b> CkbCompleter<'a, 'b> {
                 }
             }
         }
-        if prefix_names.peek().is_none() || app.p.subcommands.is_empty() {
+        if prefix_names.peek().is_none() || app.get_subcommands().is_empty() {
             Some(app)
         } else {
             None
@@ -137,7 +112,7 @@ impl<'a, 'b> CkbCompleter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Completer for CkbCompleter<'a, 'b> {
+impl<'a> Completer for CkbCompleter<'a> {
     type Candidate = Pair;
 
     fn complete(
@@ -206,9 +181,9 @@ impl<'a, 'b> Completer for CkbCompleter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Helper for CkbCompleter<'a, 'b> {}
+impl<'a> Helper for CkbCompleter<'a> {}
 
-impl<'a, 'b> Highlighter for CkbCompleter<'a, 'b> {
+impl<'a> Highlighter for CkbCompleter<'a> {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         Owned("\x1b[1m".to_owned() + hint + "\x1b[m")
     }
@@ -235,7 +210,7 @@ impl<'a, 'b> Highlighter for CkbCompleter<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Hinter for CkbCompleter<'a, 'b> {
+impl<'a> Hinter for CkbCompleter<'a> {
     fn hint(&self, _line: &str, _pos: usize, _context: &Context) -> Option<String> {
         None
     }

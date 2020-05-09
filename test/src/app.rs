@@ -33,7 +33,7 @@ impl App {
         &self.cli_bin
     }
 
-    fn matches<'a>() -> clap::ArgMatches<'a> {
+    fn matches() -> clap::ArgMatches {
         clap::App::new("ckb-cli-test")
             .arg(
                 clap::Arg::with_name("ckb-bin")
@@ -41,7 +41,7 @@ impl App {
                     .takes_value(true)
                     .required(true)
                     .value_name("PATH")
-                    .help("Path to ckb executable"),
+                    .about("Path to ckb executable"),
             )
             .arg(
                 clap::Arg::with_name("cli-bin")
@@ -49,7 +49,7 @@ impl App {
                     .takes_value(true)
                     .required(true)
                     .value_name("PATH")
-                    .help("Path to ckb-cli executable"),
+                    .about("Path to ckb-cli executable"),
             )
             .get_matches()
     }
