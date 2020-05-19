@@ -410,7 +410,6 @@ version = "0.1.0"
 dependencies = [
  "ckb-index",
  "ckb-jsonrpc-types",
- "ckb-sdk",
  "ckb-types",
  "faster-hex 0.3.1",
  "serde",

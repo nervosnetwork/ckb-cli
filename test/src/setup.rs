@@ -14,18 +14,29 @@ use std::time::{Duration, Instant};
 pub struct Setup {
     ckb_bin: String,
     cli_bin: String,
+    pub keystore_plugin_bin: String,
     ckb_dir: String,
+    _ckb_cli_dir: String,
     rpc_port: u16,
     miner: Option<Miner>,
 }
 
 // TODO Make CLI base_dir configurable
 impl Setup {
-    pub fn new(ckb_bin: String, cli_bin: String, ckb_dir: String, rpc_port: u16) -> Self {
+    pub fn new(
+        ckb_bin: String,
+        cli_bin: String,
+        keystore_plugin_bin: String,
+        ckb_dir: String,
+        ckb_cli_dir: String,
+        rpc_port: u16,
+    ) -> Self {
         Self {
             ckb_bin,
             cli_bin,
+            keystore_plugin_bin,
             ckb_dir,
+            _ckb_cli_dir: ckb_cli_dir,
             rpc_port,
             miner: None,
         }
@@ -87,9 +98,13 @@ impl Setup {
             if stderr.contains("index database may not ready") {
                 continue;
             } else if !stderr.is_empty() && !stderr.contains("No previous history.") {
-                return stderr.to_string();
+                let err_string = stderr.to_string();
+                log::debug!("stderr: {}", err_string);
+                return err_string;
             } else {
-                return extract_output(stdout.to_string());
+                let output = extract_output(stdout.to_string());
+                log::debug!("stdout: {}", output);
+                return output;
             }
         }
     }

@@ -56,6 +56,7 @@ impl Spec for WalletTransfer {
             "wallet get-live-cells --address {}",
             ACCOUNT1_ADDRESS
         ));
+        log::info!("output={}, tx_hash: {}", output, tx_hash);
         assert!(output.contains(&tx_hash));
 
         // Transaction fee can not be more than 1.0 CKB
