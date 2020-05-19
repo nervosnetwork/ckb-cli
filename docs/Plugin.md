@@ -224,6 +224,57 @@ The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package 
         "m/44'/309'/0'/0/19",
         // The message to sign (H256)
         "0xe203d8260a0eb9d0ec8f69976e2108d9e50d0c8fb1920a67d10d61cb9993e284",
+        // The sign target, a transaction or any message
+        {
+          "type": "transaction",
+          "content": {
+            "version": "0x0",
+            "cell_deps": [
+              {
+                "out_point": {
+                  "tx_hash": "0xd6ae21528966b5926a95b5dfa75281e91f071af492ba7879aff29d671c7bb523",
+                  "index": "0x0"
+                },
+                "dep_type": "dep_group"
+              }
+            ],
+            "header_deps": [],
+            "inputs": [
+              {
+                "since": "0x0",
+                "previous_output": {
+                  "tx_hash": "0xb79cc8daf20601d5cefda345951e21390fc5e2c6dab33c7a39207f64fb947731",
+                  "index": "0x7"
+                }
+              }
+            ],
+            "outputs": [
+              {
+                "capacity": "0x174876e800",
+                "lock": {
+                  "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+                  "hash_type": "type",
+                  "args": "0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"
+                },
+                "type": null
+              },
+              {
+                "capacity": "0x1bc16d5005b88180",
+                "lock": {
+                  "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+                  "hash_type": "type",
+                  "args": "0xc8328aabcd9b9e8e64fbc566c4385c3bdeb219d7"
+                },
+                "type": null
+              }
+            ],
+            "outputs_data": [
+              "0x",
+              "0x"
+            ],
+            "witnesses": []
+          }
+        },
         // Sign use recoverable signature
         true,
         // (optional) The password to decrypt the account
