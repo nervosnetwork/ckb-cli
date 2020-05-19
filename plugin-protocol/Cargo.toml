@@ -10,6 +10,7 @@ edition = "2018"
 ckb-sdk = { path = "../ckb-sdk" }
 ckb-index = { path = "../ckb-index" }
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
 serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 serde_json = "1.0"

@@ -3,6 +3,7 @@ mod index;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use ckb_jsonrpc_types as rpc_types;
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
@@ -15,7 +16,7 @@ use clap::{App, AppSettings, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
-use crate::plugin::{KeyStoreHandler, PluginManager};
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -741,37 +742,40 @@ fn get_keystore_signer(
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        let path: &[_] = if lock_args.contains(&account) {
-            &[]
-        } else {
-            match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
-                None => return Ok(None),
-                Some(path) => path.as_ref(),
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &rpc_types::Transaction| {
+            let path: &[_] = if lock_args.contains(&account) {
+                &[]
+            } else {
+                match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
+                    None => return Ok(None),
+                    Some(path) => path.as_ref(),
+                }
+            };
+            if message == &h256!("0x0") {
+                return Ok(Some([0u8; 65]));
             }
-        };
-        if message == &h256!("0x0") {
-            return Ok(Some([0u8; 65]));
-        }
-        let data = keystore.sign(
-            account.clone(),
-            path,
-            message.clone(),
-            password.clone(),
-            true,
-        )?;
-        if data.len() != 65 {
-            Err(format!(
-                "Invalid signature data lenght: {}, data: {:?}",
-                data.len(),
-                data
-            ))
-        } else {
-            let mut data_bytes = [0u8; 65];
-            data_bytes.copy_from_slice(&data[..]);
-            Ok(Some(data_bytes))
-        }
-    })
+            let data = keystore.sign(
+                account.clone(),
+                path,
+                message.clone(),
+                SignTarget::Transaction(tx.clone()),
+                password.clone(),
+                true,
+            )?;
+            if data.len() != 65 {
+                Err(format!(
+                    "Invalid signature data lenght: {}, data: {:?}",
+                    data.len(),
+                    data
+                ))
+            } else {
+                let mut data_bytes = [0u8; 65];
+                data_bytes.copy_from_slice(&data[..]);
+                Ok(Some(data_bytes))
+            }
+        },
+    )
 }
 
 #[derive(Clone, Debug)]

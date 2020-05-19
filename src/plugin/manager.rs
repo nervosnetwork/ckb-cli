@@ -10,8 +10,8 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use ckb_index::LiveCellInfo;
+use ckb_jsonrpc_types::{BlockNumber, HeaderView, Script};
 use ckb_sdk::{
-    rpc::{HeaderView, Script},
     wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey},
     HttpRpcClient,
 };
@@ -23,7 +23,7 @@ use crate::utils::other::read_password;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
     JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,
-    PluginResponse, PluginRole, RpcRequest,
+    PluginResponse, PluginRole, RpcRequest, SignTarget,
 };
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
@@ -756,22 +756,32 @@ impl ServiceProvider {
                                     let response_result = match rpc_request {
                                         RpcRequest::GetBlock { hash } => {
                                             // TODO: handle error
-                                            rpc_client.get_block(hash).map(|data| {
+                                            rpc_client
+                                                .client()
+                                                .get_block(hash)
+                                                .map(|data| {
+                                                    PluginResponse::BlockViewOpt(Box::new(data))
+                                                })
+                                                .map_err(|err| err.to_string())
+                                        }
+                                        RpcRequest::GetBlockByNumber { number } => rpc_client
+                                            .client()
+                                            .get_block_by_number(BlockNumber::from(number))
+                                            .map(|data| {
                                                 PluginResponse::BlockViewOpt(Box::new(data))
                                             })
-                                        }
-                                        RpcRequest::GetBlockByNumber { number } => {
-                                            rpc_client.get_block_by_number(number).map(|data| {
-                                                PluginResponse::BlockViewOpt(Box::new(data))
-                                            })
-                                        }
+                                            .map_err(|err| err.to_string()),
                                         RpcRequest::GetBlockHash { number } => rpc_client
-                                            .get_block_hash(number)
-                                            .map(PluginResponse::H256Opt),
+                                            .client()
+                                            .get_block_hash(BlockNumber::from(number))
+                                            .map(PluginResponse::H256Opt)
+                                            .map_err(|err| err.to_string()),
                                         RpcRequest::GetCellbaseOutputCapacityDetails { hash } => {
                                             rpc_client
+                                                .client()
                                                 .get_cellbase_output_capacity_details(hash)
                                                 .map(PluginResponse::BlockRewardOpt)
+                                                .map_err(|err| err.to_string())
                                         } // TODO: more rpc methods
                                     };
                                     response_result.unwrap_or_else(|err| {
@@ -1293,6 +1303,7 @@ impl KeyStoreHandler {
         hash160: H160,
         path: &P,
         message: H256,
+        target: SignTarget,
         password: Option<String>,
         recoverable: bool,
     ) -> Result<Bytes, String> {
@@ -1301,6 +1312,7 @@ impl KeyStoreHandler {
             hash160,
             path,
             message,
+            target: Box::new(target),
             password,
             recoverable,
         };

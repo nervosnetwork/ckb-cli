@@ -88,7 +88,15 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     privkey: JsonBytes::from_vec(vec![3u8; 32]),
                     chain_code: JsonBytes::from_vec(vec![4u8; 32]),
                 },
-                KeyStoreRequest::Sign { recoverable, .. } => {
+                KeyStoreRequest::Sign {
+                    recoverable,
+                    target,
+                    ..
+                } => {
+                    eprintln!(
+                        "SignTaret: {}",
+                        serde_json::to_string_pretty(&target).unwrap()
+                    );
                     let signature = if recoverable {
                         vec![1u8; 65]
                     } else {

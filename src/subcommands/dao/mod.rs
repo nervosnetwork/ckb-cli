@@ -1,6 +1,6 @@
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
-use crate::plugin::{KeyStoreHandler, PluginManager};
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::index::IndexController;
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
@@ -9,7 +9,7 @@ use crate::utils::other::{
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
-use ckb_jsonrpc_types::JsonBytes;
+use ckb_jsonrpc_types::{self as rpc_types, JsonBytes};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
     GenesisInfo, HttpRpcClient, SignerFn,
@@ -279,7 +279,7 @@ impl<'a> DAOSubCommand<'a> {
                 }
             };
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
-            signer(&accounts, &digest)?.expect("signer missed")
+            signer(&accounts, &digest, &transaction.data().into())?.expect("signer missed")
         };
 
         witnesses[0] = init_witness
@@ -339,34 +339,37 @@ fn get_keystore_signer(
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                let data = keystore.sign(
-                    account.clone(),
-                    &[],
-                    message.clone(),
-                    password.clone(),
-                    true,
-                )?;
-                if data.len() != 65 {
-                    Err(format!(
-                        "Invalid signature data lenght: {}, data: {:?}",
-                        data.len(),
-                        data
-                    ))
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &rpc_types::Transaction| {
+            if lock_args.contains(&account) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
                 } else {
-                    let mut data_bytes = [0u8; 65];
-                    data_bytes.copy_from_slice(&data[..]);
-                    Ok(Some(data_bytes))
+                    let data = keystore.sign(
+                        account.clone(),
+                        &[],
+                        message.clone(),
+                        SignTarget::Transaction(tx.clone()),
+                        password.clone(),
+                        true,
+                    )?;
+                    if data.len() != 65 {
+                        Err(format!(
+                            "Invalid signature data lenght: {}, data: {:?}",
+                            data.len(),
+                            data
+                        ))
+                    } else {
+                        let mut data_bytes = [0u8; 65];
+                        data_bytes.copy_from_slice(&data[..]);
+                        Ok(Some(data_bytes))
+                    }
                 }
+            } else {
+                Ok(None)
             }
-        } else {
-            Ok(None)
-        }
-    })
+        },
+    )
 }
 
 fn take_by_out_points(

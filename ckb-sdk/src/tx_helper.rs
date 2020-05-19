@@ -1,9 +1,12 @@
 use ckb_hash::{blake2b_256, new_blake2b};
+use ckb_jsonrpc_types as rpc_types;
 use ckb_types::{
     bytes::{Bytes, BytesMut},
     core::{ScriptHashType, TransactionBuilder, TransactionView},
     h256,
-    packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{
+        self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script, Transaction, WitnessArgs,
+    },
     prelude::*,
     H160, H256,
 };
@@ -202,14 +205,13 @@ impl TxHelper {
         witnesses
     }
 
-    pub fn sign_inputs<S, C>(
+    pub fn sign_inputs<C>(
         &self,
-        mut signer: S,
+        mut signer: SignerFn,
         get_live_cell: C,
         skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
-        S: FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>,
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
     {
         let all_sighash_lock_args = self
@@ -239,14 +241,16 @@ impl TxHelper {
                 lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
                 lock_args
             };
-            if signer(&lock_args, &h256!("0x0"))?.is_some() {
+            if signer(&lock_args, &h256!("0x0"), &Transaction::default().into())?.is_some() {
                 let signature = build_signature(
-                    &self.transaction.hash(),
+                    &self.transaction,
                     input_size,
                     &idxs,
                     &witnesses,
                     self.multisig_configs.get(&multisig_hash160),
-                    |message: &H256| signer(&lock_args, message).map(|sig| sig.unwrap()),
+                    |message: &H256, tx: &rpc_types::Transaction| {
+                        signer(&lock_args, message, tx).map(|sig| sig.unwrap())
+                    },
                 )?;
                 signatures.insert(lock_arg, signature);
             }
@@ -361,7 +365,9 @@ impl TxHelper {
     }
 }
 
-pub type SignerFn = Box<dyn FnMut(&HashSet<H160>, &H256) -> Result<Option<[u8; 65]>, String>>;
+pub type SignerFn = Box<
+    dyn FnMut(&HashSet<H160>, &H256, &rpc_types::Transaction) -> Result<Option<[u8; 65]>, String>,
+>;
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct MultisigConfig {
@@ -518,8 +524,10 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
     }
 }
 
-pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>>(
-    tx_hash: &Byte32,
+pub fn build_signature<
+    S: FnMut(&H256, &rpc_types::Transaction) -> Result<[u8; SECP_SIGNATURE_SIZE], String>,
+>(
+    tx: &TransactionView,
     input_size: usize,
     input_group_idxs: &[usize],
     witnesses: &[packed::Bytes],
@@ -553,7 +561,7 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     };
 
     let mut blake2b = new_blake2b();
-    blake2b.update(tx_hash.as_slice());
+    blake2b.update(tx.hash().as_slice());
     blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
     blake2b.update(&init_witness.as_bytes());
     for idx in input_group_idxs.iter().skip(1).cloned() {
@@ -568,7 +576,7 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
     let message = H256::from(message);
-    signer(&message).map(|data| Bytes::from(data.to_vec()))
+    signer(&message, &tx.data().into()).map(|data| Bytes::from(data.to_vec()))
 }
 
 #[cfg(test)]

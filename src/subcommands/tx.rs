@@ -25,7 +25,7 @@ use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
-use crate::plugin::{KeyStoreHandler, PluginManager};
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -612,34 +612,37 @@ fn get_keystore_signer(
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
-            } else {
-                let data = keystore.sign(
-                    account.clone(),
-                    &[],
-                    message.clone(),
-                    password.clone(),
-                    true,
-                )?;
-                if data.len() != 65 {
-                    Err(format!(
-                        "Invalid signature data lenght: {}, data: {:?}",
-                        data.len(),
-                        data
-                    ))
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
+            if lock_args.contains(&account) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
                 } else {
-                    let mut data_bytes = [0u8; 65];
-                    data_bytes.copy_from_slice(&data[..]);
-                    Ok(Some(data_bytes))
+                    let data = keystore.sign(
+                        account.clone(),
+                        &[],
+                        message.clone(),
+                        SignTarget::Transaction(tx.clone()),
+                        password.clone(),
+                        true,
+                    )?;
+                    if data.len() != 65 {
+                        Err(format!(
+                            "Invalid signature data lenght: {}, data: {:?}",
+                            data.len(),
+                            data
+                        ))
+                    } else {
+                        let mut data_bytes = [0u8; 65];
+                        data_bytes.copy_from_slice(&data[..]);
+                        Ok(Some(data_bytes))
+                    }
                 }
+            } else {
+                Ok(None)
             }
-        } else {
-            Ok(None)
-        }
-    })
+        },
+    )
 }
 
 fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(

@@ -241,6 +241,9 @@ impl InteractiveEnv {
             Ok(args) => args,
             Err(e) => return Err(e.to_string()),
         };
+        if args.is_empty() {
+            return Ok(false);
+        }
 
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();

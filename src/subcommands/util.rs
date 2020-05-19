@@ -24,7 +24,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
-use crate::plugin::PluginManager;
+use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -608,9 +608,12 @@ fn sign_message(
             } else {
                 None
             };
+            let target = SignTarget::AnyMessage(serde_json::json!({
+                "message": message.clone(),
+            }));
             plugin_mgr
                 .keystore_handler()
-                .sign(account, &[], message.clone(), password, false)
+                .sign(account, &[], message.clone(), target, password, false)
                 .map(|bytes| (&bytes[..]).to_vec())
         }
         (None, Some((plugin_mgr, account)), true) => {
@@ -619,9 +622,12 @@ fn sign_message(
             } else {
                 None
             };
+            let target = SignTarget::AnyMessage(serde_json::json!({
+                "message": message.clone(),
+            }));
             plugin_mgr
                 .keystore_handler()
-                .sign(account, &[], message.clone(), password, true)
+                .sign(account, &[], message.clone(), target, password, true)
                 .map(|bytes| (&bytes[..]).to_vec())
         }
         _ => Err(String::from("Both privkey and key store is missing")),

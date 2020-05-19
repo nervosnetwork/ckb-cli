@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use ckb_index::LiveCellInfo;
-use ckb_sdk::rpc::{BlockReward, BlockView, HeaderView, JsonBytes, Script, Transaction};
+use ckb_jsonrpc_types::{BlockReward, BlockView, HeaderView, JsonBytes, Script, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
@@ -164,6 +164,13 @@ pub enum CallbackResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case", content = "content")]
+pub enum SignTarget {
+    Transaction(Transaction),
+    AnyMessage(serde_json::Value),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum KeyStoreRequest {
     // return: PluginResponse::H160
     ListAccount,
@@ -191,6 +198,7 @@ pub enum KeyStoreRequest {
         hash160: H160,
         path: String,
         message: H256,
+        target: Box<SignTarget>,
         recoverable: bool,
         password: Option<String>,
     },

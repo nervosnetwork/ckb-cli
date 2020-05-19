@@ -1,4 +1,4 @@
-use ckb_sdk::rpc::Transaction;
+use ckb_jsonrpc_types::Transaction;
 use faster_hex::{hex_decode, hex_string};
 use serde::de::DeserializeOwned;
 use std::convert::TryFrom;
@@ -161,6 +161,7 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
                 hash160,
                 path,
                 message,
+                target,
                 recoverable,
                 password,
             } => {
@@ -168,6 +169,7 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
                     serde_json::json!(hash160),
                     serde_json::json!(path),
                     serde_json::json!(message),
+                    serde_json::json!(target),
                     serde_json::json!(recoverable),
                     serde_json::json!(password),
                 ];
@@ -266,8 +268,9 @@ impl TryFrom<&JsonrpcRequest> for KeyStoreRequest {
                 hash160: parse_param(data, 0, "hash160")?,
                 path: parse_param(data, 1, "path")?,
                 message: parse_param(data, 2, "message")?,
-                recoverable: parse_param(data, 3, "recoverable")?,
-                password: parse_param(data, 4, "password")?,
+                target: parse_param(data, 3, "target")?,
+                recoverable: parse_param(data, 4, "recoverable")?,
+                password: parse_param(data, 5, "password")?,
             },
             method::KEYSTORE_EXTENDED_PUBKEY => KeyStoreRequest::ExtendedPubkey {
                 hash160: parse_param(data, 0, "hash160")?,
@@ -414,10 +417,10 @@ fn parse_param<T: DeserializeOwned>(
         .get(index)
         .cloned()
         .map(|value| {
-            let content: T = serde_json::from_value(value).map_err(|err| {
+            let content: T = serde_json::from_value(value.clone()).map_err(|err| {
                 format!(
-                    "Parse {}'s parameter(field={}, index={}) failed: {}",
-                    data.method, field_name, index, err
+                    "Parse {}'s parameter(field={}, index={}) value: {:?}, failed: {}",
+                    data.method, field_name, index, value, err
                 )
             })?;
             Ok(content)

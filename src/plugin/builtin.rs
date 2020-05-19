@@ -155,6 +155,7 @@ impl DefaultKeyStore {
                     hash160,
                     path,
                     message,
+                    target: _target,
                     password,
                     recoverable,
                 } => {

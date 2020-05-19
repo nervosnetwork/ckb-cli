@@ -1,4 +1,5 @@
 use ckb_hash::new_blake2b;
+use ckb_jsonrpc_types as rpc_types;
 use ckb_script::TransactionScriptsVerifier;
 use ckb_types::{
     bytes::Bytes,
@@ -218,7 +219,7 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<(), String>
     where
-        S: Fn(&H160, &H256) -> Result<[u8; 65], String>,
+        S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
         C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
     {
         let tx = self.mock_tx.core_transaction();
@@ -242,6 +243,7 @@ impl<'a> MockTransactionHelper<'a> {
             }
         }
 
+        let rpc_tx = self.mock_tx.tx.clone().into();
         for (lock_arg, idxs) in input_group.into_iter() {
             let init_witness = WitnessArgs::new_builder()
                 .lock(Some(Bytes::from(vec![0u8; 65])).pack())
@@ -258,7 +260,8 @@ impl<'a> MockTransactionHelper<'a> {
             let mut message = [0u8; 32];
             blake2b.finalize(&mut message);
             let message = H256::from(message);
-            let sig = signer(&lock_arg, &message).map(|data| Bytes::from(data.to_vec()))?;
+            let sig =
+                signer(&lock_arg, &message, &rpc_tx).map(|data| Bytes::from(data.to_vec()))?;
             witnesses[idxs[0]] = WitnessArgs::new_builder()
                 .lock(Some(sig).pack())
                 .build()
@@ -284,7 +287,7 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<(), String>
     where
-        S: Fn(&H160, &H256) -> Result<[u8; 65], String>,
+        S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
         C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
     {
         self.add_change_output(target_lock, &mut live_cell_getter)?;
@@ -415,7 +418,7 @@ mod test {
             .build()
             .data();
 
-        let signer = |target_lock_arg: &H160, tx_hash_hash: &H256| {
+        let signer = |target_lock_arg: &H160, tx_hash_hash: &H256, _tx: &rpc_types::Transaction| {
             if &lock_arg != target_lock_arg {
                 return Err(String::from("lock arg not match"));
             }

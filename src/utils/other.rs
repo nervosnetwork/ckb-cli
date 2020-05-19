@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
 use ckb_index::{LiveCellInfo, VERSION};
+use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{CELLBASE_MATURITY, MIN_SECP_CELL_CAPACITY, ONE_CKB},
@@ -31,7 +32,7 @@ use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
-use crate::plugin::KeyStoreHandler;
+use crate::plugin::{KeyStoreHandler, SignTarget};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -77,15 +78,22 @@ pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<Addre
 pub fn get_signer(
     keystore: KeyStoreHandler,
     require_password: bool,
-) -> impl Fn(&H160, &H256) -> Result<[u8; 65], String> + 'static {
-    move |lock_arg: &H160, tx_hash_hash: &H256| {
+) -> impl Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String> + 'static {
+    move |lock_arg: &H160, tx_hash_hash: &H256, tx: &rpc_types::Transaction| {
         let password = if require_password {
             let prompt = format!("Password for [{:x}]", lock_arg);
             Some(read_password(false, Some(prompt.as_str()))?)
         } else {
             None
         };
-        let data = keystore.sign(lock_arg.clone(), &[], tx_hash_hash.clone(), password, true)?;
+        let data = keystore.sign(
+            lock_arg.clone(),
+            &[],
+            tx_hash_hash.clone(),
+            SignTarget::Transaction(tx.clone()),
+            password,
+            true,
+        )?;
         if data.len() != 65 {
             Err(format!(
                 "Invalid signature data lenght: {}, data: {:?}",
@@ -301,20 +309,22 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
     let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
         .expect("Generate hash(H160) from pubkey failed");
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&lock_arg) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, _tx: &rpc_types::Transaction| {
+            if lock_args.contains(&lock_arg) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
+                } else {
+                    let message = secp256k1::Message::from_slice(message.as_bytes())
+                        .expect("Convert to secp256k1 message failed");
+                    let signature = SECP256K1.sign_recoverable(&message, &privkey);
+                    Ok(Some(serialize_signature(&signature)))
+                }
             } else {
-                let message = secp256k1::Message::from_slice(message.as_bytes())
-                    .expect("Convert to secp256k1 message failed");
-                let signature = SECP256K1.sign_recoverable(&message, &privkey);
-                Ok(Some(serialize_signature(&signature)))
+                Ok(None)
             }
-        } else {
-            Ok(None)
-        }
-    })
+        },
+    )
 }
 
 pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
