@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 use serde_derive::{Deserialize, Serialize};
 
 use super::CliSubCommand;
@@ -22,18 +22,18 @@ impl MoleculeSubCommand {
         MoleculeSubCommand {}
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static, 'static> {
+    pub fn subcommand(name: &'static str) -> App<'static> {
         let arg_type = Arg::with_name("type")
             .long("type")
             .takes_value(true)
             .required(true)
-            .help("The molecule type name defined in blockchain.mol (and extra OutPointVec)");
+            .about("The molecule type name defined in blockchain.mol (and extra OutPointVec)");
         let arg_binary_hex = Arg::with_name("binary-hex")
             .long("binary-hex")
             .takes_value(true)
             .required(true)
             .validator(|input| HexParser.validate(input))
-            .help("Binary data hex format");
+            .about("Binary data hex format");
 
         let arg_json_path = Arg::with_name("json-path")
             .long("json-path")
@@ -45,21 +45,21 @@ impl MoleculeSubCommand {
             .takes_value(true)
             .default_value("binary")
             .possible_values(&["binary", "hash"])
-            .help("Serialize output type");
+            .about("Serialize output type");
 
-        SubCommand::with_name(name)
+        App::new(name)
             .about("Molecule encode/decode utilities")
             .subcommands(vec![
-                SubCommand::with_name("decode")
+                App::new("decode")
                     .about("Decode molecule type from binary")
                     .arg(arg_type.clone())
                     .arg(arg_binary_hex.clone()),
-                SubCommand::with_name("encode")
+                App::new("encode")
                     .about("Encode molecule type from json to binary")
                     .arg(arg_type.clone())
                     .arg(arg_json_path.clone())
                     .arg(arg_serialize_output_type),
-                SubCommand::with_name("default")
+                App::new("default")
                     .about("Print default json structure of certain molecule type")
                     .arg(arg_type.clone())
                     .arg(
@@ -271,7 +271,7 @@ impl CliSubCommand for MoleculeSubCommand {
                     Ok(json_string)
                 }
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand("molecule").generate_usage()),
         }
     }
 }

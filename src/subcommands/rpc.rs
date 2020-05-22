@@ -9,7 +9,7 @@ use ckb_sdk::{
     HttpRpcClient,
 };
 use ckb_types::{packed, prelude::*, H256};
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ impl<'a> RpcSubCommand<'a> {
         }
     }
 
-    pub fn subcommand() -> App<'static, 'static> {
+    pub fn subcommand() -> App<'static> {
         let arg_hash = Arg::with_name("hash")
             .long("hash")
             .takes_value(true)
@@ -50,62 +50,62 @@ impl<'a> RpcSubCommand<'a> {
             .takes_value(true)
             .validator(|input| FromStrParser::<u64>::default().validate(input))
             .required(true)
-            .help("Block number");
+            .about("Block number");
 
         let arg_page = Arg::with_name("page")
             .long("page")
             .takes_value(true)
             .validator(|input| FromStrParser::<u64>::default().validate(input))
             .required(true)
-            .help("Page number");
+            .about("Page number");
         let arg_perpage = Arg::with_name("perpage")
             .long("perpage")
             .takes_value(true)
             .validator(|input| FromStrParser::<u8>::default().validate(input))
             .default_value("50")
             .required(true)
-            .help("Page size, max value is 50");
+            .about("Page size, max value is 50");
         let arg_reverse_order = Arg::with_name("reverse-order")
             .long("reverse-order")
-            .help("Returns the live cells collection in reverse order");
+            .about("Returns the live cells collection in reverse order");
         let arg_peer_id = Arg::with_name("peer-id")
             .long("peer-id")
             .takes_value(true)
             .required(true)
-            .help("Node's peer id");
+            .about("Node's peer id");
 
-        SubCommand::with_name("rpc")
+        App::new("rpc")
             .about("Invoke RPC call to node")
             .arg(
                 Arg::with_name("raw-data")
                     .long("raw-data")
                     .global(true)
-                    .help("Output raw jsonrpc data")
+                    .about("Output raw jsonrpc data")
             )
             .subcommands(vec![
                 // [Chain]
-                SubCommand::with_name("get_block")
+                App::new("get_block")
                     .about("Get block content by hash")
-                    .arg(arg_hash.clone().help("Block hash")),
-                SubCommand::with_name("get_block_by_number")
+                    .arg(arg_hash.clone().about("Block hash")),
+                App::new("get_block_by_number")
                     .about("Get block content by block number")
                     .arg(arg_number.clone()),
-                SubCommand::with_name("get_block_hash")
+                App::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
-                SubCommand::with_name("get_cellbase_output_capacity_details")
+                App::new("get_cellbase_output_capacity_details")
                     .about("Get block header content by hash")
-                    .arg(arg_hash.clone().help("Block hash")),
-                SubCommand::with_name("get_cells_by_lock_hash")
+                    .arg(arg_hash.clone().about("Block hash")),
+                App::new("get_cells_by_lock_hash")
                     .about("Get cells by lock script hash")
-                    .arg(arg_hash.clone().help("Lock hash"))
+                    .arg(arg_hash.clone().about("Lock hash"))
                     .arg(
                         Arg::with_name("from")
                             .long("from")
                             .takes_value(true)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
-                            .help("From block number"),
+                            .about("From block number"),
                     )
                     .arg(
                         Arg::with_name("to")
@@ -113,19 +113,19 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
-                            .help("To block number"),
+                            .about("To block number"),
                     ),
-                SubCommand::with_name("get_current_epoch").about("Get current epoch information"),
-                SubCommand::with_name("get_epoch_by_number")
+                App::new("get_current_epoch").about("Get current epoch information"),
+                App::new("get_epoch_by_number")
                     .about("Get epoch information by epoch number")
-                    .arg(arg_number.clone().help("Epoch number")),
-                SubCommand::with_name("get_header")
+                    .arg(arg_number.clone().about("Epoch number")),
+                App::new("get_header")
                     .about("Get block header content by hash")
-                    .arg(arg_hash.clone().help("Block hash")),
-                SubCommand::with_name("get_header_by_number")
+                    .arg(arg_hash.clone().about("Block hash")),
+                App::new("get_header_by_number")
                     .about("Get block header by block number")
                     .arg(arg_number.clone()),
-                SubCommand::with_name("get_live_cell")
+                App::new("get_live_cell")
                     .about("Get live cell (live means unspent)")
                     .arg(
                         Arg::with_name("tx-hash")
@@ -133,7 +133,7 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
-                            .help("Tx hash"),
+                            .about("Tx hash"),
                     )
                     .arg(
                         Arg::with_name("index")
@@ -141,56 +141,56 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
-                            .help("Output index"),
+                            .about("Output index"),
                     )
                     .arg(
                         Arg::with_name("with-data")
                             .long("with-data")
-                            .help("Get live cell with data")
+                            .about("Get live cell with data")
                     ),
-                SubCommand::with_name("get_tip_block_number").about("Get tip block number"),
-                SubCommand::with_name("get_tip_header").about("Get tip header"),
-                SubCommand::with_name("get_transaction")
+                App::new("get_tip_block_number").about("Get tip block number"),
+                App::new("get_tip_header").about("Get tip header"),
+                App::new("get_transaction")
                     .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().help("Tx hash")),
+                    .arg(arg_hash.clone().about("Tx hash")),
                 // [Indexer]
-                SubCommand::with_name("deindex_lock_hash")
-                    .arg(arg_hash.clone().help("Lock script hash"))
+                App::new("deindex_lock_hash")
+                    .arg(arg_hash.clone().about("Lock script hash"))
                     .about("Remove index for live cells and transactions by the hash of lock script"),
-                SubCommand::with_name("get_live_cells_by_lock_hash")
-                    .arg(arg_hash.clone().help("Lock script hash"))
+                App::new("get_live_cells_by_lock_hash")
+                    .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(arg_page.clone())
                     .arg(arg_perpage.clone())
                     .arg(arg_reverse_order.clone())
                     .about("Get the live cells collection by the hash of lock script"),
-                SubCommand::with_name("get_transactions_by_lock_hash")
-                    .arg(arg_hash.clone().help("Lock script hash"))
+                App::new("get_transactions_by_lock_hash")
+                    .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(arg_page.clone())
                     .arg(arg_perpage.clone())
                     .arg(arg_reverse_order.clone())
                     .about("Get the transactions collection by the hash of lock script. Returns empty array when the `lock_hash` has not been indexed yet"),
-                SubCommand::with_name("index_lock_hash")
-                    .arg(arg_hash.clone().help("Lock script hash"))
+                App::new("index_lock_hash")
+                    .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(
                         Arg::with_name("index-from")
                             .long("index-from")
                             .takes_value(true)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .help("Index from the block number")
+                            .about("Index from the block number")
                     )
                     .about("Create index for live cells and transactions by the hash of lock script"),
                 // [Net]
-                SubCommand::with_name("get_banned_addresses").about("Get all banned IPs/Subnets"),
-                SubCommand::with_name("get_peers").about("Get connected peers"),
-                SubCommand::with_name("local_node_info").about("Get local node information"),
-                SubCommand::with_name("set_ban")
+                App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
+                App::new("get_peers").about("Get connected peers"),
+                App::new("local_node_info").about("Get local node information"),
+                App::new("set_ban")
                     .arg(
                         Arg::with_name("address")
                             .long("address")
                             .takes_value(true)
                             .validator(|input| FromStrParser::<IpNetwork>::new().validate(input))
                             .required(true)
-                            .help("The IP/Subnet with an optional netmask (default is /32 = single IP)")
+                            .about("The IP/Subnet with an optional netmask (default is /32 = single IP)")
                     )
                     .arg(
                         Arg::with_name("command")
@@ -198,7 +198,7 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .possible_values(&["insert", "delete"])
                             .required(true)
-                            .help("`insert` to insert an IP/Subnet to the list, `delete` to delete an IP/Subnet from the list")
+                            .about("`insert` to insert an IP/Subnet to the list, `delete` to delete an IP/Subnet from the list")
                     )
                     .arg(
                         Arg::with_name("ban_time")
@@ -207,21 +207,21 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| DurationParser.validate(input))
                             .required(true)
                             .default_value("24h")
-                            .help("How long the IP is banned")
+                            .about("How long the IP is banned")
                     )
                     .arg(
                         Arg::with_name("reason")
                             .long("reason")
                             .takes_value(true)
-                            .help("Ban reason, optional parameter")
+                            .about("Ban reason, optional parameter")
                     )
                     .about("Insert or delete an IP/Subnet from the banned list"),
                 // [Pool]
-                SubCommand::with_name("tx_pool_info").about("Get transaction pool information"),
+                App::new("tx_pool_info").about("Get transaction pool information"),
                 // [`Stats`]
-                SubCommand::with_name("get_blockchain_info").about("Get chain information"),
+                App::new("get_blockchain_info").about("Get chain information"),
                 // [`IntegrationTest`]
-                SubCommand::with_name("add_node")
+                App::new("add_node")
                     .arg(arg_peer_id.clone())
                     .arg(
                         Arg::with_name("address")
@@ -229,20 +229,20 @@ impl<'a> RpcSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| FromStrParser::<Multiaddr>::new().validate(input))
                             .required(true)
-                            .help("Target node's address (multiaddr)")
+                            .about("Target node's address (multiaddr)")
                     )
                     .about("Connect to a node"),
-                SubCommand::with_name("remove_node")
+                App::new("remove_node")
                     .arg(arg_peer_id.clone())
                     .about("Disconnect a node"),
-                SubCommand::with_name("broadcast_transaction")
+                App::new("broadcast_transaction")
                     .arg(
                         Arg::with_name("json-path")
                          .long("json-path")
                          .takes_value(true)
                          .required(true)
                          .validator(|input| FilePathParser::new(true).validate(input))
-                         .help("Transaction content (json format, see rpc send_transaction)")
+                         .about("Transaction content (json format, see rpc send_transaction)")
                     )
                     .about("Broadcast transaction without verify"),
             ])
@@ -679,7 +679,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let resp = self.rpc_client.broadcast_transaction(tx.into())?;
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            _ => Err(Self::subcommand().generate_usage()),
         }
     }
 }

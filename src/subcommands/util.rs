@@ -15,21 +15,26 @@ use ckb_types::{
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
 };
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
+use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
 use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
 use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use std::fs;
+use std::io::Read;
+use std::path::PathBuf;
 
 use super::CliSubCommand;
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FixedHashParser, FromStrParser, HexParser,
-        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
+        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, read_password, serialize_signature},
     printer::{OutputFormat, Printable},
 };
+use crate::{build_cli, get_version};
 
 const FLAG_SINCE_EPOCH_NUMBER: u64 =
     0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
@@ -52,23 +57,23 @@ impl<'a> UtilSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static, 'static> {
+    pub fn subcommand(name: &'static str) -> App<'static> {
         let arg_privkey = Arg::with_name("privkey-path")
             .long("privkey-path")
             .takes_value(true)
             .validator(|input| PrivkeyPathParser.validate(input))
-            .help("Private key file path (only read first line)");
+            .about("Private key file path (only read first line)");
         let arg_pubkey = Arg::with_name("pubkey")
             .long("pubkey")
             .takes_value(true)
             .validator(|input| PubkeyHexParser.validate(input))
-            .help("Public key (hex string, compressed format)");
+            .about("Public key (hex string, compressed format)");
         let arg_address = Arg::with_name("address")
             .long("address")
             .takes_value(true)
             .validator(|input| AddressParser::default().validate(input))
             .required(true)
-            .help("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
+            .about("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
 
         let binary_hex_arg = Arg::with_name("binary-hex")
             .long("binary-hex")
@@ -84,11 +89,11 @@ impl<'a> UtilSubCommand<'a> {
                     .set_short(CodeHashIndex::Sighash)
                     .validate(input)
             })
-            .help("The address in single signature format");
+            .about("The address in single signature format");
 
         let arg_recoverable = Arg::with_name("recoverable")
             .long("recoverable")
-            .help("Sign use recoverable signature");
+            .about("Sign use recoverable signature");
 
         let arg_message = Arg::with_name("message")
             .long("message")
@@ -96,10 +101,10 @@ impl<'a> UtilSubCommand<'a> {
             .required(true)
             .validator(|input| FixedHashParser::<H256>::default().validate(input));
 
-        SubCommand::with_name(name)
+        App::new(name)
             .about("Utilities")
             .subcommands(vec![
-                SubCommand::with_name("key-info")
+                App::new("key-info")
                     .about(
                         "Show public information of a secp256k1 private key (from file) or public key",
                     )
@@ -107,66 +112,73 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(arg_pubkey.clone().required(false))
                     .arg(arg_address.clone().required(false))
                     .arg(arg::lock_arg().clone()),
-                SubCommand::with_name("sign-data")
+                App::new("sign-data")
                     .about("Sign data with secp256k1 signature ")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(
                         arg::from_account()
-                            .required_unless(arg::privkey_path().b.name)
-                            .conflicts_with(arg::privkey_path().b.name),
+                            .required_unless(arg::privkey_path().get_name())
+                            .conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(arg_recoverable.clone())
                     .arg(
                         binary_hex_arg
                             .clone()
-                            .help("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                            .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
                     ),
-                SubCommand::with_name("sign-message")
+                App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().b.name))
+                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(
                         arg::from_account()
-                            .required_unless(arg::privkey_path().b.name)
-                            .conflicts_with(arg::privkey_path().b.name),
+                            .required_unless(arg::privkey_path().get_name())
+                            .conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(arg_recoverable.clone())
-                    .arg(arg_message.clone().help("The message to be signed (32 bytes)")),
-                SubCommand::with_name("verify-signature")
+                    .arg(arg_message.clone().about("The message to be signed (32 bytes)")),
+                App::new("verify-signature")
                     .about("Verify a compact format signature")
                     .arg(arg::pubkey())
-                    .arg(arg::privkey_path().conflicts_with(arg::pubkey().b.name))
+                    .arg(arg::privkey_path().conflicts_with(arg::pubkey().get_name()))
                     .arg(
                         arg::from_account()
-                            .conflicts_with_all(&[arg::privkey_path().b.name, arg::pubkey().b.name]),
+                            .conflicts_with_all(&[arg::privkey_path().get_name(), arg::pubkey().get_name()]),
                     )
-                    .arg(arg_message.clone().help("The message to be verify (32 bytes)"))
+                    .arg(arg_message.clone().about("The message to be verify (32 bytes)"))
                     .arg(
                         Arg::with_name("signature")
                             .long("signature")
                             .takes_value(true)
                             .required(true)
                             .validator(|input| HexParser.validate(input))
-                            .help("The compact format signature (support recoverable signature)")
+                            .about("The compact format signature (support recoverable signature)")
                     ),
-                SubCommand::with_name("eaglesong")
+                App::new("eaglesong")
                     .about("Hash binary use eaglesong algorithm")
-                    .arg(binary_hex_arg.clone()),
-                SubCommand::with_name("blake2b")
+                    .arg(binary_hex_arg.clone().about("The binary in hex format to hash")),
+                App::new("blake2b")
                     .about("Hash binary use blake2b algorithm (personalization: 'ckb-default-hash')")
-                    .arg(binary_hex_arg.clone())
+                    .arg(binary_hex_arg.clone().required(false).about("The binary in hex format to hash"))
+                    .arg(
+                        Arg::with_name("binary-path")
+                            .long("binary-path")
+                            .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("The binary file path")
+                    )
                     .arg(
                         Arg::with_name("prefix-160")
                             .long("prefix-160")
-                            .help("Only show prefix 160 bits (Example: calculate lock_arg from pubkey)")
+                            .about("Only show prefix 160 bits (Example: calculate lock_arg from pubkey)")
                     ),
-                SubCommand::with_name("compact-to-difficulty")
+                App::new("compact-to-difficulty")
                     .about("Convert compact target value to difficulty value")
                     .arg(Arg::with_name("compact-target")
                          .long("compact-target")
                          .takes_value(true)
                          .validator(|input| {
                              FromStrParser::<u32>::default()
-                                 .validate(input.clone())
+                                 .validate(input)
                                  .or_else(|_| {
                                      let input = if input.starts_with("0x") || input.starts_with("0X") {
                                          &input[2..]
@@ -177,9 +189,9 @@ impl<'a> UtilSubCommand<'a> {
                                  })
                          })
                          .required(true)
-                         .help("The compact target value")
+                         .about("The compact target value")
                     ),
-                SubCommand::with_name("difficulty-to-compact")
+                App::new("difficulty-to-compact")
                     .about("Convert difficulty value to compact target value")
                     .arg(Arg::with_name("difficulty")
                          .long("difficulty")
@@ -193,9 +205,9 @@ impl<'a> UtilSubCommand<'a> {
                              U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
                          })
                          .required(true)
-                         .help("The difficulty value")
+                         .about("The difficulty value")
                     ),
-                SubCommand::with_name("to-genesis-multisig-addr")
+                App::new("to-genesis-multisig-addr")
                     .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
                     .arg(
                         arg_sighash_address
@@ -211,9 +223,9 @@ impl<'a> UtilSubCommand<'a> {
                             .long("locktime")
                             .required(true)
                             .takes_value(true)
-                            .help("The locktime in UTC format date. Example: 2022-05-01")
+                            .about("The locktime in UTC format date. Example: 2022-05-01")
                     ),
-                SubCommand::with_name("to-multisig-addr")
+                App::new("to-multisig-addr")
                     .about("Convert address in single signature format to multisig format")
                     .arg(arg_sighash_address.clone())
                     .arg(
@@ -222,7 +234,15 @@ impl<'a> UtilSubCommand<'a> {
                             .required(true)
                             .takes_value(true)
                             .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
-                            .help("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
+                            .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
+                    ),
+                App::new("completions")
+                    .about("Generates completion scripts for your shell")
+                    .arg(
+                        Arg::with_name("shell")
+                            .required(true)
+                            .possible_values(&["bash", "zsh", "fish", "elvish", "powershell"])
+                            .about("The shell to generate the script for")
                     ),
         ])
     }
@@ -422,7 +442,20 @@ message = "0x"
                 Ok(format!("{:#x}", H256::from(builder.finalize())))
             }
             ("blake2b", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let binary: Vec<u8> = HexParser
+                    .from_matches_opt(m, "binary-hex", false)?
+                    .ok_or_else(String::new)
+                    .or_else(|_| -> Result<_, String> {
+                        let path: PathBuf = FilePathParser::new(true)
+                            .from_matches(m, "binary-path")
+                            .map_err(|err| {
+                                format!("<binary-hex> or <binary-path> is required: {}", err)
+                            })?;
+                        let mut data = Vec::new();
+                        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                        file.read_to_end(&mut data).map_err(|err| err.to_string())?;
+                        Ok(data)
+                    })?;
                 let hash_data = blake2b_256(&binary);
                 let slice = if m.is_present("prefix-160") {
                     &hash_data[0..20]
@@ -530,7 +563,27 @@ message = "0x"
                 });
                 Ok(resp.render(format, color))
             }
-            _ => Err(matches.usage().to_owned()),
+            ("completions", Some(m)) => {
+                let shell = m.value_of("shell").unwrap();
+                let version = get_version();
+                let version_short = version.short();
+                let version_long = version.long();
+                let mut app = build_cli(&version_short, &version_long);
+                let bin_name = "ckb-cli";
+                let output = &mut std::io::stdout();
+                match shell {
+                    "bash" => clap_generate::generate::<Bash, _>(&mut app, bin_name, output),
+                    "zsh" => clap_generate::generate::<Zsh, _>(&mut app, bin_name, output),
+                    "fish" => clap_generate::generate::<Fish, _>(&mut app, bin_name, output),
+                    "elvish" => clap_generate::generate::<Elvish, _>(&mut app, bin_name, output),
+                    "powershell" => {
+                        clap_generate::generate::<PowerShell, _>(&mut app, bin_name, output)
+                    }
+                    _ => panic!("Invalid shell: {}", shell),
+                }
+                Ok("".to_string())
+            }
+            _ => Err(Self::subcommand("util").generate_usage()),
         }
     }
 }

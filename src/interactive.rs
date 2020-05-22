@@ -32,7 +32,7 @@ pub struct InteractiveEnv {
     config_file: PathBuf,
     history_file: PathBuf,
     index_dir: PathBuf,
-    parser: clap::App<'static, 'static>,
+    parser: clap::App<'static>,
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
@@ -224,7 +224,7 @@ impl InteractiveEnv {
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
-        match self.parser.clone().get_matches_from_safe(args) {
+        match self.parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
                     m.value_of("url").and_then(|url| {

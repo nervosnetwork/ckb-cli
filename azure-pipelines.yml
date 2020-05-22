@@ -28,6 +28,7 @@ jobs:
           CI: true
 
   - job: Package
+    timeoutInMinutes: 0
     condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/')
     pool:
       vmImage: 'VS2017-Win2016'
@@ -45,7 +46,9 @@ jobs:
         inputs:
           rootFolderOrFile: 'ckb-cli_$(Build.SourceBranchName)_x86_64-pc-windows-msvc'
           archiveFile: '$(Build.ArtifactStagingDirectory)/ckb-cli_$(Build.SourceBranchName)_x86_64-pc-windows-msvc.zip'
-      - script: choco install -y gpg4win
+      - script: |
+          scoop bucket add extras
+          scoop install gpg4win
         displayName: Install GPG4Win
       - task: DownloadSecureFile@1
         inputs:

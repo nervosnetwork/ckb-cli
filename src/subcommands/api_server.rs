@@ -16,7 +16,7 @@ use ckb_types::{
     prelude::*,
     H256,
 };
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{Server, ServerBuilder};
@@ -58,8 +58,8 @@ impl<'a> ApiServerSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static, 'static> {
-        SubCommand::with_name(name)
+    pub fn subcommand(name: &'static str) -> App<'static> {
+        App::new(name)
             .about("Start advanced API server")
             .arg(
                 Arg::with_name("listen")
@@ -68,11 +68,11 @@ impl<'a> ApiServerSubCommand<'a> {
                     .required(true)
                     .default_value("127.0.0.1:3000")
                     .validator(|input| FromStrParser::<SocketAddr>::new().validate(input))
-                    .help("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
+                    .about("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
             )
             .arg(
                 arg::privkey_path()
-                 .help("Private key file path (only read first line)")
+                 .about("Private key file path (only read first line)")
             )
     }
 }
