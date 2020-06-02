@@ -25,7 +25,7 @@ use crate::utils::{
     other::{
         check_capacity, get_address, get_arg_value, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        read_password, serialize_signature,
+        read_password, serialize_signature, sync_to_tip,
     },
     printer::{OutputFormat, Printable},
 };
@@ -49,6 +49,7 @@ pub struct WalletSubCommand<'a> {
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
+    wait_for_sync: bool,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -58,6 +59,7 @@ impl<'a> WalletSubCommand<'a> {
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
+        wait_for_sync: bool,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
@@ -65,6 +67,7 @@ impl<'a> WalletSubCommand<'a> {
             genesis_info,
             index_dir,
             index_controller,
+            wait_for_sync,
         }
     }
 
@@ -84,6 +87,9 @@ impl<'a> WalletSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase) -> T,
     {
+        if self.wait_for_sync {
+            sync_to_tip(&self.index_controller)?;
+        }
         let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
@@ -345,6 +351,9 @@ impl<'a> WalletSubCommand<'a> {
                 (false, false)
             }
         };
+        if self.wait_for_sync {
+            sync_to_tip(&self.index_controller)?;
+        }
         if let Err(err) = with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
             IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)
                 .map(|db| {

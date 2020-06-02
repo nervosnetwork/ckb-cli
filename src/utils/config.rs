@@ -21,6 +21,7 @@ pub struct GlobalConfig {
     network: Option<NetworkType>,
     color: bool,
     debug: bool,
+    no_sync: bool,
     output_format: OutputFormat,
     path: PathBuf,
     completion_style: bool,
@@ -36,6 +37,7 @@ impl GlobalConfig {
             network: None,
             color: true,
             debug: false,
+            no_sync: false,
             output_format: OutputFormat::Yaml,
             path: env::current_dir().unwrap(),
             completion_style: true,
@@ -137,6 +139,10 @@ impl GlobalConfig {
         self.debug = !self.debug;
     }
 
+    pub fn switch_no_sync(&mut self) {
+        self.no_sync = !self.no_sync;
+    }
+
     pub fn switch_completion_style(&mut self) {
         self.completion_style = !self.completion_style;
     }
@@ -151,6 +157,10 @@ impl GlobalConfig {
 
     pub fn set_debug(&mut self, value: bool) {
         self.debug = value;
+    }
+
+    pub fn set_no_sync(&mut self, value: bool) {
+        self.no_sync = value;
     }
 
     pub fn set_output_format(&mut self, value: OutputFormat) {
@@ -173,6 +183,10 @@ impl GlobalConfig {
         self.debug
     }
 
+    pub fn no_sync(&self) -> bool {
+        self.no_sync
+    }
+
     pub fn output_format(&self) -> OutputFormat {
         self.output_format
     }
@@ -189,6 +203,7 @@ impl GlobalConfig {
         let path = self.path.to_string_lossy();
         let color = self.color.to_string();
         let debug = self.debug.to_string();
+        let no_sync = self.no_sync.to_string();
         let output_format = self.output_format.to_string();
         let completion_style = if self.completion_style {
             "List"
@@ -210,6 +225,7 @@ impl GlobalConfig {
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),
+            ("no-sync", no_sync.as_str()),
             ("output format", output_format.as_str()),
             ("completion style", completion_style),
             ("edit style", edit_style),

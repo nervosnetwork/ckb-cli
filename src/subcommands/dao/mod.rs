@@ -3,7 +3,7 @@ use self::command::TransactArgs;
 use crate::utils::index::IndexController;
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    serialize_signature,
+    serialize_signature, sync_to_tip,
 };
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
@@ -37,6 +37,7 @@ pub struct DAOSubCommand<'a> {
     index_dir: PathBuf,
     index_controller: IndexController,
     transact_args: Option<TransactArgs>,
+    wait_for_sync: bool,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -46,6 +47,7 @@ impl<'a> DAOSubCommand<'a> {
         genesis_info: GenesisInfo,
         index_dir: PathBuf,
         index_controller: IndexController,
+        wait_for_sync: bool,
     ) -> Self {
         Self {
             rpc_client,
@@ -54,6 +56,7 @@ impl<'a> DAOSubCommand<'a> {
             index_dir,
             index_controller,
             transact_args: None,
+            wait_for_sync,
         }
     }
 
@@ -291,6 +294,9 @@ impl<'a> DAOSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase, &mut HttpRpcClient) -> T,
     {
+        if self.wait_for_sync {
+            sync_to_tip(&self.index_controller)?;
+        }
         let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info.clone();
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
