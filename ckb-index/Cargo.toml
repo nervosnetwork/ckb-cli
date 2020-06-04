@@ -13,7 +13,4 @@ log = "0.4.6"
 failure = "0.1.5"
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.32.0-rc1" }
 ckb-sdk = { path = "../ckb-sdk" }
-
-[dependencies.rocksdb]
-git = "https://github.com/nervosnetwork/rust-rocksdb"
-rev = "14d2991"
+rocksdb = { package = "ckb-rocksdb", version = "=0.13.0", features = ["snappy"] }
