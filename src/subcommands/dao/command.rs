@@ -156,7 +156,7 @@ impl TransactArgs {
             let payload = AddressPayload::from_pubkey(&pubkey);
             Address::new(network_type, payload)
         } else {
-            let account: Option<H160> = FixedHashParser::<H160>::default()
+            let account: H160 = FixedHashParser::<H160>::default()
                 .from_matches_opt(m, "from-account", false)
                 .or_else(|err| {
                     let result: Result<Option<Address>, String> = AddressParser::new_sighash()
@@ -168,8 +168,13 @@ impl TransactArgs {
                                 .map(|address| H160::from_slice(&address.payload().args()).unwrap())
                         })
                         .map_err(|_| format!("Invalid value for '--from-account': {}", err))
+                })?
+                .ok_or_else(|| {
+                    // It's a bug of clap, otherwise if <privkey-path> is not given <from-account> must required.
+                    // The bug only happen when put <tx-fee> before <out-point>.
+                    String::from("<privkey-path> or <from-account> is required!")
                 })?;
-            let payload = AddressPayload::from_pubkey_hash(account.unwrap());
+            let payload = AddressPayload::from_pubkey_hash(account);
             Address::new(network_type, payload)
         };
         assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());
