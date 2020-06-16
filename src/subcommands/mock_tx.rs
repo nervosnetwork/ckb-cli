@@ -2,9 +2,11 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
     GenesisInfo, HttpRpcClient, MockCellDep, MockInfo, MockInput, MockResourceLoader,
-    MockTransaction, MockTransactionHelper, ReprMockTransaction,
+    MockTransaction, MockTransactionHelper, ReprMockCellDep, ReprMockInfo, ReprMockInput,
+    ReprMockTransaction,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -12,7 +14,7 @@ use ckb_types::{
         capacity_bytes, Capacity, HeaderBuilder, HeaderView, ScriptHashType, TransactionBuilder,
     },
     h256,
-    packed::{CellDep, CellInput, CellOutput, OutPoint, Script},
+    packed::{self, CellDep, CellInput, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
@@ -71,6 +73,18 @@ impl<'a> MockTxSubCommand<'a> {
                         arg_output_file
                             .clone()
                             .about("Completed mock transaction data file (format: json)"),
+                    ),
+                App::new("dump")
+                    .about("Dump all on-chain data(inputs/cell_deps/header_deps) into mock_info")
+                    .arg(
+                        arg_tx_file
+                            .clone()
+                            .about("CKB transaction data file (format: json)"),
+                    )
+                    .arg(
+                        arg_output_file
+                            .clone()
+                            .about("Dumped mock transaction data file (format: json)"),
                     ),
                 App::new("verify")
                     .about("Verify a mock transaction in local")
@@ -223,6 +237,142 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         "tx-hash": tx_hash,
                     });
                     Ok(Output::new_output(resp))
+                }
+            }
+            ("dump", Some(m)) => {
+                let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
+                let output_opt: Option<PathBuf> =
+                    FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
+                let mut content = String::new();
+                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                file.read_to_string(&mut content)
+                    .map_err(|err| err.to_string())?;
+                let mut src_tx: json_types::Transaction =
+                    serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?;
+                fn load_output_and_data(
+                    rpc_client: &mut HttpRpcClient,
+                    out_point: json_types::OutPoint,
+                ) -> Result<(json_types::CellOutput, json_types::JsonBytes, H256), String>
+                {
+                    let tx_hash = out_point.tx_hash;
+                    let index = out_point.index.value() as usize;
+                    let (tx, block_hash) = rpc_client
+                        .get_transaction(tx_hash.clone())?
+                        .filter(|tx_with_status| tx_with_status.tx_status.block_hash.is_some())
+                        .map(|tx_with_status| {
+                            let tx = json_types::Transaction::from(packed::Transaction::from(
+                                tx_with_status.transaction.inner,
+                            ));
+                            let block_hash = tx_with_status
+                                .tx_status
+                                .block_hash
+                                .expect("block_hash exists");
+                            (tx, block_hash)
+                        })
+                        .ok_or_else(|| {
+                            format!("transaction not exists or not mined: {:x}", tx_hash)
+                        })?;
+                    let output = tx.outputs.get(index).cloned().ok_or_else(|| {
+                        format!(
+                            "can not found output tx-hash={:x}, index={}",
+                            tx_hash, index
+                        )
+                    })?;
+                    let data = tx.outputs_data.get(index).cloned().ok_or_else(|| {
+                        format!("can not found data tx-hash={:x}, index={}", tx_hash, index)
+                    })?;
+                    Ok((output, data, block_hash))
+                }
+                let mock_inputs = src_tx
+                    .inputs
+                    .iter()
+                    .map(|input| {
+                        let (output, data, block_hash) =
+                            load_output_and_data(self.rpc_client, input.previous_output.clone())?;
+                        Ok(ReprMockInput {
+                            input: input.clone(),
+                            output,
+                            data,
+                            block_hash: Some(block_hash),
+                        })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                let mock_cell_deps = src_tx
+                    .cell_deps
+                    .iter()
+                    .flat_map(|cell_dep| {
+                        let (output, data, block_hash) =
+                            match load_output_and_data(self.rpc_client, cell_dep.out_point.clone())
+                            {
+                                Ok((output, data, block_hash)) => (output, data, block_hash),
+                                Err(err) => return vec![Err(err)],
+                            };
+                        if cell_dep.dep_type == json_types::DepType::DepGroup {
+                            let out_points = match packed::OutPointVec::from_slice(data.as_bytes())
+                            {
+                                Ok(out_points) => out_points,
+                                Err(err) => return vec![Err(err.to_string())],
+                            };
+                            out_points
+                                .into_iter()
+                                .map(json_types::OutPoint::from)
+                                .map(|out_point| {
+                                    let (output, data, block_hash) =
+                                        load_output_and_data(self.rpc_client, out_point.clone())?;
+                                    Ok(ReprMockCellDep {
+                                        cell_dep: json_types::CellDep {
+                                            out_point,
+                                            dep_type: json_types::DepType::Code,
+                                        },
+                                        output,
+                                        data,
+                                        block_hash: Some(block_hash),
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            vec![Ok(ReprMockCellDep {
+                                cell_dep: cell_dep.clone(),
+                                output,
+                                data,
+                                block_hash: Some(block_hash),
+                            })]
+                        }
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                let mock_header_deps = src_tx
+                    .header_deps
+                    .iter()
+                    .map(|block_hash| {
+                        self.rpc_client
+                            .get_header(block_hash.clone())?
+                            .map(HeaderView::from)
+                            .map(json_types::HeaderView::from)
+                            .ok_or_else(|| format!("header not exists: {:x}", block_hash))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                src_tx.cell_deps = mock_cell_deps
+                    .iter()
+                    .map(|mock_cell_dep| mock_cell_dep.cell_dep.clone())
+                    .collect::<Vec<_>>();
+                let repr_tx = ReprMockTransaction {
+                    mock_info: ReprMockInfo {
+                        inputs: mock_inputs,
+                        cell_deps: mock_cell_deps,
+                        header_deps: mock_header_deps,
+                    },
+                    tx: src_tx,
+                };
+                if let Some(path) = output_opt {
+                    let content =
+                        serde_json::to_string_pretty(&repr_tx).map_err(|err| err.to_string())?;
+                    let mut out_file = fs::File::create(path).map_err(|err| err.to_string())?;
+                    out_file
+                        .write_all(content.as_bytes())
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_success())
+                } else {
+                    Ok(Output::new_output(repr_tx))
                 }
             }
             ("verify", Some(m)) => {
