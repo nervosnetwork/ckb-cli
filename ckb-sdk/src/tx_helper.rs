@@ -219,6 +219,7 @@ impl TxHelper {
             .collect::<HashMap<_, _>>();
 
         let witnesses = self.init_witnesses();
+        let input_size = self.transaction.inputs().len();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
         for ((code_hash, lock_arg), idxs) in
             self.input_group(get_live_cell, skip_check)?.into_iter()
@@ -241,6 +242,7 @@ impl TxHelper {
             if signer(&lock_args, &h256!("0x0"))?.is_some() {
                 let signature = build_signature(
                     &self.transaction.hash(),
+                    input_size,
                     &idxs,
                     &witnesses,
                     self.multisig_configs.get(&multisig_hash160),
@@ -518,6 +520,7 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
 
 pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>>(
     tx_hash: &Byte32,
+    input_size: usize,
     input_group_idxs: &[usize],
     witnesses: &[packed::Bytes],
     multisig_config_opt: Option<&MultisigConfig>,
@@ -557,6 +560,10 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
         let other_witness: &packed::Bytes = &witnesses[idx];
         blake2b.update(&(other_witness.len() as u64).to_le_bytes());
         blake2b.update(&other_witness.raw_data());
+    }
+    for outter_witness in &witnesses[input_size..witnesses.len()] {
+        blake2b.update(&(outter_witness.len() as u64).to_le_bytes());
+        blake2b.update(&outter_witness.raw_data());
     }
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
