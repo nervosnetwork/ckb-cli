@@ -77,8 +77,19 @@ impl<'a> MockTxSubCommand<'a> {
                 App::new("dump")
                     .about("Dump all on-chain data(inputs/cell_deps/header_deps) into mock_info")
                     .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required_unless("tx-file")
+                            .conflicts_with("tx-file")
+                            .about("The hash of transaction which is on the chain"),
+                    )
+                    .arg(
                         arg_tx_file
                             .clone()
+                            .required_unless("tx-hash")
+                            .conflicts_with("tx-hash")
                             .about("CKB transaction data file (format: json)"),
                     )
                     .arg(
@@ -240,15 +251,29 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 }
             }
             ("dump", Some(m)) => {
-                let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let output_opt: Option<PathBuf> =
                     FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
-                let mut content = String::new();
-                let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                file.read_to_string(&mut content)
-                    .map_err(|err| err.to_string())?;
-                let mut src_tx: json_types::Transaction =
-                    serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?;
+                let tx_hash_opt: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash", false)?;
+                let path_opt: Option<PathBuf> =
+                    FilePathParser::new(true).from_matches_opt(m, "tx-file", false)?;
+                let src_tx: json_types::Transaction = if let Some(path) = path_opt {
+                    let mut content = String::new();
+                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                    file.read_to_string(&mut content)
+                        .map_err(|err| err.to_string())?;
+                    serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?
+                } else if let Some(tx_hash) = tx_hash_opt {
+                    self.rpc_client
+                        .get_transaction(tx_hash.clone())?
+                        .map(|tx_with_status| {
+                            packed::Transaction::from(tx_with_status.transaction.inner)
+                        })
+                        .ok_or_else(|| format!("Transaction not found on chain: {:x}", tx_hash))?
+                        .into()
+                } else {
+                    return Err(String::from("<tx-hash> or <tx-file> is required"));
+                };
                 fn load_output_and_data(
                     rpc_client: &mut HttpRpcClient,
                     out_point: json_types::OutPoint,
@@ -307,7 +332,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                                 Ok((output, data, block_hash)) => (output, data, block_hash),
                                 Err(err) => return vec![Err(err)],
                             };
-                        if cell_dep.dep_type == json_types::DepType::DepGroup {
+                        let mut cell_deps = if cell_dep.dep_type == json_types::DepType::DepGroup {
                             let out_points = match packed::OutPointVec::from_slice(data.as_bytes())
                             {
                                 Ok(out_points) => out_points,
@@ -331,13 +356,15 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                                 })
                                 .collect::<Vec<_>>()
                         } else {
-                            vec![Ok(ReprMockCellDep {
-                                cell_dep: cell_dep.clone(),
-                                output,
-                                data,
-                                block_hash: Some(block_hash),
-                            })]
-                        }
+                            Vec::new()
+                        };
+                        cell_deps.push(Ok(ReprMockCellDep {
+                            cell_dep: cell_dep.clone(),
+                            output,
+                            data,
+                            block_hash: Some(block_hash),
+                        }));
+                        cell_deps
                     })
                     .collect::<Result<Vec<_>, String>>()?;
                 let mock_header_deps = src_tx
@@ -351,10 +378,6 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                             .ok_or_else(|| format!("header not exists: {:x}", block_hash))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                src_tx.cell_deps = mock_cell_deps
-                    .iter()
-                    .map(|mock_cell_dep| mock_cell_dep.cell_dep.clone())
-                    .collect::<Vec<_>>();
                 let repr_tx = ReprMockTransaction {
                     mock_info: ReprMockInfo {
                         inputs: mock_inputs,
