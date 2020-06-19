@@ -252,6 +252,7 @@ impl ApiRpcImpl {
             Some(genesis_info),
             self.index_dir.clone(),
             self.index_controller.clone(),
+            true,
         ))
     }
 }

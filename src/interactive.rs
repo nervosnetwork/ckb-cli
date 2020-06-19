@@ -224,6 +224,7 @@ impl InteractiveEnv {
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
+        let wait_for_sync = !self.config.no_sync();
         match self.parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
@@ -251,6 +252,9 @@ impl InteractiveEnv {
                     if m.is_present("debug") {
                         self.config.switch_debug();
                     }
+                    if m.is_present("no-sync") {
+                        self.config.switch_no_sync();
+                    }
 
                     if m.is_present("edit_style") {
                         self.config.switch_edit_style();
@@ -267,6 +271,7 @@ impl InteractiveEnv {
                         "url": self.config.get_url().to_string(),
                         "color": self.config.color(),
                         "debug": self.config.debug(),
+                        "no-sync": self.config.no_sync(),
                         "output_format": self.config.output_format().to_string(),
                         "completion_style": self.config.completion_style(),
                         "edit_style": self.config.edit_style(),
@@ -347,6 +352,7 @@ impl InteractiveEnv {
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
+                        wait_for_sync,
                     )
                     .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);
@@ -360,6 +366,7 @@ impl InteractiveEnv {
                         genesis_info,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
+                        wait_for_sync,
                     )
                     .process(&sub_matches, format, color, debug)?;
                     println!("{}", output);

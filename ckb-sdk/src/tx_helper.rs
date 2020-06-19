@@ -8,6 +8,7 @@ use ckb_types::{
     H160, H256,
 };
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
 use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
@@ -85,9 +86,7 @@ impl TxHelper {
         skip_check: bool,
     ) -> Result<(), String> {
         let lock = get_live_cell(out_point.clone(), false)?.lock();
-        if !skip_check {
-            check_lock_script(&lock)?;
-        }
+        check_lock_script(&lock, skip_check)?;
 
         let since = if let Some(number) = since_absolute_epoch_opt {
             Since::new_absolute_epoch(number).value()
@@ -172,21 +171,20 @@ impl TxHelper {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let lock = get_live_cell(input.previous_output(), false)?.lock();
-            if !skip_check {
-                check_lock_script(&lock).map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
-            }
+            check_lock_script(&lock, skip_check)
+                .map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
 
             let lock_arg = lock.args().raw_data();
             let code_hash = lock.code_hash();
-            let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
-            if code_hash == MULTISIG_TYPE_HASH.pack()
-                && !self.multisig_configs.contains_key(&hash160)
-            {
-                return Err(format!(
-                    "No mutisig config found for input(no.{}) lock_arg prefix: {:#x}",
-                    idx + 1,
-                    hash160,
-                ));
+            if code_hash == MULTISIG_TYPE_HASH.pack() {
+                let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
+                if !self.multisig_configs.contains_key(&hash160) {
+                    return Err(format!(
+                        "No mutisig config found for input(no.{}) lock_arg prefix: {:#x}",
+                        idx + 1,
+                        hash160,
+                    ));
+                }
             }
             input_group
                 .entry((code_hash, lock_arg))
@@ -221,10 +219,15 @@ impl TxHelper {
             .collect::<HashMap<_, _>>();
 
         let witnesses = self.init_witnesses();
+        let input_size = self.transaction.inputs().len();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
         for ((code_hash, lock_arg), idxs) in
             self.input_group(get_live_cell, skip_check)?.into_iter()
         {
+            if code_hash != SIGHASH_TYPE_HASH.pack() && code_hash != MULTISIG_TYPE_HASH.pack() {
+                continue;
+            }
+
             let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
             let lock_args = if code_hash == MULTISIG_TYPE_HASH.pack() {
                 all_sighash_lock_args
@@ -239,6 +242,7 @@ impl TxHelper {
             if signer(&lock_args, &h256!("0x0"))?.is_some() {
                 let signature = build_signature(
                     &self.transaction.hash(),
+                    input_size,
                     &idxs,
                     &witnesses,
                     self.multisig_configs.get(&multisig_hash160),
@@ -339,7 +343,7 @@ impl TxHelper {
             let capacity: u64 = output.capacity().unpack();
             input_total += capacity;
 
-            check_lock_script(&output.lock())
+            check_lock_script(&output.lock(), false)
                 .map_err(|err| format!("Input(no.{}) {}", i + 1, err))?;
         }
 
@@ -349,7 +353,7 @@ impl TxHelper {
             let capacity: u64 = output.capacity().unpack();
             output_total += capacity;
 
-            check_lock_script(&output.lock())
+            check_lock_script(&output.lock(), false)
                 .map_err(|err| format!("Output(no.{}) {}", i + 1, err))?;
         }
 
@@ -465,28 +469,58 @@ impl MultisigConfig {
     }
 }
 
-pub fn check_lock_script(lock: &Script) -> Result<(), String> {
-    let lock_arg = lock.args().raw_data();
-    if lock.hash_type() != ScriptHashType::Type.into() {
-        return Err("invalid lock script hash type, expected `type`".to_string());
+pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> {
+    #[derive(Eq, PartialEq)]
+    enum CodeHashCategory {
+        Sighash,
+        Multisig,
+        Other,
     }
+
     let code_hash: H256 = lock.code_hash().unpack();
-    if (code_hash == SIGHASH_TYPE_HASH && lock_arg.len() == 20)
-        | (code_hash == MULTISIG_TYPE_HASH && lock_arg.len() == 20)
-        | (code_hash == MULTISIG_TYPE_HASH && lock_arg.len() == 28)
-    {
-        Ok(())
+    let hash_type: ScriptHashType = lock.hash_type().try_into().expect("hash_type");
+    let lock_args = lock.args().raw_data();
+
+    let code_hash_category = if code_hash == SIGHASH_TYPE_HASH {
+        CodeHashCategory::Sighash
+    } else if code_hash == MULTISIG_TYPE_HASH {
+        CodeHashCategory::Multisig
     } else {
-        Err(format!(
-            "invalid lock script code_hash: {:#x}, args.length: {}",
+        CodeHashCategory::Other
+    };
+    let hash_type_str = if hash_type == ScriptHashType::Type {
+        "type"
+    } else {
+        "data"
+    };
+
+    match (code_hash_category, hash_type, lock_args.len()) {
+        (CodeHashCategory::Sighash, ScriptHashType::Type, 20) => Ok(()),
+        (CodeHashCategory::Multisig, ScriptHashType::Type, 20) => Ok(()),
+        (CodeHashCategory::Multisig, ScriptHashType::Type, 28) => Ok(()),
+        (CodeHashCategory::Sighash, _, _) => Err(format!(
+            "Invalid sighash lock script, hash_type: {}, args.length: {}",
+            hash_type_str,
+            lock_args.len()
+        )),
+        (CodeHashCategory::Multisig, _, _) => Err(format!(
+            "Invalid multisig lock script, hash_type: {}, args.length: {}",
+            hash_type_str,
+            lock_args.len()
+        )),
+        (CodeHashCategory::Other, _, _) if skip_check => Ok(()),
+        (CodeHashCategory::Other, _, _) => Err(format!(
+            "invalid lock script code_hash: {:#x}, hash_type: {}, args.length: {}",
             code_hash,
-            lock_arg.len(),
-        ))
+            hash_type_str,
+            lock_args.len(),
+        )),
     }
 }
 
 pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], String>>(
     tx_hash: &Byte32,
+    input_size: usize,
     input_group_idxs: &[usize],
     witnesses: &[packed::Bytes],
     multisig_config_opt: Option<&MultisigConfig>,
@@ -527,8 +561,106 @@ pub fn build_signature<S: FnMut(&H256) -> Result<[u8; SECP_SIGNATURE_SIZE], Stri
         blake2b.update(&(other_witness.len() as u64).to_le_bytes());
         blake2b.update(&other_witness.raw_data());
     }
+    for outter_witness in &witnesses[input_size..witnesses.len()] {
+        blake2b.update(&(outter_witness.len() as u64).to_le_bytes());
+        blake2b.update(&outter_witness.raw_data());
+    }
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
     let message = H256::from(message);
     signer(&message).map(|data| Bytes::from(data.to_vec()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ckb_types::{h160, h256};
+
+    #[test]
+    fn test_check_lock_script() {
+        let lock_sighash_ok = packed::Script::new_builder()
+            .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
+            .code_hash(SIGHASH_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type.into())
+            .build();
+        let lock_sighash_bad_hash_type = lock_sighash_ok
+            .clone()
+            .as_builder()
+            .hash_type(ScriptHashType::Data.into())
+            .build();
+        let lock_sighash_bad_args_1 = lock_sighash_ok
+            .clone()
+            .as_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes().to_vec()).pack())
+            .build();
+        let lock_sighash_bad_args_2 = lock_sighash_ok
+            .clone()
+            .as_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes()[0..12].to_vec()).pack())
+            .build();
+
+        let lock_multisig_ok = packed::Script::new_builder()
+            .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
+            .code_hash(MULTISIG_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type.into())
+            .build();
+        let lock_multisig_ok_args_28 = lock_multisig_ok
+            .clone()
+            .as_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes()[0..28].to_vec()).pack())
+            .build();
+        let lock_multisig_bad_hash_type = lock_multisig_ok
+            .clone()
+            .as_builder()
+            .hash_type(ScriptHashType::Data.into())
+            .build();
+        let lock_multisig_bad_args_1 = lock_multisig_ok
+            .clone()
+            .as_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes().to_vec()).pack())
+            .build();
+        let lock_multisig_bad_args_2 = lock_multisig_ok
+            .clone()
+            .as_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes()[0..12].to_vec()).pack())
+            .build();
+
+        let lock_other_type = packed::Script::new_builder()
+            .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
+            .code_hash(h256!("0xdeadbeef").pack())
+            .hash_type(ScriptHashType::Type.into())
+            .build();
+        let lock_other_data = packed::Script::new_builder()
+            .args(Bytes::from(h256!("0x33").as_bytes().to_vec()).pack())
+            .code_hash(h256!("0xdeadbeef").pack())
+            .hash_type(ScriptHashType::Data.into())
+            .build();
+
+        for (script, is_ok, skip_check) in &[
+            (&lock_sighash_ok, true, false),
+            (&lock_sighash_ok, true, true),
+            (&lock_sighash_bad_hash_type, false, false),
+            (&lock_sighash_bad_hash_type, false, true),
+            (&lock_sighash_bad_args_1, false, false),
+            (&lock_sighash_bad_args_1, false, true),
+            (&lock_sighash_bad_args_2, false, false),
+            (&lock_sighash_bad_args_2, false, true),
+            (&lock_multisig_ok, true, false),
+            (&lock_multisig_ok, true, true),
+            (&lock_multisig_ok_args_28, true, false),
+            (&lock_multisig_ok_args_28, true, true),
+            (&lock_multisig_bad_hash_type, false, false),
+            (&lock_multisig_bad_hash_type, false, true),
+            (&lock_multisig_bad_args_1, false, false),
+            (&lock_multisig_bad_args_1, false, true),
+            (&lock_multisig_bad_args_2, false, false),
+            (&lock_multisig_bad_args_2, false, true),
+            (&lock_other_type, true, true),
+            (&lock_other_type, false, false),
+            (&lock_other_data, true, true),
+            (&lock_other_data, false, false),
+        ] {
+            assert_eq!(check_lock_script(script, *skip_check).is_ok(), *is_ok);
+        }
+    }
 }

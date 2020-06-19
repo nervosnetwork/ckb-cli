@@ -21,7 +21,6 @@ use subcommands::{
     MockTxSubCommand, MoleculeSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
     WalletSubCommand,
 };
-use utils::other::sync_to_tip;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
@@ -77,6 +76,7 @@ fn main() -> Result<(), io::Error> {
             }
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
+        config.set_no_sync(configs["no-sync"].as_bool().unwrap_or(false));
         config.set_color(ansi_support && configs["color"].as_bool().unwrap_or(true));
         output_format =
             OutputFormat::from_str(&configs["output_format"].as_str().unwrap_or("yaml"))
@@ -95,16 +95,7 @@ fn main() -> Result<(), io::Error> {
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
-
-    // When flag `--wait-for-sync` given, we have to ensure that the index-store synchronizes
-    // to the tip before executing the command.
-    let wait_for_sync = matches.is_present("wait-for-sync");
-    if wait_for_sync {
-        if let Err(err) = sync_to_tip(&index_controller) {
-            eprintln!("Synchronize error: {}", err);
-            process::exit(1);
-        }
-    }
+    let wait_for_sync = !matches.is_present("no-sync");
 
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
@@ -166,6 +157,7 @@ fn main() -> Result<(), io::Error> {
                 None,
                 index_dir.clone(),
                 index_controller.clone(),
+                wait_for_sync,
             )
             .process(&sub_matches, output_format, color, debug)
         }),
@@ -178,6 +170,7 @@ fn main() -> Result<(), io::Error> {
                         genesis_info,
                         index_dir.clone(),
                         index_controller.clone(),
+                        wait_for_sync,
                     )
                     .process(&sub_matches, output_format, color, debug)
                 })
@@ -291,10 +284,18 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .arg(
             Arg::with_name("wait-for-sync")
                 .long("wait-for-sync")
+                .conflicts_with("no-sync")
                 .global(true)
                 .about(
                     "Ensure the index-store synchronizes completely before command being executed",
                 ),
+        )
+        .arg(
+            Arg::with_name("no-sync")
+                .long("no-sync")
+                .conflicts_with("wait-for-sync")
+                .global(true)
+                .about("Don't wait index database sync to tip"),
         );
 
     #[cfg(unix)]
@@ -329,6 +330,11 @@ pub fn build_interactive() -> App<'static> {
                     Arg::with_name("debug")
                         .long("debug")
                         .about("Switch debug mode"),
+                )
+                .arg(
+                    Arg::with_name("no-sync")
+                        .long("no-sync")
+                        .about("Switch whether wait index database sync to tip"),
                 )
                 .arg(
                     Arg::with_name("output-format")
