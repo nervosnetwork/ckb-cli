@@ -354,7 +354,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "ansi_term 0.11.0",
  "atty",
@@ -481,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-index"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "bincode",
  "ckb-rocksdb",
@@ -639,7 +639,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "aes-ctr",
  "bech32",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk-types"
-version = "0.33.0"
+version = "0.33.1"
 dependencies = [
  "ckb-crypto",
  "ckb-error",
