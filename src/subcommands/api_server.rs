@@ -24,13 +24,12 @@ use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use serde::{Deserialize, Serialize};
 
-use super::{CliSubCommand, LiveCells, TransferArgs, WalletSubCommand};
+use super::{CliSubCommand, LiveCells, Output, TransferArgs, WalletSubCommand};
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
     index::{IndexController, IndexRequest},
     other::get_network_type,
-    printer::OutputFormat,
 };
 
 pub struct ApiServerSubCommand<'a> {
@@ -78,13 +77,7 @@ impl<'a> ApiServerSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        _format: OutputFormat,
-        _color: bool,
-        _debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let listen_addr: SocketAddr =
             FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;
         let privkey_path: Option<String> = matches.value_of("privkey-path").map(Into::into);
@@ -139,7 +132,9 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
         RpcServer::start(&listen_addr, io_handler).wait();
-        Ok(String::from("Stopped"))
+        Ok(Output::new_error(serde_json::json!({
+            "status": "stopped",
+        })))
     }
 }
 

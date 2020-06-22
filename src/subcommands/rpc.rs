@@ -17,11 +17,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser,
 };
-use crate::utils::printer::{OutputFormat, Printable};
 
 pub struct RpcSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -250,13 +249,7 @@ impl<'a> RpcSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for RpcSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        _debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let is_raw_data = matches.is_present("raw-data");
         match matches.subcommand() {
             // [Chain]
@@ -270,10 +263,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_block(hash)
                         .map(RawOptionBlockView)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_block(hash).map(OptionBlockView)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_block_by_number", Some(m)) => {
@@ -286,20 +279,20 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_block_by_number(BlockNumber::from(number))
                         .map(RawOptionBlockView)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_block_by_number(number)
                         .map(OptionBlockView)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_block_hash", Some(m)) => {
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 let resp = self.rpc_client.get_block_hash(number).map(OptionH256)?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("get_cellbase_output_capacity_details", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -311,13 +304,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_cellbase_output_capacity_details(hash)
                         .map(RawOptionBlockReward)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_cellbase_output_capacity_details(hash)
                         .map(OptionBlockReward)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_cells_by_lock_hash", Some(m)) => {
@@ -336,13 +329,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         )
                         .map(RawCellOutputWithOutPoints)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_cells_by_lock_hash(lock_hash, from_number, to_number)
                         .map(CellOutputWithOutPoints)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_current_epoch", Some(m)) => {
@@ -352,10 +345,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .get_current_epoch()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_current_epoch()?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_epoch_by_number", Some(m)) => {
@@ -368,13 +361,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_epoch_by_number(EpochNumber::from(number))
                         .map(RawOptionEpochView)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_epoch_by_number(number)
                         .map(OptionEpochView)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_header", Some(m)) => {
@@ -387,10 +380,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_header(hash)
                         .map(RawOptionHeaderView)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_header(hash).map(OptionHeaderView)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_header_by_number", Some(m)) => {
@@ -403,13 +396,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_header_by_number(BlockNumber::from(number))
                         .map(RawOptionHeaderView)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_header_by_number(number)
                         .map(OptionHeaderView)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_live_cell", Some(m)) => {
@@ -428,10 +421,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .get_live_cell(out_point.into(), with_data)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_live_cell(out_point, with_data)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_tip_block_number", Some(m)) => {
@@ -441,13 +434,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .get_tip_block_number()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_tip_block_number()
                         .map(|number| serde_json::json!(number))?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_tip_header", Some(m)) => {
@@ -457,10 +450,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .get_tip_header()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_tip_header()?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_transaction", Some(m)) => {
@@ -473,20 +466,20 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_transaction(hash)
                         .map(RawOptionTransactionWithStatus)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
                         .get_transaction(hash)
                         .map(OptionTransactionWithStatus)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             // [Indexer]
             ("deindex_lock_hash", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
                 self.rpc_client.deindex_lock_hash(hash)?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("get_live_cells_by_lock_hash", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -506,7 +499,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         )
                         .map(RawLiveCells)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
@@ -517,7 +510,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                             Some(reverse_order),
                         )
                         .map(LiveCells)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_transactions_by_lock_hash", Some(m)) => {
@@ -538,7 +531,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         )
                         .map(RawCellTransactions)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self
                         .rpc_client
@@ -549,7 +542,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                             Some(reverse_order),
                         )
                         .map(CellTransactions)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("index_lock_hash", Some(m)) => {
@@ -563,10 +556,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .index_lock_hash(hash, index_from.map(BlockNumber::from))
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.index_lock_hash(hash, index_from)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             // [Net]
@@ -578,10 +571,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_banned_addresses()
                         .map(RawBannedAddrList)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_banned_addresses().map(BannedAddrList)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("get_peers", Some(m)) => {
@@ -592,10 +585,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .get_peers()
                         .map(RawNodes)
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_peers().map(Nodes)?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("local_node_info", Some(m)) => {
@@ -605,10 +598,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .local_node_info()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.local_node_info()?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             ("set_ban", Some(m)) => {
@@ -627,7 +620,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     absolute,
                     reason,
                 )?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             // [Pool]
             ("tx_pool_info", Some(m)) => {
@@ -637,10 +630,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .tx_pool_info()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.tx_pool_info()?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             // [Stats]
@@ -651,10 +644,10 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .raw_rpc_client
                         .get_blockchain_info()
                         .map_err(|err| err.to_string())?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_blockchain_info()?;
-                    Ok(resp.render(format, color))
+                    Ok(Output::new_output(resp))
                 }
             }
             // [IntegrationTest]
@@ -663,12 +656,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let address: Multiaddr =
                     FromStrParser::<Multiaddr>::new().from_matches(m, "address")?;
                 self.rpc_client.add_node(peer_id, address.to_string())?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("remove_node", Some(m)) => {
                 let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
                 self.rpc_client.remove_node(peer_id)?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("broadcast_transaction", Some(m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
@@ -677,7 +670,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
 
                 let resp = self.rpc_client.broadcast_transaction(tx.into())?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
         }

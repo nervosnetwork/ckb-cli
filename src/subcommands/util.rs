@@ -24,7 +24,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -32,7 +32,6 @@ use crate::utils::{
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, read_password, serialize_signature},
-    printer::{OutputFormat, Printable},
 };
 use crate::{build_cli, get_version};
 
@@ -249,13 +248,7 @@ impl<'a> UtilSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for UtilSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
                 let privkey_opt: Option<PrivkeyWrapper> =
@@ -276,7 +269,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
                 let old_address = OldAddress::new_default(lock_arg.clone());
 
-                println!(
+                eprintln!(
                     r#"Put this config in < ckb.toml >:
 
 [block_assembler]
@@ -302,7 +295,7 @@ message = "0x"
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
                 let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
@@ -338,7 +331,7 @@ message = "0x"
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("sign-message", Some(m)) => {
                 let message: H256 =
@@ -373,7 +366,7 @@ message = "0x"
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("verify-signature", Some(m)) => {
                 let message: H256 =
@@ -433,13 +426,14 @@ message = "0x"
                     "recoverable": recoverable,
                     "verify-ok": verify_ok,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("eaglesong", Some(m)) => {
                 let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
                 let mut builder = EagleSongBuilder::new();
                 builder.update(&binary);
-                Ok(format!("{:#x}", H256::from(builder.finalize())))
+                let output_string = format!("{:#x}", H256::from(builder.finalize()));
+                Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             ("blake2b", Some(m)) => {
                 let binary: Vec<u8> = HexParser
@@ -462,7 +456,8 @@ message = "0x"
                 } else {
                     &hash_data[..]
                 };
-                Ok(format!("0x{}", hex_string(slice).unwrap()))
+                let output_string = format!("0x{}", hex_string(slice).unwrap());
+                Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             ("compact-to-difficulty", Some(m)) => {
                 let compact_target: u32 = FromStrParser::<u32>::default()
@@ -479,7 +474,7 @@ message = "0x"
                 let resp = serde_json::json!({
                     "difficulty": format!("{:#x}", compact_to_difficulty(compact_target))
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("difficulty-to-compact", Some(m)) => {
                 let input = m.value_of("difficulty").unwrap();
@@ -492,7 +487,7 @@ message = "0x"
                 let resp = serde_json::json!({
                     "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {
                 let chain_info: ChainInfo = self
@@ -524,7 +519,7 @@ message = "0x"
                 let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload);
                 let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
-                    println!(
+                    eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
                         NaiveDateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0),
                         NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
@@ -534,7 +529,7 @@ message = "0x"
                         MULTISIG_TYPE_HASH,
                     );
                 }
-                Ok(serde_json::json!(resp).render(format, color))
+                Ok(Output::new_output(serde_json::json!(resp)))
             }
             ("to-multisig-addr", Some(m)) => {
                 let address: Address = AddressParser::default()
@@ -561,7 +556,7 @@ message = "0x"
                     },
                     "target_epoch": epoch.to_string(),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();
@@ -581,7 +576,7 @@ message = "0x"
                     }
                     _ => panic!("Invalid shell: {}", shell),
                 }
-                Ok("".to_string())
+                Ok(Output::new_success())
             }
             _ => Err(Self::subcommand("util").generate_usage()),
         }
