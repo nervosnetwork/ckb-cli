@@ -299,18 +299,14 @@ impl InteractiveEnv {
                 ("rpc", Some(sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
-                        .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                        .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.key_store).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
-                    println!("{}", output);
+                    let output =
+                        AccountSubCommand::new(&mut self.key_store).process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("mock-tx", Some(sub_matches)) => {
@@ -320,28 +316,27 @@ impl InteractiveEnv {
                         &mut self.key_store,
                         genesis_info,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("tx", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output =
                         TxSubCommand::new(&mut self.rpc_client, &mut self.key_store, genesis_info)
-                            .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                            .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("util", Some(sub_matches)) => {
                     let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.key_store)
-                        .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                        .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("molecule", Some(sub_matches)) => {
-                    let output =
-                        MoleculeSubCommand::new().process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    let output = MoleculeSubCommand::new().process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("wallet", Some(sub_matches)) => {
@@ -354,8 +349,8 @@ impl InteractiveEnv {
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("dao", Some(sub_matches)) => {
@@ -368,8 +363,8 @@ impl InteractiveEnv {
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("exit", _) => {

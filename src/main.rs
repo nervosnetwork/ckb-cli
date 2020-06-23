@@ -12,7 +12,7 @@ use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg};
 #[cfg(unix)]
-use subcommands::TuiSubCommand;
+use subcommands::{Output, TuiSubCommand};
 
 use crate::utils::other::get_genesis_info;
 use interactive::InteractiveEnv;
@@ -102,40 +102,24 @@ fn main() -> Result<(), io::Error> {
     }
     let result = match matches.subcommand() {
         #[cfg(unix)]
-        ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone()).start(),
-        ("rpc", Some(sub_matches)) => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
-            .process(&sub_matches, output_format, color, debug),
+        ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone())
+            .start()
+            .map(|s| Output::new_output(serde_json::json!(s))),
+        ("rpc", Some(sub_matches)) => {
+            RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(&sub_matches, debug)
+        }
         ("account", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            AccountSubCommand::new(&mut key_store).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
+            AccountSubCommand::new(&mut key_store).process(&sub_matches, debug)
         }),
         ("mock-tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            MockTxSubCommand::new(&mut rpc_client, &mut key_store, None).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
+            MockTxSubCommand::new(&mut rpc_client, &mut key_store, None)
+                .process(&sub_matches, debug)
         }),
         ("tx", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            TxSubCommand::new(&mut rpc_client, &mut key_store, None).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
+            TxSubCommand::new(&mut rpc_client, &mut key_store, None).process(&sub_matches, debug)
         }),
         ("util", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
-            UtilSubCommand::new(&mut rpc_client, &mut key_store).process(
-                &sub_matches,
-                output_format,
-                color,
-                debug,
-            )
+            UtilSubCommand::new(&mut rpc_client, &mut key_store).process(&sub_matches, debug)
         }),
         ("server", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             ApiServerSubCommand::new(
@@ -145,11 +129,9 @@ fn main() -> Result<(), io::Error> {
                 index_dir.clone(),
                 index_controller.clone(),
             )
-            .process(&sub_matches, output_format, color, debug)
+            .process(&sub_matches, debug)
         }),
-        ("molecule", Some(sub_matches)) => {
-            MoleculeSubCommand::new().process(&sub_matches, output_format, color, debug)
-        }
+        ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(&sub_matches, debug),
         ("wallet", Some(sub_matches)) => get_key_store(&ckb_cli_dir).and_then(|mut key_store| {
             WalletSubCommand::new(
                 &mut rpc_client,
@@ -159,7 +141,7 @@ fn main() -> Result<(), io::Error> {
                 index_controller.clone(),
                 wait_for_sync,
             )
-            .process(&sub_matches, output_format, color, debug)
+            .process(&sub_matches, debug)
         }),
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
@@ -172,7 +154,7 @@ fn main() -> Result<(), io::Error> {
                         index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, output_format, color, debug)
+                    .process(&sub_matches, debug)
                 })
             })
         }
@@ -191,8 +173,8 @@ fn main() -> Result<(), io::Error> {
     };
 
     match result {
-        Ok(message) => {
-            println!("{}", message);
+        Ok(output) => {
+            output.print(output_format, color);
             index_controller.shutdown();
         }
         Err(err) => {

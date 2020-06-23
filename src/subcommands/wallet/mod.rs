@@ -14,7 +14,7 @@ use ckb_types::{
 use clap::{App, AppSettings, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -27,7 +27,6 @@ use crate::utils::{
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
         read_password, serialize_signature, sync_to_tip,
     },
-    printer::{OutputFormat, Printable},
 };
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
@@ -526,13 +525,7 @@ impl<'a> WalletSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for WalletSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let to_data = get_to_data(m)?;
@@ -555,10 +548,11 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
-                    Ok(ckb_jsonrpc_types::TransactionView::from(tx).render(format, color))
+                    let rpc_tx_view = ckb_jsonrpc_types::TransactionView::from(tx);
+                    Ok(Output::new_output(rpc_tx_view))
                 } else {
                     let tx_hash: H256 = tx.hash().unpack();
-                    Ok(tx_hash.render(format, color))
+                    Ok(Output::new_output(tx_hash))
                 }
             }
             ("get-capacity", Some(m)) => {
@@ -618,7 +612,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     resp["dao"] = serde_json::json!(format!("{:#}", HumanCapacity::from(dao)));
                     resp["free"] = serde_json::json!(format!("{:#}", HumanCapacity::from(free)));
                 }
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("get-live-cells", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
@@ -705,7 +699,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         serde_json::json!(format!("{:#}", HumanCapacity::from(total_capacity)));
                 }
 
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("top-capacity", Some(m)) => {
                 let n: usize = m
@@ -725,12 +719,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         })
                         .collect::<Vec<_>>()
                 })?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("db-metrics", _) => {
                 let metrcis = self.with_db(|db| db.get_metrics(None))?;
                 let resp = serde_json::to_value(metrcis).map_err(|err| err.to_string())?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
         }

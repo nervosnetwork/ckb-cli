@@ -1,3 +1,4 @@
+use crate::subcommands::Output;
 use crate::utils::{
     other::check_lack_of_capacity,
     printer::{OutputFormat, Printable},
@@ -94,21 +95,19 @@ pub(crate) fn calculate_dao_maximum_withdraw4(
 pub(crate) fn send_transaction(
     rpc_client: &mut HttpRpcClient,
     transaction: TransactionView,
-    format: OutputFormat,
-    color: bool,
     debug: bool,
-) -> Result<String, String> {
+) -> Result<Output, String> {
     check_lack_of_capacity(&transaction)?;
     let transaction_view: ckb_jsonrpc_types::TransactionView = transaction.clone().into();
     if debug {
-        println!(
+        eprintln!(
             "[Send Transaction]:\n{}",
-            transaction_view.render(format, color)
+            transaction_view.render(OutputFormat::Yaml, false)
         );
     }
 
     let resp = rpc_client.send_transaction(transaction.data())?;
-    Ok(resp.render(format, color))
+    Ok(Output::new_output(resp))
 }
 
 pub(crate) fn minimal_unlock_point(

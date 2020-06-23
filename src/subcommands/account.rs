@@ -10,7 +10,7 @@ use ckb_sdk::{
 use ckb_types::{packed::Script, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
 use crate::utils::{
     arg::lock_arg,
     arg_parser::{
@@ -18,7 +18,6 @@ use crate::utils::{
         FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
-    printer::{OutputFormat, Printable},
 };
 
 pub struct AccountSubCommand<'a> {
@@ -140,13 +139,7 @@ impl<'a> AccountSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for AccountSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        _debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("list", _) => {
                 let mut accounts = self
@@ -175,10 +168,10 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         })
                     })
                     .collect::<Vec<_>>();
-                Ok(serde_json::json!(resp).render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("new", _) => {
-                println!("Your new account is locked with a password. Please give a password. Do not forget this password.");
+                eprintln!("Your new account is locked with a password. Please give a password. Do not forget this password.");
 
                 let pass = read_password(true, None)?;
                 let lock_arg = self
@@ -195,7 +188,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("import", Some(m)) => {
                 let secp_key: Option<PrivkeyWrapper> =
@@ -221,7 +214,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("import-keystore", Some(m)) => {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "path")?;
@@ -243,7 +236,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("unlock", Some(m)) => {
                 let lock_arg: H160 =
@@ -258,7 +251,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "status": lock_after,
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("update", Some(m)) => {
                 let lock_arg: H160 =
@@ -268,7 +261,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 self.key_store
                     .update(&lock_arg, old_password.as_bytes(), new_passsword.as_bytes())
                     .map_err(|err| err.to_string())?;
-                Ok("success".to_owned())
+                Ok(Output::new_success())
             }
             ("export", Some(m)) => {
                 let lock_arg: H160 =
@@ -291,10 +284,13 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map_err(|err| err.to_string())?;
                 file.write(format!("{:x}", chain_code).as_bytes())
                     .map_err(|err| err.to_string())?;
-                Ok(format!(
-                    "Success exported account as extended privkey to: \"{}\", please use this file carefully",
-                    key_path
-                ))
+                let resp = serde_json::json!({
+                    "message": format!(
+                        "Success exported account as extended privkey to: \"{}\", please use this file carefully",
+                        key_path
+                    )
+                });
+                Ok(Output::new_error(resp))
             }
             ("bip44-addresses", Some(m)) => {
                 let lock_arg: H160 =
@@ -335,7 +331,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "receiving": get_addresses(&key_set.external),
                     "change": get_addresses(&key_set.change),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
@@ -357,7 +353,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand("account").generate_usage()),
         }

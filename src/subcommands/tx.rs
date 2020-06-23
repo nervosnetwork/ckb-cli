@@ -25,7 +25,7 @@ use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -36,7 +36,6 @@ use crate::utils::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
         get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
     },
-    printer::{OutputFormat, Printable},
 };
 
 pub struct TxSubCommand<'a> {
@@ -239,13 +238,7 @@ impl<'a> TxSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for TxSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
 
         match matches.subcommand() {
@@ -261,9 +254,9 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
                     file.write_all(content.as_bytes())
                         .map_err(|err| err.to_string())?;
-                    Ok(String::from("ok"))
+                    Ok(Output::new_success())
                 } else {
-                    Ok(repr.render(format, color))
+                    Ok(Output::new_output(repr))
                 }
             }
             ("clear-field", Some(m)) => {
@@ -278,7 +271,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                     Ok(())
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-input", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -307,7 +300,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     )
                 })?;
 
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-output", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -346,7 +339,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     Ok(())
                 })?;
 
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-signature", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -356,7 +349,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_signature(lock_arg, signature)
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-multisig-config", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -377,7 +370,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     helper.add_multisig_config(cfg);
                     Ok(())
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("info", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -450,7 +443,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     "output_total": format!("{:#}", HumanCapacity(output_total)),
                     "tx_fee": tx_fee_string,
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("sign-inputs", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -499,7 +492,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         })
                     })
                     .collect::<Vec<_>>();
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("send", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -537,13 +530,16 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx = helper.build_tx(&mut get_live_cell, skip_check)?;
                 let rpc_tx = json_types::Transaction::from(tx.data());
                 if debug {
-                    println!("[send transaction]:\n{}", rpc_tx.render(format, color));
+                    eprintln!(
+                        "[send transaction]:\n{}",
+                        serde_json::to_string_pretty(&rpc_tx).unwrap()
+                    );
                 }
                 let resp = self
                     .rpc_client
                     .send_transaction(tx.data())
                     .map_err(|err| format!("Send transaction error: {}", err))?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("build-multisig-address", Some(m)) => {
                 let sighash_addresses: Vec<Address> = AddressParser::default()
@@ -569,7 +565,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref()).unwrap()),
                     "lock-hash": format!("{:#x}", lock_script.calc_script_hash())
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand("tx").generate_usage()),
         }
@@ -596,7 +592,7 @@ fn print_cell_info(
     };
     let address = Address::new(network, address_payload);
     let type_script_status = if type_script_empty { "none" } else { "some" };
-    println!(
+    eprintln!(
         "[{}] {} => {}, (data-length: {}, type-script: {}, lock-kind: {})",
         prefix,
         address,

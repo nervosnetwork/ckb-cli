@@ -1,5 +1,5 @@
 use crate::subcommands::dao::util::{calculate_dao_maximum_withdraw, send_transaction};
-use crate::subcommands::{CliSubCommand, DAOSubCommand};
+use crate::subcommands::{CliSubCommand, DAOSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -7,7 +7,6 @@ use crate::utils::{
         PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{get_address, get_network_type},
-    printer::{OutputFormat, Printable},
 };
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
@@ -20,20 +19,14 @@ use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
 impl<'a> CliSubCommand for DAOSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network_type = get_network_type(&mut self.rpc_client)?;
         match matches.subcommand() {
             ("deposit", Some(m)) => {
                 self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
                 let transaction = self.deposit(capacity)?;
-                send_transaction(self.rpc_client(), transaction, format, color, debug)
+                send_transaction(self.rpc_client(), transaction, debug)
             }
             ("prepare", Some(m)) => {
                 self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
@@ -42,7 +35,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     return Err("Duplicated out-points".to_string());
                 }
                 let transaction = self.prepare(out_points)?;
-                send_transaction(self.rpc_client(), transaction, format, color, debug)
+                send_transaction(self.rpc_client(), transaction, debug)
             }
             ("withdraw", Some(m)) => {
                 self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
@@ -51,7 +44,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     return Err("Duplicated out-points".to_string());
                 }
                 let transaction = self.withdraw(out_points)?;
-                send_transaction(self.rpc_client(), transaction, format, color, debug)
+                send_transaction(self.rpc_client(), transaction, debug)
             }
             ("query-deposited-cells", Some(m)) => {
                 let query_args = QueryArgs::from_matches(m, network_type)?;
@@ -64,7 +57,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     }).collect::<Vec<_>>(),
                     "total_capacity": total_capacity,
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("query-prepared-cells", Some(m)) => {
                 let query_args = QueryArgs::from_matches(m, network_type)?;
@@ -84,7 +77,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                     }).collect::<Vec<_>>(),
                     "total_maximum_withdraw": total_maximum_withdraw,
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
         }
