@@ -200,7 +200,7 @@ http://localhost:3000
           "lock_hash": "0x951f5af7606e2905a556a2774b99de803f0dac47e06129ecd3d4c42243b290ed",
           "number": 62800,
           "tx_hash": "0xd3f1df20a4b87c01d77b0ab9877c9270c512ce3e9a4443deb0eb685112fc24e5",
-          "tx_index": 1,
+          "output_index": 1,
           "type_hashes": null
         },
         "mature": true
@@ -216,7 +216,7 @@ http://localhost:3000
           "lock_hash": "0x951f5af7606e2905a556a2774b99de803f0dac47e06129ecd3d4c42243b290ed",
           "number": 86682,
           "tx_hash": "0x962562e730cbab29fcfed8c2aff9da8936f669c2236957107da12c357d6847af",
-          "tx_index": 0,
+          "output_index": 0,
           "type_hashes": null
         },
         "mature": true

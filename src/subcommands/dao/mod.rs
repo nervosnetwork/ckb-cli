@@ -133,7 +133,7 @@ impl<'a> DAOSubCommand<'a> {
                 .collect::<HashSet<_>>();
             cells_by_lock
                 .intersection(&cells_by_code)
-                .sorted_by_key(|live| (live.number, live.tx_index, live.index.output_index))
+                .sorted_by_key(|live| (live.number, live.index.tx_index, live.index.output_index))
                 .cloned()
                 .collect::<Vec<_>>()
         })
