@@ -3,6 +3,7 @@ use std::env;
 use std::fs;
 use std::io::{self, Read};
 use std::iter::FromIterator;
+use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 
@@ -52,10 +53,24 @@ fn main() -> Result<(), io::Error> {
         .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("API_URL"));
 
-    let mut ckb_cli_dir = dirs::home_dir().unwrap();
-    ckb_cli_dir.push(".ckb-cli");
-    let mut resource_dir = ckb_cli_dir.clone();
-    resource_dir.push("resource");
+    let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
+        let dir = PathBuf::from(dir_string.as_str());
+        if !dir.exists() {
+            fs::create_dir_all(&dir)?;
+        }
+        if dir.exists() && !dir.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{} is not a directory", dir_string),
+            ));
+        }
+        dir
+    } else {
+        let mut dir = dirs::home_dir().unwrap();
+        dir.push(".ckb-cli");
+        dir
+    };
+
     let mut index_dir = ckb_cli_dir.clone();
     index_dir.push(index_dirname());
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
