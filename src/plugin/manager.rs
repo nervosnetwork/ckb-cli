@@ -226,7 +226,10 @@ impl PluginManager {
             .unwrap_or(true)
     }
     pub fn keystore_handler(&self) -> KeyStoreHandler {
-        KeyStoreHandler::new(self.service_provider.handler().clone())
+        KeyStoreHandler::new(
+            self.service_provider.handler().clone(),
+            self.keystores.is_empty(),
+        )
     }
     #[allow(unused)]
     pub fn indexer_handler(&self) -> IndexerHandler {
@@ -1143,11 +1146,20 @@ impl Plugin {
 #[derive(Clone)]
 pub struct KeyStoreHandler {
     handler: ServiceHandler,
+    /// Is default file based keystore
+    is_default: bool,
 }
 
 impl KeyStoreHandler {
-    fn new(handler: ServiceHandler) -> KeyStoreHandler {
-        KeyStoreHandler { handler }
+    fn new(handler: ServiceHandler, is_default: bool) -> KeyStoreHandler {
+        KeyStoreHandler {
+            handler,
+            is_default,
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        self.is_default
     }
 
     fn call(&self, request: KeyStoreRequest) -> Result<PluginResponse, String> {

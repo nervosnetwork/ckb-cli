@@ -79,7 +79,7 @@ pub fn get_signer(
     keystore: KeyStoreHandler,
     require_password: bool,
 ) -> impl Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String> + 'static {
-    move |lock_arg: &H160, tx_hash_hash: &H256, tx: &rpc_types::Transaction| {
+    move |lock_arg: &H160, message: &H256, _tx: &rpc_types::Transaction| {
         let password = if require_password {
             let prompt = format!("Password for [{:x}]", lock_arg);
             Some(read_password(false, Some(prompt.as_str()))?)
@@ -89,8 +89,8 @@ pub fn get_signer(
         let data = keystore.sign(
             lock_arg.clone(),
             &[],
-            tx_hash_hash.clone(),
-            SignTarget::Transaction(tx.clone()),
+            message.clone(),
+            SignTarget::AnyMessage(message.clone()),
             password,
             true,
         )?;

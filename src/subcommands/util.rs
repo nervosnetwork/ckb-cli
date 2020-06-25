@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
@@ -324,6 +325,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
+                    Some(binary),
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
@@ -359,6 +361,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
+                    None,
                 )?;
                 let result = serde_json::json!({
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
@@ -589,6 +592,7 @@ fn sign_message(
     from_account_opt: Option<(&mut PluginManager, H160)>,
     recoverable: bool,
     message: &H256,
+    data: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
@@ -608,9 +612,9 @@ fn sign_message(
             } else {
                 None
             };
-            let target = SignTarget::AnyMessage(serde_json::json!({
-                "message": message.clone(),
-            }));
+            let target = data
+                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
+                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, false)
@@ -622,9 +626,9 @@ fn sign_message(
             } else {
                 None
             };
-            let target = SignTarget::AnyMessage(serde_json::json!({
-                "message": message.clone(),
-            }));
+            let target = data
+                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
+                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, true)

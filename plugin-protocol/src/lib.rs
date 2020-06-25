@@ -166,8 +166,13 @@ pub enum CallbackResponse {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case", content = "content")]
 pub enum SignTarget {
-    Transaction(Transaction),
-    AnyMessage(serde_json::Value),
+    Transaction {
+        tx: Transaction,
+        inputs: Vec<Transaction>,
+        change_path: String,
+    },
+    AnyMessage(H256),
+    AnyData(JsonBytes),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

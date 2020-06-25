@@ -9,6 +9,7 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
+    wallet::DerivationPath,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
     MultisigConfig, NetworkType, SignerFn, TxHelper,
 };
@@ -463,7 +464,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     };
                     let account = account_opt.unwrap();
                     let keystore = self.plugin_mgr.keystore_handler();
-                    get_keystore_signer(keystore, account, password)
+                    let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
+                    get_keystore_signer(keystore, new_client, account, password)
                 };
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
@@ -609,6 +611,7 @@ fn print_cell_info(
 
 fn get_keystore_signer(
     keystore: KeyStoreHandler,
+    mut client: HttpRpcClient,
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
@@ -618,11 +621,33 @@ fn get_keystore_signer(
                 if message == &h256!("0x0") {
                     Ok(Some([0u8; 65]))
                 } else {
+                    let sign_target = if keystore.is_default() {
+                        SignTarget::AnyData(Default::default())
+                    } else {
+                        let inputs = tx
+                            .inputs
+                            .iter()
+                            .map(|input| {
+                                let tx_hash = &input.previous_output.tx_hash;
+                                client
+                                    .get_transaction(tx_hash.clone())?
+                                    .map(|tx_with_status| tx_with_status.transaction.inner)
+                                    .map(packed::Transaction::from)
+                                    .map(json_types::Transaction::from)
+                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
+                            })
+                            .collect::<Result<Vec<_>, String>>()?;
+                        SignTarget::Transaction {
+                            tx: tx.clone(),
+                            inputs,
+                            change_path: DerivationPath::empty().to_string(),
+                        }
+                    };
                     let data = keystore.sign(
                         account.clone(),
                         &[],
                         message.clone(),
-                        SignTarget::Transaction(tx.clone()),
+                        sign_target,
                         password.clone(),
                         true,
                     )?;

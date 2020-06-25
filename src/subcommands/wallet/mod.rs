@@ -3,12 +3,12 @@ mod index;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use ckb_jsonrpc_types as rpc_types;
+use ckb_jsonrpc_types as json_types;
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
     h256,
-    packed::{Byte32, CellOutput, OutPoint, Script},
+    packed::{self, Byte32, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
@@ -290,26 +290,34 @@ impl<'a> WalletSubCommand<'a> {
 
         let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
-        let change_address_payload = if let Some(last_change_address) = last_change_address_opt {
-            // Behave like HD wallet
-            let change_last =
-                H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
-            let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
-                from_lock_arg.clone(),
-                receiving_address_length,
-                change_last,
-                DERIVE_CHANGE_ADDRESS_MAX_LEN,
-                password.clone(),
-            )?;
-            for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                path_map.insert(hash160.clone(), path.clone());
-                let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                lock_hashes.push(Script::from(&payload).calc_script_hash());
-            }
-            last_change_address.payload().clone()
-        } else {
-            from_address.payload().clone()
-        };
+        let (change_address_payload, change_path) =
+            if let Some(last_change_address) = last_change_address_opt {
+                // Behave like HD wallet
+                let change_last =
+                    H160::from_slice(last_change_address.payload().args().as_ref()).unwrap();
+                let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
+                    from_lock_arg.clone(),
+                    receiving_address_length,
+                    change_last.clone(),
+                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                    password.clone(),
+                )?;
+                let mut change_path_opt = None;
+                for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                    if hash160 == &change_last {
+                        change_path_opt = Some(path.clone());
+                    }
+                    path_map.insert(hash160.clone(), path.clone());
+                    let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                    lock_hashes.push(Script::from(&payload).calc_script_hash());
+                }
+                (
+                    last_change_address.payload().clone(),
+                    change_path_opt.expect("change path not exists"),
+                )
+            } else {
+                (from_address.payload().clone(), DerivationPath::empty())
+            };
 
         if let Some(from_locked_address) = from_locked_address.as_ref() {
             lock_hashes.insert(
@@ -385,6 +393,7 @@ impl<'a> WalletSubCommand<'a> {
             return Err("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust".to_string());
         }
 
+        let rpc_url = self.rpc_client.url().to_string();
         let keystore = self.plugin_mgr.keystore_handler();
         let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
             Default::default();
@@ -417,7 +426,15 @@ impl<'a> WalletSubCommand<'a> {
         let signer = if let Some(from_privkey) = from_privkey {
             get_privkey_signer(from_privkey)
         } else {
-            get_keystore_signer(keystore, path_map, from_lock_arg, password)
+            let new_client = HttpRpcClient::new(rpc_url);
+            get_keystore_signer(
+                keystore,
+                new_client,
+                change_path,
+                path_map,
+                from_lock_arg,
+                password,
+            )
         };
         for (lock_arg, signature) in
             helper.sign_inputs(signer, &mut get_live_cell_fn, skip_check)?
@@ -549,7 +566,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
-                    let rpc_tx_view = ckb_jsonrpc_types::TransactionView::from(tx);
+                    let rpc_tx_view = json_types::TransactionView::from(tx);
                     Ok(Output::new_output(rpc_tx_view))
                 } else {
                     let tx_hash: H256 = tx.hash().unpack();
@@ -738,12 +755,14 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
 
 fn get_keystore_signer(
     keystore: KeyStoreHandler,
+    mut client: HttpRpcClient,
+    change_path: DerivationPath,
     path_map: HashMap<H160, DerivationPath>,
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
     Box::new(
-        move |lock_args: &HashSet<H160>, message: &H256, tx: &rpc_types::Transaction| {
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
             let path: &[_] = if lock_args.contains(&account) {
                 &[]
             } else {
@@ -755,11 +774,33 @@ fn get_keystore_signer(
             if message == &h256!("0x0") {
                 return Ok(Some([0u8; 65]));
             }
+            let sign_target = if keystore.is_default() {
+                SignTarget::AnyData(Default::default())
+            } else {
+                let inputs = tx
+                    .inputs
+                    .iter()
+                    .map(|input| {
+                        let tx_hash = &input.previous_output.tx_hash;
+                        client
+                            .get_transaction(tx_hash.clone())?
+                            .map(|tx_with_status| tx_with_status.transaction.inner)
+                            .map(packed::Transaction::from)
+                            .map(json_types::Transaction::from)
+                            .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                SignTarget::Transaction {
+                    tx: tx.clone(),
+                    inputs,
+                    change_path: change_path.to_string(),
+                }
+            };
             let data = keystore.sign(
                 account.clone(),
                 path,
                 message.clone(),
-                SignTarget::Transaction(tx.clone()),
+                sign_target,
                 password.clone(),
                 true,
             )?;
