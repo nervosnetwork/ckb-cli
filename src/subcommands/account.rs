@@ -81,6 +81,9 @@ impl<'a> AccountSubCommand<'a> {
                 App::new("update")
                     .about("Update password of an account")
                     .arg(lock_arg().required(true)),
+                App::new("upgrade")
+                    .about("Upgrade an account to latest json format")
+                    .arg(lock_arg().required(true)),
                 App::new("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
                     .arg(lock_arg().required(true))
@@ -184,11 +187,13 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 unreachable!();
                             }
                         } else {
+                            let has_ckb_root = self.key_store.get_ckb_root(&lock_arg).is_some();
                             serde_json::json!({
                                 "#": idx,
                                 "source": source,
                                 "lock_arg": format!("{:#x}", lock_arg),
                                 "lock_hash": format!("{:#x}", lock_hash),
+                                "has_ckb_root": has_ckb_root,
                                 "address": {
                                     "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                     "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
@@ -296,6 +301,15 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     old_password,
                     new_passsword,
                 )?;
+                Ok(Output::new_success())
+            }
+            ("upgrade", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let password = read_password(false, None)?;
+                self.key_store
+                    .upgrade(&lock_arg, password.as_bytes())
+                    .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
             ("export", Some(m)) => {

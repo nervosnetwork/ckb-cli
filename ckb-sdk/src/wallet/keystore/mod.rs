@@ -165,6 +165,25 @@ impl KeyStore {
             Ok(key.hash160().clone())
         }
     }
+    pub fn upgrade(&self, hash160: &H160, password: &[u8]) -> Result<(), Error> {
+        let filepath = self.get_filepath(hash160)?;
+        let backup_path = filepath.with_file_name(format!("{:#x}.upgrade-backup", hash160));
+        if backup_path.exists() {
+            return Err(Error::Io(format!(
+                "Backup file exists: {:?}, remove it first",
+                backup_path
+            )));
+        }
+        fs::copy(&filepath, &backup_path)?;
+        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let filename = filepath
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("file_name");
+        let _filepath = self.storage.store_key(filename, &key, password)?;
+        fs::remove_file(backup_path)?;
+        Ok(())
+    }
     pub fn export(
         &self,
         hash160: &H160,
@@ -511,7 +530,7 @@ impl DerivedKeySet {
 
 #[derive(Clone)]
 pub struct CkbRoot {
-    path: &'static str,
+    pub path: &'static str,
     extended_pubkey: ExtendedPubKey,
 }
 
