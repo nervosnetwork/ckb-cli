@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use ckb_sdk::{
-    wallet::{DerivationPath, Key, MasterPrivKey},
+    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
@@ -23,11 +23,18 @@ use crate::utils::{
 
 pub struct AccountSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
+    key_store: &'a mut KeyStore,
 }
 
 impl<'a> AccountSubCommand<'a> {
-    pub fn new(plugin_mgr: &'a mut PluginManager) -> AccountSubCommand<'a> {
-        AccountSubCommand { plugin_mgr }
+    pub fn new(
+        plugin_mgr: &'a mut PluginManager,
+        key_store: &'a mut KeyStore,
+    ) -> AccountSubCommand<'a> {
+        AccountSubCommand {
+            plugin_mgr,
+            key_store,
+        }
     }
 
     pub fn subcommand(name: &'static str) -> App<'static> {
@@ -126,6 +133,14 @@ impl<'a> AccountSubCommand<'a> {
                             .default_value("10")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .about("Change addresses length")
+                    )
+                    .arg(
+                        Arg::with_name("network")
+                            .long("network")
+                            .takes_value(true)
+                            .default_value("mainnet")
+                            .possible_values(&["mainnet", "testnet"])
+                            .about("The network type")
                     )
                     .arg(lock_arg().required(true)),
                 App::new("extended-address")
@@ -356,6 +371,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FromStrParser::<u32>::default().from_matches(m, "from-change-index")?;
                 let change_length: u32 =
                     FromStrParser::<u32>::default().from_matches(m, "change-length")?;
+                let network = match m.value_of("network").expect("network argument") {
+                    "mainnet" => NetworkType::Mainnet,
+                    "testnet" => NetworkType::Testnet,
+                    _ => unreachable!(),
+                };
+
                 let key_set = self
                     .plugin_mgr
                     .keystore_handler()
@@ -372,7 +393,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(NetworkType::Mainnet, payload).to_string(),
+                                "address": Address::new(network, payload).to_string(),
                             })
                         })
                         .collect::<Vec<_>>()

@@ -27,7 +27,7 @@ use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
     index::IndexThreadState,
-    other::{check_alerts, get_network_type, index_dirname},
+    other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
 
@@ -117,6 +117,12 @@ fn main() -> Result<(), io::Error> {
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
+    let mut key_store = get_key_store(&ckb_cli_dir).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Open file based key store error: {}", err),
+        )
+    })?;
     let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, api_uri.clone()).unwrap();
     let result = match matches.subcommand() {
         #[cfg(unix)]
@@ -127,7 +133,7 @@ fn main() -> Result<(), io::Error> {
             RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(&sub_matches, debug)
         }
         ("account", Some(sub_matches)) => {
-            AccountSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
+            AccountSubCommand::new(&mut plugin_mgr, &mut key_store).process(&sub_matches, debug)
         }
         ("mock-tx", Some(sub_matches)) => {
             MockTxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None)
@@ -178,6 +184,7 @@ fn main() -> Result<(), io::Error> {
                 ckb_cli_dir,
                 config,
                 plugin_mgr,
+                key_store,
                 index_controller.clone(),
             )
             .and_then(|mut env| env.start())
