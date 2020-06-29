@@ -16,7 +16,7 @@ use chrono::{Datelike, Timelike, Utc};
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_types::{H160, H256};
-use faster_hex::hex_decode;
+use faster_hex::{hex_decode, hex_string};
 use rand::Rng;
 use secp256k1::recovery::RecoverableSignature;
 use uuid::Uuid;
@@ -27,11 +27,13 @@ pub use util::{zeroize_privkey, zeroize_slice};
 
 const KEYSTORE_VERSION: u32 = 3;
 const KEYSTORE_ORIGIN: &str = "ckb-cli";
+pub const CKB_ROOT_PATH: &str = "m/44'/309'/0'";
 
 pub struct KeyStore {
     keys_dir: PathBuf,
     storage: PassphraseKeyStore,
     files: HashMap<H160, PathBuf>,
+    ckb_roots: HashMap<H160, CkbRoot>,
     unlocked_keys: HashMap<H160, TimedKey>,
 }
 
@@ -41,6 +43,7 @@ impl Clone for KeyStore {
             keys_dir: self.keys_dir.clone(),
             storage: self.storage.clone(),
             files: self.files.clone(),
+            ckb_roots: self.ckb_roots.clone(),
             unlocked_keys: HashMap::default(),
         }
     }
@@ -56,6 +59,7 @@ impl KeyStore {
                 scrypt_type,
             },
             files: HashMap::default(),
+            ckb_roots: HashMap::default(),
             unlocked_keys: HashMap::default(),
         };
         key_store.refresh_dir()?;
@@ -73,6 +77,10 @@ impl KeyStore {
     pub fn get_accounts(&mut self) -> &HashMap<H160, PathBuf> {
         self.refresh_dir().ok();
         &self.files
+    }
+    pub fn get_ckb_root(&mut self, hash160: &H160) -> Option<&CkbRoot> {
+        self.refresh_dir().ok();
+        self.ckb_roots.get(hash160)
     }
     pub fn has_account(&mut self, hash160: &H160) -> bool {
         self.refresh_dir().ok();
@@ -237,7 +245,7 @@ impl KeyStore {
         Ok(self
             .get_timed_key(hash160)?
             .master_privkey()
-            .extended_pubkey(path)?)
+            .extended_pubkey(path))
     }
     pub fn extended_pubkey_with_password<P>(
         &mut self,
@@ -250,58 +258,59 @@ impl KeyStore {
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.master_privkey.extended_pubkey(path)?)
+        Ok(key.master_privkey.extended_pubkey(path))
     }
-    pub fn derived_key_set_with_password(
+    pub fn ckb_root_with_password(
         &mut self,
         hash160: &H160,
         password: &[u8],
-        external_max_len: u32,
-        change_last: &H160,
-        change_max_len: u32,
-    ) -> Result<DerivedKeySet, Error> {
+    ) -> Result<CkbRoot, Error> {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
-        key.derived_key_set(external_max_len, change_last, change_max_len)
-    }
-    pub fn derived_key_set_by_index_with_password(
-        &mut self,
-        hash160: &H160,
-        password: &[u8],
-        external_start: u32,
-        external_length: u32,
-        change_start: u32,
-        change_length: u32,
-    ) -> Result<DerivedKeySet, Error> {
-        let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
-        Ok(key.derived_key_set_by_index(
-            external_start,
-            external_length,
-            change_start,
-            change_length,
-        ))
+        Ok(key.ckb_root())
     }
 
     // NOTE: assume refresh keystore directory is not a hot action
     fn refresh_dir(&mut self) -> Result<(), Error> {
         let mut files = HashMap::default();
+        let mut ckb_roots = HashMap::default();
         for entry in fs::read_dir(&self.keys_dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() {
-                let filename = path.file_name().and_then(OsStr::to_str).unwrap();
-                if let Some(hash160_hex) = filename.rsplitn(2, "--").next() {
-                    let mut hash160_bin = [0u8; 20];
-                    if hex_decode(hash160_hex.as_bytes(), &mut hash160_bin).is_ok() {
-                        if let Ok(hash160) = H160::from_slice(&hash160_bin) {
-                            files.insert(hash160, path.to_path_buf());
-                        }
+                let filename = path.file_name().and_then(OsStr::to_str).expect("file_name");
+                if let Some((hash160, ckb_root_opt)) = filename
+                    .rsplitn(2, "--")
+                    .next()
+                    .and_then(|hash160_hex| {
+                        let mut hash160_bin = [0u8; 20];
+                        hex_decode(hash160_hex.as_bytes(), &mut hash160_bin)
+                            .ok()
+                            .map(|_| hash160_bin)
+                    })
+                    .and_then(|hash160_bin| H160::from_slice(&hash160_bin).ok())
+                    .and_then(|hash160| {
+                        // Read CkbRoot
+                        fs::File::open(&path)
+                            .ok()
+                            .and_then(|mut file| serde_json::from_reader(&mut file).ok())
+                            .map(|value| {
+                                let ckb_root_opt = util::get_value(&value, "ckb_root")
+                                    .ok()
+                                    .and_then(|value| CkbRoot::from_json(value).ok());
+                                (hash160, ckb_root_opt)
+                            })
+                    })
+                {
+                    files.insert(hash160.clone(), path.to_path_buf());
+                    if let Some(ckb_root) = ckb_root_opt {
+                        ckb_roots.insert(hash160, ckb_root);
                     }
                 }
             }
         }
         self.files = files;
+        self.ckb_roots = ckb_roots;
         Ok(())
     }
 
@@ -500,32 +509,66 @@ impl DerivedKeySet {
     }
 }
 
-pub struct Key {
-    // randomly generate uuid v4
-    id: Uuid,
-    // H160::from_slice(&blake2b_256(pubkey)[0..20])
-    hash160: H160,
-    // The extended secp256k1 private key (privkey + chaincode)
-    master_privkey: MasterPrivKey,
+#[derive(Clone)]
+pub struct CkbRoot {
+    path: &'static str,
+    extended_pubkey: ExtendedPubKey,
 }
 
-impl Key {
-    pub fn new(master_privkey: MasterPrivKey) -> Key {
-        let id = Uuid::new_v4();
-        let hash160 = master_privkey.hash160(&[]);
-        Key {
-            id,
-            hash160,
-            master_privkey,
+impl CkbRoot {
+    pub fn to_json(&self) -> serde_json::Value {
+        assert_eq!(self.extended_pubkey.depth, 3, "depth not 3");
+        assert_eq!(
+            self.extended_pubkey.child_number,
+            ChildNumber::from_hardened_idx(0).expect("child number"),
+            "child_number is wrong",
+        );
+        let pubkey_hex = hex_string(&self.extended_pubkey.public_key.serialize()[..]).expect("hex");
+        let chain_code_hex = hex_string(&self.extended_pubkey.chain_code[..]).unwrap();
+        serde_json::json!({
+            "path": self.path,
+            "pubkey": pubkey_hex,
+            "chain_code": chain_code_hex,
+        })
+    }
+
+    pub fn from_json(value: &serde_json::Value) -> Result<CkbRoot, Error> {
+        let path = util::get_str(value, "path")?;
+        if path != CKB_ROOT_PATH {
+            return Err(Error::ParseJsonFailed(format!(
+                "Invalid path for ckb root: {}",
+                path
+            )));
         }
-    }
+        let depth = 3;
+        let parent_fingerprint = Default::default();
+        let child_number = ChildNumber::from_hardened_idx(0).expect("child number");
+        let pubkey_bin = util::get_hex_bin(value, "pubkey")?;
+        let public_key = secp256k1::PublicKey::from_slice(&pubkey_bin[..]).map_err(|err| {
+            Error::ParseJsonFailed(format!("Invalid pubkey for ckb root: {}", err))
+        })?;
+        let chain_code_bin = util::get_hex_bin(value, "chain_code")?;
+        if chain_code_bin.len() != 32 {
+            return Err(Error::ParseJsonFailed(format!(
+                "Invalid chain code data length: {}",
+                chain_code_bin.len()
+            )));
+        }
+        let mut chain_code = [0u8; 32];
+        chain_code.copy_from_slice(&chain_code_bin[..]);
+        let extended_pubkey = ExtendedPubKey {
+            depth,
+            parent_fingerprint,
+            child_number,
+            public_key,
+            chain_code: ChainCode(chain_code),
+        };
 
-    pub fn master_privkey(&self) -> &MasterPrivKey {
-        &self.master_privkey
-    }
-
-    pub fn hash160(&self) -> &H160 {
-        &self.hash160
+        // let pubkey
+        Ok(CkbRoot {
+            path: CKB_ROOT_PATH,
+            extended_pubkey,
+        })
     }
 
     pub fn derived_key_set(
@@ -536,19 +579,15 @@ impl Key {
     ) -> Result<DerivedKeySet, Error> {
         let mut external_key_set = Vec::new();
         for i in 0..external_max_len {
-            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::External as u8, i);
-            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path);
-            external_key_set.push((path, pubkey_hash.clone()));
+            let (path, hash160) = self.derived_hash160(KeyChain::External, i);
+            external_key_set.push((path, hash160));
         }
 
         let mut change_key_set = Vec::new();
         for i in 0..change_max_len {
-            let path_string = format!("m/44'/309'/0'/{}/{}", KeyChain::Change as u8, i);
-            let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-            let pubkey_hash = self.derived_pubkey_hash(&path);
-            change_key_set.push((path, pubkey_hash.clone()));
-            if change_last == &pubkey_hash {
+            let (path, hash160) = self.derived_hash160(KeyChain::Change, i);
+            change_key_set.push((path, hash160.clone()));
+            if change_last == &hash160 {
                 return Ok(DerivedKeySet {
                     external: external_key_set,
                     change: change_key_set,
@@ -556,16 +595,6 @@ impl Key {
             }
         }
         Err(Error::SearchDerivedAddrFailed)
-    }
-
-    pub fn derived_pubkey_hash<P>(&self, path: &P) -> H160
-    where
-        P: ?Sized + AsRef<[ChildNumber]>,
-    {
-        let extended_pubkey = self.master_privkey.extended_pubkey(path).unwrap();
-        let pubkey = extended_pubkey.public_key;
-        H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
-            .expect("Generate hash(H160) from pubkey failed")
     }
 
     pub fn derived_key_set_by_index(
@@ -592,6 +621,30 @@ impl Key {
         }
     }
 
+    pub fn derived_hash160(&self, chain: KeyChain, index: u32) -> (DerivationPath, H160) {
+        let (path, extended_pubkey) = self.derived_pubkey(chain, index);
+        let pubkey = extended_pubkey.public_key;
+        let hash160 = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+            .expect("Generate hash(H160) from pubkey failed");
+        (path, hash160)
+    }
+
+    pub fn derived_pubkey(&self, chain: KeyChain, index: u32) -> (DerivationPath, ExtendedPubKey) {
+        let children = vec![
+            ChildNumber::from_normal_idx(chain as u32).expect("normal child"),
+            ChildNumber::from_normal_idx(index).expect("normal child"),
+        ];
+        let path = DerivationPath::from(children);
+        let extended_pubkey = self
+            .extended_pubkey
+            .derive_pub(&SECP256K1, &path)
+            .expect("derive_pub");
+        let full_path_string = format!("{}/{}/{}", CKB_ROOT_PATH, chain as u8, index);
+        let full_path =
+            DerivationPath::from_str(full_path_string.as_str()).expect("parse full path");
+        (full_path, extended_pubkey)
+    }
+
     /// Public keys for external/change addresses
     pub fn derived_pubkeys(
         &self,
@@ -601,13 +654,39 @@ impl Key {
     ) -> Vec<(DerivationPath, ExtendedPubKey)> {
         // At least one pubkey
         (0..length)
-            .map(|i| {
-                let path_string = format!("m/44'/309'/0'/{}/{}", chain as u8, i + start);
-                let path = DerivationPath::from_str(path_string.as_str()).unwrap();
-                let extended_pubkey = self.master_privkey.extended_pubkey(&path).unwrap();
-                (path, extended_pubkey)
-            })
+            .map(|i| self.derived_pubkey(chain, i + start))
             .collect()
+    }
+}
+
+pub struct Key {
+    // randomly generate uuid v4
+    id: Uuid,
+    // H160::from_slice(&blake2b_256(pubkey)[0..20])
+    hash160: H160,
+    // The extended secp256k1 private key (privkey + chaincode)
+    master_privkey: MasterPrivKey,
+}
+
+impl Key {
+    pub fn new(master_privkey: MasterPrivKey) -> Key {
+        let id = Uuid::new_v4();
+        let hash160 = master_privkey.hash160(&[]);
+        Key {
+            id,
+            hash160,
+            master_privkey,
+        }
+    }
+
+    pub fn ckb_root(&self) -> CkbRoot {
+        self.master_privkey.ckb_root()
+    }
+    pub fn master_privkey(&self) -> &MasterPrivKey {
+        &self.master_privkey
+    }
+    pub fn hash160(&self) -> &H160 {
+        &self.hash160
     }
 
     pub fn filename(&self) -> String {
@@ -667,12 +746,14 @@ impl Key {
         let hash160_hex = format!("{:x}", self.hash160);
         let master_privkey = self.master_privkey.to_bytes();
         let crypto = Crypto::encrypt_key_scrypt(&master_privkey, password, scrypt_type);
+        let ckb_root = self.master_privkey.ckb_root();
         serde_json::json!({
             "origin": KEYSTORE_ORIGIN,
             "id": id_str,
             "version": KEYSTORE_VERSION,
             "hash160": hash160_hex,
             "crypto": crypto.to_json(),
+            "ckb_root": ckb_root.to_json(),
         })
     }
 }
@@ -762,12 +843,21 @@ impl MasterPrivKey {
         SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
     }
 
-    pub fn extended_pubkey<P>(&self, path: &P) -> Result<ExtendedPubKey, String>
+    pub fn extended_pubkey<P>(&self, path: &P) -> ExtendedPubKey
     where
         P: ?Sized + AsRef<[ChildNumber]>,
     {
         let sub_sk = self.sub_privkey(path);
-        Ok(ExtendedPubKey::from_private(&SECP256K1, &sub_sk))
+        ExtendedPubKey::from_private(&SECP256K1, &sub_sk)
+    }
+
+    pub fn ckb_root(&self) -> CkbRoot {
+        let path = DerivationPath::from_str(CKB_ROOT_PATH).expect("parse ckb root path");
+        let extended_pubkey = self.extended_pubkey(&path);
+        CkbRoot {
+            path: CKB_ROOT_PATH,
+            extended_pubkey,
+        }
     }
 
     pub fn hash160<P>(&self, path: &P) -> H160
