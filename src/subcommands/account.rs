@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -40,7 +41,18 @@ impl<'a> AccountSubCommand<'a> {
         App::new(name)
             .about("Manage accounts")
             .subcommands(vec![
-                App::new("list").about("List all accounts"),
+                App::new("list")
+                    .arg(
+                        Arg::with_name("only-mainnet-address")
+                            .long("only-mainnet-address")
+                            .about("Only show CKB mainnet address")
+                    )
+                    .arg(
+                        Arg::with_name("only-testnet-address")
+                            .long("only-testnet-address")
+                            .about("Only show CKB testnet address")
+                    )
+                    .about("List all accounts"),
                 App::new("new").about("Create a new account and print related information."),
                 App::new("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
@@ -130,11 +142,27 @@ impl<'a> AccountSubCommand<'a> {
 impl<'a> CliSubCommand for AccountSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("list", _) => {
-                let resp = self
+            ("list", Some(m)) => {
+                let mut accounts = self
                     .plugin_mgr
                     .keystore_handler()
                     .list_account()?
+                    .iter()
+                    .map(|(lock_arg, source)| (lock_arg.clone(), source.clone()))
+                    .collect::<Vec<(H160, String)>>();
+                // Sort by file path name
+                accounts.sort_by(|a, b| {
+                    let order = a.1.cmp(&b.1);
+                    if order == Ordering::Equal {
+                        a.0.cmp(&b.0)
+                    } else {
+                        order
+                    }
+                });
+                let only_mainnet_address = m.is_present("only-mainnet-address");
+                let only_testnet_address = m.is_present("only-testnet-address");
+                let partial_fields = only_mainnet_address || only_testnet_address;
+                let resp = accounts
                     .into_iter()
                     .enumerate()
                     .map(|(idx, (lock_arg, source))| {
@@ -142,16 +170,31 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
                             .unpack();
-                        serde_json::json!({
-                            "#": idx,
-                            "source": source,
-                            "lock_arg": format!("{:#x}", lock_arg),
-                            "lock_hash": format!("{:#x}", lock_hash),
-                            "address": {
-                                "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
-                            },
-                        })
+                        if partial_fields {
+                            let key = format!("{:#x}", lock_arg);
+                            if only_mainnet_address {
+                                serde_json::json!({
+                                    key: Address::new(NetworkType::Mainnet, address_payload).to_string()
+                                })
+                            } else if only_testnet_address {
+                                serde_json::json!({
+                                    key: Address::new(NetworkType::Testnet, address_payload).to_string()
+                                })
+                            } else {
+                                unreachable!();
+                            }
+                        } else {
+                            serde_json::json!({
+                                "#": idx,
+                                "source": source,
+                                "lock_arg": format!("{:#x}", lock_arg),
+                                "lock_hash": format!("{:#x}", lock_hash),
+                                "address": {
+                                    "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                                    "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                                },
+                            })
+                        }
                     })
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
