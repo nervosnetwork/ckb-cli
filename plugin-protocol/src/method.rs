@@ -27,6 +27,7 @@ pub const INDEXER_ANY: &str = "indexer_any";
 
 pub const KEYSTORE_PREFIX: &str = "keystore_";
 pub const KEYSTORE_LIST_ACCOUNT: &str = "keystore_list_account";
+pub const KEYSTORE_HAS_ACCOUNT: &str = "keystore_has_account";
 pub const KEYSTORE_CREATE_ACCOUNT: &str = "keystore_create_account";
 pub const KEYSTORE_UPDATE_PASSWORD: &str = "keystore_update_password";
 pub const KEYSTORE_IMPORT: &str = "keystore_import";

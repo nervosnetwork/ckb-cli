@@ -56,6 +56,7 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     ];
                     PluginResponse::H160Vec(accounts)
                 }
+                KeyStoreRequest::HasAccount(_) => PluginResponse::Boolean(true),
                 KeyStoreRequest::CreateAccount(_) => {
                     PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
                 }

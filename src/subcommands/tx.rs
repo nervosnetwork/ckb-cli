@@ -621,7 +621,7 @@ fn get_keystore_signer(
                 if message == &h256!("0x0") {
                     Ok(Some([0u8; 65]))
                 } else {
-                    let sign_target = if keystore.is_default() {
+                    let sign_target = if keystore.has_account_in_default(account.clone())? {
                         SignTarget::AnyData(Default::default())
                     } else {
                         let inputs = tx

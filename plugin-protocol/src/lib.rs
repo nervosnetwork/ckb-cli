@@ -105,6 +105,7 @@ pub enum PluginResponse {
     // For get_config request
     PluginConfig(PluginConfig),
     JsonValue(serde_json::Value),
+    Boolean(bool),
     String(String),
     Integer64(u64),
 
@@ -179,6 +180,8 @@ pub enum SignTarget {
 pub enum KeyStoreRequest {
     // return: PluginResponse::H160
     ListAccount,
+    // return: PluginResponse::Boolean
+    HasAccount(H160),
     // return: PluginResponse::H160
     CreateAccount(Option<String>),
     // return: PluginResponse::Ok

@@ -32,6 +32,7 @@ pub const INACTIVE_DIRNAME: &str = "inactive";
 pub const PLUGIN_FILENAME_EXT: &str = "bin";
 #[cfg(not(unix))]
 pub const PLUGIN_FILENAME_EXT: &str = "exe";
+pub const ACCOUNT_SOURCE_FS: &str = "Local File System";
 
 pub struct PluginManager {
     plugin_dir: PathBuf,
@@ -48,6 +49,7 @@ pub struct PluginManager {
     // The actived callback plugins. The key is callback name
     callbacks: HashMap<CallbackName, Vec<String>>,
 
+    default_keystore_handler: PluginHandler,
     service_provider: ServiceProvider,
     _jsonrpc_id: Arc<AtomicU64>,
 }
@@ -145,6 +147,7 @@ impl PluginManager {
                 daemon_plugins.push((plugin.clone(), config.clone()));
             }
         }
+        let default_keystore_handler = default_keystore.handler().clone();
         let service_provider = ServiceProvider::start(
             default_keystore,
             default_indexer,
@@ -169,6 +172,7 @@ impl PluginManager {
             sub_commands,
             callbacks,
             service_provider,
+            default_keystore_handler,
             _jsonrpc_id: jsonrpc_id,
         })
     }
@@ -227,8 +231,9 @@ impl PluginManager {
     }
     pub fn keystore_handler(&self) -> KeyStoreHandler {
         KeyStoreHandler::new(
+            self.default_keystore_handler.clone(),
             self.service_provider.handler().clone(),
-            self.keystores.is_empty(),
+            self.actived_keystore().map(|(_, cfg, _)| cfg.clone()),
         )
     }
     #[allow(unused)]
@@ -1145,35 +1150,146 @@ impl Plugin {
 
 #[derive(Clone)]
 pub struct KeyStoreHandler {
-    handler: ServiceHandler,
-    /// Is default file based keystore
-    is_default: bool,
+    // Local File System keystore
+    default_handler: PluginHandler,
+    // For call keystore plugin
+    service_handler: ServiceHandler,
+    // The actived keystore plugin
+    actived_plugin: Option<PluginConfig>,
 }
 
 impl KeyStoreHandler {
-    fn new(handler: ServiceHandler, is_default: bool) -> KeyStoreHandler {
+    fn new(
+        default_handler: PluginHandler,
+        service_handler: ServiceHandler,
+        actived_plugin: Option<PluginConfig>,
+    ) -> KeyStoreHandler {
         KeyStoreHandler {
-            handler,
-            is_default,
+            default_handler,
+            service_handler,
+            actived_plugin,
         }
     }
 
-    pub fn is_default(&self) -> bool {
-        self.is_default
+    pub fn actived_plugin(&self) -> Option<&PluginConfig> {
+        self.actived_plugin.as_ref()
     }
 
     fn call(&self, request: KeyStoreRequest) -> Result<PluginResponse, String> {
+        let mut default_only = false;
+        let mut hash160_opt = None;
+        match request {
+            KeyStoreRequest::ListAccount => {
+                // Both (and) handle default part out side
+            }
+            KeyStoreRequest::HasAccount(_) => {
+                // Both (or) handle default part out side
+            }
+            KeyStoreRequest::CreateAccount(_) => {
+                // Both (neet target), currently default only
+                default_only = true;
+            }
+            KeyStoreRequest::Import { .. } => {
+                // Default only
+                default_only = true;
+            }
+            KeyStoreRequest::Export { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::UpdatePassword { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::Sign { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::ExtendedPubkey { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::DerivedKeySet { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::DerivedKeySetByIndex { ref hash160, .. } => {
+                // Both
+                hash160_opt = Some(hash160.clone());
+            }
+            KeyStoreRequest::Any(_) => {
+                // Plugin only
+            }
+        }
+        if default_only
+            || hash160_opt
+                .map(|hash160| self.has_account_in_default(hash160))
+                .transpose()?
+                == Some(true)
+        {
+            let result =
+                match Request::call(&self.default_handler, (0, PluginRequest::KeyStore(request)))
+                    .map(|(_id, resp)| resp)
+                    .ok_or_else(|| String::from("Call to default keystore failed"))?
+                {
+                    PluginResponse::Error(error) => Err(error.message),
+                    response => Ok(response),
+                };
+            return result;
+        }
+
         let request = ServiceRequest::Request {
             is_from_plugin: false,
             plugin_name: String::from("default_keystore"),
             request: PluginRequest::KeyStore(request),
         };
-        match Request::call(&self.handler, request) {
+        match Request::call(&self.service_handler, request) {
             Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error.message),
             Some(ServiceResponse::Response(response)) => Ok(response),
             Some(_) => Err(String::from("Mismatch plugin response")),
             None => Err(String::from("Send request error")),
         }
+    }
+
+    pub fn has_account_in_default(&self, hash160: H160) -> Result<bool, String> {
+        let request = PluginRequest::KeyStore(KeyStoreRequest::HasAccount(hash160));
+        if let Some((_, PluginResponse::Boolean(has))) =
+            Request::call(&self.default_handler, (0, request))
+        {
+            Ok(has)
+        } else {
+            Err("Mismatch keystore response".to_string())
+        }
+    }
+
+    pub fn list_account(&self) -> Result<Vec<(H160, String)>, String> {
+        let request = KeyStoreRequest::ListAccount;
+        let plugin_request = PluginRequest::KeyStore(request.clone());
+
+        let mut all_accounts = Vec::new();
+        if let Some((_, PluginResponse::H160Vec(accounts))) =
+            Request::call(&self.default_handler, (0, plugin_request))
+        {
+            all_accounts.extend(
+                accounts
+                    .into_iter()
+                    .map(|hash160| (hash160, ACCOUNT_SOURCE_FS.to_owned())),
+            );
+        } else {
+            return Err("Mismatch default keystore response".to_string());
+        }
+        if let Some(cfg) = self.actived_plugin() {
+            if let PluginResponse::H160Vec(accounts) = self.call(request)? {
+                all_accounts.extend(
+                    accounts
+                        .into_iter()
+                        .map(|hash160| (hash160, format!("[plugin]: {}", cfg.name))),
+                );
+            } else {
+                return Err("Mismatch plugin keystore response".to_string());
+            }
+        }
+        Ok(all_accounts)
     }
 
     pub fn create_account(&self, password: Option<String>) -> Result<H160, String> {
@@ -1298,14 +1414,6 @@ impl KeyStoreHandler {
             let external = deserilize_key_set(external)?;
             let change = deserilize_key_set(change)?;
             Ok(DerivedKeySet { external, change })
-        } else {
-            Err("Mismatch keystore response".to_string())
-        }
-    }
-    pub fn list_account(&self) -> Result<Vec<H160>, String> {
-        let request = KeyStoreRequest::ListAccount;
-        if let PluginResponse::H160Vec(accounts) = self.call(request)? {
-            Ok(accounts)
         } else {
             Err("Mismatch keystore response".to_string())
         }

@@ -123,6 +123,10 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
     fn from(request: KeyStoreRequest) -> (&'static str, Vec<serde_json::Value>) {
         match request {
             KeyStoreRequest::ListAccount => (method::KEYSTORE_LIST_ACCOUNT, Vec::new()),
+            KeyStoreRequest::HasAccount(hash160) => (
+                method::KEYSTORE_HAS_ACCOUNT,
+                vec![serde_json::json!(hash160)],
+            ),
             KeyStoreRequest::CreateAccount(password) => (
                 method::KEYSTORE_CREATE_ACCOUNT,
                 vec![serde_json::json!(password)],
@@ -230,6 +234,9 @@ impl TryFrom<&JsonrpcRequest> for KeyStoreRequest {
     fn try_from(data: &JsonrpcRequest) -> Result<KeyStoreRequest, Self::Error> {
         let request = match data.method.as_str() {
             method::KEYSTORE_LIST_ACCOUNT => KeyStoreRequest::ListAccount,
+            method::KEYSTORE_HAS_ACCOUNT => {
+                KeyStoreRequest::HasAccount(parse_param(data, 0, "hash160")?)
+            }
             method::KEYSTORE_CREATE_ACCOUNT => {
                 KeyStoreRequest::CreateAccount(parse_param(data, 0, "password")?)
             }

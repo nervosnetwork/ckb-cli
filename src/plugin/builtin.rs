@@ -48,6 +48,9 @@ impl DefaultKeyStore {
                         .map(PluginResponse::H160)
                         .map_err(|err| err.to_string())
                 }
+                KeyStoreRequest::HasAccount(hash160) => {
+                    Ok(PluginResponse::Boolean(keystore.has_account(&hash160)))
+                }
                 KeyStoreRequest::UpdatePassword {
                     hash160,
                     password,

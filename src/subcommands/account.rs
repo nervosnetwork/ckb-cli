@@ -137,13 +137,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .list_account()?
                     .into_iter()
                     .enumerate()
-                    .map(|(idx, lock_arg)| {
+                    .map(|(idx, (lock_arg, source))| {
                         let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
                             .unpack();
                         serde_json::json!({
                             "#": idx,
+                            "source": source,
                             "lock_arg": format!("{:#x}", lock_arg),
                             "lock_hash": format!("{:#x}", lock_hash),
                             "address": {

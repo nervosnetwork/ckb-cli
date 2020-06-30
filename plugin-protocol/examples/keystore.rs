@@ -48,12 +48,12 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
         PluginRequest::KeyStore(keystore_request) => {
             let response = match keystore_request {
                 KeyStoreRequest::ListAccount => {
-                    let req = PluginRequest::ReadPassword("Your Password:".to_string());
+                    let req = PluginRequest::ReadPassword("Your Password".to_string());
                     let jsonrpc_request = JsonrpcRequest::from((0, req));
                     let request_string =
                         format!("{}\n", serde_json::to_string(&jsonrpc_request).unwrap());
                     // Write message to stderr for plugin debugging
-                    eprintln!("Request: {}", request_string);
+                    // eprintln!("Request: {}", request_string);
                     io::stdout().write_all(request_string.as_bytes()).unwrap();
                     io::stdout().flush().unwrap();
                     let mut line = String::new();
@@ -77,6 +77,7 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     ];
                     PluginResponse::H160Vec(accounts)
                 }
+                KeyStoreRequest::HasAccount(_) => PluginResponse::Boolean(true),
                 KeyStoreRequest::CreateAccount(_) => {
                     PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
                 }
