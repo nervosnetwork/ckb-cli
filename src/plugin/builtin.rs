@@ -50,9 +50,9 @@ impl DefaultKeyStore {
                         .map(PluginResponse::H160)
                         .map_err(|err| err.to_string())
                 }
-                KeyStoreRequest::HasAccount(hash160) => {
-                    Ok(PluginResponse::Boolean(keystore.has_account(&hash160)))
-                }
+                KeyStoreRequest::HasAccount(hash160) => Ok(PluginResponse::Boolean(
+                    keystore.has_account(&hash160, true),
+                )),
                 KeyStoreRequest::UpdatePassword {
                     hash160,
                     password,
@@ -111,7 +111,7 @@ impl DefaultKeyStore {
                     let password =
                         password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
-                        .get_ckb_root(&hash160)
+                        .get_ckb_root(&hash160, true)
                         .cloned()
                         .map_or_else(
                             || {
@@ -138,7 +138,7 @@ impl DefaultKeyStore {
                     let password =
                         password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
-                        .get_ckb_root(&hash160)
+                        .get_ckb_root(&hash160, true)
                         .cloned()
                         .map_or_else(
                             || {

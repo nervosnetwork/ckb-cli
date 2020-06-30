@@ -78,12 +78,16 @@ impl KeyStore {
         self.refresh_dir().ok();
         &self.files
     }
-    pub fn get_ckb_root(&mut self, hash160: &H160) -> Option<&CkbRoot> {
-        self.refresh_dir().ok();
+    pub fn get_ckb_root(&mut self, hash160: &H160, refresh: bool) -> Option<&CkbRoot> {
+        if refresh {
+            self.refresh_dir().ok();
+        }
         self.ckb_roots.get(hash160)
     }
-    pub fn has_account(&mut self, hash160: &H160) -> bool {
-        self.refresh_dir().ok();
+    pub fn has_account(&mut self, hash160: &H160, refresh: bool) -> bool {
+        if refresh {
+            self.refresh_dir().ok();
+        }
         self.files.contains_key(hash160)
     }
 

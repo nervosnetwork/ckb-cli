@@ -202,7 +202,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 unreachable!();
                             }
                         } else {
-                            let has_ckb_root = self.key_store.get_ckb_root(&lock_arg).is_some();
+                            let has_ckb_root = self.key_store.get_ckb_root(&lock_arg, false).is_some();
                             serde_json::json!({
                                 "#": idx,
                                 "source": source,
