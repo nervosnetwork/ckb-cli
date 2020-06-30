@@ -507,6 +507,7 @@ pub enum KeyChain {
     Change = 1,
 }
 
+#[derive(Eq, PartialEq, Debug)]
 pub struct DerivedKeySet {
     pub external: Vec<(DerivationPath, H160)>,
     pub change: Vec<(DerivationPath, H160)>,
@@ -894,5 +895,59 @@ impl Drop for MasterPrivKey {
     fn drop(&mut self) {
         zeroize_privkey(&mut self.secp_secret_key);
         zeroize_slice(&mut self.chain_code);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Address;
+    use ckb_types::h256;
+
+    #[test]
+    fn test_derived_key_set_by_index() {
+        let privkey = h256!("0xd00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc");
+        let chain_code =
+            h256!("0xcf4ebc9849b0466e82b82075b6b2ffa0b13f85e0825859996776a7350734024a");
+        let mut data = [0u8; 64];
+        data[0..32].copy_from_slice(privkey.as_bytes());
+        data[32..64].copy_from_slice(chain_code.as_bytes());
+        let master_privkey = MasterPrivKey::from_bytes(data).expect("master privkey");
+        let ckb_root = master_privkey.ckb_root();
+
+        let key_set = ckb_root.derived_key_set_by_index(0, 5, 0, 5);
+        let external_addrs = vec![
+            "ckb1qyqwlkzwj0rnn0cgepgrrmepxdcx28lj7ycqsyff5g",
+            "ckb1qyq0z9zf42dqt2dsu2m26tz8uf2pgqt48hzs59gq8k",
+            "ckb1qyq9zu0xkvy80u3pctmsnzsfnkm4hdgnrwpsf2neqy",
+            "ckb1qyqrwphyar42u6t9yld875cq3lz5835tw8nqn2umjw",
+            "ckb1qyq8l92erk3xljymh47a7j45cvcvhaaxge6stmd3t9",
+        ];
+        let change_addrs = vec![
+            "ckb1qyq0qft4vledmyz6l2vr0ep7fnengrdgdk8s573jj2",
+            "ckb1qyqv63drwtfsch60zwhpwqh48lz7g2wj5czqavgmp5",
+            "ckb1qyq9r5el7rtwsfjhnf0xw7mq9y54h535df5sj3zkur",
+            "ckb1qyq97pjqv6m33h6725hl9ywcttdqw99rk4rqqaun8s",
+            "ckb1qyq02frzewvzzx6yernveargvm8sa8ur4pts96awsx",
+        ];
+        let to_pairs = |addrs: Vec<&str>, chain| {
+            addrs
+                .into_iter()
+                .enumerate()
+                .map(|(idx, addr)| {
+                    let path_string = format!("{}/{}/{}", CKB_ROOT_PATH, chain as u8, idx);
+                    let path = DerivationPath::from_str(path_string.as_str()).unwrap();
+                    let hash160 = H160::from_slice(
+                        Address::from_str(addr).unwrap().payload().args().as_ref(),
+                    )
+                    .unwrap();
+                    (path, hash160)
+                })
+                .collect::<Vec<_>>()
+        };
+        let external = to_pairs(external_addrs, KeyChain::External);
+        let change = to_pairs(change_addrs, KeyChain::Change);
+        let expected_key_set = DerivedKeySet { external, change };
+        assert_eq!(key_set, expected_key_set);
     }
 }
