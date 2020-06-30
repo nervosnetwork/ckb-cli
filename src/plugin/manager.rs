@@ -18,7 +18,7 @@ use ckb_sdk::{
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
 use crossbeam_channel::{bounded, select, Sender};
 
-use super::builtin::{DefaultIndexer, DefaultKeyStore};
+use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
@@ -1376,16 +1376,33 @@ impl KeyStoreHandler {
         external_max_len: u32,
         change_last: H160,
         change_max_len: u32,
-        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySet {
-            hash160,
+            hash160: hash160.clone(),
             external_max_len,
-            change_last,
+            change_last: change_last.clone(),
             change_max_len,
-            password,
+            password: None,
         };
-        if let PluginResponse::DerivedKeySet { external, change } = self.call(request)? {
+        let resp = match self.call(request) {
+            Ok(resp) => resp,
+            // A hack for compatibility
+            Err(message) if message == ERROR_KEYSTORE_REQUIRE_PASSWORD => {
+                let password = read_password(false, None)?;
+                let request = KeyStoreRequest::DerivedKeySet {
+                    hash160,
+                    external_max_len,
+                    change_last,
+                    change_max_len,
+                    password: Some(password),
+                };
+                self.call(request)?
+            }
+            Err(other) => {
+                return Err(other);
+            }
+        };
+        if let PluginResponse::DerivedKeySet { external, change } = resp {
             let external = deserilize_key_set(external)?;
             let change = deserilize_key_set(change)?;
             Ok(DerivedKeySet { external, change })
@@ -1400,17 +1417,35 @@ impl KeyStoreHandler {
         external_length: u32,
         change_start: u32,
         change_length: u32,
-        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySetByIndex {
-            hash160,
+            hash160: hash160.clone(),
             external_start,
             external_length,
             change_start,
             change_length,
-            password,
+            password: None,
         };
-        if let PluginResponse::DerivedKeySet { external, change } = self.call(request)? {
+        let resp = match self.call(request) {
+            Ok(resp) => resp,
+            // A hack for compatibility
+            Err(message) if message == ERROR_KEYSTORE_REQUIRE_PASSWORD => {
+                let password = read_password(false, None)?;
+                let request = KeyStoreRequest::DerivedKeySetByIndex {
+                    hash160,
+                    external_start,
+                    external_length,
+                    change_start,
+                    change_length,
+                    password: Some(password),
+                };
+                self.call(request)?
+            }
+            Err(other) => {
+                return Err(other);
+            }
+        };
+        if let PluginResponse::DerivedKeySet { external, change } = resp {
             let external = deserilize_key_set(external)?;
             let change = deserilize_key_set(change)?;
             Ok(DerivedKeySet { external, change })

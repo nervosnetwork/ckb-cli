@@ -300,7 +300,6 @@ impl<'a> WalletSubCommand<'a> {
                     receiving_address_length,
                     change_last.clone(),
                     DERIVE_CHANGE_ADDRESS_MAX_LEN,
-                    password.clone(),
                 )?;
                 let mut change_path_opt = None;
                 for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
@@ -596,11 +595,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     };
                     let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
                     if m.is_present("derived") {
-                        let password = if self.plugin_mgr.keystore_require_password() {
-                            Some(read_password(false, None)?)
-                        } else {
-                            None
-                        };
                         let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
                         let key_set = self
                             .plugin_mgr
@@ -611,7 +605,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 receiving_address_length,
                                 0,
                                 change_address_length,
-                                password,
                             )?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());

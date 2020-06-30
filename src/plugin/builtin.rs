@@ -13,6 +13,8 @@ use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginRespon
 use super::manager::PluginHandler;
 use crate::utils::other::{get_key_store, serialize_signature};
 
+pub const ERROR_KEYSTORE_REQUIRE_PASSWORD: &str = "keystore require password";
+
 pub(crate) struct DefaultKeyStore {
     handler: PluginHandler,
     _thread: JoinHandle<()>,
@@ -106,9 +108,8 @@ impl DefaultKeyStore {
                     change_max_len,
                     password,
                 } => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: derived key set")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .derived_key_set_with_password(
                             &hash160,
@@ -128,11 +129,8 @@ impl DefaultKeyStore {
                     change_length,
                     password,
                 } => {
-                    let password = password.ok_or_else(|| {
-                        String::from(
-                            "Password is required by default keystore: derived key set by index",
-                        )
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .derived_key_set_by_index_with_password(
                             &hash160,

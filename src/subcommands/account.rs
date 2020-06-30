@@ -299,12 +299,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FromStrParser::<u32>::default().from_matches(m, "from-change-index")?;
                 let change_length: u32 =
                     FromStrParser::<u32>::default().from_matches(m, "change-length")?;
-
-                let password = if self.plugin_mgr.keystore_require_password() {
-                    Some(read_password(false, None)?)
-                } else {
-                    None
-                };
                 let key_set = self
                     .plugin_mgr
                     .keystore_handler()
@@ -314,7 +308,6 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         receiving_length,
                         from_change_index,
                         change_length,
-                        password,
                     )?;
                 let get_addresses = |set: &[(DerivationPath, H160)]| {
                     set.iter()
