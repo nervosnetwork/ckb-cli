@@ -906,10 +906,10 @@ impl Drop for MasterPrivKey {
 mod tests {
     use super::*;
     use crate::Address;
-    use ckb_types::h256;
+    use ckb_types::{h160, h256};
 
     #[test]
-    fn test_derived_key_set_by_index() {
+    fn test_derived_key_set() {
         let privkey = h256!("0xd00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc");
         let chain_code =
             h256!("0xcf4ebc9849b0466e82b82075b6b2ffa0b13f85e0825859996776a7350734024a");
@@ -919,7 +919,10 @@ mod tests {
         let master_privkey = MasterPrivKey::from_bytes(data).expect("master privkey");
         let ckb_root = master_privkey.ckb_root();
 
-        let key_set = ckb_root.derived_key_set_by_index(0, 5, 0, 5);
+        let key_set_by_index = ckb_root.derived_key_set_by_index(0, 5, 0, 5);
+        let key_set = ckb_root
+            .derived_key_set(5, &h160!("0xf52462cb98211b44c8e6ccf46866cf0e9f83a857"), 10)
+            .unwrap();
         let external_addrs = vec![
             "ckb1qyqwlkzwj0rnn0cgepgrrmepxdcx28lj7ycqsyff5g",
             "ckb1qyq0z9zf42dqt2dsu2m26tz8uf2pgqt48hzs59gq8k",
@@ -952,6 +955,7 @@ mod tests {
         let external = to_pairs(external_addrs, KeyChain::External);
         let change = to_pairs(change_addrs, KeyChain::Change);
         let expected_key_set = DerivedKeySet { external, change };
+        assert_eq!(key_set, key_set_by_index);
         assert_eq!(key_set, expected_key_set);
     }
 }
