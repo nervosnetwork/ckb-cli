@@ -12,6 +12,7 @@ use crate::spec::{
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
+use std::path::PathBuf;
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "full");
@@ -43,6 +44,10 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
             &p2p_port.to_string(),
         ],
     );
+
+    let mut ckb_cli_dir = PathBuf::from(ckb_dir.as_str());
+    ckb_cli_dir.push("ckb-cli");
+    env::set_var("CKB_CLI_HOME", ckb_cli_dir.as_os_str());
 
     let mut setup = Setup::new(
         app.ckb_bin().to_string(),
