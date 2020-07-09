@@ -520,6 +520,10 @@ impl Key {
         }
     }
 
+    pub fn master_privkey(&self) -> &MasterPrivKey {
+        &self.master_privkey
+    }
+
     pub fn hash160(&self) -> &H160 {
         &self.hash160
     }
@@ -673,6 +677,7 @@ impl Key {
     }
 }
 
+#[derive(Clone)]
 pub struct MasterPrivKey {
     secp_secret_key: secp256k1::SecretKey,
     chain_code: [u8; 32],

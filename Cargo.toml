@@ -12,11 +12,11 @@ ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1
 ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
 ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
 ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
-ckb-sdk = { path = "ckb-sdk" }
-ckb-index = { path = "ckb-index" }
 ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
 ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
-
+ckb-sdk = { path = "ckb-sdk" }
+ckb-index = { path = "ckb-index" }
+plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol" }
 jsonrpc-client-core = "0.5.0"
 jsonrpc-core = "10.1"
 jsonrpc-derive = "10.1"
@@ -59,4 +59,4 @@ termion = "1.5"
 ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.33.0-pre1" }
 
 [workspace]
-members = ["ckb-sdk", "ckb-index", "ckb-sdk-types"]
+members = ["ckb-sdk", "ckb-index", "ckb-sdk-types", "plugin-protocol"]

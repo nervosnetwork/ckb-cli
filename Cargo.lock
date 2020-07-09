@@ -361,6 +361,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ckb-build-info",
+ "ckb-cli-plugin-protocol",
  "ckb-crypto",
  "ckb-dao-utils",
  "ckb-hash",
@@ -401,6 +402,19 @@ dependencies = [
  "tui",
  "url 1.7.2",
  "yaml-rust",
+]
+
+[[package]]
+name = "ckb-cli-plugin-protocol"
+version = "0.1.0"
+dependencies = [
+ "ckb-index",
+ "ckb-jsonrpc-types",
+ "ckb-types",
+ "faster-hex 0.3.1",
+ "serde",
+ "serde_derive",
+ "serde_json",
 ]
 
 [[package]]

@@ -3,6 +3,7 @@ pub mod api_server;
 pub mod dao;
 pub mod mock_tx;
 pub mod molecule;
+pub mod plugin;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
@@ -18,6 +19,7 @@ pub use api_server::ApiServerSubCommand;
 pub use dao::DAOSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
+pub use plugin::PluginSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;

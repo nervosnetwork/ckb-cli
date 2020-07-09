@@ -44,5 +44,12 @@ fi
 
 cd ${CKB_CLI_DIR}
 make prod
+# Build keystore_no_password plugin
+cd plugin-protocol && cargo build --example keystore_no_password && cd ..
+
 rm -rf test/target && ln -snf "${CKB_CLI_DIR}/target" test/target
-cd test && cargo run -- --ckb-bin "${CKB_BIN}" --cli-bin "${CKB_CLI_DIR}/target/release/ckb-cli"
+cd test && cargo run -- \
+                 --ckb-bin "${CKB_BIN}" \
+                 --cli-bin "${CKB_CLI_DIR}/target/release/ckb-cli" \
+                 --keystore-plugin "${CKB_CLI_DIR}/target/debug/examples/keystore_no_password"
+

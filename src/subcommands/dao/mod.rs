@@ -1,23 +1,24 @@
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::index::IndexController;
 use crate::utils::other::{
     get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    serialize_signature, sync_to_tip,
+    sync_to_tip,
 };
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
-use ckb_jsonrpc_types::JsonBytes;
+use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
-    wallet::KeyStore,
+    wallet::DerivationPath,
     GenesisInfo, HttpRpcClient, SignerFn,
 };
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
-    packed::{Byte32, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{self, Byte32, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     {h256, H160, H256},
 };
@@ -32,7 +33,7 @@ mod util;
 // Should CLI handle "immature header problem"?
 pub struct DAOSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
     genesis_info: GenesisInfo,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -43,7 +44,7 @@ pub struct DAOSubCommand<'a> {
 impl<'a> DAOSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
         genesis_info: GenesisInfo,
         index_dir: PathBuf,
         index_controller: IndexController,
@@ -51,7 +52,7 @@ impl<'a> DAOSubCommand<'a> {
     ) -> Self {
         Self {
             rpc_client,
-            key_store,
+            plugin_mgr,
             genesis_info,
             index_dir,
             index_controller,
@@ -266,12 +267,22 @@ impl<'a> DAOSubCommand<'a> {
                 if let Some(ref privkey) = self.transact_args().privkey {
                     get_privkey_signer(privkey.clone())
                 } else {
-                    let password = read_password(false, None)?;
-                    get_keystore_signer(self.key_store.clone(), account.clone(), password)
+                    let password = if self.plugin_mgr.keystore_require_password() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                    let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
+                    get_keystore_signer(
+                        self.plugin_mgr.keystore_handler(),
+                        new_client,
+                        account.clone(),
+                        password,
+                    )
                 }
             };
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
-            signer(&accounts, &digest)?.expect("signer missed")
+            signer(&accounts, &digest, &transaction.data().into())?.expect("signer missed")
         };
 
         witnesses[0] = init_witness
@@ -326,21 +337,65 @@ impl<'a> DAOSubCommand<'a> {
 }
 
 // TODO remove the duplicated function later
-fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
+fn get_keystore_signer(
+    keystore: KeyStoreHandler,
+    mut client: HttpRpcClient,
+    account: H160,
+    password: Option<String>,
+) -> SignerFn {
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
+            if lock_args.contains(&account) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
+                } else {
+                    let sign_target = if keystore.has_account_in_default(account.clone())? {
+                        SignTarget::AnyData(Default::default())
+                    } else {
+                        let inputs = tx
+                            .inputs
+                            .iter()
+                            .map(|input| {
+                                let tx_hash = &input.previous_output.tx_hash;
+                                client
+                                    .get_transaction(tx_hash.clone())?
+                                    .map(|tx_with_status| tx_with_status.transaction.inner)
+                                    .map(packed::Transaction::from)
+                                    .map(json_types::Transaction::from)
+                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
+                            })
+                            .collect::<Result<Vec<_>, String>>()?;
+                        SignTarget::Transaction {
+                            tx: tx.clone(),
+                            inputs,
+                            change_path: DerivationPath::empty().to_string(),
+                        }
+                    };
+                    let data = keystore.sign(
+                        account.clone(),
+                        &[],
+                        message.clone(),
+                        sign_target,
+                        password.clone(),
+                        true,
+                    )?;
+                    if data.len() != 65 {
+                        Err(format!(
+                            "Invalid signature data lenght: {}, data: {:?}",
+                            data.len(),
+                            data
+                        ))
+                    } else {
+                        let mut data_bytes = [0u8; 65];
+                        data_bytes.copy_from_slice(&data[..]);
+                        Ok(Some(data_bytes))
+                    }
+                }
             } else {
-                key_store
-                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
-                    .map(|signature| Some(serialize_signature(&signature)))
-                    .map_err(|err| err.to_string())
+                Ok(None)
             }
-        } else {
-            Ok(None)
-        }
-    })
+        },
+    )
 }
 
 fn take_by_out_points(

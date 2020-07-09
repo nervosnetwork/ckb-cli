@@ -5,10 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{
-    wallet::KeyStore, Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity,
-    NetworkType,
-};
+use ckb_sdk::{Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, NetworkType};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView},
@@ -25,6 +22,7 @@ use jsonrpc_server_utils::hosts::DomainsValidation;
 use serde::{Deserialize, Serialize};
 
 use super::{CliSubCommand, LiveCells, Output, TransferArgs, WalletSubCommand};
+use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
@@ -34,7 +32,7 @@ use crate::utils::{
 
 pub struct ApiServerSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: Option<PluginManager>,
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
@@ -43,14 +41,14 @@ pub struct ApiServerSubCommand<'a> {
 impl<'a> ApiServerSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: PluginManager,
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
     ) -> ApiServerSubCommand<'a> {
         ApiServerSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr: Some(plugin_mgr),
             genesis_info,
             index_dir,
             index_controller,
@@ -113,7 +111,7 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             rpc_client: Arc::new(Mutex::new(HttpRpcClient::new(
                 self.rpc_client.url().to_string(),
             ))),
-            key_store: Arc::new(Mutex::new(self.key_store.clone())),
+            plugin_mgr: Arc::new(Mutex::new(self.plugin_mgr.take().unwrap())),
             genesis_info: Arc::new(Mutex::new(self.genesis_info.clone())),
             privkey_path,
             index_dir: self.index_dir.clone(),
@@ -211,7 +209,7 @@ pub trait ApiRpc {
 
 struct ApiRpcImpl {
     rpc_client: Arc<Mutex<HttpRpcClient>>,
-    key_store: Arc<Mutex<KeyStore>>,
+    plugin_mgr: Arc<Mutex<PluginManager>>,
     genesis_info: Arc<Mutex<Option<GenesisInfo>>>,
     privkey_path: Option<String>,
     index_dir: PathBuf,
@@ -240,10 +238,10 @@ impl ApiRpcImpl {
     ) -> Result<T, RpcError> {
         let genesis_info = self.genesis_info().map_err(internal_err)?;
         let mut rpc_client = self.rpc_client.lock().unwrap();
-        let mut key_store = self.key_store.lock().unwrap();
+        let mut plugin_mgr = self.plugin_mgr.lock().unwrap();
         func(&mut WalletSubCommand::new(
             &mut rpc_client,
-            &mut key_store,
+            &mut plugin_mgr,
             Some(genesis_info),
             self.index_dir.clone(),
             self.index_controller.clone(),

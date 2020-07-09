@@ -3,8 +3,8 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use ckb_sdk::{
-    wallet::KeyStore, GenesisInfo, HttpRpcClient, MockCellDep, MockInfo, MockInput,
-    MockResourceLoader, MockTransaction, MockTransactionHelper, ReprMockTransaction,
+    GenesisInfo, HttpRpcClient, MockCellDep, MockInfo, MockInput, MockResourceLoader,
+    MockTransaction, MockTransactionHelper, ReprMockTransaction,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -19,27 +19,28 @@ use ckb_types::{
 use clap::{App, Arg, ArgMatches};
 
 use super::{CliSubCommand, Output};
+use crate::plugin::PluginManager;
 use crate::utils::{
     arg::lock_arg,
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
-    other::{get_genesis_info, get_singer},
+    other::{get_genesis_info, get_signer},
 };
 
 pub struct MockTxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
     genesis_info: Option<GenesisInfo>,
 }
 
 impl<'a> MockTxSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
     ) -> MockTxSubCommand<'a> {
         MockTxSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr,
             genesis_info,
         }
     }
@@ -101,7 +102,10 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 })?;
             let mut mock_tx: MockTransaction = repr_tx.into();
 
-            let signer = get_singer(self.key_store.clone());
+            let signer = get_signer(
+                self.plugin_mgr.keystore_handler(),
+                self.plugin_mgr.keystore_require_password(),
+            );
             let mut loader = Loader {
                 rpc_client: self.rpc_client,
             };

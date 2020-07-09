@@ -7,8 +7,8 @@ pub mod util;
 use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
-    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, RpcGetTipBlockNumber, Spec, Util,
-    WalletTimelockedAddress, WalletTransfer,
+    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, Plugin, RpcGetTipBlockNumber, Spec,
+    Util, WalletTimelockedAddress, WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -52,7 +52,9 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
     let mut setup = Setup::new(
         app.ckb_bin().to_string(),
         app.cli_bin().to_string(),
+        app.keystore_plugin_bin().to_string(),
         ckb_dir,
+        ckb_cli_dir.to_str().unwrap().to_owned(),
         rpc_port,
     );
     let _guard = setup.ready(&*spec);
@@ -61,6 +63,7 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
+        Box::new(Plugin),
         Box::new(RpcGetTipBlockNumber),
         Box::new(WalletTransfer),
         Box::new(WalletTimelockedAddress),

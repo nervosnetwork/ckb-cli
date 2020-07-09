@@ -14,18 +14,29 @@ use std::time::{Duration, Instant};
 pub struct Setup {
     ckb_bin: String,
     cli_bin: String,
+    pub keystore_plugin_bin: String,
     ckb_dir: String,
+    _ckb_cli_dir: String,
     rpc_port: u16,
     miner: Option<Miner>,
 }
 
 // TODO Make CLI base_dir configurable
 impl Setup {
-    pub fn new(ckb_bin: String, cli_bin: String, ckb_dir: String, rpc_port: u16) -> Self {
+    pub fn new(
+        ckb_bin: String,
+        cli_bin: String,
+        keystore_plugin_bin: String,
+        ckb_dir: String,
+        ckb_cli_dir: String,
+        rpc_port: u16,
+    ) -> Self {
         Self {
             ckb_bin,
             cli_bin,
+            keystore_plugin_bin,
             ckb_dir,
+            _ckb_cli_dir: ckb_cli_dir,
             rpc_port,
             miner: None,
         }
@@ -84,12 +95,11 @@ impl Setup {
             let output = child.wait_with_output().expect("Failed to read stdout");
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            if stderr.contains("index database may not ready") {
-                continue;
-            } else if !stderr.is_empty() && !stderr.contains("No previous history.") {
+            let output = extract_output(stdout.to_string());
+            if !output.trim().is_empty() {
+                return output;
+            } else if !stderr.trim().is_empty() {
                 return stderr.to_string();
-            } else {
-                return extract_output(stdout.to_string());
             }
         }
     }
@@ -144,10 +154,5 @@ fn extract_output(content: String) -> String {
         lines.skip_while(|line| !regex::Regex::new(r#"\[.*\]: .*"#).unwrap().is_match(line));
     let lines = lines.skip_while(|line| regex::Regex::new(r#"\[.*\]: .*"#).unwrap().is_match(line));
     let lines = lines.take_while(|line| *line != "CTRL-D");
-    let output: String = lines.collect::<Vec<_>>().join("\n");
-    if !output.is_empty() {
-        output
-    } else {
-        content
-    }
+    lines.collect::<Vec<_>>().join("\n")
 }
