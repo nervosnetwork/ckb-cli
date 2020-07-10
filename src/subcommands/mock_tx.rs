@@ -84,8 +84,6 @@ impl<'a> MockTxSubCommand<'a> {
 
 impl<'a> CliSubCommand for MockTxSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
-
         let mut complete_tx = |m: &ArgMatches,
                                complete: bool,
                                verify: bool|
@@ -106,12 +104,14 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 self.plugin_mgr.keystore_handler(),
                 self.plugin_mgr.keystore_require_password(),
             );
+            let mut rpc_client = HttpRpcClient::new(self.rpc_client.url().to_string());
             let mut loader = Loader {
                 rpc_client: self.rpc_client,
             };
             let cycle = {
                 let mut helper = MockTransactionHelper::new(&mut mock_tx);
                 if complete {
+                    let genesis_info = get_genesis_info(&self.genesis_info, &mut rpc_client)?;
                     helper.complete_tx(None, &genesis_info, &signer, |out_point| {
                         loader.get_live_cell(out_point)
                     })?;
@@ -151,6 +151,8 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let lock_arg_opt: Option<H160> =
                     FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
                 let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
+
+                let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
