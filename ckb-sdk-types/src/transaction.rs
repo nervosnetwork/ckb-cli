@@ -5,7 +5,8 @@ use ckb_types::{
     core::{
         cell::{CellMeta, CellMetaBuilder, CellProvider, CellStatus, HeaderChecker},
         error::OutPointError,
-        BlockExt, DepType, EpochExt, HeaderView, TransactionView,
+        BlockExt, DepType, EpochExt, EpochNumberWithFraction, HeaderView, TransactionInfo,
+        TransactionView,
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Transaction},
     prelude::*,
@@ -19,6 +20,8 @@ pub struct MockCellDep {
     pub cell_dep: CellDep,
     pub output: CellOutput,
     pub data: Bytes,
+    // Where this cell_dep belong to (for load_header by cell_dep)
+    pub block_hash: H256,
 }
 
 #[derive(Clone, Default)]
@@ -26,6 +29,8 @@ pub struct MockInput {
     pub input: CellInput,
     pub output: CellOutput,
     pub data: Bytes,
+    // Where this input belong to (for load_header by input)
+    pub block_hash: H256,
 }
 
 #[derive(Clone, Default)]
@@ -43,27 +48,37 @@ pub struct MockTransaction {
 }
 
 impl MockTransaction {
-    pub fn get_input_cell<F: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>>(
+    pub fn get_input_cell<
+        F: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+    >(
         &self,
         input: &CellInput,
         mut live_cell_getter: F,
-    ) -> Result<Option<(CellOutput, Bytes)>, String> {
+    ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
         for mock_input in &self.mock_info.inputs {
             if input == &mock_input.input {
-                return Ok(Some((mock_input.output.clone(), mock_input.data.clone())));
+                return Ok(Some((
+                    mock_input.output.clone(),
+                    mock_input.data.clone(),
+                    mock_input.block_hash.clone(),
+                )));
             }
         }
         live_cell_getter(input.previous_output())
     }
 
-    pub fn get_dep_cell<F: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>>(
+    pub fn get_dep_cell<F: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>>(
         &self,
         out_point: &OutPoint,
         mut live_cell_getter: F,
-    ) -> Result<Option<(CellOutput, Bytes)>, String> {
+    ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
         for mock_cell in &self.mock_info.cell_deps {
             if out_point == &mock_cell.cell_dep.out_point() {
-                return Ok(Some((mock_cell.output.clone(), mock_cell.data.clone())));
+                return Ok(Some((
+                    mock_cell.output.clone(),
+                    mock_cell.data.clone(),
+                    mock_cell.block_hash.clone(),
+                )));
             }
         }
         live_cell_getter(out_point.clone())
@@ -90,8 +105,10 @@ impl MockTransaction {
 
 pub trait MockResourceLoader {
     fn get_header(&mut self, hash: H256) -> Result<Option<HeaderView>, String>;
-    fn get_live_cell(&mut self, out_point: OutPoint)
-        -> Result<Option<(CellOutput, Bytes)>, String>;
+    fn get_live_cell(
+        &mut self,
+        out_point: OutPoint,
+    ) -> Result<Option<(CellOutput, Bytes, H256)>, String>;
 }
 
 pub struct Resource {
@@ -109,17 +126,23 @@ impl Resource {
         let mut required_headers = HashMap::default();
 
         for input in tx.inputs().into_iter() {
-            let (output, data) = mock_tx
+            let (output, data, block_hash) = mock_tx
                 .get_input_cell(&input, |out_point| loader.get_live_cell(out_point))?
                 .ok_or_else(|| format!("Can not get CellOutput by input={}", input))?;
             let cell_meta = CellMetaBuilder::from_cell_output(output, data)
                 .out_point(input.previous_output())
+                .transaction_info(TransactionInfo::new(
+                    1,
+                    EpochNumberWithFraction::new(1, 1, 1),
+                    block_hash.pack(),
+                    1,
+                ))
                 .build();
             required_cells.insert(input.previous_output(), cell_meta);
         }
 
         for cell_dep in tx.cell_deps().into_iter() {
-            let (output, data) = mock_tx
+            let (output, data, block_hash) = mock_tx
                 .get_dep_cell(&cell_dep.out_point(), |out_point| {
                     loader.get_live_cell(out_point)
                 })?
@@ -130,7 +153,7 @@ impl Resource {
                     .map_err(|err| format!("Parse dep group data error: {}", err))?
                     .into_iter()
                 {
-                    let (sub_output, sub_data) = mock_tx
+                    let (sub_output, sub_data, block_hash) = mock_tx
                         .get_dep_cell(&sub_out_point, |out_point| loader.get_live_cell(out_point))?
                         .ok_or_else(|| {
                             format!(
@@ -141,12 +164,24 @@ impl Resource {
 
                     let sub_cell_meta = CellMetaBuilder::from_cell_output(sub_output, sub_data)
                         .out_point(sub_out_point.clone())
+                        .transaction_info(TransactionInfo::new(
+                            1,
+                            EpochNumberWithFraction::new(1, 1, 1),
+                            block_hash.pack(),
+                            1,
+                        ))
                         .build();
                     required_cells.insert(sub_out_point, sub_cell_meta);
                 }
             }
             let cell_meta = CellMetaBuilder::from_cell_output(output, data)
                 .out_point(cell_dep.out_point())
+                .transaction_info(TransactionInfo::new(
+                    1,
+                    EpochNumberWithFraction::new(1, 1, 1),
+                    block_hash.pack(),
+                    1,
+                ))
                 .build();
             required_cells.insert(cell_dep.out_point(), cell_meta);
         }
@@ -213,12 +248,14 @@ pub struct ReprMockCellDep {
     pub cell_dep: json_types::CellDep,
     pub output: json_types::CellOutput,
     pub data: json_types::JsonBytes,
+    pub block_hash: Option<H256>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReprMockInput {
     pub input: json_types::CellInput,
     pub output: json_types::CellOutput,
     pub data: json_types::JsonBytes,
+    pub block_hash: Option<H256>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ReprMockInfo {
@@ -238,6 +275,7 @@ impl From<MockCellDep> for ReprMockCellDep {
             cell_dep: dep.cell_dep.into(),
             output: dep.output.into(),
             data: json_types::JsonBytes::from_bytes(dep.data),
+            block_hash: Some(dep.block_hash),
         }
     }
 }
@@ -247,6 +285,7 @@ impl From<ReprMockCellDep> for MockCellDep {
             cell_dep: dep.cell_dep.into(),
             output: dep.output.into(),
             data: dep.data.into_bytes(),
+            block_hash: dep.block_hash.unwrap_or_default(),
         }
     }
 }
@@ -257,6 +296,7 @@ impl From<MockInput> for ReprMockInput {
             input: input.input.into(),
             output: input.output.into(),
             data: json_types::JsonBytes::from_bytes(input.data),
+            block_hash: Some(input.block_hash),
         }
     }
 }
@@ -266,6 +306,7 @@ impl From<ReprMockInput> for MockInput {
             input: input.input.into(),
             output: input.output.into(),
             data: input.data.into_bytes(),
+            block_hash: input.block_hash.unwrap_or_default(),
         }
     }
 }

@@ -168,6 +168,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("1234"),
+                    block_hash: H256::default(),
                 };
                 let input = CellInput::new(OutPoint::new(h256!("0xff02").pack(), 0), 0);
                 let mock_input = MockInput {
@@ -177,6 +178,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("abcd"),
+                    block_hash: H256::default(),
                 };
                 let output = CellOutput::new_builder()
                     .capacity(capacity_bytes!(120).pack())
@@ -257,7 +259,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     fn get_live_cell(
         &mut self,
         out_point: OutPoint,
-    ) -> Result<Option<(CellOutput, Bytes)>, String> {
+    ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
             .get_live_cell(out_point.clone(), true)
@@ -268,12 +270,13 @@ impl<'a> MockResourceLoader for Loader<'a> {
                 .get_transaction(out_point.tx_hash().unpack())?
                 .and_then(|tx_with_status| {
                     let output_index: u32 = out_point.index().unpack();
+                    let block_hash = tx_with_status.tx_status.block_hash.unwrap_or_default();
                     tx_with_status
                         .transaction
                         .inner
                         .outputs_data
                         .get(output_index as usize)
-                        .map(|data| (output, data.clone().into_bytes()))
+                        .map(|data| (output, data.clone().into_bytes(), block_hash))
                 }))
         } else {
             Ok(None)

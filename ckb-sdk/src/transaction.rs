@@ -23,7 +23,7 @@ pub use ckb_sdk_types::transaction::{
 
 pub struct MockTransactionHelper<'a> {
     pub mock_tx: &'a mut MockTransaction,
-    live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)>,
+    live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes, H256)>,
 }
 
 impl<'a> MockTransactionHelper<'a> {
@@ -38,9 +38,9 @@ impl<'a> MockTransactionHelper<'a> {
         &mut self,
         input: &CellInput,
         live_cell_getter: C,
-    ) -> Result<(CellOutput, Bytes), String>
+    ) -> Result<(CellOutput, Bytes, H256), String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
     {
         let cell = match self.live_cell_cache.get(&input.previous_output()) {
             Some(cell) => cell.clone(),
@@ -64,12 +64,12 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<u64, String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
     {
         let mut input_total: u64 = 0;
         let mut first_input_cell = None;
         for input in self.mock_tx.core_transaction().inputs().into_iter() {
-            let (output, _) = self.get_input_cell(&input, &mut live_cell_getter)?;
+            let (output, _, _) = self.get_input_cell(&input, &mut live_cell_getter)?;
             if first_input_cell.is_none() {
                 first_input_cell = Some(output.clone());
             }
@@ -123,7 +123,7 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<(), String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
     {
         let tx = self.mock_tx.core_transaction();
         let mut cell_deps = tx.cell_deps().into_iter().collect::<HashSet<_>>();
@@ -220,7 +220,7 @@ impl<'a> MockTransactionHelper<'a> {
     ) -> Result<(), String>
     where
         S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
     {
         let tx = self.mock_tx.core_transaction();
         let mut witnesses: Vec<_> = tx.witnesses().into_iter().collect();
@@ -288,7 +288,7 @@ impl<'a> MockTransactionHelper<'a> {
     ) -> Result<(), String>
     where
         S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
     {
         self.add_change_output(target_lock, &mut live_cell_getter)?;
         self.fill_deps(genesis_info, &mut live_cell_getter)?;
@@ -375,6 +375,7 @@ mod test {
                 cell_dep: genesis_info.sighash_dep(),
                 output: dep_group_output,
                 data: dep_group_data,
+                block_hash: H256::default(),
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -382,6 +383,7 @@ mod test {
                     .build(),
                 output: secp_output,
                 data: secp_data,
+                block_hash: H256::default(),
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -389,6 +391,7 @@ mod test {
                     .build(),
                 output: secp_data_output,
                 data: secp_data_data,
+                block_hash: H256::default(),
             },
         ]);
 
@@ -403,6 +406,7 @@ mod test {
                 input: input.clone(),
                 output,
                 data: Bytes::default(),
+                block_hash: H256::default(),
             }
         });
         let output = CellOutput::new_builder()
@@ -440,7 +444,7 @@ mod test {
             fn get_live_cell(
                 &mut self,
                 out_point: OutPoint,
-            ) -> Result<Option<(CellOutput, Bytes)>, String> {
+            ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
                 Err(format!(
                     "Can not call live cell getter, out_point={:?}",
                     out_point
