@@ -126,12 +126,23 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(
                         binary_hex_arg
                             .clone()
+                            .required(false)
+                            .required_unless("utf8-string")
+                            .conflicts_with("utf8-string")
                             .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
                     )
                     .arg(
                         Arg::with_name("no-magic-bytes")
                             .long("no-magic-bytes")
                             .about("Don't add magic bytes before binary data (magic bytes: \"Nervos Message:\")")
+                    )
+                    .arg(
+                        Arg::with_name("utf8-string")
+                         .long("utf8-string")
+                         .takes_value(true)
+                         .required_unless(binary_hex_arg.get_name())
+                         .conflicts_with(binary_hex_arg.get_name())
+                         .about("The utf-8 string to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
                     ),
                 App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
@@ -306,7 +317,8 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
-                let mut binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let binary_opt: Option<Vec<u8>> =
+                    HexParser.from_matches_opt(m, "binary-hex", false)?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -324,6 +336,15 @@ message = "0x"
                             .map_err(|_| err)
                     })?;
                 let no_magic_bytes = m.is_present("no-magic-bytes");
+
+                let mut binary = if let Some(data) = binary_opt {
+                    data
+                } else {
+                    m.value_of("utf8-string")
+                        .ok_or_else(|| "<binary-hex> or <string> is required".to_string())?
+                        .as_bytes()
+                        .to_vec()
+                };
 
                 if !no_magic_bytes {
                     binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
