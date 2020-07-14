@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -169,14 +168,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|(lock_arg, source)| (lock_arg.clone(), source.clone()))
                     .collect::<Vec<(H160, String)>>();
                 // Sort by file path name
-                accounts.sort_by(|a, b| {
-                    let order = a.1.cmp(&b.1);
-                    if order == Ordering::Equal {
-                        a.0.cmp(&b.0)
-                    } else {
-                        order
-                    }
-                });
+                accounts.sort_by(|a, b| a.1.cmp(&b.1));
                 let only_mainnet_address = m.is_present("only-mainnet-address");
                 let only_testnet_address = m.is_present("only-testnet-address");
                 let partial_fields = only_mainnet_address || only_testnet_address;
