@@ -82,6 +82,9 @@ impl DefaultKeyStore {
                         .map_err(|err| err.to_string())?;
                     Ok(PluginResponse::H160(lock_arg))
                 }
+                KeyStoreRequest::ImportAccount { .. } => {
+                    Err("Not supported in file based keystore".to_string())
+                }
                 KeyStoreRequest::Export { hash160, password } => {
                     let password = password.ok_or_else(|| {
                         String::from("Password is required by default keystore: export key")

@@ -54,7 +54,11 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                         h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
                         h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
                     ];
-                    PluginResponse::H160Vec(accounts)
+                    let accounts = accounts
+                        .into_iter()
+                        .map(|hash160| JsonBytes::from_vec(hash160.as_bytes().to_vec()))
+                        .collect::<Vec<_>>();
+                    PluginResponse::BytesVec(accounts)
                 }
                 KeyStoreRequest::HasAccount(_) => PluginResponse::Boolean(true),
                 KeyStoreRequest::CreateAccount(_) => {
@@ -63,6 +67,9 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                 KeyStoreRequest::UpdatePassword { .. } => PluginResponse::Ok,
                 KeyStoreRequest::Import { .. } => {
                     PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
+                }
+                KeyStoreRequest::ImportAccount { .. } => {
+                    PluginResponse::H160(h160!("0x1111111111111111111222222222222222222222"))
                 }
                 KeyStoreRequest::Export { .. } => PluginResponse::MasterPrivateKey {
                     privkey: JsonBytes::from_vec(vec![3u8; 32]),

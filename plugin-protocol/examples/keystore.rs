@@ -1,4 +1,4 @@
-use ckb_types::{h160, H160};
+use ckb_types::{h160, h256, H160, H256};
 
 use ckb_cli_plugin_protocol::{
     JsonrpcError, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginConfig, PluginRequest,
@@ -71,11 +71,11 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     }
 
                     let accounts = vec![
-                        h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"),
-                        h160!("0x13e41d6F9292555916f17B4882a5477C01270142"),
-                        h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"),
+                        JsonBytes::from_vec(h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b").as_bytes().to_vec()),
+                        JsonBytes::from_vec(h256!("0x1111111f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").as_bytes().to_vec()),
+                        JsonBytes::from_vec(h256!("0x2222222b0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8").as_bytes().to_vec()),
                     ];
-                    PluginResponse::H160Vec(accounts)
+                    PluginResponse::BytesVec(accounts)
                 }
                 KeyStoreRequest::HasAccount(_) => PluginResponse::Boolean(true),
                 KeyStoreRequest::CreateAccount(_) => {
@@ -84,6 +84,13 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                 KeyStoreRequest::UpdatePassword { .. } => PluginResponse::Ok,
                 KeyStoreRequest::Import { .. } => {
                     PluginResponse::H160(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"))
+                }
+                KeyStoreRequest::ImportAccount { account_id, .. } => {
+                    eprintln!(
+                        "account_id: {}",
+                        serde_json::to_string_pretty(&account_id).unwrap()
+                    );
+                    PluginResponse::H160(h160!("0x1111111111111111111222222222222222222222"))
                 }
                 KeyStoreRequest::Export { .. } => PluginResponse::MasterPrivateKey {
                     privkey: JsonBytes::from_vec(vec![3u8; 32]),
