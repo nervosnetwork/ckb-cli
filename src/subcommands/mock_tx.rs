@@ -84,8 +84,6 @@ impl<'a> MockTxSubCommand<'a> {
 
 impl<'a> CliSubCommand for MockTxSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
-
         let mut complete_tx = |m: &ArgMatches,
                                complete: bool,
                                verify: bool|
@@ -106,12 +104,14 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 self.plugin_mgr.keystore_handler(),
                 self.plugin_mgr.keystore_require_password(),
             );
+            let mut rpc_client = HttpRpcClient::new(self.rpc_client.url().to_string());
             let mut loader = Loader {
                 rpc_client: self.rpc_client,
             };
             let cycle = {
                 let mut helper = MockTransactionHelper::new(&mut mock_tx);
                 if complete {
+                    let genesis_info = get_genesis_info(&self.genesis_info, &mut rpc_client)?;
                     helper.complete_tx(None, &genesis_info, &signer, |out_point| {
                         loader.get_live_cell(out_point)
                     })?;
@@ -151,6 +151,8 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let lock_arg_opt: Option<H160> =
                     FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
                 let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
+
+                let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
@@ -168,6 +170,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("1234"),
+                    block_hash: H256::default(),
                 };
                 let input = CellInput::new(OutPoint::new(h256!("0xff02").pack(), 0), 0);
                 let mock_input = MockInput {
@@ -177,6 +180,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("abcd"),
+                    block_hash: H256::default(),
                 };
                 let output = CellOutput::new_builder()
                     .capacity(capacity_bytes!(120).pack())
@@ -257,7 +261,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     fn get_live_cell(
         &mut self,
         out_point: OutPoint,
-    ) -> Result<Option<(CellOutput, Bytes)>, String> {
+    ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
             .get_live_cell(out_point.clone(), true)
@@ -268,12 +272,13 @@ impl<'a> MockResourceLoader for Loader<'a> {
                 .get_transaction(out_point.tx_hash().unpack())?
                 .and_then(|tx_with_status| {
                     let output_index: u32 = out_point.index().unpack();
+                    let block_hash = tx_with_status.tx_status.block_hash.unwrap_or_default();
                     tx_with_status
                         .transaction
                         .inner
                         .outputs_data
                         .get(output_index as usize)
-                        .map(|data| (output, data.clone().into_bytes()))
+                        .map(|data| (output, data.clone().into_bytes(), block_hash))
                 }))
         } else {
             Ok(None)
