@@ -36,6 +36,8 @@ use crate::utils::{
 };
 use crate::{build_cli, get_version};
 
+// Magic bytes to put before every sign-data binary argument
+const SIGN_MAGIC_BYTES: &[u8] = b"Nervos Message:";
 const FLAG_SINCE_EPOCH_NUMBER: u64 =
     0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
 const EPOCH_LENGTH: u64 = 1800;
@@ -125,6 +127,11 @@ impl<'a> UtilSubCommand<'a> {
                         binary_hex_arg
                             .clone()
                             .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                    )
+                    .arg(
+                        Arg::with_name("no-magic-bytes")
+                            .long("no-magic-bytes")
+                            .about("Don't add magic bytes before binary data (magic bytes: \"Nervos Message:\")")
                     ),
                 App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
@@ -299,7 +306,7 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let mut binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -316,7 +323,11 @@ message = "0x"
                             })
                             .map_err(|_| err)
                     })?;
+                let no_magic_bytes = m.is_present("no-magic-bytes");
 
+                if !no_magic_bytes {
+                    binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
+                }
                 let message = H256::from(blake2b_256(&binary));
                 let plugin_mgr_opt =
                     from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
