@@ -1,8 +1,8 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
     CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, HeaderView, LiveCell,
-    LockHashIndexState, Node, OutPoint, PeerState, Timestamp, Transaction, TransactionWithStatus,
-    TxPoolInfo, Uint64, Version,
+    LocalNode, LockHashIndexState, OutPoint, PeerState, RemoteNode, Timestamp, Transaction,
+    TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::types;
@@ -104,8 +104,8 @@ jsonrpc!(pub struct RawHttpRpcClient {
 
     // Net
     pub fn get_banned_addresses(&mut self) -> Vec<BannedAddr>;
-    pub fn get_peers(&mut self) -> Vec<Node>;
-    pub fn local_node_info(&mut self) -> Node;
+    pub fn get_peers(&mut self) -> Vec<RemoteNode>;
+    pub fn local_node_info(&mut self) -> LocalNode;
     pub fn set_ban(
         &mut self,
         address: String,
@@ -309,13 +309,13 @@ impl HttpRpcClient {
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
-    pub fn get_peers(&mut self) -> Result<Vec<types::Node>, String> {
+    pub fn get_peers(&mut self) -> Result<Vec<types::RemoteNode>, String> {
         self.client
             .get_peers()
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
-    pub fn local_node_info(&mut self) -> Result<types::Node, String> {
+    pub fn local_node_info(&mut self) -> Result<types::LocalNode, String> {
         self.client
             .local_node_info()
             .map(Into::into)
