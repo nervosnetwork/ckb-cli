@@ -22,6 +22,19 @@ impl Spec for Util {
         ));
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         let message = value["message"].as_str().unwrap();
+        let signature0 = value["signature"].as_str().unwrap();
+        assert_eq!(
+            message,
+            "0x81604242d6308051ae7cfd9d67a3b5f3cdd9446c009a82a20d5b6d30d9289ba9"
+        );
+        assert_eq!(signature0, "0xdfb707ff4facf2f7ed9da0ab2660ae911f356eff0d100e1f1b6f18dcfb8a49b54bf3c5741578a12fc261fa55eeb5902dea501f175c16b4b32a664a223da911b1");
+
+        let output = setup.cli(&format!(
+            "util sign-data --binary-hex 0xdeadbeef --privkey-path {} --no-magic-bytes",
+            account_privkey
+        ));
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        let message = value["message"].as_str().unwrap();
         let signature1 = value["signature"].as_str().unwrap();
         assert_eq!(
             message,
@@ -72,9 +85,9 @@ impl Spec for Util {
         let signature = value["signature"].as_str().unwrap();
         assert_eq!(
             message,
-            "0x761b06536d4d9580de9b63a3d5c5a5da0c6826c39775a7ce5039ac7e0f7f5dbc"
+            "0x81604242d6308051ae7cfd9d67a3b5f3cdd9446c009a82a20d5b6d30d9289ba9"
         );
-        assert_eq!(signature, "0x3f5aad8439367a7840deffbf3ee7657b9b225c553f7d5a4f766d99ac78128a6f7de732923d4dcf4551ff97421f104aa33d83d14362ab276502580cdd66fd56ee00");
+        assert_eq!(signature, "0xdfb707ff4facf2f7ed9da0ab2660ae911f356eff0d100e1f1b6f18dcfb8a49b54bf3c5741578a12fc261fa55eeb5902dea501f175c16b4b32a664a223da911b100");
 
         let output = setup.cli(&format!(
             "util verify-signature --message {} --signature {} --privkey-path {}",

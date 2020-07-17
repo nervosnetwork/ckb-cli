@@ -11,18 +11,19 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
+use crate::plugin::PluginManager;
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
-    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
     index::{IndexController, IndexRequest},
-    other::{check_alerts, get_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
-use ckb_sdk::{rpc::RawHttpRpcClient, wallet::KeyStore, GenesisInfo, HttpRpcClient};
+use ckb_sdk::{rpc::RawHttpRpcClient, GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -33,7 +34,7 @@ pub struct InteractiveEnv {
     history_file: PathBuf,
     index_dir: PathBuf,
     parser: clap::App<'static>,
-    key_store: KeyStore,
+    plugin_mgr: PluginManager,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
@@ -44,6 +45,7 @@ impl InteractiveEnv {
     pub fn from_config(
         ckb_cli_dir: PathBuf,
         mut config: GlobalConfig,
+        plugin_mgr: PluginManager,
         index_controller: IndexController,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
@@ -56,7 +58,7 @@ impl InteractiveEnv {
         let mut index_dir = ckb_cli_dir.clone();
         index_dir.push(index_dirname());
 
-        let mut env_file = ckb_cli_dir.clone();
+        let mut env_file = ckb_cli_dir;
         env_file.push("env_vars");
         if env_file.as_path().exists() {
             let file = fs::File::open(&env_file).map_err(|err| err.to_string())?;
@@ -70,16 +72,15 @@ impl InteractiveEnv {
         let parser = crate::build_interactive();
         let rpc_client = HttpRpcClient::new(config.get_url().to_string());
         let raw_rpc_client = RawHttpRpcClient::new(config.get_url());
-        let key_store = get_key_store(&ckb_cli_dir)?;
         Ok(InteractiveEnv {
             config,
             config_file,
             index_dir,
             history_file,
             parser,
+            plugin_mgr,
             rpc_client,
             raw_rpc_client,
-            key_store,
             index_controller,
             genesis_info: None,
         })
@@ -116,13 +117,28 @@ impl InteractiveEnv {
             }
         };
 
+        let mut plugin_sub_cmds = Vec::new();
+        let mut parser = self.parser.clone();
+        for (cmd_name, plugin_name) in self.plugin_mgr.sub_commands() {
+            if let Some((_, config)) = self.plugin_mgr.plugins().get(plugin_name.as_str()) {
+                plugin_sub_cmds
+                    .push((cmd_name.clone(), format!("[plugin] {}", config.description)));
+            }
+        }
+        for (cmd_name, description) in &plugin_sub_cmds {
+            parser = parser.subcommand(
+                // FIXME: when clap updated add `clap::AppSettings::DisableHelpFlags` back
+                clap::App::new(cmd_name.as_str()).about(description.as_str()),
+            );
+        }
+
         let rl_config = Config::builder()
             .history_ignore_space(true)
             .completion_type(CompletionType::List)
             .edit_mode(EditMode::Emacs)
             .build();
-        let helper = CkbCompleter::new(self.parser.clone());
         let mut rl = Editor::with_config(rl_config);
+        let helper = CkbCompleter::new(parser.clone());
         rl.set_helper(Some(helper));
         rl.bind_sequence(KeyPress::Meta('N'), Cmd::HistorySearchForward);
         rl.bind_sequence(KeyPress::Meta('P'), Cmd::HistorySearchBackward);
@@ -143,7 +159,7 @@ impl InteractiveEnv {
             );
             match rl.readline(&prompt) {
                 Ok(line) => {
-                    match self.handle_command(line.as_str(), &env_regex) {
+                    match self.handle_command(&parser, line.as_str(), &env_regex) {
                         Ok(true) => {
                             break;
                         }
@@ -215,17 +231,41 @@ impl InteractiveEnv {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    fn handle_command(&mut self, line: &str, env_regex: &Regex) -> Result<bool, String> {
+    fn handle_command(
+        &mut self,
+        parser: &clap::App,
+        line: &str,
+        env_regex: &Regex,
+    ) -> Result<bool, String> {
         let args = match shell_words::split(self.config.replace_cmd(&env_regex, line).as_str()) {
             Ok(args) => args,
             Err(e) => return Err(e.to_string()),
         };
+        if args.is_empty() {
+            return Ok(false);
+        }
 
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
         let wait_for_sync = !self.config.no_sync();
-        match self.parser.clone().try_get_matches_from(args) {
+
+        let current_cmd_name = &args[0];
+        if self
+            .plugin_mgr
+            .sub_commands()
+            .contains_key(current_cmd_name.as_str())
+        {
+            let rest_args = line[current_cmd_name.len()..].to_string();
+            log::debug!("[call sub command]: {} {}", current_cmd_name, rest_args);
+            let resp = self
+                .plugin_mgr
+                .sub_command(current_cmd_name.as_str(), rest_args)?;
+            println!("{}", resp.render(format, color));
+            return Ok(false);
+        }
+
+        match parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
                     m.value_of("url").and_then(|url| {
@@ -299,77 +339,78 @@ impl InteractiveEnv {
                 ("rpc", Some(sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
-                        .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                        .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.key_store).process(
-                        &sub_matches,
-                        format,
-                        color,
-                        debug,
-                    )?;
-                    println!("{}", output);
+                    let output = AccountSubCommand::new(&mut self.plugin_mgr)
+                        .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("mock-tx", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output = MockTxSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         genesis_info,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("tx", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output =
-                        TxSubCommand::new(&mut self.rpc_client, &mut self.key_store, genesis_info)
-                            .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                        TxSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr, genesis_info)
+                            .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("util", Some(sub_matches)) => {
-                    let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.key_store)
-                        .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr)
+                        .process(&sub_matches, debug)?;
+                    output.print(format, color);
+                    Ok(())
+                }
+                ("plugin", Some(sub_matches)) => {
+                    let output =
+                        PluginSubCommand::new(&mut self.plugin_mgr).process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("molecule", Some(sub_matches)) => {
-                    let output =
-                        MoleculeSubCommand::new().process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    let output = MoleculeSubCommand::new().process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("wallet", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         Some(genesis_info),
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("dao", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = DAOSubCommand::new(
                         &mut self.rpc_client,
-                        &mut self.key_store,
+                        &mut self.plugin_mgr,
                         genesis_info,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, format, color, debug)?;
-                    println!("{}", output);
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
                     Ok(())
                 }
                 ("exit", _) => {

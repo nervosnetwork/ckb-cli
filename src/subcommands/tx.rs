@@ -9,7 +9,7 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::KeyStore,
+    wallet::DerivationPath,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
     MultisigConfig, NetworkType, SignerFn, TxHelper,
 };
@@ -25,7 +25,8 @@ use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -34,26 +35,25 @@ use crate::utils::{
     },
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password, serialize_signature,
+        get_network_type, get_privkey_signer, get_to_data, read_password,
     },
-    printer::{OutputFormat, Printable},
 };
 
 pub struct TxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
     genesis_info: Option<GenesisInfo>,
 }
 
 impl<'a> TxSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
     ) -> TxSubCommand<'a> {
         TxSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr,
             genesis_info,
         }
     }
@@ -239,13 +239,7 @@ impl<'a> TxSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for TxSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
 
         match matches.subcommand() {
@@ -261,9 +255,9 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
                     file.write_all(content.as_bytes())
                         .map_err(|err| err.to_string())?;
-                    Ok(String::from("ok"))
+                    Ok(Output::new_success())
                 } else {
-                    Ok(repr.render(format, color))
+                    Ok(Output::new_output(repr))
                 }
             }
             ("clear-field", Some(m)) => {
@@ -278,7 +272,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                     Ok(())
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-input", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -307,7 +301,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     )
                 })?;
 
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-output", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -346,7 +340,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     Ok(())
                 })?;
 
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-signature", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -356,7 +350,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_signature(lock_arg, signature)
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("add-multisig-config", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -377,7 +371,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     helper.add_multisig_config(cfg);
                     Ok(())
                 })?;
-                Ok(String::from("ok"))
+                Ok(Output::new_success())
             }
             ("info", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -450,7 +444,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     "output_total": format!("{:#}", HumanCapacity(output_total)),
                     "tx_fee": tx_fee_string,
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("sign-inputs", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
@@ -463,10 +457,15 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
                 } else {
-                    let password = read_password(false, None)?;
+                    let password = if self.plugin_mgr.keystore_require_password() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
                     let account = account_opt.unwrap();
-                    let key_store = self.key_store.clone();
-                    get_keystore_signer(key_store, account, password)
+                    let keystore = self.plugin_mgr.keystore_handler();
+                    let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
+                    get_keystore_signer(keystore, new_client, account, password)
                 };
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
@@ -499,7 +498,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         })
                     })
                     .collect::<Vec<_>>();
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("send", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -537,13 +536,16 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx = helper.build_tx(&mut get_live_cell, skip_check)?;
                 let rpc_tx = json_types::Transaction::from(tx.data());
                 if debug {
-                    println!("[send transaction]:\n{}", rpc_tx.render(format, color));
+                    eprintln!(
+                        "[send transaction]:\n{}",
+                        serde_json::to_string_pretty(&rpc_tx).unwrap()
+                    );
                 }
                 let resp = self
                     .rpc_client
                     .send_transaction(tx.data())
                     .map_err(|err| format!("Send transaction error: {}", err))?;
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("build-multisig-address", Some(m)) => {
                 let sighash_addresses: Vec<Address> = AddressParser::default()
@@ -569,7 +571,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref()).unwrap()),
                     "lock-hash": format!("{:#x}", lock_script.calc_script_hash())
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand("tx").generate_usage()),
         }
@@ -596,7 +598,7 @@ fn print_cell_info(
     };
     let address = Address::new(network, address_payload);
     let type_script_status = if type_script_empty { "none" } else { "some" };
-    println!(
+    eprintln!(
         "[{}] {} => {}, (data-length: {}, type-script: {}, lock-kind: {})",
         prefix,
         address,
@@ -607,21 +609,65 @@ fn print_cell_info(
     );
 }
 
-fn get_keystore_signer(key_store: KeyStore, account: H160, password: String) -> SignerFn {
-    Box::new(move |lock_args: &HashSet<H160>, message: &H256| {
-        if lock_args.contains(&account) {
-            if message == &h256!("0x0") {
-                Ok(Some([0u8; 65]))
+fn get_keystore_signer(
+    keystore: KeyStoreHandler,
+    mut client: HttpRpcClient,
+    account: H160,
+    password: Option<String>,
+) -> SignerFn {
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
+            if lock_args.contains(&account) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
+                } else {
+                    let sign_target = if keystore.has_account_in_default(account.clone())? {
+                        SignTarget::AnyData(Default::default())
+                    } else {
+                        let inputs = tx
+                            .inputs
+                            .iter()
+                            .map(|input| {
+                                let tx_hash = &input.previous_output.tx_hash;
+                                client
+                                    .get_transaction(tx_hash.clone())?
+                                    .map(|tx_with_status| tx_with_status.transaction.inner)
+                                    .map(packed::Transaction::from)
+                                    .map(json_types::Transaction::from)
+                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
+                            })
+                            .collect::<Result<Vec<_>, String>>()?;
+                        SignTarget::Transaction {
+                            tx: tx.clone(),
+                            inputs,
+                            change_path: DerivationPath::empty().to_string(),
+                        }
+                    };
+                    let data = keystore.sign(
+                        account.clone(),
+                        &[],
+                        message.clone(),
+                        sign_target,
+                        password.clone(),
+                        true,
+                    )?;
+                    if data.len() != 65 {
+                        Err(format!(
+                            "Invalid signature data lenght: {}, data: {:?}",
+                            data.len(),
+                            data
+                        ))
+                    } else {
+                        let mut data_bytes = [0u8; 65];
+                        data_bytes.copy_from_slice(&data[..]);
+                        Ok(Some(data_bytes))
+                    }
+                }
             } else {
-                key_store
-                    .sign_recoverable_with_password(&account, &[], message, password.as_bytes())
-                    .map(|signature| Some(serialize_signature(&signature)))
-                    .map_err(|err| err.to_string())
+                Ok(None)
             }
-        } else {
-            Ok(None)
-        }
-    })
+        },
+    )
 }
 
 fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(

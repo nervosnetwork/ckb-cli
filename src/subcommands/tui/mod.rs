@@ -460,18 +460,11 @@ fn render_peers<B: Backend>(state: &State, ctx: RenderContext<B>) {
         .max()
         .unwrap_or(10);
     let peers = state.peers.iter().flat_map(|node| {
-        let direction = node
-            .is_outbound
-            .map(
-                |is_outbound| {
-                    if is_outbound {
-                        "outbound"
-                    } else {
-                        "inbound"
-                    }
-                },
-            )
-            .unwrap_or("unknown");
+        let direction = if node.is_outbound {
+            "outbound"
+        } else {
+            "inbound"
+        };
         vec![Text::raw(format!(
             "{:<width$} {:8} version({})",
             node.addresses

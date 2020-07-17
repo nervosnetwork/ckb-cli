@@ -31,7 +31,6 @@ impl Spec for WalletTransfer {
             "wallet get-live-cells --address {}",
             miner_address
         ));
-        log::info!("Check miner's live cells: {}", output);
         assert!(output.contains("current_count: 1\n"));
         assert!(output.contains("total_count: 1"));
 

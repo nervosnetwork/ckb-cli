@@ -1,10 +1,10 @@
 use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
-    wallet::KeyStore,
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -24,7 +24,8 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use super::CliSubCommand;
+use super::{CliSubCommand, Output};
+use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
@@ -32,10 +33,11 @@ use crate::utils::{
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, read_password, serialize_signature},
-    printer::{OutputFormat, Printable},
 };
 use crate::{build_cli, get_version};
 
+// Magic bytes to put before every sign-data binary argument
+const SIGN_MAGIC_BYTES: &[u8] = b"Nervos Message:";
 const FLAG_SINCE_EPOCH_NUMBER: u64 =
     0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
 const EPOCH_LENGTH: u64 = 1800;
@@ -43,17 +45,17 @@ const BLOCK_PERIOD: u64 = 8 * 1000; // 8 seconds
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
-    key_store: &'a mut KeyStore,
+    plugin_mgr: &'a mut PluginManager,
 }
 
 impl<'a> UtilSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
-        key_store: &'a mut KeyStore,
+        plugin_mgr: &'a mut PluginManager,
     ) -> UtilSubCommand<'a> {
         UtilSubCommand {
             rpc_client,
-            key_store,
+            plugin_mgr,
         }
     }
 
@@ -125,6 +127,11 @@ impl<'a> UtilSubCommand<'a> {
                         binary_hex_arg
                             .clone()
                             .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                    )
+                    .arg(
+                        Arg::with_name("no-magic-bytes")
+                            .long("no-magic-bytes")
+                            .about("Don't add magic bytes before binary data (magic bytes: \"Nervos Message:\")")
                     ),
                 App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
@@ -249,13 +256,7 @@ impl<'a> UtilSubCommand<'a> {
 }
 
 impl<'a> CliSubCommand for UtilSubCommand<'a> {
-    fn process(
-        &mut self,
-        matches: &ArgMatches,
-        format: OutputFormat,
-        color: bool,
-        debug: bool,
-    ) -> Result<String, String> {
+    fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
                 let privkey_opt: Option<PrivkeyWrapper> =
@@ -276,7 +277,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
                 let old_address = OldAddress::new_default(lock_arg.clone());
 
-                println!(
+                eprintln!(
                     r#"Put this config in < ckb.toml >:
 
 [block_assembler]
@@ -302,10 +303,10 @@ message = "0x"
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let mut binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -322,23 +323,27 @@ message = "0x"
                             })
                             .map_err(|_| err)
                     })?;
+                let no_magic_bytes = m.is_present("no-magic-bytes");
 
+                if !no_magic_bytes {
+                    binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
+                }
                 let message = H256::from(blake2b_256(&binary));
-                let key_store_opt = from_account_opt
-                    .as_ref()
-                    .map(|account| (&*self.key_store, account));
+                let plugin_mgr_opt =
+                    from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
-                    key_store_opt,
+                    plugin_mgr_opt,
                     recoverable,
                     &message,
+                    Some(binary),
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("sign-message", Some(m)) => {
                 let message: H256 =
@@ -360,20 +365,20 @@ message = "0x"
                             .map_err(|_| err)
                     })?;
 
-                let key_store_opt = from_account_opt
-                    .as_ref()
-                    .map(|account| (&*self.key_store, account));
+                let plugin_mgr_opt =
+                    from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
-                    key_store_opt,
+                    plugin_mgr_opt,
                     recoverable,
                     &message,
+                    None,
                 )?;
                 let result = serde_json::json!({
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("verify-signature", Some(m)) => {
                 let message: H256 =
@@ -402,11 +407,14 @@ message = "0x"
                 } else if let Some(privkey) = from_privkey_opt {
                     secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey)
                 } else if let Some(account) = from_account_opt {
-                    let password = read_password(false, None)?;
-                    self.key_store
-                        .extended_pubkey_with_password(&account, &[], password.as_bytes())
-                        .map_err(|err| err.to_string())?
-                        .public_key
+                    let password = if self.plugin_mgr.keystore_require_password() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                    self.plugin_mgr
+                        .keystore_handler()
+                        .extended_pubkey(account, &[], password)?
                 } else {
                     return Err(String::from(
                         "Missing <pubkey> or <privkey-path> or <from-account> argument",
@@ -433,13 +441,14 @@ message = "0x"
                     "recoverable": recoverable,
                     "verify-ok": verify_ok,
                 });
-                Ok(result.render(format, color))
+                Ok(Output::new_output(result))
             }
             ("eaglesong", Some(m)) => {
                 let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
                 let mut builder = EagleSongBuilder::new();
                 builder.update(&binary);
-                Ok(format!("{:#x}", H256::from(builder.finalize())))
+                let output_string = format!("{:#x}", H256::from(builder.finalize()));
+                Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             ("blake2b", Some(m)) => {
                 let binary: Vec<u8> = HexParser
@@ -462,7 +471,8 @@ message = "0x"
                 } else {
                     &hash_data[..]
                 };
-                Ok(format!("0x{}", hex_string(slice).unwrap()))
+                let output_string = format!("0x{}", hex_string(slice).unwrap());
+                Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             ("compact-to-difficulty", Some(m)) => {
                 let compact_target: u32 = FromStrParser::<u32>::default()
@@ -479,7 +489,7 @@ message = "0x"
                 let resp = serde_json::json!({
                     "difficulty": format!("{:#x}", compact_to_difficulty(compact_target))
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("difficulty-to-compact", Some(m)) => {
                 let input = m.value_of("difficulty").unwrap();
@@ -492,7 +502,7 @@ message = "0x"
                 let resp = serde_json::json!({
                     "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {
                 let chain_info: ChainInfo = self
@@ -524,7 +534,7 @@ message = "0x"
                 let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload);
                 let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
-                    println!(
+                    eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
                         NaiveDateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0),
                         NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
@@ -534,7 +544,7 @@ message = "0x"
                         MULTISIG_TYPE_HASH,
                     );
                 }
-                Ok(serde_json::json!(resp).render(format, color))
+                Ok(Output::new_output(serde_json::json!(resp)))
             }
             ("to-multisig-addr", Some(m)) => {
                 let address: Address = AddressParser::default()
@@ -561,7 +571,7 @@ message = "0x"
                     },
                     "target_epoch": epoch.to_string(),
                 });
-                Ok(resp.render(format, color))
+                Ok(Output::new_output(resp))
             }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();
@@ -581,7 +591,7 @@ message = "0x"
                     }
                     _ => panic!("Invalid shell: {}", shell),
                 }
-                Ok("".to_string())
+                Ok(Output::new_success())
             }
             _ => Err(Self::subcommand("util").generate_usage()),
         }
@@ -590,9 +600,10 @@ message = "0x"
 
 fn sign_message(
     from_privkey_opt: Option<&PrivkeyWrapper>,
-    from_account_opt: Option<(&KeyStore, &H160)>,
+    from_account_opt: Option<(&mut PluginManager, H160)>,
     recoverable: bool,
     message: &H256,
+    data: Option<Vec<u8>>,
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
@@ -606,19 +617,33 @@ fn sign_message(
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
             Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
         }
-        (None, Some((key_store, account)), false) => {
-            let password = read_password(false, None)?;
-            key_store
-                .sign_with_password(account, &[], message, password.as_bytes())
-                .map(|sig| sig.serialize_compact().to_vec())
-                .map_err(|err| err.to_string())
+        (None, Some((plugin_mgr, account)), false) => {
+            let password = if plugin_mgr.keystore_require_password() {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
+            let target = data
+                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
+                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
+            plugin_mgr
+                .keystore_handler()
+                .sign(account, &[], message.clone(), target, password, false)
+                .map(|bytes| (&bytes[..]).to_vec())
         }
-        (None, Some((key_store, account)), true) => {
-            let password = read_password(false, None)?;
-            key_store
-                .sign_recoverable_with_password(account, &[], message, password.as_bytes())
-                .map(|sig| serialize_signature(&sig).to_vec())
-                .map_err(|err| err.to_string())
+        (None, Some((plugin_mgr, account)), true) => {
+            let password = if plugin_mgr.keystore_require_password() {
+                Some(read_password(false, None)?)
+            } else {
+                None
+            };
+            let target = data
+                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
+                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
+            plugin_mgr
+                .keystore_handler()
+                .sign(account, &[], message.clone(), target, password, true)
+                .map(|bytes| (&bytes[..]).to_vec())
         }
         _ => Err(String::from("Both privkey and key store is missing")),
     }

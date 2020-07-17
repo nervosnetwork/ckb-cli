@@ -1,4 +1,5 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use std::convert::TryFrom;
 
 pub use ckb_jsonrpc_types::{
     self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxStatus,
@@ -49,6 +50,17 @@ impl From<Script> for packed::Script {
             .code_hash(code_hash.pack())
             .hash_type(hash_type.into())
             .build()
+    }
+}
+impl From<packed::Script> for Script {
+    fn from(input: packed::Script) -> Script {
+        Script {
+            code_hash: input.code_hash().unpack(),
+            args: JsonBytes::from_bytes(input.args().unpack()),
+            hash_type: core::ScriptHashType::try_from(input.hash_type())
+                .expect("checked data")
+                .into(),
+        }
     }
 }
 impl Serialize for Script {
@@ -115,6 +127,16 @@ impl From<CellOutput> for packed::CellOutput {
             .build()
     }
 }
+impl From<packed::CellOutput> for CellOutput {
+    fn from(input: packed::CellOutput) -> CellOutput {
+        let capacity: u64 = input.capacity().unpack();
+        CellOutput {
+            capacity: capacity.into(),
+            lock: input.lock().into(),
+            type_: input.type_().to_opt().map(Into::into),
+        }
+    }
+}
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +159,15 @@ impl From<OutPoint> for packed::OutPoint {
             .tx_hash(tx_hash.pack())
             .index(index.pack())
             .build()
+    }
+}
+impl From<packed::OutPoint> for OutPoint {
+    fn from(input: packed::OutPoint) -> OutPoint {
+        let index: u32 = input.index().unpack();
+        OutPoint {
+            tx_hash: input.tx_hash().unpack(),
+            index,
+        }
     }
 }
 
@@ -166,6 +197,15 @@ impl From<CellInput> for packed::CellInput {
             .build()
     }
 }
+impl From<packed::CellInput> for CellInput {
+    fn from(input: packed::CellInput) -> CellInput {
+        let since: u64 = input.since().unpack();
+        CellInput {
+            previous_output: input.previous_output().into(),
+            since: since.into(),
+        }
+    }
+}
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(deny_unknown_fields)]
@@ -192,6 +232,16 @@ impl From<CellDep> for packed::CellDep {
             .out_point(out_point.into())
             .dep_type(dep_type.into())
             .build()
+    }
+}
+impl From<packed::CellDep> for CellDep {
+    fn from(input: packed::CellDep) -> Self {
+        CellDep {
+            out_point: input.out_point().into(),
+            dep_type: core::DepType::try_from(input.dep_type())
+                .expect("checked data")
+                .into(),
+        }
     }
 }
 
@@ -242,6 +292,24 @@ impl From<Transaction> for packed::Transaction {
             .raw(raw)
             .witnesses(witnesses.into_iter().map(Into::into).pack())
             .build()
+    }
+}
+impl From<packed::Transaction> for Transaction {
+    fn from(input: packed::Transaction) -> Self {
+        let raw = input.raw();
+        Self {
+            version: raw.version().unpack(),
+            cell_deps: raw.cell_deps().into_iter().map(Into::into).collect(),
+            header_deps: raw
+                .header_deps()
+                .into_iter()
+                .map(|d| Unpack::<H256>::unpack(&d))
+                .collect(),
+            inputs: raw.inputs().into_iter().map(Into::into).collect(),
+            outputs: raw.outputs().into_iter().map(Into::into).collect(),
+            outputs_data: raw.outputs_data().into_iter().map(Into::into).collect(),
+            witnesses: input.witnesses().into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -764,15 +832,30 @@ impl From<rpc_types::LockHashIndexState> for LockHashIndexState {
 //  net.rs
 // ========
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
-pub struct Node {
+pub struct LocalNode {
     pub version: String,
     pub node_id: String,
     pub addresses: Vec<NodeAddress>,
-    pub is_outbound: Option<bool>,
 }
-impl From<rpc_types::Node> for Node {
-    fn from(json: rpc_types::Node) -> Node {
-        Node {
+impl From<rpc_types::LocalNode> for LocalNode {
+    fn from(json: rpc_types::LocalNode) -> LocalNode {
+        LocalNode {
+            version: json.version,
+            node_id: json.node_id,
+            addresses: json.addresses.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct RemoteNode {
+    pub version: String,
+    pub node_id: String,
+    pub addresses: Vec<NodeAddress>,
+    pub is_outbound: bool,
+}
+impl From<rpc_types::RemoteNode> for RemoteNode {
+    fn from(json: rpc_types::RemoteNode) -> RemoteNode {
+        RemoteNode {
             version: json.version,
             node_id: json.node_id,
             addresses: json.addresses.into_iter().map(Into::into).collect(),
