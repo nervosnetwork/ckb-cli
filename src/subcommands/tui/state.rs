@@ -9,7 +9,7 @@ use jsonrpc_client_core::Error as RpcError;
 
 use super::util::ts_now;
 use ckb_sdk::{
-    rpc::{BlockView, ChainInfo, Node, TxPoolInfo},
+    rpc::{BlockView, ChainInfo, LocalNode, RemoteNode, TxPoolInfo},
     HttpRpcClient,
 };
 
@@ -105,9 +105,9 @@ pub struct State {
     // FIXME: should handle fork (see: ckb-monitor)
     pub(crate) blocks: BTreeMap<u64, BlockInfo>,
     pub(crate) tip_header: Option<HeaderView>,
-    pub(crate) peers: Vec<Node>,
+    pub(crate) peers: Vec<RemoteNode>,
     pub(crate) chain: Option<ChainInfo>,
-    pub(crate) local_node: Option<Node>,
+    pub(crate) local_node: Option<LocalNode>,
     pub(crate) tx_pool: Option<TxPoolInfo>,
 }
 

@@ -4,7 +4,7 @@ use ckb_jsonrpc_types::{
 use ckb_sdk::{
     rpc::{
         BannedAddr, BlockReward, BlockView, CellOutputWithOutPoint, CellTransaction, EpochView,
-        HeaderView, LiveCell, Node, RawHttpRpcClient, TransactionWithStatus,
+        HeaderView, LiveCell, RawHttpRpcClient, RemoteNode, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -583,11 +583,11 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_peers()
-                        .map(RawNodes)
+                        .map(RawRemoteNodes)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_peers().map(Nodes)?;
+                    let resp = self.rpc_client.get_peers().map(RemoteNodes)?;
                     Ok(Output::new_output(resp))
                 }
             }
@@ -678,7 +678,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Nodes(pub Vec<Node>);
+pub struct RemoteNodes(pub Vec<RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
@@ -714,7 +714,7 @@ pub struct LiveCells(pub Vec<LiveCell>);
 pub struct CellTransactions(pub Vec<CellTransaction>);
 
 #[derive(Serialize, Deserialize)]
-pub struct RawNodes(pub Vec<rpc_types::Node>);
+pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionTransactionWithStatus(pub Option<rpc_types::TransactionWithStatus>);

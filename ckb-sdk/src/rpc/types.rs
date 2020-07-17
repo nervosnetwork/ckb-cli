@@ -832,15 +832,30 @@ impl From<rpc_types::LockHashIndexState> for LockHashIndexState {
 //  net.rs
 // ========
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
-pub struct Node {
+pub struct LocalNode {
     pub version: String,
     pub node_id: String,
     pub addresses: Vec<NodeAddress>,
-    pub is_outbound: Option<bool>,
 }
-impl From<rpc_types::Node> for Node {
-    fn from(json: rpc_types::Node) -> Node {
-        Node {
+impl From<rpc_types::LocalNode> for LocalNode {
+    fn from(json: rpc_types::LocalNode) -> LocalNode {
+        LocalNode {
+            version: json.version,
+            node_id: json.node_id,
+            addresses: json.addresses.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct RemoteNode {
+    pub version: String,
+    pub node_id: String,
+    pub addresses: Vec<NodeAddress>,
+    pub is_outbound: bool,
+}
+impl From<rpc_types::RemoteNode> for RemoteNode {
+    fn from(json: rpc_types::RemoteNode) -> RemoteNode {
+        RemoteNode {
             version: json.version,
             node_id: json.node_id,
             addresses: json.addresses.into_iter().map(Into::into).collect(),
