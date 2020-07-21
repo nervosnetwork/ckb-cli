@@ -173,6 +173,7 @@ pub enum SignTarget {
         change_path: String,
     },
     AnyMessage(H256),
+    AnyString(String),
     AnyData(JsonBytes),
 }
 

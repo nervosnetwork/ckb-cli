@@ -337,13 +337,14 @@ message = "0x"
                     })?;
                 let no_magic_bytes = m.is_present("no-magic-bytes");
 
-                let mut binary = if let Some(data) = binary_opt {
-                    data
+                let (mut binary, target) = if let Some(data) = binary_opt {
+                    (data.clone(), SignTarget::AnyData(JsonBytes::from_vec(data)))
                 } else {
-                    m.value_of("utf8-string")
-                        .ok_or_else(|| "<binary-hex> or <string> is required".to_string())?
-                        .as_bytes()
-                        .to_vec()
+                    let utf8_string = m
+                        .value_of("utf8-string")
+                        .ok_or_else(|| "<binary-hex> or <string> is required".to_string())?;
+                    let binary = utf8_string.as_bytes().to_vec();
+                    (binary, SignTarget::AnyString(utf8_string.to_string()))
                 };
 
                 if !no_magic_bytes {
@@ -357,7 +358,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
-                    Some(binary),
+                    target,
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
@@ -393,7 +394,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
-                    None,
+                    SignTarget::AnyMessage(message.clone()),
                 )?;
                 let result = serde_json::json!({
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
@@ -624,7 +625,7 @@ fn sign_message(
     from_account_opt: Option<(&mut PluginManager, H160)>,
     recoverable: bool,
     message: &H256,
-    data: Option<Vec<u8>>,
+    target: SignTarget,
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
@@ -644,9 +645,6 @@ fn sign_message(
             } else {
                 None
             };
-            let target = data
-                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
-                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, false)
@@ -658,9 +656,6 @@ fn sign_message(
             } else {
                 None
             };
-            let target = data
-                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
-                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, true)
