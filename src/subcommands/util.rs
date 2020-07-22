@@ -129,7 +129,7 @@ impl<'a> UtilSubCommand<'a> {
                             .required(false)
                             .required_unless("utf8-string")
                             .conflicts_with("utf8-string")
-                            .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                            .about("The data to be signed. The input data will be hashed using blake2b with 'ckb-default-hash' personalization first.")
                     )
                     .arg(
                         Arg::with_name("no-magic-bytes")
@@ -138,11 +138,11 @@ impl<'a> UtilSubCommand<'a> {
                     )
                     .arg(
                         Arg::with_name("utf8-string")
-                         .long("utf8-string")
-                         .takes_value(true)
-                         .required_unless(binary_hex_arg.get_name())
-                         .conflicts_with(binary_hex_arg.get_name())
-                         .about("The utf-8 string to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                            .long("utf8-string")
+                            .takes_value(true)
+                            .required_unless(binary_hex_arg.get_name())
+                            .conflicts_with(binary_hex_arg.get_name())
+                            .about("The utf-8 string to be signed. The input string will be hashed using blake2b with 'ckb-default-hash' personalization first.")
                     ),
                 App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
