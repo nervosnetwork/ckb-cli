@@ -95,6 +95,7 @@ impl<'a> MockTxSubCommand<'a> {
                     .arg(
                         arg_output_file
                             .clone()
+                            .required(true)
                             .about("Dumped mock transaction data file (format: json)"),
                     ),
                 App::new("verify")
@@ -251,13 +252,14 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 }
             }
             ("dump", Some(m)) => {
-                let output_opt: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
+                let output_path: PathBuf =
+                    FilePathParser::new(false).from_matches(m, "output-file")?;
                 let tx_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash", false)?;
-                let path_opt: Option<PathBuf> =
+                let tx_file_opt: Option<PathBuf> =
                     FilePathParser::new(true).from_matches_opt(m, "tx-file", false)?;
-                let src_tx: json_types::Transaction = if let Some(path) = path_opt {
+
+                let src_tx: json_types::Transaction = if let Some(path) = tx_file_opt {
                     let mut content = String::new();
                     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
                     file.read_to_string(&mut content)
@@ -386,17 +388,13 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     },
                     tx: src_tx,
                 };
-                if let Some(path) = output_opt {
-                    let content =
-                        serde_json::to_string_pretty(&repr_tx).map_err(|err| err.to_string())?;
-                    let mut out_file = fs::File::create(path).map_err(|err| err.to_string())?;
-                    out_file
-                        .write_all(content.as_bytes())
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_success())
-                } else {
-                    Ok(Output::new_output(repr_tx))
-                }
+                let content =
+                    serde_json::to_string_pretty(&repr_tx).map_err(|err| err.to_string())?;
+                let mut out_file = fs::File::create(output_path).map_err(|err| err.to_string())?;
+                out_file
+                    .write_all(content.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                Ok(Output::new_success())
             }
             ("verify", Some(m)) => {
                 let (mock_tx, cycle) = complete_tx(m, false, true)?;
