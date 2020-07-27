@@ -27,7 +27,7 @@ use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
     index::{IndexController, IndexRequest},
-    other::get_network_type,
+    other::{get_max_mature_number, get_network_type},
 };
 
 pub struct ApiServerSubCommand<'a> {
@@ -36,6 +36,7 @@ pub struct ApiServerSubCommand<'a> {
     genesis_info: Option<GenesisInfo>,
     index_dir: PathBuf,
     index_controller: IndexController,
+    dev_cellbase_maturity: u64,
 }
 
 impl<'a> ApiServerSubCommand<'a> {
@@ -45,6 +46,7 @@ impl<'a> ApiServerSubCommand<'a> {
         genesis_info: Option<GenesisInfo>,
         index_dir: PathBuf,
         index_controller: IndexController,
+        dev_cellbase_maturity: u64,
     ) -> ApiServerSubCommand<'a> {
         ApiServerSubCommand {
             rpc_client,
@@ -52,6 +54,7 @@ impl<'a> ApiServerSubCommand<'a> {
             genesis_info,
             index_dir,
             index_controller,
+            dev_cellbase_maturity,
         }
     }
 
@@ -116,6 +119,8 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             privkey_path,
             index_dir: self.index_dir.clone(),
             index_controller: self.index_controller.clone(),
+            network_type: network,
+            dev_cellbase_maturity: self.dev_cellbase_maturity,
         };
         io_handler.extend_with(handler.to_delegate());
 
@@ -214,6 +219,8 @@ struct ApiRpcImpl {
     privkey_path: Option<String>,
     index_dir: PathBuf,
     index_controller: IndexController,
+    network_type: NetworkType,
+    dev_cellbase_maturity: u64,
 }
 
 impl ApiRpcImpl {
@@ -246,7 +253,18 @@ impl ApiRpcImpl {
             self.index_dir.clone(),
             self.index_controller.clone(),
             true,
+            self.dev_cellbase_maturity,
         ))
+    }
+
+    fn get_max_mature_number(&self) -> Result<u64, RpcError> {
+        let cellbase_maturity = if self.network_type == NetworkType::Dev {
+            Some(self.dev_cellbase_maturity)
+        } else {
+            None
+        };
+        let mut rpc_client = self.rpc_client.lock().unwrap();
+        get_max_mature_number(&mut rpc_client, cellbase_maturity).map_err(internal_err)
     }
 }
 
@@ -283,8 +301,9 @@ impl ApiRpc for ApiRpcImpl {
     fn get_capacity_by_lock_hash(&self, lock_hash: H256) -> RpcResult<GetCapacityResponse> {
         log::info!("[call]: get_capacity_by_lock_hash({:#x})", lock_hash);
         let lock_hashes = vec![lock_hash.pack()];
+        let max_mature_number = self.get_max_mature_number()?;
         self.with_wallet(|cmd| {
-            cmd.get_capacity(lock_hashes)
+            cmd.get_capacity(lock_hashes, max_mature_number)
                 .map(|(total, immature, dao)| GetCapacityResponse {
                     total,
                     immature,
@@ -335,6 +354,7 @@ impl ApiRpc for ApiRpcImpl {
             limit,
         );
         let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+        let max_mature_number = self.get_max_mature_number()?;
         self.with_wallet(|cmd| {
             cmd.get_live_cells(
                 to_number,
@@ -343,6 +363,7 @@ impl ApiRpc for ApiRpcImpl {
                     db.get_live_cells_by_lock(lock_hash.pack(), from_number_opt, terminator)
                 },
                 true,
+                max_mature_number,
             )
             .map(|result| result.0)
             .map_err(RpcError::invalid_params)
@@ -364,6 +385,7 @@ impl ApiRpc for ApiRpcImpl {
             limit,
         );
         let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+        let max_mature_number = self.get_max_mature_number()?;
         self.with_wallet(|cmd| {
             cmd.get_live_cells(
                 to_number,
@@ -372,6 +394,7 @@ impl ApiRpc for ApiRpcImpl {
                     db.get_live_cells_by_type(type_hash.pack(), from_number_opt, terminator)
                 },
                 true,
+                max_mature_number,
             )
             .map(|result| result.0)
             .map_err(RpcError::invalid_params)
@@ -393,6 +416,7 @@ impl ApiRpc for ApiRpcImpl {
             limit,
         );
         let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+        let max_mature_number = self.get_max_mature_number()?;
         self.with_wallet(|cmd| {
             cmd.get_live_cells(
                 to_number,
@@ -401,6 +425,7 @@ impl ApiRpc for ApiRpcImpl {
                     db.get_live_cells_by_code(code_hash.pack(), from_number_opt, terminator)
                 },
                 true,
+                max_mature_number,
             )
             .map(|result| result.0)
             .map_err(RpcError::invalid_params)

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use ansi_term::Colour::Yellow;
 use ckb_sdk::NetworkType;
+use ckb_types::core::EpochNumberWithFraction;
 use ckb_util::RwLock;
 use regex::{Captures, Regex};
 
@@ -22,6 +23,7 @@ pub struct GlobalConfig {
     color: bool,
     debug: bool,
     no_sync: bool,
+    dev_cellbase_maturity: u64,
     output_format: OutputFormat,
     path: PathBuf,
     completion_style: bool,
@@ -44,6 +46,7 @@ impl GlobalConfig {
             edit_style: true,
             env_variable: HashMap::new(),
             index_state,
+            dev_cellbase_maturity: 0,
         }
     }
 
@@ -187,6 +190,14 @@ impl GlobalConfig {
         self.no_sync
     }
 
+    pub fn set_dev_cellbase_maturity(&mut self, value: u64) {
+        self.dev_cellbase_maturity = value;
+    }
+
+    pub fn dev_cellbase_maturity(&self) -> u64 {
+        self.dev_cellbase_maturity
+    }
+
     pub fn output_format(&self) -> OutputFormat {
         self.output_format
     }
@@ -204,6 +215,16 @@ impl GlobalConfig {
         let color = self.color.to_string();
         let debug = self.debug.to_string();
         let no_sync = self.no_sync.to_string();
+        let dev_cellbase_maturity = {
+            let epoch = EpochNumberWithFraction::from_full_value(self.dev_cellbase_maturity);
+            format!(
+                "{}+{}/{} ({})",
+                epoch.number(),
+                epoch.index(),
+                epoch.length(),
+                self.dev_cellbase_maturity,
+            )
+        };
         let output_format = self.output_format.to_string();
         let completion_style = if self.completion_style {
             "List"
@@ -226,6 +247,7 @@ impl GlobalConfig {
             ("color", color.as_str()),
             ("debug", debug.as_str()),
             ("no-sync", no_sync.as_str()),
+            ("cellbase maturity (dev)", dev_cellbase_maturity.as_str()),
             ("output format", output_format.as_str()),
             ("completion style", completion_style),
             ("edit style", edit_style),

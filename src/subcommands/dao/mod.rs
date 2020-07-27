@@ -3,8 +3,7 @@ use self::command::TransactArgs;
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::index::IndexController;
 use crate::utils::other::{
-    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    sync_to_tip,
+    get_network_type, get_privkey_signer, is_mature, read_password, sync_to_tip,
 };
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
@@ -39,6 +38,7 @@ pub struct DAOSubCommand<'a> {
     index_controller: IndexController,
     transact_args: Option<TransactArgs>,
     wait_for_sync: bool,
+    dev_cellbase_maturity: u64,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -49,6 +49,7 @@ impl<'a> DAOSubCommand<'a> {
         index_dir: PathBuf,
         index_controller: IndexController,
         wait_for_sync: bool,
+        dev_cellbase_maturity: u64,
     ) -> Self {
         Self {
             rpc_client,
@@ -58,23 +59,32 @@ impl<'a> DAOSubCommand<'a> {
             index_controller,
             transact_args: None,
             wait_for_sync,
+            dev_cellbase_maturity,
         }
     }
 
-    pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
+    pub fn deposit(
+        &mut self,
+        capacity: u64,
+        max_mature_number: u64,
+    ) -> Result<TransactionView, String> {
         self.check_db_ready()?;
         let target_capacity = capacity + self.transact_args().tx_fee;
-        let cells = self.collect_sighash_cells(target_capacity)?;
+        let cells = self.collect_sighash_cells(target_capacity, max_mature_number)?;
         let raw_transaction = self.build(cells).deposit(capacity)?;
         self.sign(raw_transaction)
     }
 
-    pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
+    pub fn prepare(
+        &mut self,
+        out_points: Vec<OutPoint>,
+        max_mature_number: u64,
+    ) -> Result<TransactionView, String> {
         self.check_db_ready()?;
         let tx_fee = self.transact_args().tx_fee;
         let lock_hash = self.transact_args().lock_hash();
         let cells = {
-            let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
+            let mut to_pay_fee = self.collect_sighash_cells(tx_fee, max_mature_number)?;
             let mut to_prepare = {
                 let deposit_cells = self.query_deposit_cells(lock_hash)?;
                 take_by_out_points(deposit_cells, &out_points)?
@@ -140,11 +150,14 @@ impl<'a> DAOSubCommand<'a> {
         })
     }
 
-    fn collect_sighash_cells(&mut self, target_capacity: u64) -> Result<Vec<LiveCellInfo>, String> {
+    fn collect_sighash_cells(
+        &mut self,
+        target_capacity: u64,
+        max_mature_number: u64,
+    ) -> Result<Vec<LiveCellInfo>, String> {
         let from_address = self.transact_args().address.clone();
         let mut enough = false;
         let mut take_capacity = 0;
-        let max_mature_number = get_max_mature_number(self.rpc_client())?;
         let terminator = |_, cell: &LiveCellInfo| {
             if !(cell.type_hashes.is_none() && cell.data_bytes == 0)
                 && is_mature(cell, max_mature_number)

@@ -36,8 +36,8 @@ use ckb_sdk::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::DerivationPath,
-    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
-    Since, SinceType, TxHelper, SECP256K1,
+    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
+    NetworkType, SignerFn, Since, SinceType, TxHelper, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -51,6 +51,7 @@ pub struct WalletSubCommand<'a> {
     index_dir: PathBuf,
     index_controller: IndexController,
     wait_for_sync: bool,
+    dev_cellbase_maturity: u64,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -61,6 +62,7 @@ impl<'a> WalletSubCommand<'a> {
         index_dir: PathBuf,
         index_controller: IndexController,
         wait_for_sync: bool,
+        dev_cellbase_maturity: u64,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
@@ -69,6 +71,7 @@ impl<'a> WalletSubCommand<'a> {
             index_dir,
             index_controller,
             wait_for_sync,
+            dev_cellbase_maturity,
         }
     }
 
@@ -341,7 +344,12 @@ impl<'a> WalletSubCommand<'a> {
             }
         }
 
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
+        let cellbase_maturity = if network_type == NetworkType::Dev {
+            Some(self.dev_cellbase_maturity)
+        } else {
+            None
+        };
+        let max_mature_number = get_max_mature_number(self.rpc_client, cellbase_maturity)?;
         let mut from_capacity = 0;
         let mut infos: Vec<LiveCellInfo> = Default::default();
         let mut terminator = |_, info: &LiveCellInfo| {
@@ -449,8 +457,11 @@ impl<'a> WalletSubCommand<'a> {
         Ok(tx)
     }
 
-    pub fn get_capacity(&mut self, lock_hashes: Vec<Byte32>) -> Result<(u64, u64, u64), String> {
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
+    pub fn get_capacity(
+        &mut self,
+        lock_hashes: Vec<Byte32>,
+        max_mature_number: u64,
+    ) -> Result<(u64, u64, u64), String> {
         self.with_db(|db| {
             let mut total_capacity = 0;
             let mut dao_capacity = 0;
@@ -483,6 +494,7 @@ impl<'a> WalletSubCommand<'a> {
         limit: usize,
         mut func: F,
         fast_mode: bool,
+        max_mature_number: u64,
     ) -> Result<(LiveCells, Option<(u32, u64)>), String>
     where
         F: FnMut(
@@ -517,7 +529,6 @@ impl<'a> WalletSubCommand<'a> {
                 )
             })?;
 
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let live_cells = infos
             .into_iter()
             .map(|info| {
@@ -573,13 +584,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 }
             }
             ("get-capacity", Some(m)) => {
+                let network_type = get_network_type(self.rpc_client)?;
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
                 let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
                     vec![lock_hash.pack()]
                 } else {
-                    let network_type = get_network_type(self.rpc_client)?;
-
                     let receiving_address_length: u32 = FromStrParser::<u32>::default()
                         .from_matches(m, "derive-receiving-address-length")?;
                     let change_address_length: u32 = FromStrParser::<u32>::default()
@@ -614,7 +624,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     lock_hashes
                 };
 
-                let (total, immature, dao) = self.get_capacity(lock_hashes)?;
+                let cellbase_maturity = if network_type == NetworkType::Dev {
+                    Some(self.dev_cellbase_maturity)
+                } else {
+                    None
+                };
+                let max_mature_number = get_max_mature_number(self.rpc_client, cellbase_maturity)?;
+                let (total, immature, dao) = self.get_capacity(lock_hashes, max_mature_number)?;
 
                 let mut resp =
                     serde_json::json!({ "total": format!("{:#}", HumanCapacity::from(total)) });
@@ -660,6 +676,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     );
                 }
 
+                let cellbase_maturity = if network_type == NetworkType::Dev {
+                    Some(self.dev_cellbase_maturity)
+                } else {
+                    None
+                };
+                let max_mature_number = get_max_mature_number(self.rpc_client, cellbase_maturity)?;
                 let to_number = to_number_opt.unwrap_or(std::u64::MAX);
                 let (
                     LiveCells {
@@ -693,6 +715,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         }
                     },
                     fast_mode,
+                    max_mature_number,
                 )?;
                 let mut resp = serde_json::json!({
                     "live_cells": live_cells.into_iter().map(|live_cell| {

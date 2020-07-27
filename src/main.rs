@@ -24,7 +24,7 @@ use subcommands::{
 };
 use utils::other::get_genesis_info;
 use utils::{
-    arg_parser::{ArgParser, UrlParser},
+    arg_parser::{ArgParser, FromStrParser, UrlParser},
     config::GlobalConfig,
     index::IndexThreadState,
     other::{check_alerts, get_network_type, index_dirname},
@@ -82,6 +82,7 @@ fn main() -> Result<(), io::Error> {
     config_file.push("config");
 
     let mut output_format = OutputFormat::Yaml;
+    let mut dev_cellbase_maturity = 0;
     if config_file.as_path().exists() {
         let mut file = fs::File::open(&config_file)?;
         let mut content = String::new();
@@ -94,6 +95,8 @@ fn main() -> Result<(), io::Error> {
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
         config.set_no_sync(configs["no-sync"].as_bool().unwrap_or(false));
+        dev_cellbase_maturity = configs["dev-cellbase-maturity"].as_u64().unwrap_or(0);
+        config.set_dev_cellbase_maturity(dev_cellbase_maturity);
         config.set_color(ansi_support && configs["color"].as_bool().unwrap_or(true));
         output_format =
             OutputFormat::from_str(&configs["output_format"].as_str().unwrap_or("yaml"))
@@ -113,6 +116,12 @@ fn main() -> Result<(), io::Error> {
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
     let wait_for_sync = !matches.is_present("no-sync");
+    if let Some(value) = FromStrParser::<u64>::default()
+        .from_matches_opt(&matches, "cellbase-maturity", false)
+        .expect("cellbase maturity already validated")
+    {
+        dev_cellbase_maturity = value;
+    }
 
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
@@ -145,6 +154,7 @@ fn main() -> Result<(), io::Error> {
             None,
             index_dir,
             index_controller.clone(),
+            dev_cellbase_maturity,
         )
         .process(&sub_matches, debug),
         ("plugin", Some(sub_matches)) => {
@@ -158,6 +168,7 @@ fn main() -> Result<(), io::Error> {
             index_dir,
             index_controller.clone(),
             wait_for_sync,
+            dev_cellbase_maturity,
         )
         .process(&sub_matches, debug),
         ("dao", Some(sub_matches)) => {
@@ -169,6 +180,7 @@ fn main() -> Result<(), io::Error> {
                     index_dir.clone(),
                     index_controller.clone(),
                     wait_for_sync,
+                    dev_cellbase_maturity,
                 )
                 .process(&sub_matches, debug)
             })
@@ -293,6 +305,14 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 ),
         )
         .arg(
+            Arg::with_name("cellbase-maturity")
+                .long("cellbase-maturity")
+                .validator(|input| FromStrParser::<u64>::default().validate(input))
+                .takes_value(true)
+                .global(true)
+                .about("dev network cellbase maturity raw value (full value)"),
+        )
+        .arg(
             Arg::with_name("no-sync")
                 .long("no-sync")
                 .conflicts_with("wait-for-sync")
@@ -337,6 +357,13 @@ pub fn build_interactive() -> App<'static> {
                     Arg::with_name("no-sync")
                         .long("no-sync")
                         .about("Switch whether wait index database sync to tip"),
+                )
+                .arg(
+                    Arg::with_name("cellbase-maturity")
+                        .long("cellbase-maturity")
+                        .validator(|input| FromStrParser::<u64>::default().validate(input))
+                        .takes_value(true)
+                        .about("Set dev network cellbase maturity raw value (full value)"),
                 )
                 .arg(
                     Arg::with_name("output-format")

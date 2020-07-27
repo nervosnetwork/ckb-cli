@@ -201,24 +201,36 @@ pub fn get_live_cell(
 }
 
 // Get max mature block number
-pub fn get_max_mature_number(rpc_client: &mut HttpRpcClient) -> Result<u64, String> {
+pub fn get_max_mature_number(
+    rpc_client: &mut HttpRpcClient,
+    cellbase_maturity: Option<u64>,
+) -> Result<u64, String> {
     let tip_epoch = rpc_client
         .get_tip_header()
         .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
-    let tip_epoch_number = tip_epoch.number();
-    if tip_epoch_number < 4 {
+    let cellbase_maturity = cellbase_maturity
+        .map(EpochNumberWithFraction::from_full_value)
+        .unwrap_or(CELLBASE_MATURITY);
+    if tip_epoch < cellbase_maturity {
         // No cellbase live cell is mature
         Ok(0)
     } else {
+        let epoch_delta_bytes: [u8; 32] = (tip_epoch.to_rational()
+            - cellbase_maturity.to_rational())
+        .into_u256()
+        .to_le_bytes();
+        let mut epoch_number_bytes_u64 = [0u8; 8];
+        epoch_number_bytes_u64.copy_from_slice(&epoch_delta_bytes[0..8]);
+        let epoch_number = u64::from_le_bytes(epoch_number_bytes_u64);
         let max_mature_epoch = rpc_client
-            .get_epoch_by_number(tip_epoch_number - 4)?
+            .get_epoch_by_number(epoch_number)?
             .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
         let start_number = max_mature_epoch.start_number;
         let length = max_mature_epoch.length;
         Ok(calc_max_mature_number(
             tip_epoch,
             Some((start_number, length)),
-            CELLBASE_MATURITY,
+            cellbase_maturity,
         ))
     }
 }

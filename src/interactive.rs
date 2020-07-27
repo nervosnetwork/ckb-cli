@@ -17,6 +17,7 @@ use crate::subcommands::{
     PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
+    arg_parser::{ArgParser, FromStrParser},
     completer::CkbCompleter,
     config::GlobalConfig,
     index::{IndexController, IndexRequest},
@@ -249,6 +250,7 @@ impl InteractiveEnv {
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
         let wait_for_sync = !self.config.no_sync();
+        let dev_cellbase_maturity = self.config.dev_cellbase_maturity();
 
         let current_cmd_name = &args[0];
         if self
@@ -289,6 +291,14 @@ impl InteractiveEnv {
                         self.config.set_output_format(output_format);
                     }
 
+                    if let Some(value) = FromStrParser::<u64>::default().from_matches_opt(
+                        m,
+                        "cellbase-maturity",
+                        false,
+                    )? {
+                        self.config.set_dev_cellbase_maturity(value);
+                    }
+
                     if m.is_present("debug") {
                         self.config.switch_debug();
                     }
@@ -312,6 +322,7 @@ impl InteractiveEnv {
                         "color": self.config.color(),
                         "debug": self.config.debug(),
                         "no-sync": self.config.no_sync(),
+                        "dev-cellbase-maturity": self.config.dev_cellbase_maturity(),
                         "output_format": self.config.output_format().to_string(),
                         "completion_style": self.config.completion_style(),
                         "edit_style": self.config.edit_style(),
@@ -394,6 +405,7 @@ impl InteractiveEnv {
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,
+                        dev_cellbase_maturity,
                     )
                     .process(&sub_matches, debug)?;
                     output.print(format, color);
@@ -408,6 +420,7 @@ impl InteractiveEnv {
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,
+                        dev_cellbase_maturity,
                     )
                     .process(&sub_matches, debug)?;
                     output.print(format, color);

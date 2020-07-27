@@ -6,7 +6,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, OutPointParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{get_address, get_network_type},
+    other::{get_address, get_max_mature_number, get_network_type},
 };
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
@@ -21,11 +21,17 @@ use std::collections::HashSet;
 impl<'a> CliSubCommand for DAOSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network_type = get_network_type(&mut self.rpc_client)?;
+        let cellbase_maturity = if network_type == NetworkType::Dev {
+            Some(self.dev_cellbase_maturity)
+        } else {
+            None
+        };
+        let max_mature_number = get_max_mature_number(self.rpc_client, cellbase_maturity)?;
         match matches.subcommand() {
             ("deposit", Some(m)) => {
                 self.transact_args = Some(TransactArgs::from_matches(m, network_type)?);
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-                let transaction = self.deposit(capacity)?;
+                let transaction = self.deposit(capacity, max_mature_number)?;
                 send_transaction(self.rpc_client(), transaction, debug)
             }
             ("prepare", Some(m)) => {
@@ -34,7 +40,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                 if out_points.len() != out_points.iter().collect::<HashSet<_>>().len() {
                     return Err("Duplicated out-points".to_string());
                 }
-                let transaction = self.prepare(out_points)?;
+                let transaction = self.prepare(out_points, max_mature_number)?;
                 send_transaction(self.rpc_client(), transaction, debug)
             }
             ("withdraw", Some(m)) => {
