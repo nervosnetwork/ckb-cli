@@ -835,23 +835,49 @@ impl From<rpc_types::LockHashIndexState> for LockHashIndexState {
 pub struct LocalNode {
     pub version: String,
     pub node_id: String,
+    pub active: bool,
     pub addresses: Vec<NodeAddress>,
+    pub protocols: Vec<LocalNodeProtocol>,
+    pub connections: Uint64,
 }
 impl From<rpc_types::LocalNode> for LocalNode {
     fn from(json: rpc_types::LocalNode) -> LocalNode {
         LocalNode {
             version: json.version,
             node_id: json.node_id,
+            active: json.active,
             addresses: json.addresses.into_iter().map(Into::into).collect(),
+            protocols: json.protocols.into_iter().map(Into::into).collect(),
+            connections: json.connections.value(),
         }
     }
 }
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct LocalNodeProtocol {
+    pub id: Uint64,
+    pub name: String,
+    pub support_versions: Vec<String>,
+}
+impl From<rpc_types::LocalNodeProtocol> for LocalNodeProtocol {
+    fn from(json: rpc_types::LocalNodeProtocol) -> LocalNodeProtocol {
+        LocalNodeProtocol {
+            id: json.id.value(),
+            name: json.name,
+            support_versions: json.support_versions,
+        }
+    }
+}
+
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct RemoteNode {
     pub version: String,
     pub node_id: String,
     pub addresses: Vec<NodeAddress>,
     pub is_outbound: bool,
+    pub connected_duration: Uint64,
+    pub last_ping_duration: Option<Uint64>,
+    pub sync_state: Option<PeerSyncState>,
+    pub protocols: Vec<RemoteNodeProtocol>,
 }
 impl From<rpc_types::RemoteNode> for RemoteNode {
     fn from(json: rpc_types::RemoteNode) -> RemoteNode {
@@ -860,6 +886,47 @@ impl From<rpc_types::RemoteNode> for RemoteNode {
             node_id: json.node_id,
             addresses: json.addresses.into_iter().map(Into::into).collect(),
             is_outbound: json.is_outbound,
+            connected_duration: json.connected_duration.value(),
+            last_ping_duration: json.last_ping_duration.map(|duration| duration.value()),
+            sync_state: json.sync_state.map(Into::into),
+            protocols: json.protocols.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct RemoteNodeProtocol {
+    pub id: Uint64,
+    pub version: String,
+}
+impl From<rpc_types::RemoteNodeProtocol> for RemoteNodeProtocol {
+    fn from(json: rpc_types::RemoteNodeProtocol) -> RemoteNodeProtocol {
+        RemoteNodeProtocol {
+            id: json.id.value(),
+            version: json.version,
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct PeerSyncState {
+    pub best_known_header_hash: Option<Byte32>,
+    pub best_known_header_number: Option<Uint64>,
+    pub last_common_header_hash: Option<Byte32>,
+    pub last_common_header_number: Option<Uint64>,
+    pub unknown_header_list_size: Uint64,
+    pub inflight_count: Uint64,
+    pub can_fetch_count: Uint64,
+}
+impl From<rpc_types::PeerSyncState> for PeerSyncState {
+    fn from(json: rpc_types::PeerSyncState) -> PeerSyncState {
+        PeerSyncState {
+            best_known_header_hash: json.best_known_header_hash,
+            best_known_header_number: json.best_known_header_number.map(|number| number.value()),
+            last_common_header_hash: json.last_common_header_hash,
+            last_common_header_number: json.last_common_header_number.map(|number| number.value()),
+            unknown_header_list_size: json.unknown_header_list_size.value(),
+            inflight_count: json.inflight_count.value(),
+            can_fetch_count: json.can_fetch_count.value(),
         }
     }
 }
@@ -901,21 +968,27 @@ impl From<rpc_types::BannedAddr> for BannedAddr {
 // =========
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TxPoolInfo {
+    pub tip_hash: H256,
+    pub tip_number: BlockNumber,
     pub pending: Uint64,
     pub proposed: Uint64,
     pub orphan: Uint64,
     pub total_tx_size: Uint64,
     pub total_tx_cycles: Uint64,
+    pub min_fee_rate: Uint64,
     pub last_txs_updated_at: Timestamp,
 }
 impl From<rpc_types::TxPoolInfo> for TxPoolInfo {
     fn from(json: rpc_types::TxPoolInfo) -> TxPoolInfo {
         TxPoolInfo {
+            tip_hash: json.tip_hash,
+            tip_number: json.tip_number.value(),
             pending: json.pending.into(),
             proposed: json.proposed.into(),
             orphan: json.orphan.into(),
             total_tx_size: json.total_tx_size.into(),
             total_tx_cycles: json.total_tx_cycles.into(),
+            min_fee_rate: json.min_fee_rate.value(),
             last_txs_updated_at: json.last_txs_updated_at.into(),
         }
     }
@@ -944,3 +1017,36 @@ impl From<rpc_types::TxPoolInfo> for TxPoolInfo {
 //         }
 //     }
 // }
+
+// ========
+// debug.rs
+// ========
+#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+pub struct ExtraLoggerConfig {
+    pub filter: String,
+}
+impl From<rpc_types::ExtraLoggerConfig> for ExtraLoggerConfig {
+    fn from(json: rpc_types::ExtraLoggerConfig) -> ExtraLoggerConfig {
+        ExtraLoggerConfig {
+            filter: json.filter,
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+pub struct MainLoggerConfig {
+    pub filter: Option<String>,
+    pub to_stdout: Option<bool>,
+    pub to_file: Option<bool>,
+    pub color: Option<bool>,
+}
+impl From<rpc_types::MainLoggerConfig> for MainLoggerConfig {
+    fn from(json: rpc_types::MainLoggerConfig) -> MainLoggerConfig {
+        MainLoggerConfig {
+            filter: json.filter,
+            to_stdout: json.to_stdout,
+            to_file: json.to_file,
+            color: json.color,
+        }
+    }
+}
