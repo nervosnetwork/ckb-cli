@@ -1,8 +1,9 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
-    CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, HeaderView, LiveCell,
-    LocalNode, LockHashIndexState, OutPoint, PeerState, RemoteNode, Timestamp, Transaction,
-    TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, ExtraLoggerConfig,
+    HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState, MainLoggerConfig, OutPoint,
+    PeerState, RemoteNode, Script, Timestamp, Transaction, TransactionWithStatus, TxPoolInfo,
+    Uint64, Version,
 };
 
 use super::types;
@@ -114,6 +115,10 @@ jsonrpc!(pub struct RawHttpRpcClient {
         absolute: Option<bool>,
         reason: Option<String>
     ) -> ();
+    pub fn sync_state(&mut self) -> types::PeerSyncState;
+    pub fn set_network_active(&mut self, state: bool) -> ();
+    pub fn add_node(&mut self, peer_id: String, address: String) -> ();
+    pub fn remove_node(&mut self, peer_id: String) -> ();
 
     // Pool
     pub fn send_transaction(&mut self, tx: Transaction) -> H256;
@@ -123,14 +128,21 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
     pub fn get_peers_state(&mut self) -> Vec<PeerState>;
 
-    // IntegrationTest
-    pub fn add_node(&mut self, peer_id: String, address: String) -> ();
-    pub fn remove_node(&mut self, peer_id: String) -> ();
-    pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
-
     // Miner
     pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> BlockTemplate;
     pub fn submit_block(&mut self, _work_id: String, _data: Block) -> H256;
+
+    // IntegrationTest
+    pub fn process_block_without_verify(&mut self, data: Block, broadcast: bool) -> Option<H256>;
+    pub fn truncate(&mut self, target_tip_hash: H256) -> ();
+    pub fn generate_block(&mut self, block_assembler_script: Option<Script>, block_assembler_message: Option<JsonBytes>) -> H256;
+    pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
+    pub fn get_fork_block(&mut self, _hash: H256) -> Option<BlockView>;
+
+    // Debug
+    pub fn jemalloc_profiling_dump(&mut self) -> String;
+    pub fn update_main_logger(&mut self, config: MainLoggerConfig) -> ();
+    pub fn set_extra_logger(&mut self, name: String, config_opt: Option<ExtraLoggerConfig>) -> ();
 });
 
 pub struct HttpRpcClient {
@@ -333,6 +345,27 @@ impl HttpRpcClient {
             .set_ban(address, command, ban_time.map(Into::into), absolute, reason)
             .map_err(|err| err.to_string())
     }
+    pub fn sync_state(&mut self) -> Result<types::PeerSyncState, String> {
+        self.client
+            .sync_state()
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+    pub fn set_network_active(&mut self, state: bool) -> Result<(), String> {
+        self.client
+            .set_network_active(state)
+            .map_err(|err| err.to_string())
+    }
+    pub fn add_node(&mut self, peer_id: String, address: String) -> Result<(), String> {
+        self.client
+            .add_node(peer_id, address)
+            .map_err(|err| err.to_string())
+    }
+    pub fn remove_node(&mut self, peer_id: String) -> Result<(), String> {
+        self.client
+            .remove_node(peer_id)
+            .map_err(|err| err.to_string())
+    }
 
     // Pool
     pub fn send_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
@@ -358,23 +391,6 @@ impl HttpRpcClient {
         self.client.get_peers_state().map_err(|err| err.to_string())
     }
 
-    // IntegrationTest
-    pub fn add_node(&mut self, peer_id: String, address: String) -> Result<(), String> {
-        self.client
-            .add_node(peer_id, address)
-            .map_err(|err| err.to_string())
-    }
-    pub fn remove_node(&mut self, peer_id: String) -> Result<(), String> {
-        self.client
-            .remove_node(peer_id)
-            .map_err(|err| err.to_string())
-    }
-    pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
-        self.client
-            .broadcast_transaction(tx.into())
-            .map_err(|err| err.to_string())
-    }
-
     // Miner
     pub fn get_block_template(
         &mut self,
@@ -393,6 +409,58 @@ impl HttpRpcClient {
     pub fn submit_block(&mut self, work_id: String, data: packed::Block) -> Result<H256, String> {
         self.client
             .submit_block(work_id, data.into())
+            .map_err(|err| err.to_string())
+    }
+
+    // IntegrationTest
+    pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
+        self.client
+            .broadcast_transaction(tx.into())
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn process_block_without_verify(
+        &mut self,
+        data: Block,
+        broadcast: bool,
+    ) -> Result<Option<H256>, String> {
+        self.client
+            .process_block_without_verify(data, broadcast)
+            .map_err(|err| err.to_string())
+    }
+    pub fn truncate(&mut self, target_tip_hash: H256) -> Result<(), String> {
+        self.client
+            .truncate(target_tip_hash)
+            .map_err(|err| err.to_string())
+    }
+    pub fn generate_block(
+        &mut self,
+        block_assembler_script: Option<Script>,
+        block_assembler_message: Option<JsonBytes>,
+    ) -> Result<H256, String> {
+        self.client
+            .generate_block(block_assembler_script, block_assembler_message)
+            .map_err(|err| err.to_string())
+    }
+
+    // Debug
+    pub fn jemalloc_profiling_dump(&mut self) -> Result<String, String> {
+        self.client
+            .jemalloc_profiling_dump()
+            .map_err(|err| err.to_string())
+    }
+    pub fn update_main_logger(&mut self, config: MainLoggerConfig) -> Result<(), String> {
+        self.client
+            .update_main_logger(config)
+            .map_err(|err| err.to_string())
+    }
+    pub fn set_extra_logger(
+        &mut self,
+        name: String,
+        config_opt: Option<ExtraLoggerConfig>,
+    ) -> Result<(), String> {
+        self.client
+            .set_extra_logger(name, config_opt)
             .map_err(|err| err.to_string())
     }
 }

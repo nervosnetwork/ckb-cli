@@ -1017,36 +1017,3 @@ impl From<rpc_types::TxPoolInfo> for TxPoolInfo {
 //         }
 //     }
 // }
-
-// ========
-// debug.rs
-// ========
-#[derive(Clone, Default, Serialize, Deserialize, Debug)]
-pub struct ExtraLoggerConfig {
-    pub filter: String,
-}
-impl From<rpc_types::ExtraLoggerConfig> for ExtraLoggerConfig {
-    fn from(json: rpc_types::ExtraLoggerConfig) -> ExtraLoggerConfig {
-        ExtraLoggerConfig {
-            filter: json.filter,
-        }
-    }
-}
-
-#[derive(Clone, Default, Serialize, Deserialize, Debug)]
-pub struct MainLoggerConfig {
-    pub filter: Option<String>,
-    pub to_stdout: Option<bool>,
-    pub to_file: Option<bool>,
-    pub color: Option<bool>,
-}
-impl From<rpc_types::MainLoggerConfig> for MainLoggerConfig {
-    fn from(json: rpc_types::MainLoggerConfig) -> MainLoggerConfig {
-        MainLoggerConfig {
-            filter: json.filter,
-            to_stdout: json.to_stdout,
-            to_file: json.to_file,
-            color: json.color,
-        }
-    }
-}
