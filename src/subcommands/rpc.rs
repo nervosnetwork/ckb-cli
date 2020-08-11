@@ -1,5 +1,5 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, PeerState, Transaction, Uint64,
+    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, PeerState, Script, Transaction, Uint64,
 };
 use ckb_sdk::{
     rpc::{
@@ -8,7 +8,7 @@ use ckb_sdk::{
     },
     HttpRpcClient,
 };
-use ckb_types::{packed, prelude::*, H256};
+use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
-    ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser,
+    ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
 };
 
 pub struct RpcSubCommand<'a> {
@@ -215,11 +215,17 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Ban reason, optional parameter")
                     )
                     .about("Insert or delete an IP/Subnet from the banned list"),
-                // [Pool]
-                App::new("tx_pool_info").about("Get transaction pool information"),
-                // [`Stats`]
-                App::new("get_blockchain_info").about("Get chain information"),
-                // [`IntegrationTest`]
+                App::new("sync_state").about("Returns sync state of this node"),
+                App::new("set_network_active")
+                    .arg(
+                        Arg::with_name("state")
+                            .long("state")
+                            .takes_value(true)
+                            .possible_values(&["enable", "disable"])
+                            .required(true)
+                            .about("The network state to set")
+                    )
+                    .about("Disable/enable all p2p network activity"),
                 App::new("add_node")
                     .arg(arg_peer_id.clone())
                     .arg(
@@ -234,6 +240,11 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("remove_node")
                     .arg(arg_peer_id.clone())
                     .about("Disconnect a node"),
+                // [Pool]
+                App::new("tx_pool_info").about("Get transaction pool information"),
+                // [`Stats`]
+                App::new("get_blockchain_info").about("Get chain information"),
+                // [`IntegrationTest`]
                 App::new("broadcast_transaction")
                     .arg(
                         Arg::with_name("json-path")
@@ -244,6 +255,31 @@ impl<'a> RpcSubCommand<'a> {
                          .about("Transaction content (json format, see rpc send_transaction)")
                     )
                     .about("Broadcast transaction without verify"),
+                App::new("truncate")
+                    .arg(
+                        Arg::with_name("tip-hash")
+                            .long("tip-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required(true)
+                            .about("Target tip block hash")
+                    )
+                    .about("Truncate blocks to target tip block"),
+                App::new("generate_block")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("Block assembler lock script (json format)")
+                    )
+                    .arg(
+                        Arg::with_name("message")
+                            .long("message")
+                            .takes_value(true)
+                            .validator(|input| HexParser.validate(input))
+                            .about("Block assembler message (hex format)")
+                    )
             ])
     }
 }
@@ -622,6 +658,36 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 )?;
                 Ok(Output::new_success())
             }
+            ("sync_state", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .sync_state()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.sync_state()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("set_network_active", Some(m)) => {
+                let state = m.value_of("state").unwrap() == "enable";
+                self.rpc_client.set_network_active(state)?;
+                Ok(Output::new_success())
+            }
+            ("add_node", Some(m)) => {
+                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
+                let address: Multiaddr =
+                    FromStrParser::<Multiaddr>::new().from_matches(m, "address")?;
+                self.rpc_client.add_node(peer_id, address.to_string())?;
+                Ok(Output::new_success())
+            }
+            ("remove_node", Some(m)) => {
+                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
+                self.rpc_client.remove_node(peer_id)?;
+                Ok(Output::new_success())
+            }
             // [Pool]
             ("tx_pool_info", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -651,18 +717,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 }
             }
             // [IntegrationTest]
-            ("add_node", Some(m)) => {
-                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
-                let address: Multiaddr =
-                    FromStrParser::<Multiaddr>::new().from_matches(m, "address")?;
-                self.rpc_client.add_node(peer_id, address.to_string())?;
-                Ok(Output::new_success())
-            }
-            ("remove_node", Some(m)) => {
-                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
-                self.rpc_client.remove_node(peer_id)?;
-                Ok(Output::new_success())
-            }
             ("broadcast_transaction", Some(m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
@@ -670,6 +724,27 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
 
                 let resp = self.rpc_client.broadcast_transaction(tx.into())?;
+                Ok(Output::new_output(resp))
+            }
+            ("truncate", Some(m)) => {
+                let target_tip_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tip-hash")?;
+                self.rpc_client.truncate(target_tip_hash)?;
+                Ok(Output::new_success())
+            }
+            ("generate_block", Some(m)) => {
+                let json_path_opt: Option<PathBuf> =
+                    FilePathParser::new(true).from_matches_opt(m, "json-path", false)?;
+                let script_opt: Option<Script> = if let Some(json_path) = json_path_opt {
+                    let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                    Some(serde_json::from_str(&content).map_err(|err| err.to_string())?)
+                } else {
+                    None
+                };
+                let message_opt: Option<Bytes> = HexParser.from_matches_opt(m, "message", false)?;
+                let resp = self
+                    .rpc_client
+                    .generate_block(script_opt, message_opt.map(JsonBytes::from_bytes))?;
                 Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
