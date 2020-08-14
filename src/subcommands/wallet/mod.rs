@@ -596,6 +596,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
                     if m.is_present("derived") {
                         let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
+
                         let key_set = self
                             .plugin_mgr
                             .keystore_handler()

@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use ckb_sdk::{
-    wallet::{DerivationPath, Key, MasterPrivKey},
+    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, AddressPayload, NetworkType,
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
@@ -22,11 +22,18 @@ use crate::utils::{
 
 pub struct AccountSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
+    key_store: &'a mut KeyStore,
 }
 
 impl<'a> AccountSubCommand<'a> {
-    pub fn new(plugin_mgr: &'a mut PluginManager) -> AccountSubCommand<'a> {
-        AccountSubCommand { plugin_mgr }
+    pub fn new(
+        plugin_mgr: &'a mut PluginManager,
+        key_store: &'a mut KeyStore,
+    ) -> AccountSubCommand<'a> {
+        AccountSubCommand {
+            plugin_mgr,
+            key_store,
+        }
     }
 
     pub fn subcommand(name: &'static str) -> App<'static> {
@@ -40,7 +47,18 @@ impl<'a> AccountSubCommand<'a> {
         App::new(name)
             .about("Manage accounts")
             .subcommands(vec![
-                App::new("list").about("List all accounts"),
+                App::new("list")
+                    .arg(
+                        Arg::with_name("only-mainnet-address")
+                            .long("only-mainnet-address")
+                            .about("Only show CKB mainnet address")
+                    )
+                    .arg(
+                        Arg::with_name("only-testnet-address")
+                            .long("only-testnet-address")
+                            .about("Only show CKB testnet address")
+                    )
+                    .about("List all accounts"),
                 App::new("new").about("Create a new account and print related information."),
                 App::new("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
@@ -68,6 +86,9 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 App::new("update")
                     .about("Update password of an account")
+                    .arg(lock_arg().required(true)),
+                App::new("upgrade")
+                    .about("Upgrade an account to latest json format")
                     .arg(lock_arg().required(true)),
                 App::new("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
@@ -112,6 +133,14 @@ impl<'a> AccountSubCommand<'a> {
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .about("Change addresses length")
                     )
+                    .arg(
+                        Arg::with_name("network")
+                            .long("network")
+                            .takes_value(true)
+                            .default_value("mainnet")
+                            .possible_values(&["mainnet", "testnet"])
+                            .about("The network type")
+                    )
                     .arg(lock_arg().required(true)),
                 App::new("extended-address")
                     .about("Extended address (see: BIP-44)")
@@ -130,11 +159,20 @@ impl<'a> AccountSubCommand<'a> {
 impl<'a> CliSubCommand for AccountSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("list", _) => {
-                let resp = self
+            ("list", Some(m)) => {
+                let mut accounts = self
                     .plugin_mgr
                     .keystore_handler()
                     .list_account()?
+                    .iter()
+                    .map(|(lock_arg, source)| (lock_arg.clone(), source.clone()))
+                    .collect::<Vec<(H160, String)>>();
+                // Sort by file path name
+                accounts.sort_by(|a, b| a.1.cmp(&b.1));
+                let only_mainnet_address = m.is_present("only-mainnet-address");
+                let only_testnet_address = m.is_present("only-testnet-address");
+                let partial_fields = only_mainnet_address || only_testnet_address;
+                let resp = accounts
                     .into_iter()
                     .enumerate()
                     .map(|(idx, (lock_arg, source))| {
@@ -142,16 +180,33 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         let lock_hash: H256 = Script::from(&address_payload)
                             .calc_script_hash()
                             .unpack();
-                        serde_json::json!({
-                            "#": idx,
-                            "source": source,
-                            "lock_arg": format!("{:#x}", lock_arg),
-                            "lock_hash": format!("{:#x}", lock_hash),
-                            "address": {
-                                "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
-                            },
-                        })
+                        if partial_fields {
+                            let key = format!("{:#x}", lock_arg);
+                            if only_mainnet_address {
+                                serde_json::json!({
+                                    key: Address::new(NetworkType::Mainnet, address_payload).to_string()
+                                })
+                            } else if only_testnet_address {
+                                serde_json::json!({
+                                    key: Address::new(NetworkType::Testnet, address_payload).to_string()
+                                })
+                            } else {
+                                unreachable!();
+                            }
+                        } else {
+                            let has_ckb_root = self.key_store.get_ckb_root(&lock_arg, false).is_some();
+                            serde_json::json!({
+                                "#": idx,
+                                "source": source,
+                                "lock_arg": format!("{:#x}", lock_arg),
+                                "lock_hash": format!("{:#x}", lock_hash),
+                                "has_ckb_root": has_ckb_root,
+                                "address": {
+                                    "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                                    "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                                },
+                            })
+                        }
                     })
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
@@ -255,6 +310,15 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 )?;
                 Ok(Output::new_success())
             }
+            ("upgrade", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let password = read_password(false, None)?;
+                self.key_store
+                    .upgrade(&lock_arg, password.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                Ok(Output::new_success())
+            }
             ("export", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
@@ -299,6 +363,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FromStrParser::<u32>::default().from_matches(m, "from-change-index")?;
                 let change_length: u32 =
                     FromStrParser::<u32>::default().from_matches(m, "change-length")?;
+                let network = match m.value_of("network").expect("network argument") {
+                    "mainnet" => NetworkType::Mainnet,
+                    "testnet" => NetworkType::Testnet,
+                    _ => unreachable!(),
+                };
+
                 let key_set = self
                     .plugin_mgr
                     .keystore_handler()
@@ -315,7 +385,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(NetworkType::Mainnet, payload).to_string(),
+                                "address": Address::new(network, payload).to_string(),
                             })
                         })
                         .collect::<Vec<_>>()
