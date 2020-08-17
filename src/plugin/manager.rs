@@ -1376,13 +1376,14 @@ impl KeyStoreHandler {
         external_max_len: u32,
         change_last: H160,
         change_max_len: u32,
+        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySet {
             hash160: hash160.clone(),
             external_max_len,
             change_last: change_last.clone(),
             change_max_len,
-            password: None,
+            password,
         };
         let resp = match self.call(request) {
             Ok(resp) => resp,
@@ -1417,6 +1418,7 @@ impl KeyStoreHandler {
         external_length: u32,
         change_start: u32,
         change_length: u32,
+        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySetByIndex {
             hash160: hash160.clone(),
@@ -1424,7 +1426,7 @@ impl KeyStoreHandler {
             external_length,
             change_start,
             change_length,
-            password: None,
+            password,
         };
         let resp = match self.call(request) {
             Ok(resp) => resp,

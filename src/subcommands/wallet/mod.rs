@@ -300,6 +300,7 @@ impl<'a> WalletSubCommand<'a> {
                     receiving_address_length,
                     change_last.clone(),
                     DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                    None,
                 )?;
                 let mut change_path_opt = None;
                 for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
@@ -606,6 +607,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 receiving_address_length,
                                 0,
                                 change_address_length,
+                                None,
                             )?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
