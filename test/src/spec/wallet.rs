@@ -2,8 +2,11 @@ use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
-use std::fs;
+use ckb_sdk::{constants::ONE_CKB, HumanCapacity};
 use tempfile::tempdir;
+
+use std::fs;
+use std::str::FromStr;
 
 // Random private key just for tests
 pub const ACCOUNT1_PRIVKEY: &str =
@@ -101,7 +104,7 @@ impl Spec for WalletTransfer {
             "transfer from account1 to account2 with more than 1.0 CKB tx fee: {}",
             output
         );
-        assert!(output.contains("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust"));
+        assert!(output.contains("Transaction fee (2.00001) can not be more than 1.0 CKB, please change to-capacity value to adjust (not enough live cells to adjust)"), output);
 
         // Transfer from miner to account2 (include input maturity filter)
         let tx_hash = setup.cli(&format!(
@@ -145,6 +148,27 @@ impl Spec for WalletTransfer {
         ));
         assert!(output.contains(&tx_hash));
         assert!(output.contains(&format!("{:x}", TYPE_ID_CODE_HASH)));
+
+        let output = setup.cli(&format!(
+            "wallet get-live-cells --address {} --limit 1",
+            ACCOUNT2_ADDRESS
+        ));
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        let capacity_str = value["live_cells"][0]["capacity"]
+            .as_str()
+            .unwrap()
+            .split(' ')
+            .next()
+            .unwrap();
+        let capacity = HumanCapacity::from_str(capacity_str).unwrap();
+        let target_capacity_str = HumanCapacity(capacity.0 - 5 * ONE_CKB).to_string();
+
+        let tx_hash = setup.cli(&format!(
+            "wallet transfer --privkey-path {} --to-address {} --capacity {} --tx-fee 0.00001",
+            account2_privkey, ACCOUNT1_ADDRESS, target_capacity_str,
+        ));
+        // Transaction can be sent
+        assert!(tx_hash.starts_with("0x"));
     }
 }
 
