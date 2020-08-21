@@ -378,6 +378,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         receiving_length,
                         from_change_index,
                         change_length,
+                        None,
                     )?;
                 let get_addresses = |set: &[(DerivationPath, H160)]| {
                     set.iter()
