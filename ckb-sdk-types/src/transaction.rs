@@ -1,12 +1,11 @@
 use ckb_jsonrpc_types as json_types;
-use ckb_script::DataLoader;
+use ckb_traits::{CellDataProvider, HeaderProvider};
 use ckb_types::{
     bytes::Bytes,
     core::{
         cell::{CellMeta, CellMetaBuilder, CellProvider, CellStatus, HeaderChecker},
         error::OutPointError,
-        BlockExt, DepType, EpochExt, EpochNumberWithFraction, HeaderView, TransactionInfo,
-        TransactionView,
+        DepType, EpochNumberWithFraction, HeaderView, TransactionInfo, TransactionView,
     },
     packed::{Byte32, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Transaction},
     prelude::*,
@@ -221,25 +220,24 @@ impl CellProvider for Resource {
     }
 }
 
-impl DataLoader for Resource {
-    // load CellOutput
+impl CellDataProvider for Resource {
     fn load_cell_data(&self, cell: &CellMeta) -> Option<(Bytes, Byte32)> {
-        cell.mem_cell_data.clone().or_else(|| {
-            self.required_cells
-                .get(&cell.out_point)
-                .and_then(|cell_meta| cell_meta.mem_cell_data.clone())
-        })
+        cell.mem_cell_data
+            .as_ref()
+            .map(ToOwned::to_owned)
+            .or_else(|| self.get_cell_data(&cell.out_point))
     }
-    // load BlockExt
-    fn get_block_ext(&self, _block_hash: &Byte32) -> Option<BlockExt> {
-        // TODO: visit this later
-        None
+
+    fn get_cell_data(&self, out_point: &OutPoint) -> Option<(Bytes, Byte32)> {
+        self.required_cells
+            .get(out_point)
+            .and_then(|cell_meta| cell_meta.mem_cell_data.clone())
     }
-    fn get_block_epoch(&self, _block_hash: &Byte32) -> Option<EpochExt> {
-        None
-    }
-    fn get_header(&self, block_hash: &Byte32) -> Option<HeaderView> {
-        self.required_headers.get(block_hash).cloned()
+}
+
+impl HeaderProvider for Resource {
+    fn get_header(&self, hash: &Byte32) -> Option<HeaderView> {
+        self.required_headers.get(hash).cloned()
     }
 }
 

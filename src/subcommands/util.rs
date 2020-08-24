@@ -126,12 +126,23 @@ impl<'a> UtilSubCommand<'a> {
                     .arg(
                         binary_hex_arg
                             .clone()
-                            .about("The data to be signed (blake2b hashed with 'ckb-default-hash' personalization)")
+                            .required(false)
+                            .required_unless("utf8-string")
+                            .conflicts_with("utf8-string")
+                            .about("The data to be signed. The input data will be hashed using blake2b with 'ckb-default-hash' personalization first.")
                     )
                     .arg(
                         Arg::with_name("no-magic-bytes")
                             .long("no-magic-bytes")
                             .about("Don't add magic bytes before binary data (magic bytes: \"Nervos Message:\")")
+                    )
+                    .arg(
+                        Arg::with_name("utf8-string")
+                            .long("utf8-string")
+                            .takes_value(true)
+                            .required_unless(binary_hex_arg.get_name())
+                            .conflicts_with(binary_hex_arg.get_name())
+                            .about("The utf-8 string to be signed. The input string will be hashed using blake2b with 'ckb-default-hash' personalization first.")
                     ),
                 App::new("sign-message")
                     .about("Sign message with secp256k1 signature")
@@ -306,7 +317,8 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
-                let mut binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let binary_opt: Option<Vec<u8>> =
+                    HexParser.from_matches_opt(m, "binary-hex", false)?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -325,6 +337,16 @@ message = "0x"
                     })?;
                 let no_magic_bytes = m.is_present("no-magic-bytes");
 
+                let (mut binary, target) = if let Some(data) = binary_opt {
+                    (data.clone(), SignTarget::AnyData(JsonBytes::from_vec(data)))
+                } else {
+                    let utf8_string = m
+                        .value_of("utf8-string")
+                        .ok_or_else(|| "<binary-hex> or <string> is required".to_string())?;
+                    let binary = utf8_string.as_bytes().to_vec();
+                    (binary, SignTarget::AnyString(utf8_string.to_string()))
+                };
+
                 if !no_magic_bytes {
                     binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
                 }
@@ -336,7 +358,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
-                    Some(binary),
+                    target,
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
@@ -372,7 +394,7 @@ message = "0x"
                     plugin_mgr_opt,
                     recoverable,
                     &message,
-                    None,
+                    SignTarget::AnyMessage(message.clone()),
                 )?;
                 let result = serde_json::json!({
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
@@ -603,7 +625,7 @@ fn sign_message(
     from_account_opt: Option<(&mut PluginManager, H160)>,
     recoverable: bool,
     message: &H256,
-    data: Option<Vec<u8>>,
+    target: SignTarget,
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
@@ -623,9 +645,6 @@ fn sign_message(
             } else {
                 None
             };
-            let target = data
-                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
-                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, false)
@@ -637,9 +656,6 @@ fn sign_message(
             } else {
                 None
             };
-            let target = data
-                .map(|data| SignTarget::AnyData(JsonBytes::from_vec(data)))
-                .unwrap_or_else(|| SignTarget::AnyMessage(message.clone()));
             plugin_mgr
                 .keystore_handler()
                 .sign(account, &[], message.clone(), target, password, true)

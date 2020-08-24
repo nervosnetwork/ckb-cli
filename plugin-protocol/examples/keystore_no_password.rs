@@ -74,7 +74,7 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
                     ..
                 } => {
                     eprintln!(
-                        "SignTaret: {}",
+                        "SignTarget: {}",
                         serde_json::to_string_pretty(&target).unwrap()
                     );
                     let signature = if recoverable {
