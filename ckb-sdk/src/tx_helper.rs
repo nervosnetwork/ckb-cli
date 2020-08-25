@@ -576,7 +576,13 @@ pub fn build_signature<
     let mut message = [0u8; 32];
     blake2b.finalize(&mut message);
     let message = H256::from(message);
-    signer(&message, &tx.data().into()).map(|data| Bytes::from(data.to_vec()))
+    let mut new_witnesses = witnesses.to_vec();
+    new_witnesses[init_witness_idx] = init_witness.as_bytes().pack();
+    let new_tx = tx
+        .as_advanced_builder()
+        .set_witnesses(new_witnesses)
+        .build();
+    signer(&message, &new_tx.data().into()).map(|data| Bytes::from(data.to_vec()))
 }
 
 #[cfg(test)]
