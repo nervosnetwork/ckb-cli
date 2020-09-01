@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, Script};
 use ckb_sdk::{
-    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey},
+    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
     HttpRpcClient,
 };
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
@@ -239,6 +239,9 @@ impl PluginManager {
     #[allow(unused)]
     pub fn indexer_handler(&self) -> IndexerHandler {
         IndexerHandler::new(self.service_provider.handler().clone())
+    }
+    pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
+        self.keystore_handler().root_key_path(h160)
     }
 
     pub fn active(&mut self, name: &str) -> Result<(), String> {
@@ -1248,6 +1251,14 @@ impl KeyStoreHandler {
             Some(ServiceResponse::Response(response)) => Ok(response),
             Some(_) => Err(String::from("Mismatch plugin response")),
             None => Err(String::from("Send request error")),
+        }
+    }
+
+    pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
+        if self.has_account_in_default(h160)? {
+            Ok(DerivationPath::empty())
+        } else {
+            Ok(DerivationPath::from_str(CKB_ROOT_PATH).expect("parse ckb root path"))
         }
     }
 

@@ -9,7 +9,6 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    wallet::DerivationPath,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
     MultisigConfig, NetworkType, SignerFn, TxHelper,
 };
@@ -621,6 +620,7 @@ fn get_keystore_signer(
                 if message == &h256!("0x0") {
                     Ok(Some([0u8; 65]))
                 } else {
+                    let root_key_path = keystore.root_key_path(account.clone())?;
                     let sign_target = if keystore.has_account_in_default(account.clone())? {
                         SignTarget::AnyData(Default::default())
                     } else {
@@ -640,12 +640,12 @@ fn get_keystore_signer(
                         SignTarget::Transaction {
                             tx: tx.clone(),
                             inputs,
-                            change_path: DerivationPath::empty().to_string(),
+                            change_path: root_key_path.to_string(),
                         }
                     };
                     let data = keystore.sign(
                         account.clone(),
-                        &[],
+                        &root_key_path,
                         message.clone(),
                         sign_target,
                         password.clone(),

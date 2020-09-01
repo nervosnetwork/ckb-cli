@@ -400,9 +400,10 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("extended-address", Some(m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let root_key_path = self.plugin_mgr.root_key_path(lock_arg.clone())?;
                 let path: DerivationPath = FromStrParser::<DerivationPath>::new()
                     .from_matches_opt(m, "path", false)?
-                    .unwrap_or_else(DerivationPath::empty);
+                    .unwrap_or(root_key_path);
 
                 let password = if self.plugin_mgr.keystore_require_password() {
                     Some(read_password(false, None)?)
