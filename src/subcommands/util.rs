@@ -32,7 +32,7 @@ use crate::utils::{
         AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::{get_address, read_password, serialize_signature},
+    other::{get_address, get_network_type, read_password, serialize_signature},
 };
 use crate::{build_cli, get_version};
 
@@ -253,6 +253,29 @@ impl<'a> UtilSubCommand<'a> {
                             .takes_value(true)
                             .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
                             .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
+                    ),
+                App::new("cell-meta")
+                    .about("Query live cell's metadata")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required(true)
+                            .about("Tx hash"),
+                    )
+                    .arg(
+                        Arg::with_name("index")
+                            .long("index")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .required(true)
+                            .about("Output index"),
+                    )
+                    .arg(
+                        Arg::with_name("with-data")
+                            .long("with-data")
+                            .about("Get live cell with data")
                     ),
                 App::new("completions")
                     .about("Generates completion scripts for your shell")
@@ -594,6 +617,44 @@ message = "0x"
                     "target_epoch": epoch.to_string(),
                 });
                 Ok(Output::new_output(resp))
+            }
+            ("cell-meta", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
+                let with_data = m.is_present("with-data");
+                let out_point = packed::OutPoint::new_builder()
+                    .tx_hash(tx_hash.pack())
+                    .index(index.pack())
+                    .build();
+                let cell_with_status = self.rpc_client.get_live_cell(out_point, true)?;
+                if cell_with_status.status != "live" {
+                    Ok(Output::new_output(cell_with_status))
+                } else {
+                    let network = get_network_type(self.rpc_client)?;
+                    let info = cell_with_status.cell.expect("cell.info");
+                    let output = info.output;
+                    let data = info.data.expect("info.data");
+                    let packed_output = packed::CellOutput::from(output.clone());
+                    let lock_hash: H256 = packed_output.lock().calc_script_hash().unpack();
+                    let address_payload = AddressPayload::from(packed_output.lock());
+                    let address = Address::new(network, address_payload);
+                    let type_hash: Option<H256> = packed_output
+                        .type_()
+                        .to_opt()
+                        .map(|script| script.calc_script_hash().unpack());
+                    let mut resp = serde_json::json!({
+                        "output": output,
+                        "data_hash": data.hash,
+                        "lock_hash": lock_hash,
+                        "type_hash": type_hash,
+                        "address": address.to_string(),
+                    });
+                    if with_data {
+                        resp["data"] = serde_json::json!(data.content);
+                    }
+                    Ok(Output::new_output(resp))
+                }
             }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();
