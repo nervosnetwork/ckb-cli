@@ -169,6 +169,29 @@ impl Spec for WalletTransfer {
         ));
         // Transaction can be sent
         assert!(tx_hash.starts_with("0x"));
+
+        // test skip check to-address
+        let anyone_can_pay_address = "ckt1qg8mxsu48mncexvxkzgaa7mz2g25uza4zpz062relhjmyuc52ps3rjpj324umxu73ej0h3txcsu9cw77kgvawjvpsjg";
+        let output = setup.cli(&format!(
+            "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001",
+            miner_privkey, anyone_can_pay_address,
+        ));
+        assert!(output.contains(format!("Invalid to-address: {}", anyone_can_pay_address).as_str()));
+
+        let tx_hash = setup.cli(&format!(
+            "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001 --skip-check-to-address",
+            miner_privkey, anyone_can_pay_address,
+        ));
+        log::info!(
+            "transfer from miner to an anyone-can-pay address with 180 CKB: {}",
+            tx_hash
+        );
+        setup.miner().generate_blocks(3);
+        let output = setup.cli(&format!(
+            "wallet get-capacity --address {}",
+            anyone_can_pay_address,
+        ));
+        assert_eq!(output, "total: 180.0 (CKB)");
     }
 }
 
