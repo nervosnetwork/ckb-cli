@@ -450,8 +450,23 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account", false)?;
+                let account_opt: Option<H160> = m
+                    .value_of("from-account")
+                    .map(|input| {
+                        FixedHashParser::<H160>::default()
+                            .parse(&input)
+                            .or_else(|err| {
+                                let result: Result<Address, String> = AddressParser::new_sighash()
+                                    .set_network(network)
+                                    .parse(&input);
+                                result
+                                    .map(|address| {
+                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    })
+                                    .map_err(|_| err)
+                            })
+                    })
+                    .transpose()?;
                 let skip_check: bool = m.is_present("skip-check");
 
                 let signer = if let Some(privkey) = privkey_opt {
