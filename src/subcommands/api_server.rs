@@ -441,6 +441,7 @@ impl HttpTransferArgs {
             tx_fee,
             to_address: self.to_address,
             to_data: self.to_data,
+            is_type_id: false,
         }
     }
 }

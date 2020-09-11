@@ -1,6 +1,7 @@
 use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
+use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use std::fs;
 use tempfile::tempdir;
 
@@ -122,6 +123,28 @@ impl Spec for WalletTransfer {
             ACCOUNT2_ADDRESS
         ));
         assert!(output.contains(&tx_hash));
+
+        // create type id cell with transfer
+        let tx_hash = setup.cli(&format!(
+            "wallet transfer --privkey-path {} --to-address {} --capacity 20000 --tx-fee 0.00001 --type-id",
+            miner_privkey, ACCOUNT1_ADDRESS,
+        ));
+        log::info!(
+            "transfer from miner to account1 with 20000 CKB: {}, and with type_id lock script",
+            tx_hash
+        );
+        setup.miner().generate_blocks(3);
+        let output = setup.cli(&format!(
+            "wallet get-capacity --address {}",
+            ACCOUNT1_ADDRESS
+        ));
+        assert_eq!(output, "total: 37999.99999 (CKB)");
+        let output = setup.cli(&format!(
+            "wallet get-live-cells --address {}",
+            ACCOUNT1_ADDRESS
+        ));
+        assert!(output.contains(&tx_hash));
+        assert!(output.contains(&format!("{:x}", TYPE_ID_CODE_HASH)));
     }
 }
 

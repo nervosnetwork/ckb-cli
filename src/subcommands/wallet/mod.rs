@@ -3,12 +3,13 @@ mod index;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
 use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, ScriptHashType, TransactionView},
     h256,
-    packed::{self, Byte32, CellOutput, OutPoint, Script},
+    packed::{self, Byte32, CellOutput, OutPoint, Script, ScriptOpt},
     prelude::*,
     H160, H256,
 };
@@ -30,6 +31,7 @@ use crate::utils::{
         read_password, sync_to_tip,
     },
 };
+use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
     constants::{
@@ -127,6 +129,11 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::derive_receiving_address_length())
                     .arg(
                         arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
+                    )
+                    .arg(
+                        Arg::with_name("type-id")
+                            .long("type-id")
+                            .about("Add type id type script to target output cell"),
                     ),
                 App::new("get-capacity")
                     .about("Get capacity by lock script hash or address or lock arg or pubkey")
@@ -177,6 +184,7 @@ impl<'a> WalletSubCommand<'a> {
             tx_fee,
             to_address,
             to_data,
+            is_type_id,
         } = args;
 
         let network_type = get_network_type(self.rpc_client)?;
@@ -410,9 +418,34 @@ impl<'a> WalletSubCommand<'a> {
                 skip_check,
             )?;
         }
+
+        // Add outputs
+        let type_script = if is_type_id {
+            let mut blake2b = new_blake2b();
+            let first_cell_input = helper
+                .transaction()
+                .inputs()
+                .into_iter()
+                .next()
+                .expect("inputs empty");
+            blake2b.update(first_cell_input.as_slice());
+            blake2b.update(&0u64.to_le_bytes());
+            let mut ret = [0; 32];
+            blake2b.finalize(&mut ret);
+            Some(
+                Script::new_builder()
+                    .code_hash(TYPE_ID_CODE_HASH.pack())
+                    .hash_type(ScriptHashType::Type.into())
+                    .args(Bytes::from(ret[..].to_vec()).pack())
+                    .build(),
+            )
+        } else {
+            None
+        };
         let to_output = CellOutput::new_builder()
             .capacity(Capacity::shannons(to_capacity).pack())
             .lock(to_address.payload().into())
+            .type_(ScriptOpt::new_builder().set(type_script).build())
             .build();
         helper.add_output(to_output, to_data);
         if rest_capacity >= MIN_SECP_CELL_CAPACITY {
@@ -563,6 +596,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .map(|s| s.to_string()),
                     to_address: get_arg_value(m, "to-address")?,
                     to_data: Some(to_data),
+                    is_type_id: m.is_present("type-id"),
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
@@ -827,6 +861,7 @@ pub struct TransferArgs {
     pub tx_fee: String,
     pub to_address: String,
     pub to_data: Option<Bytes>,
+    pub is_type_id: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

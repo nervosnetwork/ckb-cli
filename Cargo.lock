@@ -351,6 +351,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "ckb-build-info",
+ "ckb-chain-spec",
  "ckb-cli-plugin-protocol",
  "ckb-crypto",
  "ckb-dao-utils",
