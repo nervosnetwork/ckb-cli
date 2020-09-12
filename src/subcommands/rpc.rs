@@ -155,19 +155,19 @@ impl<'a> RpcSubCommand<'a> {
                 // [Indexer]
                 App::new("deindex_lock_hash")
                     .arg(arg_hash.clone().about("Lock script hash"))
-                    .about("Remove index for live cells and transactions by the hash of lock script"),
+                    .about("[Deprecated] Remove index for live cells and transactions by the hash of lock script"),
                 App::new("get_live_cells_by_lock_hash")
                     .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(arg_page.clone())
                     .arg(arg_perpage.clone())
                     .arg(arg_reverse_order.clone())
-                    .about("Get the live cells collection by the hash of lock script"),
+                    .about("[Deprecated] Get the live cells collection by the hash of lock script"),
                 App::new("get_transactions_by_lock_hash")
                     .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(arg_page.clone())
                     .arg(arg_perpage.clone())
                     .arg(arg_reverse_order.clone())
-                    .about("Get the transactions collection by the hash of lock script. Returns empty array when the `lock_hash` has not been indexed yet"),
+                    .about("[Deprecated] Get the transactions collection by the hash of lock script. Returns empty array when the `lock_hash` has not been indexed yet"),
                 App::new("index_lock_hash")
                     .arg(arg_hash.clone().about("Lock script hash"))
                     .arg(
@@ -177,7 +177,7 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .about("Index from the block number")
                     )
-                    .about("Create index for live cells and transactions by the hash of lock script"),
+                    .about("[Deprecated] Create index for live cells and transactions by the hash of lock script"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -514,6 +514,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             // [Indexer]
             ("deindex_lock_hash", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+                #[allow(deprecated)]
                 self.rpc_client.deindex_lock_hash(hash)?;
                 Ok(Output::new_success())
             }
@@ -537,6 +538,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
+                    #[allow(deprecated)]
                     let resp = self
                         .rpc_client
                         .get_live_cells_by_lock_hash(
@@ -569,6 +571,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
+                    #[allow(deprecated)]
                     let resp = self
                         .rpc_client
                         .get_transactions_by_lock_hash(
@@ -594,6 +597,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
+                    #[allow(deprecated)]
                     let resp = self.rpc_client.index_lock_hash(hash, index_from)?;
                     Ok(Output::new_output(resp))
                 }
