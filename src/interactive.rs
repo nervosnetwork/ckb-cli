@@ -271,7 +271,7 @@ impl InteractiveEnv {
         match parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
-                    m.value_of("url").and_then(|url| {
+                    if let Some(url) = m.value_of("url") {
                         let index_sender = self.index_controller.sender();
                         Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
@@ -280,8 +280,7 @@ impl InteractiveEnv {
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
-                        Some(())
-                    });
+                    };
                     if m.is_present("color") {
                         self.config.switch_color();
                     }

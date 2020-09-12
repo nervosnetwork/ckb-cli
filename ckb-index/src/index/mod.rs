@@ -200,7 +200,7 @@ impl<'a> IndexDatabase<'a> {
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.clone().unpack(), None);
+        let key_prefix = Key::LockLiveCellIndexPrefix(lock_hash.unpack(), None);
         let key_start = Key::LockLiveCellIndexPrefix(lock_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }
@@ -211,7 +211,7 @@ impl<'a> IndexDatabase<'a> {
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::TypeLiveCellIndexPrefix(type_hash.clone().unpack(), None);
+        let key_prefix = Key::TypeLiveCellIndexPrefix(type_hash.unpack(), None);
         let key_start = Key::TypeLiveCellIndexPrefix(type_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }
@@ -222,7 +222,7 @@ impl<'a> IndexDatabase<'a> {
         from_number: Option<u64>,
         terminator: F,
     ) -> Vec<LiveCellInfo> {
-        let key_prefix = Key::CodeLiveCellIndexPrefix(code_hash.clone().unpack(), None);
+        let key_prefix = Key::CodeLiveCellIndexPrefix(code_hash.unpack(), None);
         let key_start = Key::CodeLiveCellIndexPrefix(code_hash.unpack(), from_number);
         self.get_live_cell_infos(key_prefix, key_start, terminator)
     }

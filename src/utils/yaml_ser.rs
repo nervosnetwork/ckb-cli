@@ -17,6 +17,7 @@ pub enum EmitError {
 impl Error for EmitError {
     fn description(&self) -> &str {
         match *self {
+            #[allow(deprecated)]
             EmitError::FmtError(ref err) => err.description(),
             EmitError::BadHashmapKey => "bad hashmap key",
         }

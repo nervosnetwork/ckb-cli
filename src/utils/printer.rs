@@ -1,7 +1,6 @@
 use std::env;
 use std::fmt;
 
-use atty;
 use colored::Colorize;
 
 use crate::utils::json_color::Colorizer;

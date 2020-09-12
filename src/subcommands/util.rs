@@ -397,6 +397,7 @@ message = "0x"
                 };
 
                 if !no_magic_bytes {
+                    #[allow(clippy::reversed_empty_ranges)]
                     binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
                 }
                 let message = H256::from(blake2b_256(&binary));
