@@ -324,7 +324,10 @@ impl<'a> WalletSubCommand<'a> {
                     change_path_opt.expect("change path not exists"),
                 )
             } else {
-                (from_address.payload().clone(), DerivationPath::empty())
+                (
+                    from_address.payload().clone(),
+                    self.plugin_mgr.root_key_path(from_lock_arg.clone())?,
+                )
             };
 
         if let Some(from_locked_address) = from_locked_address.as_ref() {
@@ -793,12 +796,12 @@ fn get_keystore_signer(
 ) -> SignerFn {
     Box::new(
         move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
-            let path: &[_] = if lock_args.contains(&account) {
-                &[]
+            let path = if lock_args.contains(&account) {
+                keystore.root_key_path(account.clone())?
             } else {
                 match lock_args.iter().find_map(|lock_arg| path_map.get(lock_arg)) {
                     None => return Ok(None),
-                    Some(path) => path.as_ref(),
+                    Some(path) => path.clone(),
                 }
             };
             if message == &h256!("0x0") {
@@ -828,7 +831,7 @@ fn get_keystore_signer(
             };
             let data = keystore.sign(
                 account.clone(),
-                path,
+                &path,
                 message.clone(),
                 sign_target,
                 password.clone(),

@@ -86,9 +86,10 @@ pub fn get_signer(
         } else {
             None
         };
+        let path = keystore.root_key_path(lock_arg.clone())?;
         let data = keystore.sign(
             lock_arg.clone(),
-            &[],
+            &path,
             message.clone(),
             SignTarget::AnyMessage(message.clone()),
             password,

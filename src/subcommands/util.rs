@@ -378,13 +378,18 @@ message = "0x"
                     };
                 let extended_address_opt: Option<Address> =
                     AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
                     .map(|(addr, account)| {
                         search_path(self.plugin_mgr, account, addr, password.clone())
                     })
                     .transpose()?
-                    .unwrap_or_else(DerivationPath::empty);
+                    .unwrap_or(root_path);
 
                 let (mut binary, target) = if let Some(data) = binary_opt {
                     (data.clone(), SignTarget::AnyData(JsonBytes::from_vec(data)))
@@ -446,13 +451,19 @@ message = "0x"
                     };
                 let extended_address_opt: Option<Address> =
                     AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
                     .map(|(addr, account)| {
                         search_path(self.plugin_mgr, account, addr, password.clone())
                     })
                     .transpose()?
-                    .unwrap_or_else(DerivationPath::empty);
+                    .unwrap_or(root_path);
 
                 let plugin_mgr_opt =
                     from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
@@ -501,13 +512,18 @@ message = "0x"
                     } else {
                         None
                     };
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
                     .map(|(addr, account)| {
                         search_path(self.plugin_mgr, account, addr, password.clone())
                     })
                     .transpose()?
-                    .unwrap_or_else(DerivationPath::empty);
+                    .unwrap_or(root_path);
 
                 let pubkey = if let Some(pubkey) = pubkey_opt {
                     pubkey
