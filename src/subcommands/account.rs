@@ -213,12 +213,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             }
             ("new", _) => {
                 eprintln!("Your new account is locked with a password. Please give a password. Do not forget this password.");
-
-                let password = if self.plugin_mgr.keystore_require_password() {
-                    Some(read_password(false, None)?)
-                } else {
-                    None
-                };
+                let password = read_password(true, None)?;
                 let lock_arg = self
                     .plugin_mgr
                     .keystore_handler()
@@ -238,11 +233,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             ("import", Some(m)) => {
                 let secp_key: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
-                let password = if self.plugin_mgr.keystore_require_password() {
-                    Some(read_password(false, None)?)
-                } else {
-                    None
-                };
+                let password = Some(read_password(false, None)?);
                 let master_privkey = if let Some(secp_key) = secp_key {
                     // Default chain code is [255u8; 32]
                     let mut data = [255u8; 64];
@@ -272,11 +263,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "path")?;
 
                 let old_password = read_password(false, Some("Decrypt password"))?;
-                let new_password = if self.plugin_mgr.keystore_require_password() {
-                    Some(read_password(false, None)?)
-                } else {
-                    None
-                };
+                let new_password = Some(read_password(false, None)?);
                 let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
                 let data: serde_json::Value =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
@@ -323,11 +310,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let key_path = m.value_of("extended-privkey-path").unwrap();
-                let password = if self.plugin_mgr.keystore_require_password() {
-                    Some(read_password(false, None)?)
-                } else {
-                    None
-                };
+                let password = Some(read_password(false, None)?);
 
                 if Path::new(key_path).exists() {
                     return Err(format!("File exists: {}", key_path));

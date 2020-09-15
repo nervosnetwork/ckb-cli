@@ -42,9 +42,8 @@ impl DefaultKeyStore {
         ) -> Result<PluginResponse, String> {
             match request {
                 KeyStoreRequest::CreateAccount(password) => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: create account")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .new_account(password.as_bytes())
                         .map(PluginResponse::H160)
@@ -66,9 +65,8 @@ impl DefaultKeyStore {
                     chain_code,
                     password,
                 } => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: import key")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     let privkey = secp256k1::SecretKey::from_slice(&privkey)
                         .map_err(|err| err.to_string())?;
                     let mut data = [0u8; 64];
@@ -83,9 +81,8 @@ impl DefaultKeyStore {
                     Ok(PluginResponse::H160(lock_arg))
                 }
                 KeyStoreRequest::Export { hash160, password } => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: export key")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .export_key(&hash160, password.as_bytes())
                         .map(|master_privkey| {
@@ -175,9 +172,8 @@ impl DefaultKeyStore {
                     password,
                     recoverable,
                 } => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: sign")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let signature = if recoverable {
                         keystore
@@ -208,9 +204,8 @@ impl DefaultKeyStore {
                     path,
                     password,
                 } => {
-                    let password = password.ok_or_else(|| {
-                        String::from("Password is required by default keystore: extended pubkey")
-                    })?;
+                    let password =
+                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let data = keystore
                         .extended_pubkey_with_password(&hash160, path.as_ref(), password.as_bytes())
