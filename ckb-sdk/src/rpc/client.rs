@@ -264,11 +264,13 @@ impl HttpRpcClient {
     }
 
     // Indexer
+    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
     pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> Result<(), String> {
         self.client
             .deindex_lock_hash(lock_hash)
             .map_err(|err| err.to_string())
     }
+    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
     pub fn get_live_cells_by_lock_hash(
         &mut self,
         lock_hash: H256,
@@ -286,6 +288,7 @@ impl HttpRpcClient {
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
+    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
     pub fn get_transactions_by_lock_hash(
         &mut self,
         lock_hash: H256,
@@ -303,6 +306,7 @@ impl HttpRpcClient {
             .map(|vec| vec.into_iter().map(Into::into).collect())
             .map_err(|err| err.to_string())
     }
+    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
     pub fn index_lock_hash(
         &mut self,
         lock_hash: H256,

@@ -23,7 +23,7 @@ use crate::utils::{
     other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
-use ckb_sdk::{rpc::RawHttpRpcClient, GenesisInfo, HttpRpcClient};
+use ckb_sdk::{rpc::RawHttpRpcClient, wallet::KeyStore, GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -35,6 +35,7 @@ pub struct InteractiveEnv {
     index_dir: PathBuf,
     parser: clap::App<'static>,
     plugin_mgr: PluginManager,
+    key_store: KeyStore,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
@@ -46,6 +47,7 @@ impl InteractiveEnv {
         ckb_cli_dir: PathBuf,
         mut config: GlobalConfig,
         plugin_mgr: PluginManager,
+        key_store: KeyStore,
         index_controller: IndexController,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
@@ -79,6 +81,7 @@ impl InteractiveEnv {
             history_file,
             parser,
             plugin_mgr,
+            key_store,
             rpc_client,
             raw_rpc_client,
             index_controller,
@@ -268,7 +271,7 @@ impl InteractiveEnv {
         match parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
-                    m.value_of("url").and_then(|url| {
+                    if let Some(url) = m.value_of("url") {
                         let index_sender = self.index_controller.sender();
                         Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
@@ -277,8 +280,7 @@ impl InteractiveEnv {
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
-                        Some(())
-                    });
+                    };
                     if m.is_present("color") {
                         self.config.switch_color();
                     }
@@ -344,7 +346,7 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
-                    let output = AccountSubCommand::new(&mut self.plugin_mgr)
+                    let output = AccountSubCommand::new(&mut self.plugin_mgr, &mut self.key_store)
                         .process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())

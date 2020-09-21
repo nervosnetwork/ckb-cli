@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, Script};
 use ckb_sdk::{
-    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey},
+    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
     HttpRpcClient,
 };
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
@@ -239,6 +239,9 @@ impl PluginManager {
     #[allow(unused)]
     pub fn indexer_handler(&self) -> IndexerHandler {
         IndexerHandler::new(self.service_provider.handler().clone())
+    }
+    pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
+        self.keystore_handler().root_key_path(h160)
     }
 
     pub fn active(&mut self, name: &str) -> Result<(), String> {
@@ -1251,6 +1254,14 @@ impl KeyStoreHandler {
         }
     }
 
+    pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
+        if self.has_account_in_default(h160)? {
+            Ok(DerivationPath::empty())
+        } else {
+            Ok(DerivationPath::from_str(CKB_ROOT_PATH).expect("parse ckb root path"))
+        }
+    }
+
     pub fn has_account_in_default(&self, hash160: H160) -> Result<bool, String> {
         let request = PluginRequest::KeyStore(KeyStoreRequest::HasAccount(hash160));
         if let Some((_, PluginResponse::Boolean(has))) =
@@ -1376,13 +1387,14 @@ impl KeyStoreHandler {
         external_max_len: u32,
         change_last: H160,
         change_max_len: u32,
+        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySet {
             hash160: hash160.clone(),
             external_max_len,
             change_last: change_last.clone(),
             change_max_len,
-            password: None,
+            password,
         };
         let resp = match self.call(request) {
             Ok(resp) => resp,
@@ -1417,6 +1429,7 @@ impl KeyStoreHandler {
         external_length: u32,
         change_start: u32,
         change_length: u32,
+        password: Option<String>,
     ) -> Result<DerivedKeySet, String> {
         let request = KeyStoreRequest::DerivedKeySetByIndex {
             hash160: hash160.clone(),
@@ -1424,7 +1437,7 @@ impl KeyStoreHandler {
             external_length,
             change_start,
             change_length,
-            password: None,
+            password,
         };
         let resp = match self.call(request) {
             Ok(resp) => resp,

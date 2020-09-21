@@ -5,6 +5,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
+    wallet::{ChildNumber, DerivationPath},
     Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -32,7 +33,7 @@ use crate::utils::{
         AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::{get_address, read_password, serialize_signature},
+    other::{get_address, get_network_type, read_password, serialize_signature},
 };
 use crate::{build_cli, get_version};
 
@@ -86,11 +87,7 @@ impl<'a> UtilSubCommand<'a> {
             .long("sighash-address")
             .required(true)
             .takes_value(true)
-            .validator(|input| {
-                AddressParser::default()
-                    .set_short(CodeHashIndex::Sighash)
-                    .validate(input)
-            })
+            .validator(|input| AddressParser::new_sighash().validate(input))
             .about("The address in single signature format");
 
         let arg_recoverable = Arg::with_name("recoverable")
@@ -102,6 +99,13 @@ impl<'a> UtilSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .validator(|input| FixedHashParser::<H256>::default().validate(input));
+
+        let arg_extended_address = Arg::with_name("extended-address")
+            .long("extended-address")
+            .takes_value(true)
+            .validator(|input| AddressParser::new_sighash().validate(input))
+            .conflicts_with(arg::privkey_path().get_name())
+            .about("The address extended from `m/44'/309'/0'` (Search 2000 receiving addresses and 2000 change addresses max)");
 
         App::new(name)
             .about("Utilities")
@@ -123,6 +127,7 @@ impl<'a> UtilSubCommand<'a> {
                             .conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(arg_recoverable.clone())
+                    .arg(arg_extended_address.clone())
                     .arg(
                         binary_hex_arg
                             .clone()
@@ -153,6 +158,7 @@ impl<'a> UtilSubCommand<'a> {
                             .conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(arg_recoverable.clone())
+                    .arg(arg_extended_address.clone())
                     .arg(arg_message.clone().about("The message to be signed (32 bytes)")),
                 App::new("verify-signature")
                     .about("Verify a compact format signature")
@@ -163,6 +169,11 @@ impl<'a> UtilSubCommand<'a> {
                             .conflicts_with_all(&[arg::privkey_path().get_name(), arg::pubkey().get_name()]),
                     )
                     .arg(arg_message.clone().about("The message to be verify (32 bytes)"))
+                    .arg(
+                        arg_extended_address
+                            .clone()
+                            .conflicts_with(arg::pubkey().get_name())
+                    )
                     .arg(
                         Arg::with_name("signature")
                             .long("signature")
@@ -254,6 +265,29 @@ impl<'a> UtilSubCommand<'a> {
                             .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
                             .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
                     ),
+                App::new("cell-meta")
+                    .about("Query live cell's metadata")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required(true)
+                            .about("Tx hash"),
+                    )
+                    .arg(
+                        Arg::with_name("index")
+                            .long("index")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u32>::default().validate(input))
+                            .required(true)
+                            .about("Output index"),
+                    )
+                    .arg(
+                        Arg::with_name("with-data")
+                            .long("with-data")
+                            .about("Get live cell with data")
+                    ),
                 App::new("completions")
                     .about("Generates completion scripts for your shell")
                     .arg(
@@ -336,6 +370,26 @@ message = "0x"
                             .map_err(|_| err)
                     })?;
                 let no_magic_bytes = m.is_present("no-magic-bytes");
+                let password =
+                    if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                let extended_address_opt: Option<Address> =
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
+                let target_path = extended_address_opt
+                    .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
+                    .map(|(addr, account)| {
+                        search_path(self.plugin_mgr, account, addr, password.clone())
+                    })
+                    .transpose()?
+                    .unwrap_or(root_path);
 
                 let (mut binary, target) = if let Some(data) = binary_opt {
                     (data.clone(), SignTarget::AnyData(JsonBytes::from_vec(data)))
@@ -348,6 +402,7 @@ message = "0x"
                 };
 
                 if !no_magic_bytes {
+                    #[allow(clippy::reversed_empty_ranges)]
                     binary.splice(0..0, SIGN_MAGIC_BYTES.iter().cloned());
                 }
                 let message = H256::from(blake2b_256(&binary));
@@ -356,14 +411,17 @@ message = "0x"
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
                     plugin_mgr_opt,
+                    &target_path,
                     recoverable,
                     &message,
                     target,
+                    password,
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
+                    "path": target_path.to_string(),
                 });
                 Ok(Output::new_output(result))
             }
@@ -386,19 +444,43 @@ message = "0x"
                             })
                             .map_err(|_| err)
                     })?;
+                let password =
+                    if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                let extended_address_opt: Option<Address> =
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
+                let target_path = extended_address_opt
+                    .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
+                    .map(|(addr, account)| {
+                        search_path(self.plugin_mgr, account, addr, password.clone())
+                    })
+                    .transpose()?
+                    .unwrap_or(root_path);
 
                 let plugin_mgr_opt =
                     from_account_opt.map(|account| (&mut *self.plugin_mgr, account));
                 let signature = sign_message(
                     from_privkey_opt.as_ref(),
                     plugin_mgr_opt,
+                    &target_path,
                     recoverable,
                     &message,
                     SignTarget::AnyMessage(message.clone()),
+                    password,
                 )?;
                 let result = serde_json::json!({
                     "signature": format!("0x{}", hex_string(&signature).unwrap()),
                     "recoverable": recoverable,
+                    "path": target_path.to_string(),
                 });
                 Ok(Output::new_output(result))
             }
@@ -423,20 +505,37 @@ message = "0x"
                             })
                             .map_err(|_| err)
                     })?;
+                let extended_address_opt: Option<Address> =
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let password =
+                    if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
+                        Some(read_password(false, None)?)
+                    } else {
+                        None
+                    };
+                let root_path = if let Some(ref account) = from_account_opt {
+                    self.plugin_mgr.root_key_path(account.clone())?
+                } else {
+                    DerivationPath::empty()
+                };
+                let target_path = extended_address_opt
+                    .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
+                    .map(|(addr, account)| {
+                        search_path(self.plugin_mgr, account, addr, password.clone())
+                    })
+                    .transpose()?
+                    .unwrap_or(root_path);
 
                 let pubkey = if let Some(pubkey) = pubkey_opt {
                     pubkey
                 } else if let Some(privkey) = from_privkey_opt {
                     secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey)
                 } else if let Some(account) = from_account_opt {
-                    let password = if self.plugin_mgr.keystore_require_password() {
-                        Some(read_password(false, None)?)
-                    } else {
-                        None
-                    };
-                    self.plugin_mgr
-                        .keystore_handler()
-                        .extended_pubkey(account, &[], password)?
+                    self.plugin_mgr.keystore_handler().extended_pubkey(
+                        account,
+                        &target_path,
+                        password,
+                    )?
                 } else {
                     return Err(String::from(
                         "Missing <pubkey> or <privkey-path> or <from-account> argument",
@@ -595,6 +694,44 @@ message = "0x"
                 });
                 Ok(Output::new_output(resp))
             }
+            ("cell-meta", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
+                let with_data = m.is_present("with-data");
+                let out_point = packed::OutPoint::new_builder()
+                    .tx_hash(tx_hash.pack())
+                    .index(index.pack())
+                    .build();
+                let cell_with_status = self.rpc_client.get_live_cell(out_point, true)?;
+                if cell_with_status.status != "live" {
+                    Ok(Output::new_output(cell_with_status))
+                } else {
+                    let network = get_network_type(self.rpc_client)?;
+                    let info = cell_with_status.cell.expect("cell.info");
+                    let output = info.output;
+                    let data = info.data.expect("info.data");
+                    let packed_output = packed::CellOutput::from(output.clone());
+                    let lock_hash: H256 = packed_output.lock().calc_script_hash().unpack();
+                    let address_payload = AddressPayload::from(packed_output.lock());
+                    let address = Address::new(network, address_payload);
+                    let type_hash: Option<H256> = packed_output
+                        .type_()
+                        .to_opt()
+                        .map(|script| script.calc_script_hash().unpack());
+                    let mut resp = serde_json::json!({
+                        "output": output,
+                        "data_hash": data.hash,
+                        "lock_hash": lock_hash,
+                        "type_hash": type_hash,
+                        "address": address.to_string(),
+                    });
+                    if with_data {
+                        resp["data"] = serde_json::json!(data.content);
+                    }
+                    Ok(Output::new_output(resp))
+                }
+            }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();
                 let version = get_version();
@@ -620,12 +757,40 @@ message = "0x"
     }
 }
 
-fn sign_message(
+fn search_path(
+    plugin_mgr: &mut PluginManager,
+    hash160: H160,
+    extended_address: Address,
+    password: Option<String>,
+) -> Result<DerivationPath, String> {
+    let target = H160::from_slice(extended_address.payload().args().as_ref())
+        .map_err(|err| format!("parse extended address lock args error: {}", err))?;
+    let key_set = plugin_mgr
+        .keystore_handler()
+        .derived_key_set_by_index(hash160, 0, 2000, 0, 2000, password)?;
+    for (path, hash) in key_set
+        .external
+        .into_iter()
+        .chain(key_set.change.into_iter())
+    {
+        if hash == target {
+            return Ok(path);
+        }
+    }
+    Err(format!(
+        "can not found path for address: {}",
+        extended_address
+    ))
+}
+
+fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
     from_privkey_opt: Option<&PrivkeyWrapper>,
     from_account_opt: Option<(&mut PluginManager, H160)>,
+    path: &P,
     recoverable: bool,
     message: &H256,
     target: SignTarget,
+    password: Option<String>,
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
@@ -639,28 +804,14 @@ fn sign_message(
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
             Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
         }
-        (None, Some((plugin_mgr, account)), false) => {
-            let password = if plugin_mgr.keystore_require_password() {
-                Some(read_password(false, None)?)
-            } else {
-                None
-            };
-            plugin_mgr
-                .keystore_handler()
-                .sign(account, &[], message.clone(), target, password, false)
-                .map(|bytes| (&bytes[..]).to_vec())
-        }
-        (None, Some((plugin_mgr, account)), true) => {
-            let password = if plugin_mgr.keystore_require_password() {
-                Some(read_password(false, None)?)
-            } else {
-                None
-            };
-            plugin_mgr
-                .keystore_handler()
-                .sign(account, &[], message.clone(), target, password, true)
-                .map(|bytes| (&bytes[..]).to_vec())
-        }
+        (None, Some((plugin_mgr, account)), false) => plugin_mgr
+            .keystore_handler()
+            .sign(account, path, message.clone(), target, password, false)
+            .map(|bytes| (&bytes[..]).to_vec()),
+        (None, Some((plugin_mgr, account)), true) => plugin_mgr
+            .keystore_handler()
+            .sign(account, path, message.clone(), target, password, true)
+            .map(|bytes| (&bytes[..]).to_vec()),
         _ => Err(String::from("Both privkey and key store is missing")),
     }
 }
