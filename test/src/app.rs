@@ -1,4 +1,3 @@
-use clap;
 use std::path::Path;
 
 #[derive(Debug, Clone)]

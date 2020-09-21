@@ -502,6 +502,7 @@ impl error::Error for Error {
     fn description(&self) -> &str {
         match *self {
             Error::CannotDeriveFromHardenedKey => "cannot derive hardened key from public key",
+            #[allow(deprecated)]
             Error::Ecdsa(ref e) => error::Error::description(e),
             Error::InvalidChildNumber(_) => "child number is invalid",
             Error::RngError(_) => "rng error",

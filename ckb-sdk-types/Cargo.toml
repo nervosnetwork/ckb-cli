@@ -1,6 +1,6 @@
 [package]
 name = "ckb-sdk-types"
-version = "0.35.0"
+version = "0.36.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -9,11 +9,11 @@ license = "MIT"
 serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1" }
-ckb-traits = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1" }
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1" }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1" }
-ckb-error = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2" }
+ckb-traits = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2" }
+ckb-error = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2" }
 
 [dev-dependencies]
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.35.0-rc1", features = ["secp"] }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.36.0-rc2", features = ["secp"] }
