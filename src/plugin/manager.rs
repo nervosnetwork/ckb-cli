@@ -1303,8 +1303,8 @@ impl KeyStoreHandler {
         Ok(all_accounts)
     }
 
-    pub fn create_account(&self, password: Option<String>) -> Result<H160, String> {
-        let request = KeyStoreRequest::CreateAccount(password);
+    pub fn create_account(&self, password: String) -> Result<H160, String> {
+        let request = KeyStoreRequest::CreateAccount(Some(password));
         if let PluginResponse::H160(hash160) = self.call(request)? {
             Ok(hash160)
         } else {
@@ -1477,14 +1477,33 @@ impl KeyStoreHandler {
     ) -> Result<Bytes, String> {
         let path = DerivationPath::from(path.as_ref().to_vec()).to_string();
         let request = KeyStoreRequest::Sign {
-            hash160,
-            path,
-            message,
-            target: Box::new(target),
+            hash160: hash160.clone(),
+            path: path.clone(),
+            message: message.clone(),
+            target: Box::new(target.clone()),
             password,
             recoverable,
         };
-        if let PluginResponse::Bytes(data) = self.call(request)? {
+        let resp = match self.call(request) {
+            Ok(resp) => resp,
+            // A hack for compatibility
+            Err(err) if err == ERROR_KEYSTORE_REQUIRE_PASSWORD => {
+                let password = read_password(false, None)?;
+                let request = KeyStoreRequest::Sign {
+                    hash160,
+                    path,
+                    message,
+                    target: Box::new(target),
+                    password: Some(password),
+                    recoverable,
+                };
+                self.call(request)?
+            }
+            Err(other) => {
+                return Err(other);
+            }
+        };
+        if let PluginResponse::Bytes(data) = resp {
             Ok(data.into_bytes())
         } else {
             Err("Mismatch keystore response".to_string())
@@ -1498,11 +1517,27 @@ impl KeyStoreHandler {
     ) -> Result<secp256k1::PublicKey, String> {
         let path = DerivationPath::from(path.as_ref().to_vec()).to_string();
         let request = KeyStoreRequest::ExtendedPubkey {
-            hash160,
-            path,
+            hash160: hash160.clone(),
+            path: path.clone(),
             password,
         };
-        if let PluginResponse::Bytes(data) = self.call(request)? {
+        let resp = match self.call(request) {
+            Ok(resp) => resp,
+            // A hack for compatibility
+            Err(message) if message == ERROR_KEYSTORE_REQUIRE_PASSWORD => {
+                let password = read_password(false, None)?;
+                let request = KeyStoreRequest::ExtendedPubkey {
+                    hash160,
+                    path,
+                    password: Some(password),
+                };
+                self.call(request)?
+            }
+            Err(other) => {
+                return Err(other);
+            }
+        };
+        if let PluginResponse::Bytes(data) = resp {
             secp256k1::PublicKey::from_slice(data.as_bytes()).map_err(|err| err.to_string())
         } else {
             Err("Mismatch keystore response".to_string())
