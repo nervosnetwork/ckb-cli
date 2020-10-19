@@ -2,8 +2,8 @@ use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
     CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, ExtraLoggerConfig,
     HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState, MainLoggerConfig, OutPoint,
-    PeerState, RemoteNode, Script, Timestamp, Transaction, TransactionWithStatus, TxPoolInfo,
-    Uint64, Version,
+    PeerState, RemoteNode, Script, Timestamp, Transaction, TransactionProof, TransactionWithStatus,
+    TxPoolInfo, Uint64, Version,
 };
 
 use super::types;
@@ -80,6 +80,12 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_tip_block_number(&mut self) -> BlockNumber;
     pub fn get_tip_header(&mut self) -> HeaderView;
     pub fn get_transaction(&mut self, hash: H256) -> Option<TransactionWithStatus>;
+    pub fn get_transaction_proof(
+        &mut self,
+        tx_hashes: Vec<H256>,
+        block_hash: Option<H256>
+    ) -> TransactionProof;
+    pub fn verify_transaction_proof(&mut self, tx_proof: TransactionProof) -> Vec<H256>;
 
     // Indexer
     pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> ();
@@ -119,6 +125,8 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn set_network_active(&mut self, state: bool) -> ();
     pub fn add_node(&mut self, peer_id: String, address: String) -> ();
     pub fn remove_node(&mut self, peer_id: String) -> ();
+    pub fn clear_banned_addresses(&mut self) -> ();
+    pub fn ping_peers(&mut self) -> ();
 
     // Pool
     pub fn send_transaction(&mut self, tx: Transaction) -> H256;
@@ -262,6 +270,24 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_transaction_proof(
+        &mut self,
+        tx_hashes: Vec<H256>,
+        block_hash: Option<H256>,
+    ) -> Result<types::TransactionProof, String> {
+        self.client
+            .get_transaction_proof(tx_hashes, block_hash)
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+    pub fn verify_transaction_proof(
+        &mut self,
+        tx_proof: types::TransactionProof,
+    ) -> Result<Vec<H256>, String> {
+        self.client
+            .verify_transaction_proof(tx_proof.into())
+            .map_err(|err| err.to_string())
+    }
 
     // Indexer
     #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
@@ -369,6 +395,14 @@ impl HttpRpcClient {
         self.client
             .remove_node(peer_id)
             .map_err(|err| err.to_string())
+    }
+    pub fn clear_banned_addresses(&mut self) -> Result<(), String> {
+        self.client
+            .clear_banned_addresses()
+            .map_err(|err| err.to_string())
+    }
+    pub fn ping_peers(&mut self) -> Result<(), String> {
+        self.client.ping_peers().map_err(|err| err.to_string())
     }
 
     // Pool
