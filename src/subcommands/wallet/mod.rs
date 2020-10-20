@@ -356,8 +356,14 @@ impl<'a> WalletSubCommand<'a> {
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let mut from_capacity = 0;
         let mut infos: Vec<LiveCellInfo> = Default::default();
+
+        fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
+            let rest_capacity = from_capacity - to_capacity - tx_fee;
+            from_capacity >= to_capacity + tx_fee
+                && (rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB)
+        }
         let mut terminator = |_, info: &LiveCellInfo| {
-            if from_capacity >= to_capacity + tx_fee {
+            if enough_capacity(from_capacity, to_capacity, tx_fee) {
                 (true, false)
             } else if info.type_hashes.is_none()
                 && info.data_bytes == 0
@@ -365,7 +371,7 @@ impl<'a> WalletSubCommand<'a> {
             {
                 from_capacity += info.capacity;
                 infos.push(info.clone());
-                (from_capacity >= to_capacity + tx_fee, false)
+                (enough_capacity(from_capacity, to_capacity, tx_fee), false)
             } else {
                 (false, false)
             }
@@ -398,10 +404,10 @@ impl<'a> WalletSubCommand<'a> {
                 from_address, from_capacity,
             ));
         }
-
         let rest_capacity = from_capacity - to_capacity - tx_fee;
-        if rest_capacity < MIN_SECP_CELL_CAPACITY && tx_fee + rest_capacity > ONE_CKB {
-            return Err("Transaction fee can not be more than 1.0 CKB, please change to-capacity value to adjust".to_string());
+        if rest_capacity < MIN_SECP_CELL_CAPACITY && rest_capacity + tx_fee > ONE_CKB {
+            let final_fee = HumanCapacity(tx_fee + rest_capacity);
+            return Err(format!("Transaction fee ({}) can not be more than 1.0 CKB, please change to-capacity value to adjust (not enough live cells to adjust)", final_fee));
         }
 
         let rpc_url = self.rpc_client.url().to_string();

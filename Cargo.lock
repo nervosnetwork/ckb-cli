@@ -320,13 +320,13 @@ dependencies = [
 
 [[package]]
 name = "ckb-build-info"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 
 [[package]]
 name = "ckb-chain-spec"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-crypto",
  "ckb-dao-utils",
@@ -344,15 +344,15 @@ dependencies = [
 
 [[package]]
 name = "ckb-channel"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "crossbeam-channel",
 ]
 
 [[package]]
 name = "ckb-cli"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "ansi_term",
  "atty",
@@ -418,8 +418,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-crypto"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-fixed-hash",
  "failure",
@@ -431,8 +431,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-dao-utils"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "byteorder",
  "ckb-error",
@@ -443,8 +443,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-error"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-occupied-capacity",
  "enum-display-derive",
@@ -454,8 +454,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-fixed-hash"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-fixed-hash-core",
  "ckb-fixed-hash-macros",
@@ -463,8 +463,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-fixed-hash-core"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "failure",
  "faster-hex 0.4.1",
@@ -473,8 +473,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-fixed-hash-macros"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-fixed-hash-core",
  "proc-macro2 0.4.30",
@@ -484,15 +484,15 @@ dependencies = [
 
 [[package]]
 name = "ckb-hash"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "blake2b-rs",
 ]
 
 [[package]]
 name = "ckb-index"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "bincode",
  "ckb-rocksdb",
@@ -506,8 +506,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-jsonrpc-types"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-types",
  "faster-hex 0.4.1",
@@ -529,16 +529,16 @@ dependencies = [
 
 [[package]]
 name = "ckb-logger"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "log 0.4.11",
 ]
 
 [[package]]
 name = "ckb-occupied-capacity"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-occupied-capacity-core",
  "ckb-occupied-capacity-macros",
@@ -546,16 +546,16 @@ dependencies = [
 
 [[package]]
 name = "ckb-occupied-capacity-core"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "ckb-occupied-capacity-macros"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-occupied-capacity-core",
  "quote 0.6.13",
@@ -564,8 +564,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-pow"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "byteorder",
  "ckb-hash",
@@ -577,16 +577,16 @@ dependencies = [
 
 [[package]]
 name = "ckb-rational"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "numext-fixed-uint",
 ]
 
 [[package]]
 name = "ckb-resource"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-system-scripts",
  "ckb-types",
@@ -610,8 +610,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-script"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "byteorder",
  "ckb-chain-spec",
@@ -630,7 +630,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "aes-ctr",
  "bech32",
@@ -661,7 +661,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk-types"
-version = "0.36.0"
+version = "0.37.0"
 dependencies = [
  "ckb-crypto",
  "ckb-error",
@@ -688,16 +688,16 @@ dependencies = [
 
 [[package]]
 name = "ckb-traits"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "ckb-types",
 ]
 
 [[package]]
 name = "ckb-types"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "bit-vec",
  "bytes 0.5.4",
@@ -716,8 +716,8 @@ dependencies = [
 
 [[package]]
 name = "ckb-util"
-version = "0.36.0-pre"
-source = "git+https://github.com/nervosnetwork/ckb?tag=v0.36.0-rc2#38aacb54991e07294ad3073037fd24a4074ceaa3"
+version = "0.37.0-pre"
+source = "git+https://github.com/nervosnetwork/ckb?tag=v0.37.0-rc1#9ae4b75fd6120d186089f120143f267af1569749"
 dependencies = [
  "linked-hash-map",
  "parking_lot 0.7.1",
@@ -726,9 +726,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-vm"
-version = "0.19.1"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7a75c9a092719293a09da2e233fd7802fe909fa2b88a9256034f1e486a6bc7c"
+checksum = "1c8acac1ef10d936825955474c2a12c5bbde9b824a450b3b6dfe3724112d8ae5"
 dependencies = [
  "byteorder",
  "bytes 0.5.4",
@@ -738,13 +738,14 @@ dependencies = [
  "goblin",
  "libc",
  "memmap",
+ "scroll",
 ]
 
 [[package]]
 name = "ckb-vm-definitions"
-version = "0.19.1"
+version = "0.19.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ce774f97919ed2458881e02ddf431ae82bc6203fbae8d75563b4499126c0ad2"
+checksum = "062e91a4ae2eb8a79ad9ba78471bff0eb82ea313a4d6a04b2d454c6553b13fa9"
 
 [[package]]
 name = "clap"
@@ -1642,9 +1643,12 @@ dependencies = [
 
 [[package]]
 name = "merkle-cbt"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d589b5a7ca642540e7ccfbca3bcd0aa18693eb9287e2a6b17c79b1d062d52863"
+checksum = "6f1ac8428ec02d6caa5a79c15e851d84d5dc7a00df0429a8aa860d104f0a81be"
+dependencies = [
+ "cfg-if",
+]
 
 [[package]]
 name = "mime"
