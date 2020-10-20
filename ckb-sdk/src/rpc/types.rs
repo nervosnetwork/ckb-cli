@@ -597,6 +597,64 @@ impl From<BlockReward> for core::BlockReward {
     }
 }
 
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct TransactionProof {
+    /// Block hash
+    pub block_hash: H256,
+    /// Merkle root of all transactions' witness hash
+    pub witnesses_root: H256,
+    /// Merkle proof of all transactions' hash
+    pub proof: MerkleProof,
+}
+impl From<rpc_types::TransactionProof> for TransactionProof {
+    fn from(json: rpc_types::TransactionProof) -> TransactionProof {
+        TransactionProof {
+            block_hash: json.block_hash,
+            witnesses_root: json.witnesses_root,
+            proof: json.proof.into(),
+        }
+    }
+}
+impl From<TransactionProof> for rpc_types::TransactionProof {
+    fn from(json: TransactionProof) -> rpc_types::TransactionProof {
+        rpc_types::TransactionProof {
+            block_hash: json.block_hash,
+            witnesses_root: json.witnesses_root,
+            proof: json.proof.into(),
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct MerkleProof {
+    /// Leaves indices in the CBMT that are proved present in the block.
+    ///
+    /// These are indices in the CBMT tree not the transaction indices in the block.
+    pub indices: Vec<Uint32>,
+    /// Hashes of all siblings along the paths to root.
+    pub lemmas: Vec<H256>,
+}
+impl From<rpc_types::MerkleProof> for MerkleProof {
+    fn from(json: rpc_types::MerkleProof) -> MerkleProof {
+        MerkleProof {
+            indices: json
+                .indices
+                .into_iter()
+                .map(rpc_types::Uint32::value)
+                .collect(),
+            lemmas: json.lemmas,
+        }
+    }
+}
+impl From<MerkleProof> for rpc_types::MerkleProof {
+    fn from(json: MerkleProof) -> rpc_types::MerkleProof {
+        rpc_types::MerkleProof {
+            indices: json.indices.into_iter().map(Into::into).collect(),
+            lemmas: json.lemmas,
+        }
+    }
+}
+
 // =========
 //  cell.rs
 // =========

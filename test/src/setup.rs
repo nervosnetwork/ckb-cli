@@ -113,7 +113,8 @@ impl Setup {
         ckb_toml.block_assembler = Some(Miner::block_assembler());
 
         spec.modify_ckb_toml(&mut ckb_toml);
-        fs::write(&path, toml::to_string(&ckb_toml).unwrap()).expect("Dump ckb.toml");
+        let value = toml::Value::try_from(&ckb_toml).unwrap();
+        fs::write(&path, toml::to_string(&value).unwrap()).expect("Dump ckb.toml");
     }
 
     fn modify_spec_toml(&self, spec: &dyn Spec) {
