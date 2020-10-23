@@ -1294,14 +1294,20 @@ impl KeyStoreHandler {
             return Err("Mismatch default keystore response".to_string());
         }
         if let Some(cfg) = self.actived_plugin() {
-            if let PluginResponse::BytesVec(accounts) = self.call(request)? {
-                all_accounts.extend(
-                    accounts
-                        .into_iter()
-                        .map(|data| (data.into_bytes(), format!("[plugin]: {}", cfg.name))),
-                );
-            } else {
-                return Err("Mismatch plugin keystore response".to_string());
+            match self.call(request) {
+                Ok(PluginResponse::BytesVec(accounts)) => {
+                    all_accounts.extend(
+                        accounts
+                            .into_iter()
+                            .map(|data| (data.into_bytes(), format!("[plugin]: {}", cfg.name))),
+                    );
+                }
+                Ok(_) => {
+                    return Err("Mismatch plugin keystore response".to_string());
+                }
+                Err(err) => {
+                    log::info!("Send request to plugin({}) failed: {}", cfg.name, err);
+                }
             }
         }
         Ok(all_accounts)

@@ -107,26 +107,24 @@ impl DefaultKeyStore {
                     change_last,
                     change_max_len,
                     password,
-                } => {
-                    keystore
-                        .get_ckb_root(&hash160, true)
-                        .cloned()
-                        .map_or_else(
-                            || {
-                                let password =
-                                    password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
-                                keystore
-                                    .ckb_root_with_password(&hash160, password.as_bytes())
-                                    .map_err(|err| err.to_string())
-                            },
-                            Ok,
-                        )
-                        .map(|ckb_root| {
-                            ckb_root.derived_key_set(external_max_len, &change_last, change_max_len)
-                        })?
-                        .map(serilize_key_set)
-                        .map_err(|err| err.to_string())
-                }
+                } => keystore
+                    .get_ckb_root(&hash160, true)
+                    .cloned()
+                    .map_or_else(
+                        || {
+                            let password = password
+                                .ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
+                            keystore
+                                .ckb_root_with_password(&hash160, password.as_bytes())
+                                .map_err(|err| err.to_string())
+                        },
+                        Ok,
+                    )
+                    .map(|ckb_root| {
+                        ckb_root.derived_key_set(external_max_len, &change_last, change_max_len)
+                    })?
+                    .map(serilize_key_set)
+                    .map_err(|err| err.to_string()),
                 KeyStoreRequest::DerivedKeySetByIndex {
                     hash160,
                     external_start,
@@ -134,30 +132,28 @@ impl DefaultKeyStore {
                     change_start,
                     change_length,
                     password,
-                } => {
-                    keystore
-                        .get_ckb_root(&hash160, true)
-                        .cloned()
-                        .map_or_else(
-                            || {
-                                let password =
-                                    password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
-                                keystore
-                                    .ckb_root_with_password(&hash160, password.as_bytes())
-                                    .map_err(|err| err.to_string())
-                            },
-                            Ok,
+                } => keystore
+                    .get_ckb_root(&hash160, true)
+                    .cloned()
+                    .map_or_else(
+                        || {
+                            let password = password
+                                .ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
+                            keystore
+                                .ckb_root_with_password(&hash160, password.as_bytes())
+                                .map_err(|err| err.to_string())
+                        },
+                        Ok,
+                    )
+                    .map(|ckb_root| {
+                        ckb_root.derived_key_set_by_index(
+                            external_start,
+                            external_length,
+                            change_start,
+                            change_length,
                         )
-                        .map(|ckb_root| {
-                            ckb_root.derived_key_set_by_index(
-                                external_start,
-                                external_length,
-                                change_start,
-                                change_length,
-                            )
-                        })
-                        .map(serilize_key_set)
-                }
+                    })
+                    .map(serilize_key_set),
                 KeyStoreRequest::ListAccount => {
                     let mut accounts = keystore.get_accounts().iter().collect::<Vec<_>>();
                     accounts.sort_by(|a, b| a.1.cmp(&b.1));
