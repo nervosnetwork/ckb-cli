@@ -442,6 +442,7 @@ impl HttpTransferArgs {
             to_address: self.to_address,
             to_data: self.to_data,
             is_type_id: false,
+            skip_check_to_address: false,
         }
     }
 }
