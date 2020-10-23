@@ -33,7 +33,9 @@ use utils::{
 
 mod interactive;
 mod plugin;
+#[allow(clippy::mutable_key_type)]
 mod subcommands;
+#[allow(clippy::mutable_key_type)]
 mod utils;
 
 fn main() -> Result<(), io::Error> {

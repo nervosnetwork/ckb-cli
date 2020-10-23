@@ -108,13 +108,13 @@ impl DefaultKeyStore {
                     change_max_len,
                     password,
                 } => {
-                    let password =
-                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .get_ckb_root(&hash160, true)
                         .cloned()
                         .map_or_else(
                             || {
+                                let password =
+                                    password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                                 keystore
                                     .ckb_root_with_password(&hash160, password.as_bytes())
                                     .map_err(|err| err.to_string())
@@ -135,13 +135,13 @@ impl DefaultKeyStore {
                     change_length,
                     password,
                 } => {
-                    let password =
-                        password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     keystore
                         .get_ckb_root(&hash160, true)
                         .cloned()
                         .map_or_else(
                             || {
+                                let password =
+                                    password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                                 keystore
                                     .ckb_root_with_password(&hash160, password.as_bytes())
                                     .map_err(|err| err.to_string())
