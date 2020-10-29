@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -35,12 +36,24 @@ pub fn start_index_thread(
             loop {
                 // Wait first request
                 match try_recv(&receiver, &mut rpc_client) {
-                    Some(true) => {
+                    Some((true, rebuild)) => {
+                        if rebuild {
+                            if let Err(err) = remove_db(&index_dir, &mut rpc_client) {
+                                log::error!("remove database failed: {}", err);
+                            }
+                        }
                         state.write().stop();
                         log::info!("Index database thread stopped");
                         return;
                     }
-                    Some(false) => break,
+                    Some((false, rebuild)) => {
+                        if rebuild {
+                            if let Err(err) = remove_db(&index_dir, &mut rpc_client) {
+                                log::error!("remove database failed: {}", err);
+                            }
+                        }
+                        break;
+                    }
                     None => thread::sleep(Duration::from_millis(100)),
                 }
             }
@@ -53,12 +66,23 @@ pub fn start_index_thread(
                     &state,
                     &shutdown_clone,
                 ) {
-                    Ok(true) => {
+                    Ok((true, rebuild)) => {
+                        if rebuild {
+                            if let Err(err) = remove_db(&index_dir, &mut rpc_client) {
+                                log::error!("remove database failed: {}", err);
+                            }
+                        }
                         state.write().stop();
                         log::info!("Index database thread stopped");
                         break;
                     }
-                    Ok(false) => {}
+                    Ok((false, rebuild)) => {
+                        if rebuild {
+                            if let Err(err) = remove_db(&index_dir, &mut rpc_client) {
+                                log::error!("remove database failed: {}", err);
+                            }
+                        }
+                    }
                     Err(err) => {
                         state.write().error(err.clone());
                         log::info!("rpc call or db error: {:?}", err);
@@ -81,9 +105,9 @@ fn process(
     index_dir: &PathBuf,
     state: &Arc<RwLock<IndexThreadState>>,
     shutdown: &Arc<AtomicBool>,
-) -> Result<bool, String> {
-    if let Some(exit) = try_recv(&receiver, rpc_client) {
-        return Ok(exit);
+) -> Result<(bool, bool), String> {
+    if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+        return Ok((exit, rebuild));
     }
 
     state.write().start_init();
@@ -117,10 +141,10 @@ fn process(
                 db.update_tip(tip_header.clone());
                 while tip_header.number() > db.last_number().unwrap() {
                     if shutdown.load(Ordering::Relaxed) {
-                        return Ok(Some(true));
+                        return Ok(Some((true, false)));
                     }
-                    if let Some(exit) = try_recv(&receiver, rpc_client) {
-                        return Ok(Some(exit));
+                    if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+                        return Ok(Some((exit, rebuild)));
                     }
                     if let Some(next_block) =
                         rpc_client.get_block_by_number(db.next_number().unwrap())?
@@ -140,17 +164,23 @@ fn process(
                     .processing(db.last_header().cloned(), tip_header.number());
                 Ok(None)
             }) {
-                Ok(Some(exit)) => {
-                    return Ok(exit);
+                Ok(Some((exit, rebuild))) => {
+                    return Ok((exit, rebuild));
                 }
                 Ok(None) => {}
                 Err(Error::Index(IndexError::LongFork)) => {
                     log::error!(
-                        "\n{}!\nIf you running a dev chain and have removed the database directory (\"ckb/data/db\"), please also remove ckb-cli's index directory:\n  {:?}",
+                        r#"
+{}!
+If you running a dev chain and have removed the database directory (\"ckb/data/db\"), please also remove ckb-cli's index directory:
+  {:?}
+
+Or you can use follow command to rebuild index database:
+  ckb-cli index rebuild-current-database"#,
                         IndexError::LongFork,
                         index_dir.join(format!("{:#x}", genesis_hash))
                     );
-                    return Ok(true);
+                    return Ok((true, false));
                 }
                 Err(err) => {
                     return Err(err.to_string());
@@ -159,25 +189,38 @@ fn process(
         }
 
         if shutdown.load(Ordering::Relaxed) {
-            return Ok(true);
+            return Ok((true, false));
         }
-        if let Some(exit) = try_recv(&receiver, rpc_client) {
-            return Ok(exit);
+        if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+            return Ok((exit, rebuild));
         }
         thread::sleep(Duration::from_millis(100));
     }
 }
 
+fn remove_db(index_dir: &PathBuf, rpc_client: &mut HttpRpcClient) -> Result<(), String> {
+    let genesis_block: BlockView = rpc_client
+        .get_block_by_number(0)?
+        .expect("Can not get genesis block?")
+        .into();
+    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
+    let genesis_hash: H256 = genesis_info.header().hash().unpack();
+    let db_dir = index_dir.join(format!("{:#x}", genesis_hash));
+    log::info!("remove index database: {:?}", db_dir);
+    fs::remove_dir_all(&db_dir).map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 fn try_recv(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
     rpc_client: &mut HttpRpcClient,
-) -> Option<bool> {
+) -> Option<(bool, bool)> {
     match receiver.try_recv() {
         Ok(request) => Some(process_request(request, rpc_client)),
         Err(err) => {
             if err.is_disconnected() {
                 log::info!("Sender dropped, exit index thread");
-                Some(true)
+                Some((true, false))
             } else {
                 None
             }
@@ -188,7 +231,7 @@ fn try_recv(
 fn process_request(
     request: Request<IndexRequest, IndexResponse>,
     rpc_client: &mut HttpRpcClient,
-) -> bool {
+) -> (bool, bool) {
     let Request {
         responder,
         arguments,
@@ -198,8 +241,9 @@ fn process_request(
             if url != rpc_client.url() {
                 *rpc_client = HttpRpcClient::new(url);
             }
-            responder.send(IndexResponse::Ok).is_err()
+            (responder.send(IndexResponse::Ok).is_err(), false)
         }
-        IndexRequest::Kick => false,
+        IndexRequest::RebuildCurrentDB => (responder.send(IndexResponse::Ok).is_err(), true),
+        IndexRequest::Kick => (false, false),
     }
 }

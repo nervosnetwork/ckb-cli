@@ -19,8 +19,8 @@ use interactive::InteractiveEnv;
 use plugin::PluginManager;
 use subcommands::{
     start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
-    MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, RpcSubCommand, TxSubCommand,
-    UtilSubCommand, WalletSubCommand,
+    IndexSubCommand, MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, RpcSubCommand,
+    TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
@@ -106,6 +106,7 @@ fn main() -> Result<(), io::Error> {
     }
 
     let api_uri = config.get_url().to_string();
+    let index_state_clone = Arc::clone(&index_state);
     let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
     let mut rpc_client = HttpRpcClient::new(api_uri.clone());
     let mut raw_rpc_client = RawHttpRpcClient::new(api_uri.as_str());
@@ -159,6 +160,15 @@ fn main() -> Result<(), io::Error> {
             PluginSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
         }
         ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(&sub_matches, debug),
+        ("index", Some(sub_matches)) => IndexSubCommand::new(
+            &mut rpc_client,
+            None,
+            index_dir,
+            index_controller.clone(),
+            index_state_clone,
+            wait_for_sync,
+        )
+        .process(&sub_matches, debug),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             &mut plugin_mgr,
@@ -188,6 +198,7 @@ fn main() -> Result<(), io::Error> {
                 plugin_mgr,
                 key_store,
                 index_controller.clone(),
+                index_state_clone,
             )
             .and_then(|mut env| env.start())
             {
@@ -262,6 +273,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
+        .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
         .arg(
@@ -379,6 +391,7 @@ pub fn build_interactive() -> App<'static> {
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
+        .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
 }

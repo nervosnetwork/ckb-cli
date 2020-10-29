@@ -1,9 +1,13 @@
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::other::{get_network_type, sync_to_tip};
+use ckb_index::{with_index_db, IndexDatabase};
+use ckb_sdk::{GenesisInfo, HttpRpcClient};
 use ckb_types::{
     core::{service::Request, HeaderView},
     prelude::*,
@@ -15,6 +19,7 @@ use serde_derive::{Deserialize, Serialize};
 
 pub enum IndexRequest {
     Kick,
+    RebuildCurrentDB,
     UpdateUrl(String),
 }
 
@@ -197,4 +202,32 @@ impl IndexController {
             }
         }
     }
+}
+
+pub fn with_db<F, T>(
+    func: F,
+    rpc_client: &mut HttpRpcClient,
+    genesis_info: GenesisInfo,
+    index_dir: &PathBuf,
+    index_controller: IndexController,
+    wait_for_sync: bool,
+) -> Result<T, String>
+where
+    F: FnOnce(IndexDatabase) -> T,
+{
+    if wait_for_sync {
+        sync_to_tip(&index_controller)?;
+    }
+    let network_type = get_network_type(rpc_client)?;
+    let genesis_hash: H256 = genesis_info.header().hash().unpack();
+    with_index_db(&index_dir, genesis_hash, |backend, cf| {
+        let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
+        Ok(func(db))
+    })
+    .map_err(|_err| {
+        format!(
+            "Index database may not ready, sync process: {}",
+            index_controller.state().read().to_string()
+        )
+    })
 }

@@ -13,7 +13,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{App, AppSettings, Arg, ArgMatches};
+use clap::{App, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
@@ -24,7 +24,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    index::IndexController,
+    index::{with_db, IndexController},
     other::{
         check_capacity, get_address, get_arg_value, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
@@ -90,22 +90,15 @@ impl<'a> WalletSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase) -> T,
     {
-        if self.wait_for_sync {
-            sync_to_tip(&self.index_controller)?;
-        }
-        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info()?;
-        let genesis_hash: H256 = genesis_info.header().hash().unpack();
-        with_index_db(&self.index_dir, genesis_hash, |backend, cf| {
-            let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
-            Ok(func(db))
-        })
-        .map_err(|_err| {
-            format!(
-                "Index database may not ready, sync process: {}",
-                self.index_controller.state().read().to_string()
-            )
-        })
+        with_db(
+            func,
+            self.rpc_client,
+            genesis_info,
+            &self.index_dir,
+            self.index_controller.clone(),
+            self.wait_for_sync,
+        )
     }
 
     pub fn subcommand() -> App<'static> {
@@ -162,10 +155,6 @@ impl<'a> WalletSubCommand<'a> {
                             .long("fast-mode")
                             .about("Only visit current range (by --from and --to) of live cells"),
                     ),
-                // Move to index subcommand
-                App::new("db-metrics")
-                    .about("Show index database metrics")
-                    .setting(AppSettings::Hidden),
                 App::new("top-capacity")
                     .about("Show top n capacity owned by lock script hash")
                     .arg(arg::top_n()),
@@ -787,11 +776,6 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         })
                         .collect::<Vec<_>>()
                 })?;
-                Ok(Output::new_output(resp))
-            }
-            ("db-metrics", _) => {
-                let metrcis = self.with_db(|db| db.get_metrics(None))?;
-                let resp = serde_json::to_value(metrcis).map_err(|err| err.to_string())?;
                 Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
