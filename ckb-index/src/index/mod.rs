@@ -17,7 +17,7 @@ use crate::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use key::{Key, KeyMetrics, KeyType};
 pub use types::{CellIndex, HashType, LiveCellInfo, TxInfo};
 
-use types::BlockDeltaInfo;
+use types::{BlockDeltaInfo, KEEP_RECENT_BLOCKS};
 
 // NOTE: You should reopen to increase database size when processed enough blocks
 //  [reference]: https://stackoverflow.com/a/33571804
@@ -121,7 +121,7 @@ impl<'a> IndexDatabase<'a> {
                     reader
                         .get(&Key::BlockDelta(last_header.number()).to_bytes())
                         .map(|bytes| bincode::deserialize(&bytes).unwrap())
-                        .unwrap()
+                        .ok_or_else(|| IndexError::LongFork)?
                 };
                 let mut txn = RocksTxn::new(self.db, self.cf);
                 last_block_delta.rollback(&mut txn);
@@ -376,11 +376,11 @@ pub enum IndexError {
     BlockImmature(u64),
     IllegalBlock(Byte32),
     InvalidBlockNumber(u64),
-    BlockInvalid(String),
     NotInit,
     IoError(String),
     InvalidGenesis(String),
     InvalidNetworkType(String),
+    LongFork,
 }
 
 impl From<io::Error> for IndexError {
@@ -391,6 +391,44 @@ impl From<io::Error> for IndexError {
 
 impl fmt::Display for IndexError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:?}", self)
+        match self {
+            IndexError::BlockImmature(number) => {
+                write!(
+                    f,
+                    "Current applied block number {} greater than tip block number",
+                    number
+                )?;
+            }
+            IndexError::IllegalBlock(_) => {
+                write!(f, "Current applied block number is 1, but the parent hash not match genesis block hash")?;
+            }
+            IndexError::InvalidBlockNumber(number) => {
+                write!(
+                    f,
+                    "Current applied block number {} is not the next block of lastest block",
+                    number
+                )?;
+            }
+            IndexError::NotInit => {
+                write!(f, "Apply block before database initialization")?;
+            }
+            IndexError::IoError(msg) => {
+                write!(f, "IO error: {}", msg)?;
+            }
+            IndexError::InvalidGenesis(msg) => {
+                write!(f, "Genesis hash not match with DB, {}", msg)?;
+            }
+            IndexError::InvalidNetworkType(msg) => {
+                write!(f, "NetworkType not match with DB, {}", msg)?;
+            }
+            IndexError::LongFork => {
+                write!(
+                    f,
+                    "Already rollbacked {} blocks, long fork detected",
+                    KEEP_RECENT_BLOCKS
+                )?;
+            }
+        }
+        Ok(())
     }
 }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use ckb_index::{with_index_db, IndexDatabase};
+use ckb_index::{with_index_db, Error, IndexDatabase, IndexError};
 use ckb_sdk::GenesisInfo;
 use ckb_sdk::HttpRpcClient;
 use ckb_types::{
@@ -106,7 +106,7 @@ fn process(
         }
 
         if tip_header.number() >= next_number {
-            let exit_opt = with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
+            match with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
                 let mut db =
                     IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)
                         .unwrap();
@@ -125,8 +125,7 @@ fn process(
                     if let Some(next_block) =
                         rpc_client.get_block_by_number(db.next_number().unwrap())?
                     {
-                        db.apply_next_block(next_block.into())
-                            .expect("Add block failed");
+                        db.apply_next_block(next_block.into())?;
                         state
                             .write()
                             .processing(db.last_header().cloned(), tip_header.number());
@@ -140,10 +139,22 @@ fn process(
                     .write()
                     .processing(db.last_header().cloned(), tip_header.number());
                 Ok(None)
-            })
-            .map_err(|err| err.to_string())?;
-            if let Some(exit) = exit_opt {
-                return Ok(exit);
+            }) {
+                Ok(Some(exit)) => {
+                    return Ok(exit);
+                }
+                Ok(None) => {}
+                Err(Error::Index(IndexError::LongFork)) => {
+                    log::error!(
+                        "\n{}!\nIf you running a dev chain and have removed the database directory (\"ckb/data/db\"), please also remove ckb-cli's index directory:\n  {:?}",
+                        IndexError::LongFork,
+                        index_dir.join(format!("{:#x}", genesis_hash))
+                    );
+                    return Ok(true);
+                }
+                Err(err) => {
+                    return Err(err.to_string());
+                }
             }
         }
 
