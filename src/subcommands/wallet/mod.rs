@@ -364,9 +364,12 @@ impl<'a> WalletSubCommand<'a> {
         let mut infos: Vec<LiveCellInfo> = Default::default();
 
         fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
-            let rest_capacity = from_capacity - to_capacity - tx_fee;
-            from_capacity >= to_capacity + tx_fee
-                && (rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB)
+            if from_capacity < to_capacity + tx_fee {
+                false
+            } else {
+                let rest_capacity = from_capacity - to_capacity - tx_fee;
+                rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB
+            }
         }
         let mut terminator = |_, info: &LiveCellInfo| {
             if enough_capacity(from_capacity, to_capacity, tx_fee) {
