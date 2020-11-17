@@ -86,6 +86,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
         block_hash: Option<H256>
     ) -> TransactionProof;
     pub fn verify_transaction_proof(&mut self, tx_proof: TransactionProof) -> Vec<H256>;
+    pub fn get_fork_block(&mut self, block_hash: H256) -> Option<BlockView>;
 
     // Indexer
     pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> ();
@@ -145,7 +146,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn truncate(&mut self, target_tip_hash: H256) -> ();
     pub fn generate_block(&mut self, block_assembler_script: Option<Script>, block_assembler_message: Option<JsonBytes>) -> H256;
     pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
-    pub fn get_fork_block(&mut self, _hash: H256) -> Option<BlockView>;
 
     // Debug
     pub fn jemalloc_profiling_dump(&mut self) -> String;
@@ -286,6 +286,12 @@ impl HttpRpcClient {
     ) -> Result<Vec<H256>, String> {
         self.client
             .verify_transaction_proof(tx_proof.into())
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_fork_block(&mut self, block_hash: H256) -> Result<Option<types::BlockView>, String> {
+        self.client
+            .get_fork_block(block_hash)
+            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 

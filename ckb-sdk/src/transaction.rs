@@ -243,9 +243,17 @@ impl<'a> MockTransactionHelper<'a> {
             }
         }
 
-        let rpc_tx = self.mock_tx.tx.clone().into();
+        let mut rpc_tx: rpc_types::Transaction = self.mock_tx.tx.clone().into();
         for (lock_arg, idxs) in input_group.into_iter() {
-            let init_witness = WitnessArgs::new_builder()
+            let init_witness_idx = idxs[0];
+            let init_witness = if witnesses[init_witness_idx].raw_data().is_empty() {
+                WitnessArgs::default()
+            } else {
+                WitnessArgs::from_slice(witnesses[init_witness_idx].raw_data().as_ref())
+                    .map_err(|err| err.to_string())?
+            };
+            let init_witness = init_witness
+                .as_builder()
                 .lock(Some(Bytes::from(vec![0u8; 65])).pack())
                 .build();
             let mut blake2b = new_blake2b();
@@ -255,14 +263,22 @@ impl<'a> MockTransactionHelper<'a> {
             for idx in idxs.iter().skip(1).cloned() {
                 let other_witness = &witnesses[idx];
                 blake2b.update(&(other_witness.len() as u64).to_le_bytes());
-                blake2b.update(other_witness.as_slice());
+                blake2b.update(&other_witness.raw_data());
             }
             let mut message = [0u8; 32];
             blake2b.finalize(&mut message);
             let message = H256::from(message);
+
+            witnesses[init_witness_idx] = init_witness.as_bytes().pack();
+            rpc_tx.witnesses = witnesses
+                .iter()
+                .cloned()
+                .map(|witness| rpc_types::JsonBytes::from_bytes(witness.raw_data()))
+                .collect();
             let sig =
                 signer(&lock_arg, &message, &rpc_tx).map(|data| Bytes::from(data.to_vec()))?;
-            witnesses[idxs[0]] = WitnessArgs::new_builder()
+            witnesses[init_witness_idx] = init_witness
+                .as_builder()
                 .lock(Some(sig).pack())
                 .build()
                 .as_bytes()

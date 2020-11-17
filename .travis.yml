@@ -1,5 +1,5 @@
 language: rust
-rust: 1.38.0
+rust: 1.46.0
 dist: xenial
 sudo: true
 cache:
@@ -38,6 +38,9 @@ before_cache:
   - rm -rf ./target/debug/incremental/
   - cargo sweep -f
 
+before_deploy:
+  - 'export TRAVIS_TAG="${TRAVIS_BRANCH##*/}"'
+  - git tag $TRAVIS_TAG
 deploy:
   provider: releases
   api_key: "$GITHUB_TOKEN"
@@ -45,11 +48,11 @@ deploy:
     - "releases/ckb-cli_${TRAVIS_TAG}_${REL_PKG}"
     - "releases/ckb-cli_${TRAVIS_TAG}_${REL_PKG}.asc"
   skip_cleanup: true
-  prerelease: true
+  draft: true
   overwrite: true
   on:
-    tags: true
-    condition: '"$GITHUB_TOKEN" != "" && "$REL_PKG" != ""'
+    all_branches: true
+    condition: '$TRAVIS_BRANCH =~ ^pkg/'
 
 matrix:
   include:
@@ -82,7 +85,7 @@ matrix:
       script: make integration
 
     - name: Package for macOS
-      if: 'tag IS present AND env(GITHUB_TOKEN) IS present'
+      if: 'branch =~ /^pkg\// AND env(GITHUB_TOKEN) IS present'
       os: osx
       env: REL_PKG=x86_64-apple-darwin.zip
       before_install: skip
@@ -97,10 +100,10 @@ matrix:
         - gpg --import devtools/ci/travis-secret.asc
         - devtools/ci/package.sh target/release/ckb-cli
     - name: Package for Linux
-      if: 'tag IS present AND env(GITHUB_TOKEN) IS present'
+      if: 'branch =~ /^pkg\// AND env(GITHUB_TOKEN) IS present'
       language: ruby
       addons: { apt: { packages: [] } }
-      env: REL_PKG=x86_64-unknown-linux-gnu.tar.gz BUILDER_IMAGE=nervos/ckb-docker-builder:xenial-rust-1.38.0
+      env: REL_PKG=x86_64-unknown-linux-gnu.tar.gz BUILDER_IMAGE=nervos/ckb-docker-builder:xenial-rust-1.46.0
       before_install: skip
       before_cache: skip
       cache:
@@ -113,10 +116,10 @@ matrix:
         - gpg --import devtools/ci/travis-secret.asc
         - devtools/ci/package.sh target/release/ckb-cli
     - name: Package for Centos
-      if: 'tag IS present AND env(GITHUB_TOKEN) IS present'
+      if: 'branch =~ /^pkg\// AND env(GITHUB_TOKEN) IS present'
       language: ruby
       addons: { apt: { packages: [] } }
-      env: REL_PKG=x86_64-unknown-centos-gnu.tar.gz BUILDER_IMAGE=nervos/ckb-docker-builder:centos-7-rust-1.38.0
+      env: REL_PKG=x86_64-unknown-centos-gnu.tar.gz BUILDER_IMAGE=nervos/ckb-docker-builder:centos-7-rust-1.46.0
       before_install: skip
       before_cache: skip
       cache:

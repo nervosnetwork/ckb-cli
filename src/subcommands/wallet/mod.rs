@@ -131,6 +131,10 @@ impl<'a> WalletSubCommand<'a> {
                         arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
                     )
                     .arg(
+                        Arg::with_name("skip-check-to-address")
+                            .long("skip-check-to-address")
+                            .about("Skip check <to-address> (default only allow sighash/multisig address), be cautious to use this flag"))
+                    .arg(
                         Arg::with_name("type-id")
                             .long("type-id")
                             .about("Add type id type script to target output cell"),
@@ -185,6 +189,7 @@ impl<'a> WalletSubCommand<'a> {
             to_address,
             to_data,
             is_type_id,
+            skip_check_to_address,
         } = args;
 
         let network_type = get_network_type(self.rpc_client)?;
@@ -273,9 +278,10 @@ impl<'a> WalletSubCommand<'a> {
         let to_address_hash_type = to_address.payload().hash_type();
         let to_address_code_hash: H256 = to_address.payload().code_hash().unpack();
         let to_address_args_len = to_address.payload().args().len();
-        if !(to_address_hash_type == ScriptHashType::Type
-            && to_address_code_hash == SIGHASH_TYPE_HASH
-            && to_address_args_len == 20)
+        if !skip_check_to_address
+            && !(to_address_hash_type == ScriptHashType::Type
+                && to_address_code_hash == SIGHASH_TYPE_HASH
+                && to_address_args_len == 20)
             && !(to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == MULTISIG_TYPE_HASH
                 && (to_address_args_len == 20 || to_address_args_len == 28))
@@ -358,9 +364,12 @@ impl<'a> WalletSubCommand<'a> {
         let mut infos: Vec<LiveCellInfo> = Default::default();
 
         fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
-            let rest_capacity = from_capacity - to_capacity - tx_fee;
-            from_capacity >= to_capacity + tx_fee
-                && (rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB)
+            if from_capacity < to_capacity + tx_fee {
+                false
+            } else {
+                let rest_capacity = from_capacity - to_capacity - tx_fee;
+                rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB
+            }
         }
         let mut terminator = |_, info: &LiveCellInfo| {
             if enough_capacity(from_capacity, to_capacity, tx_fee) {
@@ -606,6 +615,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     to_address: get_arg_value(m, "to-address")?,
                     to_data: Some(to_data),
                     is_type_id: m.is_present("type-id"),
+                    skip_check_to_address: m.is_present("skip-check-to-address"),
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
@@ -871,6 +881,7 @@ pub struct TransferArgs {
     pub to_address: String,
     pub to_data: Option<Bytes>,
     pub is_type_id: bool,
+    pub skip_check_to_address: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

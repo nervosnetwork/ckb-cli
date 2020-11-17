@@ -281,7 +281,12 @@ impl<'a> DAOSubCommand<'a> {
                 }
             };
             let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
-            signer(&accounts, &digest, &transaction.data().into())?.expect("signer missed")
+            witnesses[0] = init_witness.as_bytes();
+            let new_tx_view = transaction
+                .as_advanced_builder()
+                .set_witnesses(witnesses.iter().map(|w| w.pack()).collect::<Vec<_>>())
+                .build();
+            signer(&accounts, &digest, &new_tx_view.data().into())?.expect("signer missed")
         };
 
         witnesses[0] = init_witness

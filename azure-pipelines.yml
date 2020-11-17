@@ -3,7 +3,7 @@ trigger:
     include:
     - '*'
   tags:
-    include:
+    exclude:
     - '*'
 
 jobs:
@@ -21,7 +21,7 @@ jobs:
     steps:
       - template: devtools/azure/windows-dependencies.yml
         parameters:
-          rustup_toolchain: '1.38.0-x86_64-pc-windows-msvc'
+          rustup_toolchain: '1.46.0-x86_64-pc-windows-msvc'
       - script: make test
         displayName: Run unit tests
         env:
@@ -29,13 +29,13 @@ jobs:
 
   - job: Package
     timeoutInMinutes: 0
-    condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/')
+    condition: startsWith(variables['Build.SourceBranch'], 'refs/heads/pkg/')
     pool:
       vmImage: 'VS2017-Win2016'
     steps:
       - template: devtools/azure/windows-dependencies.yml
         parameters:
-          rustup_toolchain: '1.38.0-x86_64-pc-windows-msvc'
+          rustup_toolchain: '1.46.0-x86_64-pc-windows-msvc'
       - script: make prod
         displayName: Build
       - powershell: |
@@ -71,5 +71,5 @@ jobs:
             $(Build.ArtifactStagingDirectory)/*.zip
             $(Build.ArtifactStagingDirectory)/*.asc
           assetUploadMode: replace
-          isPreRelease: true
+          isDraft: true
           addChangeLog: false
