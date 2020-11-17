@@ -1,6 +1,8 @@
 mod chain;
 mod error;
+#[allow(clippy::mutable_key_type)]
 mod transaction;
+#[allow(clippy::mutable_key_type)]
 mod tx_helper;
 mod types;
 

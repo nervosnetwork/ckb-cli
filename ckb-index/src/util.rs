@@ -17,7 +17,7 @@ where
 {
     let path = path.as_ref().to_path_buf();
     let start = Instant::now();
-    let timeout = timeout.unwrap_or(Duration::from_secs(3));
+    let timeout = timeout.unwrap_or_else(|| Duration::from_secs(3));
     let mut options = Options::default();
     options.create_if_missing(true);
     options.create_missing_column_families(true);
