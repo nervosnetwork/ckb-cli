@@ -31,6 +31,7 @@ pub const KEYSTORE_HAS_ACCOUNT: &str = "keystore_has_account";
 pub const KEYSTORE_CREATE_ACCOUNT: &str = "keystore_create_account";
 pub const KEYSTORE_UPDATE_PASSWORD: &str = "keystore_update_password";
 pub const KEYSTORE_IMPORT: &str = "keystore_import";
+pub const KEYSTORE_IMPORT_ACCOUNT: &str = "keystore_import_account";
 pub const KEYSTORE_EXPORT: &str = "keystore_export";
 pub const KEYSTORE_SIGN: &str = "keystore_sign";
 pub const KEYSTORE_EXTENDED_PUBKEY: &str = "keystore_extended_pubkey";

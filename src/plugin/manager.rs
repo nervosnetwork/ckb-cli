@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use ckb_index::LiveCellInfo;
-use ckb_jsonrpc_types::{BlockNumber, HeaderView, Script};
+use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
 use ckb_sdk::{
     wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
     HttpRpcClient,
@@ -1196,6 +1196,9 @@ impl KeyStoreHandler {
                 // Default only
                 default_only = true;
             }
+            KeyStoreRequest::ImportAccount { .. } => {
+                // Plugin only
+            }
             KeyStoreRequest::Export { ref hash160, .. } => {
                 // Both
                 hash160_opt = Some(hash160.clone());
@@ -1273,7 +1276,7 @@ impl KeyStoreHandler {
         }
     }
 
-    pub fn list_account(&self) -> Result<Vec<(H160, String)>, String> {
+    pub fn list_account(&self) -> Result<Vec<(Bytes, String)>, String> {
         let request = KeyStoreRequest::ListAccount;
         let plugin_request = PluginRequest::KeyStore(request.clone());
 
@@ -1284,17 +1287,18 @@ impl KeyStoreHandler {
             all_accounts.extend(
                 accounts
                     .into_iter()
-                    .map(|hash160| (hash160, ACCOUNT_SOURCE_FS.to_owned())),
+                    .map(|hash160| Bytes::from(hash160.as_bytes().to_vec()))
+                    .map(|data| (data, ACCOUNT_SOURCE_FS.to_owned())),
             );
         } else {
             return Err("Mismatch default keystore response".to_string());
         }
         if let Some(cfg) = self.actived_plugin() {
-            if let PluginResponse::H160Vec(accounts) = self.call(request)? {
+            if let PluginResponse::BytesVec(accounts) = self.call(request)? {
                 all_accounts.extend(
                     accounts
                         .into_iter()
-                        .map(|hash160| (hash160, format!("[plugin]: {}", cfg.name))),
+                        .map(|data| (data.into_bytes(), format!("[plugin]: {}", cfg.name))),
                 );
             } else {
                 return Err("Mismatch plugin keystore response".to_string());
@@ -1341,6 +1345,21 @@ impl KeyStoreHandler {
         let request = KeyStoreRequest::Import {
             privkey,
             chain_code,
+            password,
+        };
+        if let PluginResponse::H160(lock_arg) = self.call(request)? {
+            Ok(lock_arg)
+        } else {
+            Err("Mismatch keystore response".to_string())
+        }
+    }
+    pub fn import_account(
+        &self,
+        account_id: Bytes,
+        password: Option<String>,
+    ) -> Result<H160, String> {
+        let request = KeyStoreRequest::ImportAccount {
+            account_id: JsonBytes::from_bytes(account_id),
             password,
         };
         if let PluginResponse::H160(lock_arg) = self.call(request)? {

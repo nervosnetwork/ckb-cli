@@ -1,4 +1,4 @@
-use ckb_jsonrpc_types::Transaction;
+use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use faster_hex::{hex_decode, hex_string};
 use serde::de::DeserializeOwned;
 use std::convert::TryFrom;
@@ -157,6 +157,17 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
                 ];
                 (method::KEYSTORE_IMPORT, params)
             }
+            KeyStoreRequest::ImportAccount {
+                account_id,
+                password,
+            } => {
+                let account_id = format!(
+                    "0x{}",
+                    hex_string(account_id.as_bytes()).expect("Hex failed")
+                );
+                let params = vec![serde_json::json!(account_id), serde_json::json!(password)];
+                (method::KEYSTORE_IMPORT_ACCOUNT, params)
+            }
             KeyStoreRequest::Export { hash160, password } => {
                 let params = vec![serde_json::json!(hash160), serde_json::json!(password)];
                 (method::KEYSTORE_EXPORT, params)
@@ -245,28 +256,15 @@ impl TryFrom<&JsonrpcRequest> for KeyStoreRequest {
                 password: parse_param(data, 1, "hash160")?,
                 new_password: parse_param(data, 2, "hash160")?,
             },
-            method::KEYSTORE_IMPORT => {
-                let parse_h256 = |index, field| {
-                    let hex: String = parse_param(data, index, field)?;
-                    if hex.len() != 66 {
-                        return Err(format!("Invalid data length for field {}, method={}, expected 32bytes data hex string", field, data.method));
-                    }
-                    if !hex.starts_with("0x") || hex.len() % 2 == 1 {
-                        return Err(format!(
-                            "Field {} is not valid hex string, method={} (0x prefix is required)",
-                            field, data.method
-                        ));
-                    }
-                    let mut dst = [0u8; 32];
-                    hex_decode(&hex.as_bytes()[2..], &mut dst).map_err(|err| err.to_string())?;
-                    Ok(dst)
-                };
-                KeyStoreRequest::Import {
-                    privkey: parse_h256(0, "privkey")?,
-                    chain_code: parse_h256(1, "chain_code")?,
-                    password: parse_param(data, 2, "password")?,
-                }
-            }
+            method::KEYSTORE_IMPORT => KeyStoreRequest::Import {
+                privkey: parse_h256(data, 0, "privkey")?,
+                chain_code: parse_h256(data, 1, "chain_code")?,
+                password: parse_param(data, 2, "password")?,
+            },
+            method::KEYSTORE_IMPORT_ACCOUNT => KeyStoreRequest::ImportAccount {
+                account_id: JsonBytes::from_vec(parse_bytes(data, 0, "account_id")?),
+                password: parse_param(data, 1, "password")?,
+            },
             method::KEYSTORE_EXPORT => KeyStoreRequest::Export {
                 hash160: parse_param(data, 0, "hash160")?,
                 password: parse_param(data, 1, "password")?,
@@ -440,6 +438,32 @@ fn parse_param<T: DeserializeOwned>(
                 index + 1
             ))
         })
+}
+
+fn parse_bytes(data: &JsonrpcRequest, index: usize, field: &str) -> Result<Vec<u8>, String> {
+    let hex: String = parse_param(data, index, field)?;
+    if !hex.starts_with("0x") || hex.len() % 2 == 1 {
+        return Err(format!(
+            "Field {} is not valid hex string, method={} (0x prefix is required)",
+            field, data.method
+        ));
+    }
+    let mut dst = vec![0u8; hex.len() / 2 - 1];
+    hex_decode(&hex.as_bytes()[2..], &mut dst).map_err(|err| err.to_string())?;
+    Ok(dst)
+}
+
+fn parse_h256(data: &JsonrpcRequest, index: usize, field: &str) -> Result<[u8; 32], String> {
+    let vec = parse_bytes(data, index, field)?;
+    if vec.len() != 32 {
+        return Err(format!(
+            "Invalid data length for field {}, method={}, expected 32bytes data hex string",
+            field, data.method
+        ));
+    }
+    let mut dst = [0u8; 32];
+    dst.copy_from_slice(&vec);
+    Ok(dst)
 }
 
 impl From<(u64, PluginResponse)> for JsonrpcResponse {

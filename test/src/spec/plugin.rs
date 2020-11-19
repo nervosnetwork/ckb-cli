@@ -41,6 +41,14 @@ impl Spec for Plugin {
             "0x59fbdd52b9967b47270b207d352e6f59616a2f03b24a9710c087b379ac0f8d09"
         );
 
+        let output = setup
+            .cli("account import-from-plugin --account-id 0x1111111f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8");
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        assert_eq!(
+            value["lock_arg"],
+            "0x1111111111111111111222222222222222222222"
+        );
+
         let tempdir = tempdir().expect("create tempdir failed");
         let extended_privkey_path = format!(
             "{}/exported-privkey",

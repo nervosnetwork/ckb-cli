@@ -8,6 +8,7 @@ use ckb_sdk::{
 };
 use ckb_types::{packed::Script, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
+use faster_hex::hex_string;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
@@ -15,7 +16,7 @@ use crate::utils::{
     arg::lock_arg,
     arg_parser::{
         ArgParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::read_password,
 };
@@ -73,6 +74,23 @@ impl<'a> AccountSubCommand<'a> {
                          .clone()
                          .required_unless("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
+                    ),
+                App::new("import-from-plugin")
+                    .about("Import an account from keystore plugin")
+                    .arg(
+                        Arg::with_name("account-id")
+                            .long("account-id")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| {
+                                let hex = HexParser.parse(input)?;
+                                if hex.is_empty() {
+                                    Err("empty account id is not allowed".to_string())
+                                } else {
+                                    Ok(())
+                                }
+                            })
+                            .about("The account id (hex format, can be found in account list)")
                     ),
                 App::new("import-keystore")
                     .about("Import key from encrypted keystore json file and create a new account.")
@@ -160,13 +178,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("list", Some(m)) => {
-                let mut accounts = self
-                    .plugin_mgr
-                    .keystore_handler()
-                    .list_account()?
-                    .iter()
-                    .map(|(lock_arg, source)| (lock_arg.clone(), source.clone()))
-                    .collect::<Vec<(H160, String)>>();
+                let mut accounts = self.plugin_mgr.keystore_handler().list_account()?;
                 // Sort by file path name
                 accounts.sort_by(|a, b| a.1.cmp(&b.1));
                 let only_mainnet_address = m.is_present("only-mainnet-address");
@@ -175,36 +187,45 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = accounts
                     .into_iter()
                     .enumerate()
-                    .map(|(idx, (lock_arg, source))| {
-                        let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
-                        let lock_hash: H256 = Script::from(&address_payload)
-                            .calc_script_hash()
-                            .unpack();
-                        if partial_fields {
-                            let key = format!("{:#x}", lock_arg);
-                            if only_mainnet_address {
-                                serde_json::json!({
-                                    key: Address::new(NetworkType::Mainnet, address_payload).to_string()
-                                })
-                            } else if only_testnet_address {
-                                serde_json::json!({
-                                    key: Address::new(NetworkType::Testnet, address_payload).to_string()
-                                })
+                    .map(|(idx, (data, source))| {
+                        if data.len() == 20 {
+                            let lock_arg = H160::from_slice(data.as_ref()).expect("H160");
+                            let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                            let lock_hash: H256 = Script::from(&address_payload)
+                                .calc_script_hash()
+                                .unpack();
+                            if partial_fields {
+                                let key = format!("{:#x}", lock_arg);
+                                if only_mainnet_address {
+                                    serde_json::json!({
+                                        key: Address::new(NetworkType::Mainnet, address_payload).to_string()
+                                    })
+                                } else if only_testnet_address {
+                                    serde_json::json!({
+                                        key: Address::new(NetworkType::Testnet, address_payload).to_string()
+                                    })
+                                } else {
+                                    unreachable!();
+                                }
                             } else {
-                                unreachable!();
+                                let has_ckb_root = self.key_store.get_ckb_root(&lock_arg, false).is_some();
+                                serde_json::json!({
+                                    "#": idx,
+                                    "source": source,
+                                    "lock_arg": format!("{:#x}", lock_arg),
+                                    "lock_hash": format!("{:#x}", lock_hash),
+                                    "has_ckb_root": has_ckb_root,
+                                    "address": {
+                                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                                    },
+                                })
                             }
                         } else {
-                            let has_ckb_root = self.key_store.get_ckb_root(&lock_arg, false).is_some();
                             serde_json::json!({
                                 "#": idx,
                                 "source": source,
-                                "lock_arg": format!("{:#x}", lock_arg),
-                                "lock_hash": format!("{:#x}", lock_hash),
-                                "has_ckb_root": has_ckb_root,
-                                "address": {
-                                    "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                    "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
-                                },
+                                "account-id": format!("0x{}", hex_string(data.as_ref()).expect("hex")),
                             })
                         }
                     })
@@ -251,7 +272,28 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .import_key(master_privkey, password)?;
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
-                    "lock_arg": format!("{:x}", lock_arg),
+                    "lock_arg": format!("{:#x}", lock_arg),
+                    "address": {
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                    },
+                });
+                Ok(Output::new_output(resp))
+            }
+            ("import-from-plugin", Some(m)) => {
+                let account_id: Vec<u8> = HexParser.from_matches(m, "account-id")?;
+                let password = if self.plugin_mgr.keystore_require_password() {
+                    Some(read_password(false, None)?)
+                } else {
+                    None
+                };
+                let lock_arg = self
+                    .plugin_mgr
+                    .keystore_handler()
+                    .import_account(account_id.into(), password)?;
+                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                let resp = serde_json::json!({
+                    "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
