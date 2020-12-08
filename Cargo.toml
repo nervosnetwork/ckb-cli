@@ -1,20 +1,20 @@
 [package]
 name = "ckb-cli"
-version = "0.38.0"
+version = "0.39.0"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 
 [dependencies]
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1", features = ["secp"] }
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
-ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1", features = ["secp"] }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
+ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
 ckb-sdk = { path = "ckb-sdk" }
 ckb-index = { path = "ckb-index" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol" }
@@ -23,7 +23,7 @@ jsonrpc-core = "10.1"
 jsonrpc-derive = "10.1"
 jsonrpc-http-server = "10.1"
 jsonrpc-server-utils = "10.1"
-secp256k1 = {version = "0.17.0" }
+secp256k1 = { version = "0.19", features = ["recovery"] }
 faster-hex = "0.4"
 env_logger = "0.6"
 crossbeam-channel = "0.3"
@@ -57,7 +57,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.38.0-rc1" }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc1" }
 
 [workspace]
 members = ["ckb-sdk", "ckb-index", "ckb-sdk-types", "plugin-protocol"]
