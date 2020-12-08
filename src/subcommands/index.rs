@@ -47,10 +47,9 @@ impl<'a> IndexSubCommand<'a> {
             .about("Index database management")
             .subcommands(vec![
                 App::new("db-metrics").about("Show index database metrics"),
-                App::new("current-database-info")
+                App::new("current-db-info")
                     .about("Show current index database's basic information"),
-                App::new("rebuild-current-database")
-                    .about("Remove and rebuild current index database"),
+                App::new("rebuild-current-db").about("Remove and rebuild current index database"),
             ])
     }
 
@@ -91,11 +90,11 @@ impl<'a> IndexSubCommand<'a> {
 impl<'a> CliSubCommand for IndexSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("current-database-info", _) => Ok(Output::new_output(serde_json::json!({
+            ("current-db-info", _) => Ok(Output::new_output(serde_json::json!({
                 "directory": self.db_dir()?.to_string_lossy(),
                 "state": self.index_state.read().to_string(),
             }))),
-            ("rebuild-current-database", _) => {
+            ("rebuild-current-db", _) => {
                 Request::call(
                     self.index_controller.sender(),
                     IndexRequest::RebuildCurrentDB,
