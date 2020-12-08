@@ -2,8 +2,8 @@ use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
     CellTransaction, CellWithStatus, ChainInfo, Consensus, EpochNumber, EpochView,
     ExtraLoggerConfig, HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState,
-    MainLoggerConfig, OutPoint, PeerState, RemoteNode, Script, Timestamp, Transaction,
-    TransactionProof, TransactionWithStatus, TxPoolInfo, TxPoolVerbosity, Uint64, Version,
+    MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
+    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::types;
@@ -133,7 +133,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     // Pool
     pub fn send_transaction(&mut self, tx: Transaction) -> H256;
     pub fn tx_pool_info(&mut self) -> TxPoolInfo;
-    pub fn get_raw_tx_pool(&mut self) -> TxPoolVerbosity;
+    pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> RawTxPool;
 
     // Stats
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
@@ -432,9 +432,9 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
-    pub fn get_raw_tx_pool(&mut self) -> Result<types::RawTxPool, String> {
+    pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> Result<types::RawTxPool, String> {
         self.client
-            .get_raw_tx_pool()
+            .get_raw_tx_pool(verbose)
             .map(Into::into)
             .map_err(|err| err.to_string())
     }

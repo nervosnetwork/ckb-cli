@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 
 pub use ckb_jsonrpc_types::{
-    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxStatus,
-    Uint128,
+    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxPoolIds,
+    TxStatus, Uint128,
 };
 use ckb_types::{core, packed, prelude::*, H256, U256};
 
@@ -1180,15 +1180,15 @@ impl From<rpc_types::TxVerbosity> for TxVerbosity {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct RawTxPool {
+pub struct TxPoolVerbosity {
     /// Pending tx verbose info
     pub pending: HashMap<H256, TxVerbosity>,
     /// Proposed tx verbose info
     pub proposed: HashMap<H256, TxVerbosity>,
 }
-impl From<rpc_types::TxPoolVerbosity> for RawTxPool {
-    fn from(json: rpc_types::TxPoolVerbosity) -> RawTxPool {
-        RawTxPool {
+impl From<rpc_types::TxPoolVerbosity> for TxPoolVerbosity {
+    fn from(json: rpc_types::TxPoolVerbosity) -> TxPoolVerbosity {
+        TxPoolVerbosity {
             pending: json
                 .pending
                 .into_iter()
@@ -1199,6 +1199,30 @@ impl From<rpc_types::TxPoolVerbosity> for RawTxPool {
                 .into_iter()
                 .map(|(key, value)| (key, value.into()))
                 .collect(),
+        }
+    }
+}
+
+/// All transactions in tx-pool.
+///
+/// `RawTxPool` is equivalent to [`TxPoolIds`][] `|` [`TxPoolVerbosity`][].
+///
+/// [`TxPoolIds`]: struct.TxPoolIds.html
+/// [`TxPoolVerbosity`]: struct.TxPoolVerbosity.html
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(untagged)]
+pub enum RawTxPool {
+    /// verbose = false
+    Ids(TxPoolIds),
+    /// verbose = true
+    Verbose(TxPoolVerbosity),
+}
+
+impl From<rpc_types::RawTxPool> for RawTxPool {
+    fn from(json: rpc_types::RawTxPool) -> RawTxPool {
+        match json {
+            rpc_types::RawTxPool::Ids(ids) => RawTxPool::Ids(ids),
+            rpc_types::RawTxPool::Verbose(verbose) => RawTxPool::Verbose(verbose.into()),
         }
     }
 }

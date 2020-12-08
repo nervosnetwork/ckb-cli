@@ -277,7 +277,9 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
                 // [Pool]
                 App::new("tx_pool_info").about("Get transaction pool information"),
-                App::new("get_raw_tx_pool").about("Returns all transaction ids in tx pool as a json array of string transaction ids"),
+                App::new("get_raw_tx_pool")
+                    .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
+                    .arg(Arg::with_name("verbose").long("verbose").about("True for a json object, false for array of transaction ids")),
                 // [`Stats`]
                 App::new("get_blockchain_info").about("Get chain information"),
                 // [`IntegrationTest`]
@@ -821,14 +823,15 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_raw_tx_pool", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let verbose = m.is_present("verbose");
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
-                        .get_raw_tx_pool()
+                        .get_raw_tx_pool(Some(verbose))
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_raw_tx_pool()?;
+                    let resp = self.rpc_client.get_raw_tx_pool(Some(verbose))?;
                     Ok(Output::new_output(resp))
                 }
             }
