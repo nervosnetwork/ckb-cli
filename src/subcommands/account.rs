@@ -184,6 +184,9 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let only_mainnet_address = m.is_present("only-mainnet-address");
                 let only_testnet_address = m.is_present("only-testnet-address");
                 let partial_fields = only_mainnet_address || only_testnet_address;
+                self.key_store
+                    .refresh_dir()
+                    .map_err(|err| err.to_string())?;
                 let resp = accounts
                     .into_iter()
                     .enumerate()
