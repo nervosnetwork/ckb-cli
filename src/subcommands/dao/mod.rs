@@ -1,14 +1,11 @@
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
-use crate::utils::index::IndexController;
-use crate::utils::other::{
-    get_max_mature_number, get_network_type, get_privkey_signer, is_mature, read_password,
-    sync_to_tip,
-};
+use crate::utils::index::{with_db, IndexController};
+use crate::utils::other::{get_max_mature_number, get_privkey_signer, is_mature, read_password};
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
-use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
+use ckb_index::{IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
@@ -122,7 +119,7 @@ impl<'a> DAOSubCommand<'a> {
 
     fn collect_dao_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
         let dao_type_hash = self.dao_type_hash().clone();
-        self.with_db(|db, _| {
+        self.with_db(|db| {
             let cells_by_lock = db
                 .get_live_cells_by_lock(lock_hash, Some(0), |_, _| (false, true))
                 .into_iter()
@@ -161,7 +158,7 @@ impl<'a> DAOSubCommand<'a> {
         };
 
         let cells: Vec<LiveCellInfo> = {
-            self.with_db(|db, _| {
+            self.with_db(|db| {
                 db.get_live_cells_by_lock(
                     Script::from(from_address.payload()).calc_script_hash(),
                     None,
@@ -302,29 +299,22 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     fn check_db_ready(&mut self) -> Result<(), String> {
-        self.with_db(|_, _| ())
+        self.with_db(|_| ())
     }
 
     fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
     where
-        F: FnOnce(IndexDatabase, &mut HttpRpcClient) -> T,
+        F: FnOnce(IndexDatabase) -> T,
     {
-        if self.wait_for_sync {
-            sync_to_tip(&self.index_controller)?;
-        }
-        let network_type = get_network_type(self.rpc_client)?;
         let genesis_info = self.genesis_info.clone();
-        let genesis_hash: H256 = genesis_info.header().hash().unpack();
-        with_index_db(&self.index_dir.clone(), genesis_hash, |backend, cf| {
-            let db = IndexDatabase::from_db(backend, cf, network_type, genesis_info, false)?;
-            Ok(func(db, self.rpc_client()))
-        })
-        .map_err(|_err| {
-            format!(
-                "Index database may not ready, sync process: {}",
-                self.index_controller.state().read().to_string()
-            )
-        })
+        with_db(
+            func,
+            self.rpc_client,
+            genesis_info,
+            &self.index_dir,
+            self.index_controller.clone(),
+            self.wait_for_sync,
+        )
     }
 
     fn transact_args(&self) -> &TransactArgs {

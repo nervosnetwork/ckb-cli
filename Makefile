@@ -6,7 +6,7 @@ fmt:
 
 clippy:
 	RUSTFLAGS='-F warnings' cargo clippy --all --tests -- ${CLIPPY_OPTS}
-	cd test && RUSTFLAGS='-F warnings' cargo clippy --all -- ${CLIPPY_OPTS}
+	cp -f Cargo.lock test/Cargo.lock && cd test && RUSTFLAGS='-F warnings' cargo clippy --all -- ${CLIPPY_OPTS}
 
 test:
 	RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all

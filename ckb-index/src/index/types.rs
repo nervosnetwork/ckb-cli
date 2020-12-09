@@ -12,8 +12,8 @@ use serde_derive::{Deserialize, Serialize};
 use super::key::{Key, KeyType};
 use crate::{KVReader, KVTxn};
 
-const KEEP_RECENT_HEADERS: u64 = 10_000;
-const KEEP_RECENT_BLOCKS: u64 = 200;
+pub const KEEP_RECENT_HEADERS: u64 = 10_000;
+pub const KEEP_RECENT_BLOCKS: u64 = 200;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]

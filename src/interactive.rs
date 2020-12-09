@@ -1,10 +1,12 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
 use ckb_types::{core::service::Request, core::BlockView};
+use ckb_util::RwLock;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -13,13 +15,14 @@ use serde_json::json;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
-    PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, IndexSubCommand, MockTxSubCommand,
+    MoleculeSubCommand, PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
+    WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
-    index::{IndexController, IndexRequest},
+    index::{IndexController, IndexRequest, IndexThreadState},
     other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
@@ -39,6 +42,7 @@ pub struct InteractiveEnv {
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
     index_controller: IndexController,
+    index_state: Arc<RwLock<IndexThreadState>>,
     genesis_info: Option<GenesisInfo>,
 }
 
@@ -49,6 +53,7 @@ impl InteractiveEnv {
         plugin_mgr: PluginManager,
         key_store: KeyStore,
         index_controller: IndexController,
+        index_state: Arc<RwLock<IndexThreadState>>,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
             fs::create_dir(&ckb_cli_dir).map_err(|err| err.to_string())?;
@@ -85,6 +90,7 @@ impl InteractiveEnv {
             rpc_client,
             raw_rpc_client,
             index_controller,
+            index_state,
             genesis_info: None,
         })
     }
@@ -384,6 +390,20 @@ impl InteractiveEnv {
                 }
                 ("molecule", Some(sub_matches)) => {
                     let output = MoleculeSubCommand::new().process(&sub_matches, debug)?;
+                    output.print(format, color);
+                    Ok(())
+                }
+                ("index", Some(sub_matches)) => {
+                    let genesis_info = self.genesis_info()?;
+                    let output = IndexSubCommand::new(
+                        &mut self.rpc_client,
+                        Some(genesis_info),
+                        self.index_dir.clone(),
+                        self.index_controller.clone(),
+                        Arc::clone(&self.index_state),
+                        wait_for_sync,
+                    )
+                    .process(&sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
