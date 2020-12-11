@@ -72,6 +72,7 @@ impl KeyStore {
         let abs_path = self.storage.store_key(key.filename(), &key, password)?;
         let hash160 = key.hash160().clone();
         self.files.insert(hash160.clone(), abs_path);
+        self.ckb_roots.insert(hash160.clone(), key.ckb_root());
         Ok(hash160)
     }
     pub fn get_accounts(&mut self) -> &HashMap<H160, PathBuf> {
@@ -294,7 +295,7 @@ impl KeyStore {
     }
 
     // NOTE: assume refresh keystore directory is not a hot action
-    fn refresh_dir(&mut self) -> Result<(), Error> {
+    pub fn refresh_dir(&mut self) -> Result<(), Error> {
         let mut files = HashMap::default();
         let mut ckb_roots = HashMap::default();
         for entry in fs::read_dir(&self.keys_dir)? {
