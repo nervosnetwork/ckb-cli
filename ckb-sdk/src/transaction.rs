@@ -1,3 +1,4 @@
+use ckb_error::OtherError;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_script::TransactionScriptsVerifier;
@@ -8,7 +9,6 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use failure::Error as FailureError;
 use fnv::FnvHashSet;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -180,7 +180,7 @@ impl<'a> MockTransactionHelper<'a> {
             let hash_type = lock
                 .hash_type()
                 .try_into()
-                .map_err(|err: FailureError| err.to_string())?;
+                .map_err(|err: OtherError| err.to_string())?;
             insert_dep(hash_type, &lock.code_hash())?;
         }
         for output in tx.outputs().into_iter() {
@@ -188,7 +188,7 @@ impl<'a> MockTransactionHelper<'a> {
                 let hash_type = script
                     .hash_type()
                     .try_into()
-                    .map_err(|err: FailureError| err.to_string())?;
+                    .map_err(|err: OtherError| err.to_string())?;
                 insert_dep(hash_type, &script.code_hash())?;
             }
         }

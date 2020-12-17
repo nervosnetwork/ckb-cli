@@ -221,17 +221,23 @@ impl CellProvider for Resource {
 }
 
 impl CellDataProvider for Resource {
-    fn load_cell_data(&self, cell: &CellMeta) -> Option<(Bytes, Byte32)> {
+    fn load_cell_data(&self, cell: &CellMeta) -> Option<Bytes> {
         cell.mem_cell_data
             .as_ref()
             .map(ToOwned::to_owned)
             .or_else(|| self.get_cell_data(&cell.out_point))
     }
 
-    fn get_cell_data(&self, out_point: &OutPoint) -> Option<(Bytes, Byte32)> {
+    fn get_cell_data(&self, out_point: &OutPoint) -> Option<Bytes> {
         self.required_cells
             .get(out_point)
             .and_then(|cell_meta| cell_meta.mem_cell_data.clone())
+    }
+
+    fn get_cell_data_hash(&self, out_point: &OutPoint) -> Option<Byte32> {
+        self.required_cells
+            .get(out_point)
+            .and_then(|cell_meta| cell_meta.mem_cell_data_hash.clone())
     }
 }
 
