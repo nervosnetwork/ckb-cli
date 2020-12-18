@@ -1,9 +1,10 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 
 pub use ckb_jsonrpc_types::{
-    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxStatus,
-    Uint128,
+    self as rpc_types, Byte32, DepType, JsonBytes, ProposalShortId, ScriptHashType, TxPoolIds,
+    TxStatus, Uint128,
 };
 use ckb_types::{core, packed, prelude::*, H256, U256};
 
@@ -13,6 +14,7 @@ use crate::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
 type Version = u32;
 type BlockNumber = u64;
 type EpochNumber = u64;
+type Cycle = u64;
 type AlertId = u32;
 type AlertPriority = u32;
 type Uint32 = u32;
@@ -655,6 +657,102 @@ impl From<MerkleProof> for rpc_types::MerkleProof {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct ProposalWindow {
+    /// The closest distance between the proposal and the commitment.
+    pub closest: BlockNumber,
+    /// The farthest distance between the proposal and the commitment.
+    pub farthest: BlockNumber,
+}
+impl From<rpc_types::ProposalWindow> for ProposalWindow {
+    fn from(json: rpc_types::ProposalWindow) -> ProposalWindow {
+        ProposalWindow {
+            closest: json.closest.into(),
+            farthest: json.farthest.into(),
+        }
+    }
+}
+
+/// Consensus defines various parameters that influence chain consensus
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct Consensus {
+    /// Names the network.
+    pub id: String,
+    /// The genesis block hash
+    pub genesis_hash: H256,
+    /// The dao type hash
+    pub dao_type_hash: Option<H256>,
+    /// The secp256k1_blake160_sighash_all_type_hash
+    pub secp256k1_blake160_sighash_all_type_hash: Option<H256>,
+    /// The secp256k1_blake160_multisig_all_type_hash
+    pub secp256k1_blake160_multisig_all_type_hash: Option<H256>,
+    /// The initial primary_epoch_reward
+    pub initial_primary_epoch_reward: Capacity,
+    /// The secondary primary_epoch_reward
+    pub secondary_epoch_reward: Capacity,
+    /// The maximum amount of uncles allowed for a block
+    pub max_uncles_num: Uint64,
+    /// The expected orphan_rate
+    pub orphan_rate_target: core::RationalU256,
+    /// The expected epoch_duration
+    pub epoch_duration_target: Uint64,
+    /// The two-step-transaction-confirmation proposal window
+    pub tx_proposal_window: ProposalWindow,
+    /// The two-step-transaction-confirmation proposer reward ratio
+    pub proposer_reward_ratio: core::RationalU256,
+    /// The Cellbase maturity
+    pub cellbase_maturity: EpochNumberWithFraction,
+    /// This parameter indicates the count of past blocks used in the median time calculation
+    pub median_time_block_count: Uint64,
+    /// Maximum cycles that all the scripts in all the commit transactions can take
+    pub max_block_cycles: Cycle,
+    /// Maximum number of bytes to use for the entire block
+    pub max_block_bytes: Uint64,
+    /// The block version number supported
+    pub block_version: Version,
+    /// The tx version number supported
+    pub tx_version: Version,
+    /// The "TYPE_ID" in hex
+    pub type_id_code_hash: H256,
+    /// The Limit to the number of proposals per block
+    pub max_block_proposals_limit: Uint64,
+    /// Primary reward is cut in half every halving_interval epoch
+    pub primary_epoch_reward_halving_interval: Uint64,
+    /// Keep difficulty be permanent if the pow is dummy
+    pub permanent_difficulty_in_dummy: bool,
+}
+impl From<rpc_types::Consensus> for Consensus {
+    fn from(json: rpc_types::Consensus) -> Consensus {
+        Consensus {
+            id: json.id,
+            genesis_hash: json.genesis_hash,
+            dao_type_hash: json.dao_type_hash,
+            secp256k1_blake160_sighash_all_type_hash: json.secp256k1_blake160_sighash_all_type_hash,
+            secp256k1_blake160_multisig_all_type_hash: json
+                .secp256k1_blake160_multisig_all_type_hash,
+            initial_primary_epoch_reward: json.initial_primary_epoch_reward.into(),
+            secondary_epoch_reward: json.secondary_epoch_reward.into(),
+            max_uncles_num: json.max_uncles_num.into(),
+            orphan_rate_target: json.orphan_rate_target,
+            epoch_duration_target: json.epoch_duration_target.into(),
+            tx_proposal_window: json.tx_proposal_window.into(),
+            proposer_reward_ratio: json.proposer_reward_ratio,
+            cellbase_maturity: json.cellbase_maturity.into(),
+            median_time_block_count: json.median_time_block_count.into(),
+            max_block_cycles: json.max_block_cycles.into(),
+            max_block_bytes: json.max_block_bytes.into(),
+            block_version: json.block_version.into(),
+            tx_version: json.tx_version.into(),
+            type_id_code_hash: json.type_id_code_hash,
+            max_block_proposals_limit: json.max_block_proposals_limit.into(),
+            primary_epoch_reward_halving_interval: json
+                .primary_epoch_reward_halving_interval
+                .into(),
+            permanent_difficulty_in_dummy: json.permanent_difficulty_in_dummy,
+        }
+    }
+}
+
 // =========
 //  cell.rs
 // =========
@@ -1048,6 +1146,83 @@ impl From<rpc_types::TxPoolInfo> for TxPoolInfo {
             total_tx_cycles: json.total_tx_cycles.into(),
             min_fee_rate: json.min_fee_rate.value(),
             last_txs_updated_at: json.last_txs_updated_at.into(),
+        }
+    }
+}
+
+/// Transaction verbose info
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct TxVerbosity {
+    /// Consumed cycles.
+    pub cycles: Uint64,
+    /// The transaction serialized size in block.
+    pub size: Uint64,
+    /// The transaction fee.
+    pub fee: Capacity,
+    /// Size of in-tx-pool ancestor transactions
+    pub ancestors_size: Uint64,
+    /// Cycles of in-tx-pool ancestor transactions
+    pub ancestors_cycles: Uint64,
+    /// Number of in-tx-pool ancestor transactions
+    pub ancestors_count: Uint64,
+}
+impl From<rpc_types::TxVerbosity> for TxVerbosity {
+    fn from(json: rpc_types::TxVerbosity) -> TxVerbosity {
+        TxVerbosity {
+            cycles: json.cycles.into(),
+            size: json.size.into(),
+            fee: json.fee.into(),
+            ancestors_size: json.ancestors_size.into(),
+            ancestors_cycles: json.ancestors_cycles.into(),
+            ancestors_count: json.ancestors_count.into(),
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct TxPoolVerbosity {
+    /// Pending tx verbose info
+    pub pending: HashMap<H256, TxVerbosity>,
+    /// Proposed tx verbose info
+    pub proposed: HashMap<H256, TxVerbosity>,
+}
+impl From<rpc_types::TxPoolVerbosity> for TxPoolVerbosity {
+    fn from(json: rpc_types::TxPoolVerbosity) -> TxPoolVerbosity {
+        TxPoolVerbosity {
+            pending: json
+                .pending
+                .into_iter()
+                .map(|(key, value)| (key, value.into()))
+                .collect(),
+            proposed: json
+                .proposed
+                .into_iter()
+                .map(|(key, value)| (key, value.into()))
+                .collect(),
+        }
+    }
+}
+
+/// All transactions in tx-pool.
+///
+/// `RawTxPool` is equivalent to [`TxPoolIds`][] `|` [`TxPoolVerbosity`][].
+///
+/// [`TxPoolIds`]: struct.TxPoolIds.html
+/// [`TxPoolVerbosity`]: struct.TxPoolVerbosity.html
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(untagged)]
+pub enum RawTxPool {
+    /// verbose = false
+    Ids(TxPoolIds),
+    /// verbose = true
+    Verbose(TxPoolVerbosity),
+}
+
+impl From<rpc_types::RawTxPool> for RawTxPool {
+    fn from(json: rpc_types::RawTxPool) -> RawTxPool {
+        match json {
+            rpc_types::RawTxPool::Ids(ids) => RawTxPool::Ids(ids),
+            rpc_types::RawTxPool::Verbose(verbose) => RawTxPool::Verbose(verbose.into()),
         }
     }
 }

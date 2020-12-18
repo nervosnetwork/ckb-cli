@@ -183,6 +183,8 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_fork_block")
                     .about("Returns the information about a fork block by hash")
                     .arg(arg_hash.clone().about("The fork block hash")),
+                App::new("get_consensus")
+                    .about("Return various consensus parameters"),
                 // [Indexer]
                 App::new("deindex_lock_hash")
                     .arg(arg_hash.clone().about("Lock script hash"))
@@ -275,6 +277,9 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
                 // [Pool]
                 App::new("tx_pool_info").about("Get transaction pool information"),
+                App::new("get_raw_tx_pool")
+                    .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
+                    .arg(Arg::with_name("verbose").long("verbose").about("True for a json object, false for array of transaction ids")),
                 // [`Stats`]
                 App::new("get_blockchain_info").about("Get chain information"),
                 // [`IntegrationTest`]
@@ -600,6 +605,19 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
+            ("get_consensus", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_consensus()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_consensus()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
             // [Indexer]
             ("deindex_lock_hash", Some(m)) => {
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -800,6 +818,20 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.tx_pool_info()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_raw_tx_pool", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let verbose = m.is_present("verbose");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_raw_tx_pool(Some(verbose))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_raw_tx_pool(Some(verbose))?;
                     Ok(Output::new_output(resp))
                 }
             }

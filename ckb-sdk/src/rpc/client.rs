@@ -1,9 +1,9 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
-    CellTransaction, CellWithStatus, ChainInfo, EpochNumber, EpochView, ExtraLoggerConfig,
-    HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState, MainLoggerConfig, OutPoint,
-    PeerState, RemoteNode, Script, Timestamp, Transaction, TransactionProof, TransactionWithStatus,
-    TxPoolInfo, Uint64, Version,
+    CellTransaction, CellWithStatus, ChainInfo, Consensus, EpochNumber, EpochView,
+    ExtraLoggerConfig, HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState,
+    MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
+    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::types;
@@ -87,6 +87,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     ) -> TransactionProof;
     pub fn verify_transaction_proof(&mut self, tx_proof: TransactionProof) -> Vec<H256>;
     pub fn get_fork_block(&mut self, block_hash: H256) -> Option<BlockView>;
+    pub fn get_consensus(&mut self) -> Consensus;
 
     // Indexer
     pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> ();
@@ -132,6 +133,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     // Pool
     pub fn send_transaction(&mut self, tx: Transaction) -> H256;
     pub fn tx_pool_info(&mut self) -> TxPoolInfo;
+    pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> RawTxPool;
 
     // Stats
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
@@ -294,6 +296,12 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_consensus(&mut self) -> Result<types::Consensus, String> {
+        self.client
+            .get_consensus()
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
 
     // Indexer
     #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
@@ -420,6 +428,13 @@ impl HttpRpcClient {
     pub fn tx_pool_info(&mut self) -> Result<types::TxPoolInfo, String> {
         self.client
             .tx_pool_info()
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> Result<types::RawTxPool, String> {
+        self.client
+            .get_raw_tx_pool(verbose)
             .map(Into::into)
             .map_err(|err| err.to_string())
     }

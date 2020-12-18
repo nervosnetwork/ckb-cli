@@ -46,8 +46,8 @@ impl Spec for DaoPrepareOne {
     }
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
-        spec_toml.params.genesis_epoch_length = EPOCH_LENGTH;
-        spec_toml.params.permanent_difficulty_in_dummy = true;
+        spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
 }
 
@@ -93,8 +93,8 @@ impl Spec for DaoPrepareMultiple {
     }
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
-        spec_toml.params.genesis_epoch_length = EPOCH_LENGTH;
-        spec_toml.params.permanent_difficulty_in_dummy = true;
+        spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
 }
 
@@ -135,8 +135,8 @@ impl Spec for DaoWithdrawMultiple {
     }
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
-        spec_toml.params.genesis_epoch_length = EPOCH_LENGTH;
-        spec_toml.params.permanent_difficulty_in_dummy = true;
+        spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
 }
 
