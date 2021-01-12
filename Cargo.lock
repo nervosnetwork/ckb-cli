@@ -397,7 +397,7 @@ dependencies = [
  "jsonrpc-derive",
  "jsonrpc-http-server",
  "jsonrpc-server-utils",
- "log 0.4.11",
+ "log 0.4.13",
  "parity-multiaddr",
  "regex",
  "rpassword",
@@ -509,7 +509,7 @@ dependencies = [
  "ckb-sdk",
  "ckb-types",
  "failure",
- "log 0.4.11",
+ "log 0.4.13",
  "serde",
  "serde_derive",
 ]
@@ -542,7 +542,7 @@ name = "ckb-logger"
 version = "0.39.0-pre"
 source = "git+https://github.com/nervosnetwork/ckb?tag=v0.39.0-rc2#2d4f9a11f5efa5b50dabacf0a224f65af9bff66c"
 dependencies = [
- "log 0.4.11",
+ "log 0.4.13",
 ]
 
 [[package]]
@@ -581,7 +581,7 @@ dependencies = [
  "ckb-hash",
  "ckb-types",
  "eaglesong",
- "log 0.4.11",
+ "log 0.4.13",
  "serde",
 ]
 
@@ -658,7 +658,7 @@ dependencies = [
  "failure",
  "faster-hex 0.4.1",
  "fnv",
- "log 0.4.11",
+ "log 0.4.13",
  "rand 0.6.5",
  "reqwest",
  "scrypt",
@@ -843,7 +843,7 @@ dependencies = [
  "cookie",
  "failure",
  "idna 0.1.5",
- "log 0.4.11",
+ "log 0.4.13",
  "publicsuffix",
  "serde",
  "serde_json",
@@ -1041,7 +1041,7 @@ checksum = "aafcde04e90a5226a6443b7aabdb016ba2f8307c847d524724bd9b346dd1a2d3"
 dependencies = [
  "atty",
  "humantime",
- "log 0.4.11",
+ "log 0.4.13",
  "regex",
  "termcolor",
 ]
@@ -1202,7 +1202,7 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "fnv",
- "log 0.4.11",
+ "log 0.4.13",
  "regex",
 ]
 
@@ -1212,7 +1212,7 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd5e3132801a1ac34ac53b97acde50c4685414dd2f291b9ea52afa6f07468c8"
 dependencies = [
- "log 0.4.11",
+ "log 0.4.13",
  "plain",
  "scroll",
 ]
@@ -1229,7 +1229,7 @@ dependencies = [
  "futures",
  "http",
  "indexmap",
- "log 0.4.11",
+ "log 0.4.13",
  "slab",
  "string",
  "tokio-io",
@@ -1325,7 +1325,7 @@ dependencies = [
  "httparse",
  "iovec",
  "itoa",
- "log 0.4.11",
+ "log 0.4.13",
  "net2",
  "rustc_version",
  "time",
@@ -1447,7 +1447,7 @@ dependencies = [
  "error-chain",
  "futures",
  "jsonrpc-core 8.0.1",
- "log 0.4.11",
+ "log 0.4.13",
  "serde",
  "serde_json",
 ]
@@ -1472,7 +1472,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc15eef5f8b6bef5ac5f7440a957ff95d036e2f98706947741bfc93d1976db4c"
 dependencies = [
  "futures",
- "log 0.4.11",
+ "log 0.4.13",
  "serde",
  "serde_derive",
  "serde_json",
@@ -1485,7 +1485,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe3b688648f1ef5d5072229e2d672ecb92cbff7d1c79bcf3fd5898f3f3df0970"
 dependencies = [
  "futures",
- "log 0.4.11",
+ "log 0.4.13",
  "serde",
  "serde_derive",
  "serde_json",
@@ -1511,7 +1511,7 @@ dependencies = [
  "hyper",
  "jsonrpc-core 10.1.0",
  "jsonrpc-server-utils",
- "log 0.4.11",
+ "log 0.4.13",
  "net2",
  "unicase",
 ]
@@ -1526,7 +1526,7 @@ dependencies = [
  "globset",
  "jsonrpc-core 10.1.0",
  "lazy_static",
- "log 0.4.11",
+ "log 0.4.13",
  "num_cpus",
  "tokio",
  "tokio-codec",
@@ -1592,14 +1592,14 @@ version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e19e8d5c34a3e0e2223db8e060f9e8264aeeb5c5fc64a4ee9965c062211c024b"
 dependencies = [
- "log 0.4.11",
+ "log 0.4.13",
 ]
 
 [[package]]
 name = "log"
-version = "0.4.11"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fabed175da42fed1fa0746b0ea71f412aa9d35e76e95e59b192c64b9dc2bf8b"
+checksum = "fcf3805d4480bb5b86070dcfeb9e2cb2ebc148adb753c5cca5f884d1d65a42b2"
 dependencies = [
  "cfg-if",
 ]
@@ -1687,7 +1687,7 @@ dependencies = [
  "iovec",
  "kernel32-sys",
  "libc",
- "log 0.4.11",
+ "log 0.4.13",
  "miow",
  "net2",
  "slab",
@@ -1736,7 +1736,7 @@ checksum = "2b0d88c06fe90d5ee94048ba40409ef1d9315d86f6f38c2efdaad4fb50c58b2d"
 dependencies = [
  "lazy_static",
  "libc",
- "log 0.4.11",
+ "log 0.4.13",
  "openssl",
  "openssl-probe",
  "openssl-sys",
@@ -2413,7 +2413,7 @@ dependencies = [
  "http",
  "hyper",
  "hyper-tls",
- "log 0.4.11",
+ "log 0.4.13",
  "mime",
  "mime_guess",
  "native-tls",
@@ -2477,7 +2477,7 @@ checksum = "0f47ea1ceb347d2deae482d655dc8eef4bd82363d3329baffa3818bd76fea48b"
 dependencies = [
  "dirs",
  "libc",
- "log 0.4.11",
+ "log 0.4.13",
  "memchr",
  "nix",
  "unicode-segmentation",
@@ -3005,7 +3005,7 @@ checksum = "57fc868aae093479e3131e3d165c93b1c7474109d13c90ec0dda2a1bbfff0674"
 dependencies = [
  "bytes 0.4.12",
  "futures",
- "log 0.4.11",
+ "log 0.4.13",
 ]
 
 [[package]]
@@ -3017,7 +3017,7 @@ dependencies = [
  "crossbeam-utils 0.7.2",
  "futures",
  "lazy_static",
- "log 0.4.11",
+ "log 0.4.13",
  "mio",
  "num_cpus",
  "parking_lot 0.9.0",
@@ -3062,7 +3062,7 @@ dependencies = [
  "crossbeam-utils 0.7.2",
  "futures",
  "lazy_static",
- "log 0.4.11",
+ "log 0.4.13",
  "num_cpus",
  "slab",
  "tokio-executor",
@@ -3088,7 +3088,7 @@ checksum = "e2a0b10e610b39c38b031a2fcab08e4b82f16ece36504988dcbd81dbba650d82"
 dependencies = [
  "bytes 0.4.12",
  "futures",
- "log 0.4.11",
+ "log 0.4.13",
  "mio",
  "tokio-codec",
  "tokio-io",
@@ -3105,7 +3105,7 @@ dependencies = [
  "futures",
  "iovec",
  "libc",
- "log 0.4.11",
+ "log 0.4.13",
  "mio",
  "mio-uds",
  "tokio-codec",
@@ -3147,7 +3147,7 @@ dependencies = [
  "cassowary",
  "either",
  "itertools",
- "log 0.4.11",
+ "log 0.4.13",
  "termion",
  "unicode-segmentation",
  "unicode-width",
@@ -3295,7 +3295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6395efa4784b027708f7451087e647ec73cc74f5d9bc2e418404248d679a230"
 dependencies = [
  "futures",
- "log 0.4.11",
+ "log 0.4.13",
  "try-lock",
 ]
 
