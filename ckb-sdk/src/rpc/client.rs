@@ -5,6 +5,7 @@ use ckb_jsonrpc_types::{
     Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
+use super::primitive;
 use super::types;
 use ckb_types::{packed, H256};
 
@@ -86,6 +87,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn verify_transaction_proof(&mut self, tx_proof: TransactionProof) -> Vec<H256>;
     pub fn get_fork_block(&mut self, block_hash: H256) -> Option<BlockView>;
     pub fn get_consensus(&mut self) -> Consensus;
+    pub fn get_block_median_time(&mut self, block_hash: H256) -> Option<Timestamp>;
 
     // Net
     pub fn get_banned_addresses(&mut self) -> Vec<BannedAddr>;
@@ -265,6 +267,15 @@ impl HttpRpcClient {
         self.client
             .get_consensus()
             .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_block_median_time(
+        &mut self,
+        hash: H256,
+    ) -> Result<Option<primitive::Timestamp>, String> {
+        self.client
+            .get_block_median_time(hash)
+            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 

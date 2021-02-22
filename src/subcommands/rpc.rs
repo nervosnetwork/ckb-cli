@@ -4,7 +4,7 @@ use ckb_jsonrpc_types::{
 use ckb_sdk::{
     rpc::{
         BannedAddr, BlockReward, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode,
-        TransactionProof, TransactionWithStatus,
+        Timestamp, TransactionProof, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -148,6 +148,9 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_hash.clone().about("The fork block hash")),
                 App::new("get_consensus")
                     .about("Return various consensus parameters"),
+                App::new("get_block_median_time")
+                    .about("Returns the past median time by block hash")
+                    .arg(arg_hash.clone().about("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -530,6 +533,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
+            ("get_block_median_time", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_block_median_time(hash)
+                        .map(RawOptionTimestamp)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_block_median_time(hash)
+                        .map(OptionTimestamp)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
             // [Net]
             ("get_banned_addresses", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -713,6 +735,9 @@ pub struct RemoteNodes(pub Vec<RemoteNode>);
 pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
 
 #[derive(Serialize, Deserialize)]
+pub struct OptionTimestamp(pub Option<Timestamp>);
+
+#[derive(Serialize, Deserialize)]
 pub struct OptionBlockView(pub Option<BlockView>);
 
 #[derive(Serialize, Deserialize)]
@@ -744,6 +769,9 @@ pub struct RawOptionBlockView(pub Option<rpc_types::BlockView>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionHeaderView(pub Option<rpc_types::HeaderView>);
+
+#[derive(Serialize, Deserialize)]
+pub struct RawOptionTimestamp(pub Option<rpc_types::Timestamp>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionEpochView(pub Option<rpc_types::EpochView>);
