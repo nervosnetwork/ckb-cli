@@ -756,31 +756,6 @@ impl From<rpc_types::Consensus> for Consensus {
 // =========
 //  cell.rs
 // =========
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CellOutputWithOutPoint {
-    pub out_point: OutPoint,
-    pub block_hash: H256,
-    pub capacity: Capacity,
-    pub lock: Script,
-    #[serde(rename = "type")]
-    pub type_: Option<Script>,
-    //// TODO: update those fields
-    // pub output_data_len: Uint64,
-    // pub cellbase: bool,
-}
-impl From<rpc_types::CellOutputWithOutPoint> for CellOutputWithOutPoint {
-    fn from(json: rpc_types::CellOutputWithOutPoint) -> CellOutputWithOutPoint {
-        CellOutputWithOutPoint {
-            out_point: json.out_point.into(),
-            block_hash: json.block_hash,
-            capacity: json.capacity.into(),
-            lock: json.lock.into(),
-            type_: json.type_.map(Into::into),
-            // output_data_len: json.output_data_len.into(),
-            // cellbase: json.cellbase,
-        }
-    }
-}
 
 //// TODO: Make `cell::CellData` public
 // #[derive(Debug, Serialize, Deserialize)]
@@ -912,74 +887,6 @@ impl From<rpc_types::ChainInfo> for ChainInfo {
             difficulty: json.difficulty,
             is_initial_block_download: json.is_initial_block_download,
             alerts: json.alerts.into_iter().map(Into::into).collect(),
-        }
-    }
-}
-
-// ============
-//  indexer.rs
-// ============
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LiveCell {
-    pub created_by: TransactionPoint,
-    pub cell_output: CellOutput,
-    //// TODO: update those fields
-    // pub output_data_len: Uint64,
-    // pub cellbase: bool,
-}
-impl From<rpc_types::LiveCell> for LiveCell {
-    fn from(json: rpc_types::LiveCell) -> LiveCell {
-        LiveCell {
-            created_by: json.created_by.into(),
-            cell_output: json.cell_output.into(),
-            // output_data_len: json.output_data_len.into(),
-            // cellbase: json.cellbase,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CellTransaction {
-    pub created_by: TransactionPoint,
-    pub consumed_by: Option<TransactionPoint>,
-}
-impl From<rpc_types::CellTransaction> for CellTransaction {
-    fn from(json: rpc_types::CellTransaction) -> CellTransaction {
-        CellTransaction {
-            created_by: json.created_by.into(),
-            consumed_by: json.consumed_by.map(Into::into),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TransactionPoint {
-    pub block_number: BlockNumber,
-    pub tx_hash: H256,
-    pub index: Uint64,
-}
-impl From<rpc_types::TransactionPoint> for TransactionPoint {
-    fn from(json: rpc_types::TransactionPoint) -> TransactionPoint {
-        TransactionPoint {
-            block_number: json.block_number.into(),
-            tx_hash: json.tx_hash,
-            index: json.index.into(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct LockHashIndexState {
-    pub lock_hash: H256,
-    pub block_number: BlockNumber,
-    pub block_hash: H256,
-}
-impl From<rpc_types::LockHashIndexState> for LockHashIndexState {
-    fn from(json: rpc_types::LockHashIndexState) -> LockHashIndexState {
-        LockHashIndexState {
-            lock_hash: json.lock_hash,
-            block_number: json.block_number.into(),
-            block_hash: json.block_hash,
         }
     }
 }

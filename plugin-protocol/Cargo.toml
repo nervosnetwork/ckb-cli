@@ -8,8 +8,8 @@ edition = "2018"
 
 [dependencies]
 ckb-index = { path = "../ckb-index" }
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc2" }
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.39.0-rc2" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.40.0-rc2" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.40.0-rc2" }
 serde = { version = "1.0", features = ["rc"] }
 serde_derive = "1.0"
 serde_json = "1.0"

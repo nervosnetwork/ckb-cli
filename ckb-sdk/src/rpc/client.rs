@@ -1,11 +1,11 @@
 use ckb_jsonrpc_types::{
-    BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellOutputWithOutPoint,
-    CellTransaction, CellWithStatus, ChainInfo, Consensus, EpochNumber, EpochView,
-    ExtraLoggerConfig, HeaderView, JsonBytes, LiveCell, LocalNode, LockHashIndexState,
-    MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
-    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellWithStatus,
+    ChainInfo, Consensus, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
+    LocalNode, MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp,
+    Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
+use super::primitive;
 use super::types;
 use ckb_types::{packed, H256};
 
@@ -20,7 +20,7 @@ macro_rules! jsonrpc {
     ) => (
         $(#[$struct_attr])*
         pub struct $struct_name {
-            pub client: reqwest::Client,
+            pub client: reqwest::blocking::Client,
             pub url: reqwest::Url,
             pub id: u64,
         }
@@ -28,7 +28,7 @@ macro_rules! jsonrpc {
         impl $struct_name {
             pub fn new(uri: &str) -> Self {
                 let url = reqwest::Url::parse(uri).expect("ckb uri, e.g. \"http://127.0.0.1:8114\"");
-                $struct_name { url, id: 0, client: reqwest::Client::new(), }
+                $struct_name { url, id: 0, client: reqwest::blocking::Client::new(), }
             }
 
             $(
@@ -44,7 +44,7 @@ macro_rules! jsonrpc {
                     req_json.insert("method".to_owned(), serde_json::json!(method));
                     req_json.insert("params".to_owned(), params);
 
-                    let mut resp = $selff.client.post($selff.url.clone()).json(&req_json).send()?;
+                    let resp = $selff.client.post($selff.url.clone()).json(&req_json).send()?;
                     let output = resp.json::<ckb_jsonrpc_types::response::Output>()?;
                     match output {
                         ckb_jsonrpc_types::response::Output::Success(success) => {
@@ -71,7 +71,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_block_by_number(&mut self, number: BlockNumber) -> Option<BlockView>;
     pub fn get_block_hash(&mut self, number: BlockNumber) -> Option<H256>;
     pub fn get_cellbase_output_capacity_details(&mut self, hash: H256) -> Option<BlockReward>;
-    pub fn get_cells_by_lock_hash(&mut self, lock_hash: H256, from: BlockNumber, to: BlockNumber) -> Vec<CellOutputWithOutPoint>;
     pub fn get_current_epoch(&mut self) -> EpochView;
     pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> Option<EpochView>;
     pub fn get_header(&mut self, hash: H256) -> Option<HeaderView>;
@@ -88,28 +87,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn verify_transaction_proof(&mut self, tx_proof: TransactionProof) -> Vec<H256>;
     pub fn get_fork_block(&mut self, block_hash: H256) -> Option<BlockView>;
     pub fn get_consensus(&mut self) -> Consensus;
-
-    // Indexer
-    pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> ();
-    pub fn get_live_cells_by_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        page: Uint64,
-        per_page: Uint64,
-        reverse_order: Option<bool>
-    ) -> Vec<LiveCell>;
-    pub fn get_transactions_by_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        page: Uint64,
-        per_page: Uint64,
-        reverse_order: Option<bool>
-    ) -> Vec<CellTransaction>;
-    pub fn index_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        index_from: Option<BlockNumber>
-    ) -> LockHashIndexState;
+    pub fn get_block_median_time(&mut self, block_hash: H256) -> Option<Timestamp>;
 
     // Net
     pub fn get_banned_addresses(&mut self) -> Vec<BannedAddr>;
@@ -203,17 +181,6 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
-    pub fn get_cells_by_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        from: u64,
-        to: u64,
-    ) -> Result<Vec<types::CellOutputWithOutPoint>, String> {
-        self.client
-            .get_cells_by_lock_hash(lock_hash, BlockNumber::from(from), BlockNumber::from(to))
-            .map(|vec| vec.into_iter().map(Into::into).collect())
-            .map_err(|err| err.to_string())
-    }
     pub fn get_current_epoch(&mut self) -> Result<types::EpochView, String> {
         self.client
             .get_current_epoch()
@@ -302,59 +269,13 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
-
-    // Indexer
-    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
-    pub fn deindex_lock_hash(&mut self, lock_hash: H256) -> Result<(), String> {
-        self.client
-            .deindex_lock_hash(lock_hash)
-            .map_err(|err| err.to_string())
-    }
-    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
-    pub fn get_live_cells_by_lock_hash(
+    pub fn get_block_median_time(
         &mut self,
-        lock_hash: H256,
-        page: u64,
-        per_page: u64,
-        reverse_order: Option<bool>,
-    ) -> Result<Vec<types::LiveCell>, String> {
+        hash: H256,
+    ) -> Result<Option<primitive::Timestamp>, String> {
         self.client
-            .get_live_cells_by_lock_hash(
-                lock_hash,
-                Uint64::from(page),
-                Uint64::from(per_page),
-                reverse_order,
-            )
-            .map(|vec| vec.into_iter().map(Into::into).collect())
-            .map_err(|err| err.to_string())
-    }
-    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
-    pub fn get_transactions_by_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        page: u64,
-        per_page: u64,
-        reverse_order: Option<bool>,
-    ) -> Result<Vec<types::CellTransaction>, String> {
-        self.client
-            .get_transactions_by_lock_hash(
-                lock_hash,
-                Uint64::from(page),
-                Uint64::from(per_page),
-                reverse_order,
-            )
-            .map(|vec| vec.into_iter().map(Into::into).collect())
-            .map_err(|err| err.to_string())
-    }
-    #[deprecated(since = "0.36.0", note = "Use standalone ckb-indexer")]
-    pub fn index_lock_hash(
-        &mut self,
-        lock_hash: H256,
-        index_from: Option<u64>,
-    ) -> Result<types::LockHashIndexState, String> {
-        self.client
-            .index_lock_hash(lock_hash, index_from.map(BlockNumber::from))
-            .map(Into::into)
+            .get_block_median_time(hash)
+            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 

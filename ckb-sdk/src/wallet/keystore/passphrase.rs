@@ -1,8 +1,8 @@
 //! Web3 Secret Storage
 //! https://github.com/ethereum/wiki/wiki/Web3-Secret-Storage-Definition
 
-use aes_ctr::stream_cipher::generic_array::GenericArray;
-use aes_ctr::stream_cipher::{NewStreamCipher, SyncStreamCipher};
+use aes_ctr::cipher::generic_array::GenericArray;
+use aes_ctr::cipher::{NewStreamCipher, SyncStreamCipher};
 use aes_ctr::Aes128Ctr;
 use faster_hex::hex_string;
 use rand::Rng;
