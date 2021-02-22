@@ -1,11 +1,10 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, PeerState, Script, Transaction, Uint64,
+    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, PeerState, Script, Transaction,
 };
 use ckb_sdk::{
     rpc::{
-        BannedAddr, BlockReward, BlockView, CellOutputWithOutPoint, CellTransaction, EpochView,
-        HeaderView, LiveCell, RawHttpRpcClient, RemoteNode, TransactionProof,
-        TransactionWithStatus,
+        BannedAddr, BlockReward, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode,
+        TransactionProof, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -51,23 +50,6 @@ impl<'a> RpcSubCommand<'a> {
             .validator(|input| FromStrParser::<u64>::default().validate(input))
             .required(true)
             .about("Block number");
-
-        let arg_page = Arg::with_name("page")
-            .long("page")
-            .takes_value(true)
-            .validator(|input| FromStrParser::<u64>::default().validate(input))
-            .required(true)
-            .about("Page number");
-        let arg_perpage = Arg::with_name("perpage")
-            .long("perpage")
-            .takes_value(true)
-            .validator(|input| FromStrParser::<u8>::default().validate(input))
-            .default_value("50")
-            .required(true)
-            .about("Page size, max value is 50");
-        let arg_reverse_order = Arg::with_name("reverse-order")
-            .long("reverse-order")
-            .about("Returns the live cells collection in reverse order");
         let arg_peer_id = Arg::with_name("peer-id")
             .long("peer-id")
             .takes_value(true)
@@ -96,25 +78,6 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_cellbase_output_capacity_details")
                     .about("Get block header content by hash")
                     .arg(arg_hash.clone().about("Block hash")),
-                App::new("get_cells_by_lock_hash")
-                    .about("Get cells by lock script hash")
-                    .arg(arg_hash.clone().about("Lock hash"))
-                    .arg(
-                        Arg::with_name("from")
-                            .long("from")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .about("From block number"),
-                    )
-                    .arg(
-                        Arg::with_name("to")
-                            .long("to")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .about("To block number"),
-                    ),
                 App::new("get_current_epoch").about("Get current epoch information"),
                 App::new("get_epoch_by_number")
                     .about("Get epoch information by epoch number")
@@ -185,32 +148,6 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_hash.clone().about("The fork block hash")),
                 App::new("get_consensus")
                     .about("Return various consensus parameters"),
-                // [Indexer]
-                App::new("deindex_lock_hash")
-                    .arg(arg_hash.clone().about("Lock script hash"))
-                    .about("[Deprecated] Remove index for live cells and transactions by the hash of lock script"),
-                App::new("get_live_cells_by_lock_hash")
-                    .arg(arg_hash.clone().about("Lock script hash"))
-                    .arg(arg_page.clone())
-                    .arg(arg_perpage.clone())
-                    .arg(arg_reverse_order.clone())
-                    .about("[Deprecated] Get the live cells collection by the hash of lock script"),
-                App::new("get_transactions_by_lock_hash")
-                    .arg(arg_hash.clone().about("Lock script hash"))
-                    .arg(arg_page.clone())
-                    .arg(arg_perpage.clone())
-                    .arg(arg_reverse_order.clone())
-                    .about("[Deprecated] Get the transactions collection by the hash of lock script. Returns empty array when the `lock_hash` has not been indexed yet"),
-                App::new("index_lock_hash")
-                    .arg(arg_hash.clone().about("Lock script hash"))
-                    .arg(
-                        Arg::with_name("index-from")
-                            .long("index-from")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .about("Index from the block number")
-                    )
-                    .about("[Deprecated] Create index for live cells and transactions by the hash of lock script"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -384,31 +321,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .rpc_client
                         .get_cellbase_output_capacity_details(hash)
                         .map(OptionBlockReward)?;
-                    Ok(Output::new_output(resp))
-                }
-            }
-            ("get_cells_by_lock_hash", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let lock_hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-                let from_number: u64 = FromStrParser::<u64>::default().from_matches(m, "from")?;
-                let to_number: u64 = FromStrParser::<u64>::default().from_matches(m, "to")?;
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_cells_by_lock_hash(
-                            lock_hash,
-                            BlockNumber::from(from_number),
-                            BlockNumber::from(to_number),
-                        )
-                        .map(RawCellOutputWithOutPoints)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    let resp = self
-                        .rpc_client
-                        .get_cells_by_lock_hash(lock_hash, from_number, to_number)
-                        .map(CellOutputWithOutPoints)?;
                     Ok(Output::new_output(resp))
                 }
             }
@@ -618,97 +530,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
-            // [Indexer]
-            ("deindex_lock_hash", Some(m)) => {
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-                #[allow(deprecated)]
-                self.rpc_client.deindex_lock_hash(hash)?;
-                Ok(Output::new_success())
-            }
-            ("get_live_cells_by_lock_hash", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-                let page: u64 = FromStrParser::<u64>::default().from_matches(m, "page")?;
-                let perpage: u8 = FromStrParser::<u8>::default().from_matches(m, "perpage")?;
-                let reverse_order = m.is_present("reverse-order");
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_live_cells_by_lock_hash(
-                            hash,
-                            Uint64::from(page),
-                            Uint64::from(u64::from(perpage)),
-                            Some(reverse_order),
-                        )
-                        .map(RawLiveCells)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    #[allow(deprecated)]
-                    let resp = self
-                        .rpc_client
-                        .get_live_cells_by_lock_hash(
-                            hash,
-                            page,
-                            u64::from(perpage),
-                            Some(reverse_order),
-                        )
-                        .map(LiveCells)?;
-                    Ok(Output::new_output(resp))
-                }
-            }
-            ("get_transactions_by_lock_hash", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-                let page: u64 = FromStrParser::<u64>::default().from_matches(m, "page")?;
-                let perpage: u8 = FromStrParser::<u8>::default().from_matches(m, "perpage")?;
-                let reverse_order = m.is_present("reverse-order");
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_transactions_by_lock_hash(
-                            hash,
-                            Uint64::from(page),
-                            Uint64::from(u64::from(perpage)),
-                            Some(reverse_order),
-                        )
-                        .map(RawCellTransactions)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    #[allow(deprecated)]
-                    let resp = self
-                        .rpc_client
-                        .get_transactions_by_lock_hash(
-                            hash,
-                            page,
-                            u64::from(perpage),
-                            Some(reverse_order),
-                        )
-                        .map(CellTransactions)?;
-                    Ok(Output::new_output(resp))
-                }
-            }
-            ("index_lock_hash", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-                let index_from: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "index-from", false)?;
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .index_lock_hash(hash, index_from.map(BlockNumber::from))
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    #[allow(deprecated)]
-                    let resp = self.rpc_client.index_lock_hash(hash, index_from)?;
-                    Ok(Output::new_output(resp))
-                }
-            }
             // [Net]
             ("get_banned_addresses", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -892,9 +713,6 @@ pub struct RemoteNodes(pub Vec<RemoteNode>);
 pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
 
 #[derive(Serialize, Deserialize)]
-pub struct CellOutputWithOutPoints(pub Vec<CellOutputWithOutPoint>);
-
-#[derive(Serialize, Deserialize)]
 pub struct OptionBlockView(pub Option<BlockView>);
 
 #[derive(Serialize, Deserialize)]
@@ -916,19 +734,10 @@ pub struct BannedAddrList(pub Vec<BannedAddr>);
 pub struct OptionBlockReward(pub Option<BlockReward>);
 
 #[derive(Serialize, Deserialize)]
-pub struct LiveCells(pub Vec<LiveCell>);
-
-#[derive(Serialize, Deserialize)]
-pub struct CellTransactions(pub Vec<CellTransaction>);
-
-#[derive(Serialize, Deserialize)]
 pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionTransactionWithStatus(pub Option<rpc_types::TransactionWithStatus>);
-
-#[derive(Serialize, Deserialize)]
-pub struct RawCellOutputWithOutPoints(pub Vec<rpc_types::CellOutputWithOutPoint>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionBlockView(pub Option<rpc_types::BlockView>);
@@ -944,9 +753,3 @@ pub struct RawBannedAddrList(pub Vec<rpc_types::BannedAddr>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionBlockReward(pub Option<rpc_types::BlockReward>);
-
-#[derive(Serialize, Deserialize)]
-pub struct RawLiveCells(pub Vec<rpc_types::LiveCell>);
-
-#[derive(Serialize, Deserialize)]
-pub struct RawCellTransactions(pub Vec<rpc_types::CellTransaction>);

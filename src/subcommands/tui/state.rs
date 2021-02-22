@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use ckb_types::{core::HeaderView, packed::Script, prelude::*};
 use ckb_util::RwLock;
-use jsonrpc_client_core::Error as RpcError;
 
 use super::util::ts_now;
 use ckb_sdk::{
@@ -28,7 +27,7 @@ pub fn start_rpc_thread(url: String, state: Arc<RwLock<State>>) {
     });
 }
 
-fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result<(), RpcError> {
+fn process(state: &Arc<RwLock<State>>, rpc_client: &mut HttpRpcClient) -> Result<(), String> {
     loop {
         let chain_info_opt = rpc_client.get_blockchain_info().ok();
         let local_node_info = rpc_client.local_node_info()?;
