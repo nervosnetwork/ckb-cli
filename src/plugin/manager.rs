@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use ckb_index::LiveCellInfo;
-use ckb_jsonrpc_types::{BlockNumber, HeaderView, Script};
+use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
 use ckb_sdk::{
     wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
     HttpRpcClient,
@@ -1196,6 +1196,9 @@ impl KeyStoreHandler {
                 // Default only
                 default_only = true;
             }
+            KeyStoreRequest::ImportAccount { .. } => {
+                // Plugin only
+            }
             KeyStoreRequest::Export { ref hash160, .. } => {
                 // Both
                 hash160_opt = Some(hash160.clone());
@@ -1226,6 +1229,7 @@ impl KeyStoreHandler {
         }
         if default_only
             || hash160_opt
+                .clone()
                 .map(|hash160| self.has_account_in_default(hash160))
                 .transpose()?
                 == Some(true)
@@ -1239,6 +1243,11 @@ impl KeyStoreHandler {
                     response => Ok(response),
                 };
             return result;
+        }
+        if let Some(hash160) = hash160_opt {
+            if !self.has_account(hash160.clone())? {
+                return Err(format!("Account not found: {:#x}", hash160));
+            }
         }
 
         let request = ServiceRequest::Request {
@@ -1262,6 +1271,20 @@ impl KeyStoreHandler {
         }
     }
 
+    pub fn has_account(&self, hash160: H160) -> Result<bool, String> {
+        let request = ServiceRequest::Request {
+            is_from_plugin: false,
+            plugin_name: String::from("default_keystore"),
+            request: PluginRequest::KeyStore(KeyStoreRequest::HasAccount(hash160)),
+        };
+        match Request::call(&self.service_handler, request) {
+            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error.message),
+            Some(ServiceResponse::Response(PluginResponse::Boolean(has))) => Ok(has),
+            Some(_) => Err(String::from("Mismatch plugin response")),
+            None => Err(String::from("Send request error")),
+        }
+    }
+
     pub fn has_account_in_default(&self, hash160: H160) -> Result<bool, String> {
         let request = PluginRequest::KeyStore(KeyStoreRequest::HasAccount(hash160));
         if let Some((_, PluginResponse::Boolean(has))) =
@@ -1273,7 +1296,7 @@ impl KeyStoreHandler {
         }
     }
 
-    pub fn list_account(&self) -> Result<Vec<(H160, String)>, String> {
+    pub fn list_account(&self) -> Result<Vec<(Bytes, String)>, String> {
         let request = KeyStoreRequest::ListAccount;
         let plugin_request = PluginRequest::KeyStore(request.clone());
 
@@ -1284,20 +1307,27 @@ impl KeyStoreHandler {
             all_accounts.extend(
                 accounts
                     .into_iter()
-                    .map(|hash160| (hash160, ACCOUNT_SOURCE_FS.to_owned())),
+                    .map(|hash160| Bytes::from(hash160.as_bytes().to_vec()))
+                    .map(|data| (data, ACCOUNT_SOURCE_FS.to_owned())),
             );
         } else {
             return Err("Mismatch default keystore response".to_string());
         }
         if let Some(cfg) = self.actived_plugin() {
-            if let PluginResponse::H160Vec(accounts) = self.call(request)? {
-                all_accounts.extend(
-                    accounts
-                        .into_iter()
-                        .map(|hash160| (hash160, format!("[plugin]: {}", cfg.name))),
-                );
-            } else {
-                return Err("Mismatch plugin keystore response".to_string());
+            match self.call(request) {
+                Ok(PluginResponse::BytesVec(accounts)) => {
+                    all_accounts.extend(
+                        accounts
+                            .into_iter()
+                            .map(|data| (data.into_bytes(), format!("[plugin]: {}", cfg.name))),
+                    );
+                }
+                Ok(_) => {
+                    return Err("Mismatch plugin keystore response".to_string());
+                }
+                Err(err) => {
+                    log::info!("Send request to plugin({}) failed: {}", cfg.name, err);
+                }
             }
         }
         Ok(all_accounts)
@@ -1341,6 +1371,21 @@ impl KeyStoreHandler {
         let request = KeyStoreRequest::Import {
             privkey,
             chain_code,
+            password,
+        };
+        if let PluginResponse::H160(lock_arg) = self.call(request)? {
+            Ok(lock_arg)
+        } else {
+            Err("Mismatch keystore response".to_string())
+        }
+    }
+    pub fn import_account(
+        &self,
+        account_id: Bytes,
+        password: Option<String>,
+    ) -> Result<H160, String> {
+        let request = KeyStoreRequest::ImportAccount {
+            account_id: JsonBytes::from_bytes(account_id),
             password,
         };
         if let PluginResponse::H160(lock_arg) = self.call(request)? {

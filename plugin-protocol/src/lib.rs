@@ -117,6 +117,7 @@ pub enum PluginResponse {
     BlockViewOpt(Box<Option<BlockView>>),
     BlockRewardOpt(Option<BlockReward>),
     Bytes(JsonBytes),
+    BytesVec(Vec<JsonBytes>),
 
     Callback(CallbackResponse),
     MasterPrivateKey {
@@ -179,7 +180,7 @@ pub enum SignTarget {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum KeyStoreRequest {
-    // return: PluginResponse::H160
+    // return: PluginResponse::Bytes
     ListAccount,
     // return: PluginResponse::Boolean
     HasAccount(H160),
@@ -195,6 +196,11 @@ pub enum KeyStoreRequest {
     Import {
         privkey: [u8; 32],
         chain_code: [u8; 32],
+        password: Option<String>,
+    },
+    // return: PluginResponse::H160
+    ImportAccount {
+        account_id: JsonBytes,
         password: Option<String>,
     },
     // return: PluginResponse::MasterPrivateKey

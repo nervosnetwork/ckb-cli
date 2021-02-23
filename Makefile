@@ -6,7 +6,7 @@ fmt:
 
 clippy:
 	RUSTFLAGS='-F warnings' cargo clippy --all --tests -- ${CLIPPY_OPTS}
-	cd test && RUSTFLAGS='-F warnings' cargo clippy --all -- ${CLIPPY_OPTS}
+	cp -f Cargo.lock test/Cargo.lock && cd test && RUSTFLAGS='-F warnings' cargo clippy --all -- ${CLIPPY_OPTS}
 
 test:
 	RUSTFLAGS='-F warnings' RUST_BACKTRACE=full cargo test --all
@@ -15,7 +15,7 @@ ci: fmt clippy test security-audit
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh v0.38.0-rc1
+	bash devtools/ci/integration.sh v0.40.0-rc2
 
 prod: ## Build binary with release profile.
 	cargo build --release

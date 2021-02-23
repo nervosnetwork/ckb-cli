@@ -1,4 +1,5 @@
 mod error;
+#[allow(clippy::mutable_key_type)]
 mod index;
 mod kvdb;
 mod util;
