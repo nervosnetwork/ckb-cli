@@ -419,7 +419,7 @@ dependencies = [
  "shell-words",
  "termion",
  "tui",
- "url 1.7.2",
+ "url 2.2.1",
  "yaml-rust",
 ]
 
