@@ -667,6 +667,7 @@ dependencies = [
  "failure",
  "faster-hex 0.4.1",
  "fnv",
+ "futures 0.3.12",
  "log",
  "rand 0.6.5",
  "reqwest",
@@ -676,6 +677,8 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tiny-keccak",
+ "tokio 0.2.25",
+ "tokio-util 0.3.1",
  "uuid",
 ]
 
