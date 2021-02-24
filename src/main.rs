@@ -19,8 +19,8 @@ use interactive::InteractiveEnv;
 use plugin::PluginManager;
 use subcommands::{
     start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
-    IndexSubCommand, MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, RpcSubCommand,
-    TxSubCommand, UtilSubCommand, WalletSubCommand,
+    IndexSubCommand, MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, PubSubCommand,
+    RpcSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
@@ -191,6 +191,9 @@ fn main() -> Result<(), io::Error> {
                 .process(&sub_matches, debug)
             })
         }
+        ("pubsub", Some(sub_matches)) => {
+            PubSubCommand::new(output_format, color).process(&sub_matches, debug)
+        }
         _ => {
             if let Err(err) = InteractiveEnv::from_config(
                 ckb_cli_dir,
@@ -276,6 +279,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
+        .subcommand(PubSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
                 .long("url")

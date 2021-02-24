@@ -17,7 +17,7 @@
 ///     rt.block_on(async {
 ///         let c = new_tcp_client("127.0.0.1:18114").await.unwrap();
 ///         let mut h = c
-///             .subscription::<HeaderView>("new_tip_header")
+///             .subscribe::<HeaderView>("new_tip_header")
 ///             .await
 ///             .unwrap();
 ///         while let Some(Ok(r)) = h.next().await {
@@ -69,7 +69,7 @@ where
     }
 
     /// Subscription a topic
-    pub async fn subscription<F: for<'de> serde::de::Deserialize<'de>>(
+    pub async fn subscribe<F: for<'de> serde::de::Deserialize<'de>>(
         mut self,
         name: &str,
     ) -> io::Result<Handle<T, F>> {

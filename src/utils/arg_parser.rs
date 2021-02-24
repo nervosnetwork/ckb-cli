@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::fs;
 use std::io::Read;
 use std::marker::PhantomData;
+use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -535,6 +536,17 @@ impl ArgParser<Duration> for DurationParser {
             }
         };
         Ok(Duration::from_secs(seconds))
+    }
+}
+
+pub struct SocketParser;
+
+impl ArgParser<::std::net::SocketAddr> for SocketParser {
+    fn parse(&self, input: &str) -> Result<::std::net::SocketAddr, String> {
+        input
+            .to_socket_addrs()
+            .map_err(|e| e.to_string())
+            .and_then(|mut iter| iter.next().ok_or_else(|| "must socket format".to_string()))
     }
 }
 
