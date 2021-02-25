@@ -55,6 +55,7 @@ mod stream_codec;
 /// General rpc subscription client
 pub struct Client<T> {
     inner: Framed<T, StreamCodec>,
+    id: usize,
 }
 
 impl<T> Client<T>
@@ -64,7 +65,7 @@ where
     /// New a pubsub rpc client
     pub fn new(io: T) -> Client<T> {
         let inner = Framed::new(io, StreamCodec::stream_incoming());
-        Client { inner }
+        Client { inner, id: 0 }
     }
 
     /// Subscription a topic
@@ -84,9 +85,10 @@ where
         // < {"jsonrpc":"2.0","result":true,"id":2}
 
         let req_json = format!(
-            r#"{{"id": 2, "jsonrpc": "2.0", "method": "subscribe", "params": ["{}"]}}"#,
-            name
+            r#"{{"id": {}, "jsonrpc": "2.0", "method": "subscribe", "params": ["{}"]}}"#,
+            self.id, name
         );
+        self.id = self.id.wrapping_add(1);
 
         self.inner.send(req_json).await?;
         let (resp, inner) = self.inner.into_future().await;
@@ -102,6 +104,7 @@ where
                     topic: name.to_string(),
                     sub_id: res,
                     output: PhantomData::default(),
+                    rpc_id: self.id,
                 })
             }
             ckb_jsonrpc_types::response::Output::Failure(e) => {
@@ -117,6 +120,7 @@ pub struct Handle<T, F> {
     topic: String,
     sub_id: String,
     output: PhantomData<F>,
+    rpc_id: usize,
 }
 
 impl<T, F> Handle<T, F>
@@ -133,22 +137,37 @@ where
         &self.topic
     }
 
-    /// Unsubscribe and drop this connection
-    pub async fn unsubscribe(mut self) -> io::Result<()> {
+    /// Unsubscribe and return this Client
+    pub async fn unsubscribe(mut self) -> io::Result<Client<T>> {
         let req_json = format!(
-            r#"{{"id": 3, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
-            self.sub_id
+            r#"{{"id": {}, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
+            self.rpc_id, self.sub_id
         );
+        self.rpc_id = self.rpc_id.wrapping_add(1);
 
         self.inner.send(req_json).await?;
-        let (resp, _inner) = self.inner.into_future().await;
 
-        let output = serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(
-            &resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??,
-        )?;
+        let mut inner = self.inner;
+
+        let (output, inner) = loop {
+            let (resp, next_inner) = inner.into_future().await;
+
+            // Since the current subscription state, the return value may be a notification,
+            // we need to ensure that the unsubscribed message returns before jumping out
+            if let Ok(output) = serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(
+                &resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??,
+            ) {
+                break (output, next_inner);
+            } else {
+                inner = next_inner;
+            }
+        };
 
         match output {
-            ckb_jsonrpc_types::response::Output::Success(_) => Ok(()),
+            ckb_jsonrpc_types::response::Output::Success(_) => Ok(Client {
+                inner,
+                id: self.rpc_id,
+            }),
             ckb_jsonrpc_types::response::Output::Failure(e) => {
                 Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
             }
