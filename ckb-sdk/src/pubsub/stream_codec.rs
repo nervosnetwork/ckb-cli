@@ -1,5 +1,7 @@
-// copy from jsonrpc service-util
-
+/// copy from jsonrpc [service-util](https://github.com/paritytech/jsonrpc/blob/master/server-utils/src/stream_codec.rs)
+///
+/// I changed the return value of decode to BytesMut. It is not a good idea to parse it into a string in the codec.
+/// It will cause one more copy, but it is necessary to check whether it is utf8 encoding
 use ckb_types::bytes::BytesMut;
 use std::{io, str};
 

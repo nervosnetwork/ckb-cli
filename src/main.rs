@@ -132,9 +132,13 @@ fn main() -> Result<(), io::Error> {
         ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone())
             .start()
             .map(|s| Output::new_output(serde_json::json!(s))),
-        ("rpc", Some(sub_matches)) => {
-            RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(&sub_matches, debug)
-        }
+        ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
+            ("subscribe", Some(sub_sub_matches)) => {
+                PubSubCommand::new(output_format, color).process(&sub_sub_matches, debug)
+            }
+            _ => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
+                .process(&sub_matches, debug),
+        },
         ("account", Some(sub_matches)) => {
             AccountSubCommand::new(&mut plugin_mgr, &mut key_store).process(&sub_matches, debug)
         }
@@ -190,9 +194,6 @@ fn main() -> Result<(), io::Error> {
                 )
                 .process(&sub_matches, debug)
             })
-        }
-        ("pubsub", Some(sub_matches)) => {
-            PubSubCommand::new(output_format, color).process(&sub_matches, debug)
         }
         _ => {
             if let Err(err) = InteractiveEnv::from_config(
@@ -268,7 +269,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .long_version(version_long)
         .global_setting(AppSettings::ColoredHelp)
         .global_setting(AppSettings::DeriveDisplayOrder)
-        .subcommand(RpcSubCommand::subcommand())
+        .subcommand(RpcSubCommand::subcommand().subcommand(PubSubCommand::subcommand()))
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))
@@ -279,7 +280,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
-        .subcommand(PubSubCommand::subcommand())
         .arg(
             Arg::with_name("url")
                 .long("url")

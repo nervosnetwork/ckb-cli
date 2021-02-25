@@ -32,7 +32,6 @@
 ///         }
 ///     });   
 /// }
-///
 /// ```
 ///
 use std::{
@@ -137,7 +136,7 @@ where
     /// Unsubscribe and drop this connection
     pub async fn unsubscribe(mut self) -> io::Result<()> {
         let req_json = format!(
-            r#"{{"id": 2, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
+            r#"{{"id": 3, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
             self.sub_id
         );
 

@@ -23,6 +23,7 @@ macro_rules! block_on {
         })
     };
 }
+
 pub struct PubSubCommand {
     format: OutputFormat,
     color: bool,
@@ -41,22 +42,22 @@ impl PubSubCommand {
             .validator(|input| SocketParser.validate(input))
             .about("RPC pubsub server socket, like \"127.0.0.1:18114\"");
 
-        App::new("pubsub")
+        App::new("subscribe")
             .about("Subscribe to TCP interface of node")
             .subcommands(vec![
-                App::new("new-tip-header")
+                App::new("new_tip_header")
                     .arg(arg.clone())
                     .about("Subscribe to new block header notification"),
-                App::new("new-tip-block")
+                App::new("new_tip_block")
                     .arg(arg.clone())
                     .about("Subscribe to new block notification"),
-                App::new("new-transaction")
+                App::new("new_transaction")
                     .arg(arg.clone())
                     .about("Subscribe to new transaction notification"),
-                App::new("proposed-transaction")
+                App::new("proposed_transaction")
                     .arg(arg.clone())
                     .about("Subscribe to new proposed transaction notification"),
-                App::new("rejected-transaction")
+                App::new("rejected_transaction")
                     .arg(arg)
                     .about("Subscribe to rejected transaction notification"),
             ])
@@ -66,15 +67,15 @@ impl PubSubCommand {
 impl CliSubCommand for PubSubCommand {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("new-tip-header", Some(m)) => {
+            ("new_tip_header", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 block_on!(tcp, "new_tip_header", HeaderView, self.format, self.color);
             }
-            ("new-tip-block", Some(m)) => {
+            ("new_tip_block", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 block_on!(tcp, "new_tip_block", BlockView, self.format, self.color);
             }
-            ("new-transaction", Some(m)) => {
+            ("new_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 block_on!(
                     tcp,
@@ -84,7 +85,7 @@ impl CliSubCommand for PubSubCommand {
                     self.color
                 );
             }
-            ("proposed-transaction", Some(m)) => {
+            ("proposed_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 block_on!(
                     tcp,
@@ -94,7 +95,7 @@ impl CliSubCommand for PubSubCommand {
                     self.color
                 );
             }
-            ("rejected-transaction", Some(m)) => {
+            ("rejected_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 block_on!(
                     tcp,
