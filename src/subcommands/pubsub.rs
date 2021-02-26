@@ -11,17 +11,19 @@ use crate::utils::arg_parser::{ArgParser, SocketParser};
 use crate::OutputFormat;
 
 macro_rules! block_on {
-    ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {
+    ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {{
         let mut rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(async {
-            let c = new_tcp_client($addr).await.unwrap();
-            let mut h = c.subscribe::<$output>($topic).await.unwrap();
+        let ret: io::Result<Output> = rt.block_on(async {
+            let c = new_tcp_client($addr).await?;
+            let mut h = c.subscribe::<$output>($topic).await.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not a subcribe port, please set ckb `tcp_listen_address` to use subcribe rpc feature"))?;
             while let Some(Ok(r)) = h.next().await {
                 Output::new_output(r).print($format, $color);
                 println!("");
             }
-        })
-    };
+            Ok(Output::new_success())
+        });
+        ret
+    }};
 }
 
 pub struct PubSubCommand {
@@ -69,46 +71,38 @@ impl CliSubCommand for PubSubCommand {
         match matches.subcommand() {
             ("new_tip_header", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                block_on!(tcp, "new_tip_header", HeaderView, self.format, self.color);
+                let ret = block_on!(tcp, "new_tip_header", HeaderView, self.format, self.color);
+                ret.map_err(|e| e.to_string())
             }
             ("new_tip_block", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                block_on!(tcp, "new_tip_block", BlockView, self.format, self.color);
+                let ret = block_on!(tcp, "new_tip_block", BlockView, self.format, self.color);
+                ret.map_err(|e| e.to_string())
             }
             ("new_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                block_on!(
+                let ret = block_on!(
                     tcp,
                     "new_transaction",
                     PoolTransactionEntry,
                     self.format,
                     self.color
                 );
-            }
-            ("proposed_transaction", Some(m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                block_on!(
-                    tcp,
-                    "proposed_transaction",
-                    PoolTransactionEntry,
-                    self.format,
-                    self.color
-                );
+                ret.map_err(|e| e.to_string())
             }
             ("rejected_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                block_on!(
+                let ret = block_on!(
                     tcp,
                     "rejected_transaction",
                     (PoolTransactionEntry, PoolTransactionReject),
                     self.format,
                     self.color
                 );
+                ret.map_err(|e| e.to_string())
             }
-            _ => return Err(Self::subcommand().generate_usage()),
+            _ => Err(Self::subcommand().generate_usage()),
         }
-
-        Ok(Output::new_success())
     }
 }
 
