@@ -356,7 +356,7 @@ impl KeyStore {
         Ok(timed_key)
     }
 
-    fn get_filepath(&self, hash160: &H160) -> Result<PathBuf, Error> {
+    pub fn get_filepath(&self, hash160: &H160) -> Result<PathBuf, Error> {
         self.files
             .get(hash160)
             .cloned()
