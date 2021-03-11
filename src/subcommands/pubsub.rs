@@ -12,7 +12,7 @@ use crate::OutputFormat;
 
 macro_rules! block_on {
     ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {{
-        let mut rt = tokio::runtime::Runtime::new().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
         let ret: io::Result<Output> = rt.block_on(async {
             let c = new_tcp_client($addr).await?;
             let mut h = c.subscribe::<$output>($topic).await.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not a subcribe port, please set ckb `tcp_listen_address` to use subcribe rpc feature"))?;

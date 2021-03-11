@@ -2,7 +2,7 @@
 ///
 /// I changed the return value of decode to BytesMut. It is not a good idea to parse it into a string in the codec.
 /// It will cause one more copy, but it is necessary to check whether it is utf8 encoding
-use ckb_types::bytes::BytesMut;
+use bytes::BytesMut;
 use std::{io, str};
 
 /// Separator for enveloping messages in streaming codecs
@@ -125,7 +125,7 @@ impl tokio_util::codec::Encoder<String> for StreamCodec {
 mod tests {
 
     use super::StreamCodec;
-    use ckb_types::bytes::{BufMut, BytesMut};
+    use bytes::{BufMut, BytesMut};
     use tokio_util::codec::Decoder;
 
     #[test]
