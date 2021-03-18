@@ -5,6 +5,7 @@ pub mod index;
 pub mod mock_tx;
 pub mod molecule;
 pub mod plugin;
+pub mod pubsub;
 pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
@@ -22,6 +23,7 @@ pub use index::IndexSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
 pub use plugin::PluginSubCommand;
+pub use pubsub::PubSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
