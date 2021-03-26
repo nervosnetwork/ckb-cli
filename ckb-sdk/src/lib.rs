@@ -7,6 +7,7 @@ mod tx_helper;
 mod types;
 
 pub mod constants;
+pub mod pubsub;
 pub mod rpc;
 pub mod wallet;
 
