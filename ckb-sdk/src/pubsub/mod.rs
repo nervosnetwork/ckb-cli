@@ -35,6 +35,7 @@
 /// ```
 ///
 use std::{
+    collections::VecDeque,
     io,
     marker::PhantomData,
     pin::Pin,
@@ -101,10 +102,11 @@ where
                 let res = serde_json::from_value::<String>(success.result).unwrap();
                 Ok(Handle {
                     inner,
-                    topic: name.to_string(),
-                    sub_id: res,
+                    topic_list: vec![name.to_string()],
+                    sub_ids: vec![res],
                     output: PhantomData::default(),
                     rpc_id: self.id,
+                    pending_recv: VecDeque::default(),
                 })
             }
             ckb_jsonrpc_types::response::Output::Failure(e) => {
@@ -112,66 +114,122 @@ where
             }
         }
     }
+
+    /// Subscription topics
+    pub async fn subscribe_list<F: for<'de> serde::de::Deserialize<'de>, H: AsRef<str>>(
+        mut self,
+        name_list: impl Iterator<Item = H>,
+    ) -> io::Result<Handle<T, F>> {
+        let mut topic_list = Vec::new();
+        let mut sub_ids = Vec::new();
+        let mut pending_recv = VecDeque::new();
+        let mut inner = self.inner;
+
+        for topic in name_list {
+            let req_json = format!(
+                r#"{{"id": {}, "jsonrpc": "2.0", "method": "subscribe", "params": ["{}"]}}"#,
+                self.id,
+                topic.as_ref()
+            );
+            self.id = self.id.wrapping_add(1);
+
+            inner.send(req_json).await?;
+
+            // loop util this subscribe success
+            loop {
+                let (resp, next_inner) = inner.into_future().await;
+                inner = next_inner;
+                let resp =
+                    resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??;
+                match serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(&resp) {
+                    Ok(output) => match output {
+                        ckb_jsonrpc_types::response::Output::Success(success) => {
+                            let res = serde_json::from_value::<String>(success.result).unwrap();
+                            sub_ids.push(res);
+                            topic_list.push(topic.as_ref().to_owned());
+                            break;
+                        }
+                        ckb_jsonrpc_types::response::Output::Failure(e) => {
+                            return Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
+                        }
+                    },
+                    // must be Notification message
+                    Err(_) => pending_recv.push_back(resp),
+                }
+            }
+        }
+
+        Ok(Handle {
+            inner,
+            topic_list,
+            sub_ids,
+            output: PhantomData::default(),
+            rpc_id: self.id,
+            pending_recv,
+        })
+    }
 }
 
 /// General rpc subscription topic handle
 pub struct Handle<T, F> {
     inner: Framed<T, StreamCodec>,
-    topic: String,
-    sub_id: String,
+    topic_list: Vec<String>,
+    sub_ids: Vec<String>,
     output: PhantomData<F>,
     rpc_id: usize,
+    pending_recv: VecDeque<bytes::BytesMut>,
 }
 
 impl<T, F> Handle<T, F>
 where
     T: tokio::io::AsyncWrite + tokio::io::AsyncRead + Unpin,
 {
-    /// Sub id
-    pub fn id(&self) -> &str {
-        &self.sub_id
+    /// Sub ids
+    pub fn ids(&self) -> &[String] {
+        self.sub_ids.as_ref()
     }
 
-    /// Topic name
-    pub fn topic(&self) -> &str {
-        &self.topic
+    /// Topic names
+    pub fn topics(&self) -> &[String] {
+        self.topic_list.as_ref()
     }
 
     /// Unsubscribe and return this Client
     pub async fn unsubscribe(mut self) -> io::Result<Client<T>> {
-        let req_json = format!(
-            r#"{{"id": {}, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
-            self.rpc_id, self.sub_id
-        );
-        self.rpc_id = self.rpc_id.wrapping_add(1);
-
-        self.inner.send(req_json).await?;
-
         let mut inner = self.inner;
+        for id in self.sub_ids {
+            let req_json = format!(
+                r#"{{"id": {}, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
+                self.rpc_id, id
+            );
+            self.rpc_id = self.rpc_id.wrapping_add(1);
 
-        let (output, inner) = loop {
-            let (resp, next_inner) = inner.into_future().await;
+            inner.send(req_json).await?;
 
-            // Since the current subscription state, the return value may be a notification,
-            // we need to ensure that the unsubscribed message returns before jumping out
-            if let Ok(output) = serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(
-                &resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??,
-            ) {
-                break (output, next_inner);
-            } else {
+            let output = loop {
+                let (resp, next_inner) = inner.into_future().await;
                 inner = next_inner;
-            }
-        };
 
-        match output {
-            ckb_jsonrpc_types::response::Output::Success(_) => Ok(Client {
-                inner,
-                id: self.rpc_id,
-            }),
-            ckb_jsonrpc_types::response::Output::Failure(e) => {
-                Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
+                // Since the current subscription state, the return value may be a notification,
+                // we need to ensure that the unsubscribed message returns before jumping out
+                if let Ok(output) = serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(
+                    &resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??,
+                ) {
+                    break output;
+                }
+            };
+
+            match output {
+                ckb_jsonrpc_types::response::Output::Success(_) => (),
+                ckb_jsonrpc_types::response::Output::Failure(e) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
+                }
             }
         }
+        Ok(Client {
+            inner,
+            id: self.rpc_id,
+        })
     }
 }
 
@@ -183,21 +241,22 @@ where
     type Item = io::Result<F>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.inner.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(frame))) => {
-                let output =
-                    serde_json::from_slice::<ckb_jsonrpc_types::request::Notification>(&frame)
-                        .expect("must parse to notification");
-                let message = output
-                    .params
-                    .parse::<Message>()
-                    .expect("must parse to message");
+        let parse = |data: bytes::BytesMut| -> io::Result<F> {
+            let output = serde_json::from_slice::<ckb_jsonrpc_types::request::Notification>(&data)
+                .expect("must parse to notification");
+            let message = output
+                .params
+                .parse::<Message>()
+                .expect("must parse to message");
+            serde_json::from_str::<F>(&message.result)
+                .map_err(|_| io::ErrorKind::InvalidData.into())
+        };
 
-                Poll::Ready(Some(
-                    serde_json::from_str::<F>(&message.result)
-                        .map_err(|_| io::ErrorKind::InvalidData.into()),
-                ))
-            }
+        if let Some(data) = self.pending_recv.pop_front() {
+            return Poll::Ready(Some(parse(data)));
+        }
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(parse(frame))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(err))),
