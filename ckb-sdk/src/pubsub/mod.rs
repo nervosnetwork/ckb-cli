@@ -116,9 +116,13 @@ where
     }
 
     /// Subscription topics
-    pub async fn subscribe_list<F: for<'de> serde::de::Deserialize<'de>, H: AsRef<str>>(
+    pub async fn subscribe_list<
+        F: for<'de> serde::de::Deserialize<'de>,
+        I: Iterator<Item = H>,
+        H: AsRef<str>,
+    >(
         mut self,
-        name_list: impl Iterator<Item = H>,
+        name_list: I,
     ) -> io::Result<Handle<T, F>> {
         let mut topic_list = Vec::new();
         let mut sub_ids = Vec::new();

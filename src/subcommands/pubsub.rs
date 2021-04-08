@@ -11,13 +11,13 @@ use crate::utils::arg_parser::{ArgParser, SocketParser};
 use crate::OutputFormat;
 
 macro_rules! block_on {
-    ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {{
+    ($addr:ident, $topic:expr, $output:ty, $format_output:ty, $format:expr, $color:expr) => {{
         let rt = tokio::runtime::Runtime::new().unwrap();
         let ret: io::Result<Output> = rt.block_on(async {
             let c = new_tcp_client($addr).await?;
-            let mut h = c.subscribe::<$output>($topic).await.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not a subcribe port, please set ckb `tcp_listen_address` to use subcribe rpc feature"))?;
+            let mut h = c.subscribe_list::<$output, _, _>($topic).await.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not a subcribe port, please set ckb `tcp_listen_address` to use subcribe rpc feature"))?;
             while let Some(Ok(r)) = h.next().await {
-                Output::new_output(r).print($format, $color);
+                Output::new_output(Into::<$format_output>::into(r)).print($format, $color);
                 println!("");
             }
             Ok(Output::new_success())
@@ -44,6 +44,20 @@ impl PubSubCommand {
             .validator(|input| SocketParser.validate(input))
             .about("RPC pubsub server socket, like \"127.0.0.1:18114\"");
 
+        let multi_arg = Arg::with_name("topics")
+            .short('t')
+            .takes_value(true)
+            .required(true)
+            .possible_values(&[
+                "new_tip_header",
+                "new_tip_block",
+                "new_transaction",
+                "proposed_transaction",
+                "rejected_transaction",
+            ])
+            .multiple(true)
+            .about("Optional multiple topic subscriptions ");
+
         App::new("subscribe")
             .about("Subscribe to TCP interface of node")
             .subcommands(vec![
@@ -60,8 +74,11 @@ impl PubSubCommand {
                     .arg(arg.clone())
                     .about("Subscribe to new proposed transaction notification"),
                 App::new("rejected_transaction")
-                    .arg(arg)
+                    .arg(arg.clone())
                     .about("Subscribe to rejected transaction notification"),
+                App::new("list")
+                    .args(vec![arg, multi_arg])
+                    .about("Subscribe topic list"),
             ])
     }
 }
@@ -71,19 +88,34 @@ impl CliSubCommand for PubSubCommand {
         match matches.subcommand() {
             ("new_tip_header", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                let ret = block_on!(tcp, "new_tip_header", HeaderView, self.format, self.color);
+                let ret = block_on!(
+                    tcp,
+                    vec!["new_tip_header"].iter(),
+                    HeaderView,
+                    HeaderView,
+                    self.format,
+                    self.color
+                );
                 ret.map_err(|e| e.to_string())
             }
             ("new_tip_block", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                let ret = block_on!(tcp, "new_tip_block", BlockView, self.format, self.color);
+                let ret = block_on!(
+                    tcp,
+                    vec!["new_tip_block"].iter(),
+                    BlockView,
+                    BlockView,
+                    self.format,
+                    self.color
+                );
                 ret.map_err(|e| e.to_string())
             }
             ("new_transaction", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    "new_transaction",
+                    vec!["new_transaction"].iter(),
+                    PoolTransactionEntry,
                     PoolTransactionEntry,
                     self.format,
                     self.color
@@ -94,8 +126,22 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    "rejected_transaction",
+                    vec!["rejected_transaction"].iter(),
                     (PoolTransactionEntry, PoolTransactionReject),
+                    (PoolTransactionEntry, PoolTransactionReject),
+                    self.format,
+                    self.color
+                );
+                ret.map_err(|e| e.to_string())
+            }
+            ("list", Some(m)) => {
+                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+                let list: Vec<_> = m.values_of("topics").unwrap().collect();
+                let ret = block_on!(
+                    tcp,
+                    list.iter(),
+                    ListOutput,
+                    ListOutputFormat,
                     self.format,
                     self.color
                 );
@@ -109,4 +155,42 @@ impl CliSubCommand for PubSubCommand {
 pub async fn new_tcp_client(addr: SocketAddr) -> io::Result<Client<TcpStream>> {
     let tcp = TcpStream::connect(addr).await?;
     Ok(Client::new(tcp))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(untagged)]
+enum ListOutput {
+    Header(HeaderView),
+    Block(BlockView),
+    Tx(PoolTransactionEntry),
+    Reject((PoolTransactionEntry, PoolTransactionReject)),
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ListOutputFormat {
+    topic: String,
+    data: ListOutput,
+}
+
+impl From<ListOutput> for ListOutputFormat {
+    fn from(t: ListOutput) -> ListOutputFormat {
+        match t {
+            ListOutput::Header(_) => ListOutputFormat {
+                topic: "new_tip_header".to_string(),
+                data: t,
+            },
+            ListOutput::Block(_) => ListOutputFormat {
+                topic: "new_tip_block".to_string(),
+                data: t,
+            },
+            ListOutput::Tx(_) => ListOutputFormat {
+                topic: "new_transaction".to_string(),
+                data: t,
+            },
+            ListOutput::Reject(_) => ListOutputFormat {
+                topic: "rejected_transaction".to_string(),
+                data: t,
+            },
+        }
+    }
 }
