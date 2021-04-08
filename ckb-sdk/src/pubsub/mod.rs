@@ -35,7 +35,7 @@
 /// ```
 ///
 use std::{
-    collections::VecDeque,
+    collections::{VecDeque, HashMap},
     io,
     marker::PhantomData,
     pin::Pin,
@@ -102,8 +102,7 @@ where
                 let res = serde_json::from_value::<String>(success.result).unwrap();
                 Ok(Handle {
                     inner,
-                    topic_list: vec![name.to_string()],
-                    sub_ids: vec![res],
+                    topic_list: vec![(res, name.to_string())].into_iter().collect(),
                     output: PhantomData::default(),
                     rpc_id: self.id,
                     pending_recv: VecDeque::default(),
@@ -124,8 +123,7 @@ where
         mut self,
         name_list: I,
     ) -> io::Result<Handle<T, F>> {
-        let mut topic_list = Vec::new();
-        let mut sub_ids = Vec::new();
+        let mut topic_list = HashMap::default();
         let mut pending_recv = VecDeque::new();
         let mut inner = self.inner;
 
@@ -149,8 +147,7 @@ where
                     Ok(output) => match output {
                         ckb_jsonrpc_types::response::Output::Success(success) => {
                             let res = serde_json::from_value::<String>(success.result).unwrap();
-                            sub_ids.push(res);
-                            topic_list.push(topic.as_ref().to_owned());
+                            topic_list.insert(res, topic.as_ref().to_owned());
                             break;
                         }
                         ckb_jsonrpc_types::response::Output::Failure(e) => {
@@ -166,7 +163,6 @@ where
         Ok(Handle {
             inner,
             topic_list,
-            sub_ids,
             output: PhantomData::default(),
             rpc_id: self.id,
             pending_recv,
@@ -177,8 +173,7 @@ where
 /// General rpc subscription topic handle
 pub struct Handle<T, F> {
     inner: Framed<T, StreamCodec>,
-    topic_list: Vec<String>,
-    sub_ids: Vec<String>,
+    topic_list: HashMap<String, String>,
     output: PhantomData<F>,
     rpc_id: usize,
     pending_recv: VecDeque<bytes::BytesMut>,
@@ -189,19 +184,19 @@ where
     T: tokio::io::AsyncWrite + tokio::io::AsyncRead + Unpin,
 {
     /// Sub ids
-    pub fn ids(&self) -> &[String] {
-        self.sub_ids.as_ref()
+    pub fn ids(&self) -> impl Iterator<Item=&String> {
+        self.topic_list.keys()
     }
 
     /// Topic names
-    pub fn topics(&self) -> &[String] {
-        self.topic_list.as_ref()
+    pub fn topics(&self) -> impl Iterator<Item=&String> {
+        self.topic_list.values()
     }
 
     /// Unsubscribe and return this Client
     pub async fn unsubscribe(mut self) -> io::Result<Client<T>> {
         let mut inner = self.inner;
-        for id in self.sub_ids {
+        for id in self.topic_list.keys() {
             let req_json = format!(
                 r#"{{"id": {}, "jsonrpc": "2.0", "method": "unsubscribe", "params": ["{}"]}}"#,
                 self.rpc_id, id
@@ -242,25 +237,25 @@ where
     F: for<'de> serde::de::Deserialize<'de> + Unpin,
     T: tokio::io::AsyncWrite + tokio::io::AsyncRead + Unpin,
 {
-    type Item = io::Result<F>;
+    type Item = io::Result<(String, F)>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let parse = |data: bytes::BytesMut| -> io::Result<F> {
+        let parse = |data: bytes::BytesMut, topic_list: &HashMap<String, String>| -> io::Result<(String, F)> {
             let output = serde_json::from_slice::<ckb_jsonrpc_types::request::Notification>(&data)
                 .expect("must parse to notification");
             let message = output
                 .params
                 .parse::<Message>()
                 .expect("must parse to message");
-            serde_json::from_str::<F>(&message.result)
+            serde_json::from_str::<F>(&message.result).map(|r| (topic_list.get(&message.subscription).cloned().unwrap(), r))
                 .map_err(|_| io::ErrorKind::InvalidData.into())
         };
 
         if let Some(data) = self.pending_recv.pop_front() {
-            return Poll::Ready(Some(parse(data)));
+            return Poll::Ready(Some(parse(data, &self.topic_list)));
         }
         match self.inner.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(parse(frame))),
+            Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(parse(frame, &self.topic_list))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(err))),

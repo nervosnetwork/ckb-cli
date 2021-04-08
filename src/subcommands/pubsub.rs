@@ -11,13 +11,13 @@ use crate::utils::arg_parser::{ArgParser, SocketParser};
 use crate::OutputFormat;
 
 macro_rules! block_on {
-    ($addr:ident, $topic:expr, $output:ty, $format_output:ty, $format:expr, $color:expr) => {{
+    ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {{
         let rt = tokio::runtime::Runtime::new().unwrap();
         let ret: io::Result<Output> = rt.block_on(async {
             let c = new_tcp_client($addr).await?;
             let mut h = c.subscribe_list::<$output, _, _>($topic).await.map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not a subcribe port, please set ckb `tcp_listen_address` to use subcribe rpc feature"))?;
-            while let Some(Ok(r)) = h.next().await {
-                Output::new_output(Into::<$format_output>::into(r)).print($format, $color);
+            while let Some(Ok((topic, r))) = h.next().await {
+                Output::new_output(SubOutputFormat::new(topic, r)).print($format, $color);
                 println!("");
             }
             Ok(Output::new_success())
@@ -92,7 +92,6 @@ impl CliSubCommand for PubSubCommand {
                     tcp,
                     vec!["new_tip_header"].iter(),
                     HeaderView,
-                    HeaderView,
                     self.format,
                     self.color
                 );
@@ -103,7 +102,6 @@ impl CliSubCommand for PubSubCommand {
                 let ret = block_on!(
                     tcp,
                     vec!["new_tip_block"].iter(),
-                    BlockView,
                     BlockView,
                     self.format,
                     self.color
@@ -116,6 +114,16 @@ impl CliSubCommand for PubSubCommand {
                     tcp,
                     vec!["new_transaction"].iter(),
                     PoolTransactionEntry,
+                    self.format,
+                    self.color
+                );
+                ret.map_err(|e| e.to_string())
+            }
+            ("proposed_transaction", Some(m)) => {
+                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+                let ret = block_on!(
+                    tcp,
+                    vec!["proposed_transaction"].iter(),
                     PoolTransactionEntry,
                     self.format,
                     self.color
@@ -127,7 +135,6 @@ impl CliSubCommand for PubSubCommand {
                 let ret = block_on!(
                     tcp,
                     vec!["rejected_transaction"].iter(),
-                    (PoolTransactionEntry, PoolTransactionReject),
                     (PoolTransactionEntry, PoolTransactionReject),
                     self.format,
                     self.color
@@ -141,7 +148,6 @@ impl CliSubCommand for PubSubCommand {
                     tcp,
                     list.iter(),
                     ListOutput,
-                    ListOutputFormat,
                     self.format,
                     self.color
                 );
@@ -167,30 +173,15 @@ enum ListOutput {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct ListOutputFormat {
+struct SubOutputFormat<T> {
     topic: String,
-    data: ListOutput,
+    data: T,
 }
 
-impl From<ListOutput> for ListOutputFormat {
-    fn from(t: ListOutput) -> ListOutputFormat {
-        match t {
-            ListOutput::Header(_) => ListOutputFormat {
-                topic: "new_tip_header".to_string(),
-                data: t,
-            },
-            ListOutput::Block(_) => ListOutputFormat {
-                topic: "new_tip_block".to_string(),
-                data: t,
-            },
-            ListOutput::Tx(_) => ListOutputFormat {
-                topic: "new_transaction".to_string(),
-                data: t,
-            },
-            ListOutput::Reject(_) => ListOutputFormat {
-                topic: "rejected_transaction".to_string(),
-                data: t,
-            },
+impl<T> SubOutputFormat<T> {
+    fn new(topic: String, data: T) -> Self {
+        Self{
+            topic, data
         }
     }
 }
