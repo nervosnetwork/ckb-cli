@@ -144,13 +144,7 @@ impl CliSubCommand for PubSubCommand {
             ("list", Some(m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let list: Vec<_> = m.values_of("topics").unwrap().collect();
-                let ret = block_on!(
-                    tcp,
-                    list.iter(),
-                    ListOutput,
-                    self.format,
-                    self.color
-                );
+                let ret = block_on!(tcp, list.iter(), ListOutput, self.format, self.color);
                 ret.map_err(|e| e.to_string())
             }
             _ => Err(Self::subcommand().generate_usage()),
@@ -180,8 +174,6 @@ struct SubOutputFormat<T> {
 
 impl<T> SubOutputFormat<T> {
     fn new(topic: String, data: T) -> Self {
-        Self{
-            topic, data
-        }
+        Self { topic, data }
     }
 }
