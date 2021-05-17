@@ -1,6 +1,6 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellWithStatus,
-    ChainInfo, Consensus, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
+    ChainInfo, Consensus, Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
     LocalNode, MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp,
     Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
@@ -125,7 +125,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn process_block_without_verify(&mut self, data: Block, broadcast: bool) -> Option<H256>;
     pub fn truncate(&mut self, target_tip_hash: H256) -> ();
     pub fn generate_block(&mut self, block_assembler_script: Option<Script>, block_assembler_message: Option<JsonBytes>) -> H256;
-    pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
+    pub fn broadcast_transaction(&mut self, tx: Transaction, cycles: Cycle) -> H256;
 
     // Debug
     pub fn jemalloc_profiling_dump(&mut self) -> String;
@@ -393,9 +393,13 @@ impl HttpRpcClient {
     }
 
     // IntegrationTest
-    pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
+    pub fn broadcast_transaction(
+        &mut self,
+        tx: packed::Transaction,
+        cycles: u64,
+    ) -> Result<H256, String> {
         self.client
-            .broadcast_transaction(tx.into())
+            .broadcast_transaction(tx.into(), Cycle::from(cycles))
             .map_err(|err| err.to_string())
     }
 
