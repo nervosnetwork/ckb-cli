@@ -240,7 +240,7 @@ impl<'a> RpcSubCommand<'a> {
                             .required(true)
                             .about("The cycles of the transaction")
                     )
-                    .about("Broadcast transaction without verify"),
+                    .about("[TEST ONLY] Broadcast transaction without verify"),
                 App::new("truncate")
                     .arg(
                         Arg::with_name("tip-hash")
@@ -250,7 +250,7 @@ impl<'a> RpcSubCommand<'a> {
                             .required(true)
                             .about("Target tip block hash")
                     )
-                    .about("Truncate blocks to target tip block"),
+                    .about("[TEST ONLY] Truncate blocks to target tip block"),
                 App::new("generate_block")
                     .arg(
                         Arg::with_name("json-path")
@@ -266,6 +266,7 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| HexParser.validate(input))
                             .about("Block assembler message (hex format)")
                     )
+                    .about("[TEST ONLY] Generate an empty block")
             ])
     }
 }
