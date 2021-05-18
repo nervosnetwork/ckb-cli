@@ -1,5 +1,5 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, PeerState, Script, Transaction,
+    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
 };
 use ckb_sdk::{
     rpc::{
@@ -758,9 +758,6 @@ pub struct OptionH256(pub Option<H256>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionEpochView(pub Option<EpochView>);
-
-#[derive(Serialize, Deserialize)]
-pub struct PeerStates(pub Vec<PeerState>);
 
 #[derive(Serialize, Deserialize)]
 pub struct BannedAddrList(pub Vec<BannedAddr>);

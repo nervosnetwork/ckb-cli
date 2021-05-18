@@ -1,8 +1,8 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellWithStatus,
     ChainInfo, Consensus, Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
-    LocalNode, MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp,
-    Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    LocalNode, MainLoggerConfig, OutPoint, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
+    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::primitive;
@@ -115,7 +115,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
 
     // Stats
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
-    pub fn get_peers_state(&mut self) -> Vec<PeerState>;
 
     // Miner
     pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> BlockTemplate;
@@ -366,9 +365,6 @@ impl HttpRpcClient {
             .get_blockchain_info()
             .map(Into::into)
             .map_err(|err| err.to_string())
-    }
-    pub fn get_peers_state(&mut self) -> Result<Vec<PeerState>, String> {
-        self.client.get_peers_state().map_err(|err| err.to_string())
     }
 
     // Miner

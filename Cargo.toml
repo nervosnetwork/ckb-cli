@@ -1,20 +1,20 @@
 [package]
 name = "ckb-cli"
-version = "0.41.0"
+version = "0.42.0"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 
 [dependencies]
-ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1", features = ["secp"] }
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
-ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
+ckb-jsonrpc-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-hash = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-crypto = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1", features = ["secp"] }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-util = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-resource = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-dao-utils = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
+ckb-chain-spec = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
 ckb-sdk = { path = "ckb-sdk" }
 ckb-index = { path = "ckb-index" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol" }
@@ -60,7 +60,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.41.0-rc1" }
+ckb-build-info = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
 
 [workspace]
 members = ["ckb-sdk", "ckb-index", "ckb-sdk-types", "plugin-protocol"]
