@@ -4,6 +4,7 @@ version = "0.42.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
+description = "ckb-cli index database"
 
 [dependencies]
 serde = { version = "1.0", features = ["rc"] }
@@ -11,6 +12,6 @@ serde_derive = "1.0"
 bincode = "1.1.4"
 log = "0.4.6"
 failure = "0.1.5"
-ckb-types = { git = "https://github.com/nervosnetwork/ckb", tag = "v0.42.0-rc1" }
-ckb-sdk = { path = "../ckb-sdk" }
-rocksdb = { package = "ckb-rocksdb", version = "=0.13.0", features = ["snappy"] }
+ckb-types = "=0.42.0"
+ckb-sdk = { path = "../ckb-sdk", version = "=0.42.0" }
+rocksdb = { package = "ckb-rocksdb", version = "=0.15.1", features = ["snappy"] }
