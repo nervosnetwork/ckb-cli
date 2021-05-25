@@ -232,6 +232,14 @@ impl<'a> RpcSubCommand<'a> {
                          .validator(|input| FilePathParser::new(true).validate(input))
                          .about("Transaction content (json format, see rpc send_transaction)")
                     )
+                    .arg(
+                        Arg::with_name("cycles")
+                            .long("cycles")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .required(true)
+                            .about("The cycles of the transaction")
+                    )
                     .about("Broadcast transaction without verify"),
                 App::new("truncate")
                     .arg(
@@ -694,12 +702,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             // [IntegrationTest]
             ("broadcast_transaction", Some(m)) => {
+                let cycles: u64 = FromStrParser::<u64>::default().from_matches(m, "cycles")?;
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
 
-                let resp = self.rpc_client.broadcast_transaction(tx.into())?;
+                let resp = self.rpc_client.broadcast_transaction(tx.into(), cycles)?;
                 Ok(Output::new_output(resp))
             }
             ("truncate", Some(m)) => {

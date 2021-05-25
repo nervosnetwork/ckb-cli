@@ -19,7 +19,7 @@ All second level sub-commands are listed in [wiki page](https://github.com/nervo
 ```
 git clone https://github.com/nervosnetwork/ckb-cli.git
 cd ckb-cli
-cargo install --path . -f
+cargo install --path . -f --locked
 ```
 
 ## Usage
