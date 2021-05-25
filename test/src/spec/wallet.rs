@@ -108,7 +108,7 @@ impl Spec for WalletTransfer {
 
         // Transfer from miner to account2 (include input maturity filter)
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.0001",
             miner_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!(
@@ -211,7 +211,7 @@ impl Spec for WalletTimelockedAddress {
 
         for _ in 0..4 {
             let tx_hash = setup.cli(&format!(
-                "wallet transfer --privkey-path {} --to-address {} --capacity 50000 --tx-fee 0.00001",
+                "wallet transfer --privkey-path {} --to-address {} --capacity 50000 --tx-fee 0.0001",
                 miner_privkey,
                 ACCOUNT1_ADDRESS,
             ));
