@@ -275,7 +275,7 @@ impl<'a> WalletSubCommand<'a> {
                 && to_address_code_hash == MULTISIG_TYPE_HASH
                 && (to_address_args_len == 20 || to_address_args_len == 28))
         {
-            return Err(format!("Invalid to-address: {}", to_address));
+            return Err(format!("Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address", to_address));
         }
         check_capacity(to_capacity, to_data.len())?;
 
