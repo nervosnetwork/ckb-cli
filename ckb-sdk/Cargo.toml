@@ -1,6 +1,6 @@
 [package]
 name = "ckb-sdk"
-version = "0.42.0"
+version = "0.42.1"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -37,4 +37,4 @@ ckb-jsonrpc-types = "=0.42.0"
 ckb-hash = "=0.42.0"
 ckb-resource = "=0.42.0"
 ckb-crypto = { version = "=0.42.0", features = ["secp"] }
-ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.42.0" }
+ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.42.1" }

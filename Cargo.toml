@@ -1,6 +1,6 @@
 [package]
 name = "ckb-cli"
-version = "0.42.0"
+version = "0.42.1"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
@@ -16,9 +16,9 @@ ckb-util = "=0.42.0"
 ckb-resource = "=0.42.0"
 ckb-dao-utils = "=0.42.0"
 ckb-chain-spec = "=0.42.0"
-ckb-sdk = { path = "ckb-sdk", version = "=0.42.0" }
-ckb-index = { path = "ckb-index", version = "=0.42.0" }
-plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.42.0" }
+ckb-sdk = { path = "ckb-sdk", version = "=0.42.1" }
+ckb-index = { path = "ckb-index", version = "=0.42.1" }
+plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.42.1" }
 jsonrpc-core-client = "17"
 jsonrpc-core = "17"
 jsonrpc-derive = "17"

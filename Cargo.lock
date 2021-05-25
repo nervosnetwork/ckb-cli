@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "ansi_term",
  "atty",
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli-plugin-protocol"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "ckb-index",
  "ckb-jsonrpc-types",
@@ -524,7 +524,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-index"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "bincode",
  "ckb-rocksdb",
@@ -672,7 +672,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "aes-ctr",
  "bech32",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk-types"
-version = "0.42.0"
+version = "0.42.1"
 dependencies = [
  "ckb-crypto",
  "ckb-error",
