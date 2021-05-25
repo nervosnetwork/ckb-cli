@@ -1133,27 +1133,3 @@ impl From<rpc_types::RawTxPool> for RawTxPool {
         }
     }
 }
-
-// =========
-//  sync.rs
-// =========
-//// TODO make PeerState fields public
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct PeerState {
-//     // TODO use peer_id
-//     // peer session id
-//     pub peer: Uint32,
-//     // last updated timestamp
-//     pub last_updated: Timestamp,
-//     // blocks count has request but not receive response yet
-//     pub blocks_in_flight: Uint32,
-// }
-// impl From<rpc_types::PeerState> for PeerState {
-//     fn from(json: rpc_types::PeerState) -> PeerState {
-//         PeerState {
-//             peer: json.peer.into(),
-//             last_updated: json.last_updated.into(),
-//             blocks_in_flight: json.blocks_in_flight.into()
-//         }
-//     }
-// }
