@@ -170,7 +170,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
 
                 if tx_file.exists() {
-                    return Err("Output tx-file already exists".to_string());
+                    return Err(format!("Output tx-file already exists: {:?}", tx_file));
                 }
 
                 let genesis_info = self.genesis_info()?;
@@ -290,8 +290,8 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     deployment,
                     last_recipe,
                     new_recipe,
-                    // FIXME: fill this map
-                    used_inputs: HashMap::default(),
+                    // FIXME: fill this map to support offline sign
+                    used_inputs: Vec::new(),
                     cell_tx: cell_tx_opt.map(Into::into),
                     cell_tx_signatures: HashMap::default(),
                     dep_group_tx: dep_group_tx_opt.map(Into::into),
@@ -305,8 +305,6 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 Ok(Output::new_success())
             }
             ("sign-txs", Some(m)) => {
-                let network = get_network_type(self.rpc_client)?;
-
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
@@ -316,6 +314,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         FixedHashParser::<H160>::default()
                             .parse(&input)
                             .or_else(|err| {
+                                let network = get_network_type(self.rpc_client)?;
                                 let result: Result<Address, String> = AddressParser::new_sighash()
                                     .set_network(network)
                                     .parse(&input);
@@ -328,6 +327,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     })
                     .transpose()?;
 
+                let skip_check = false;
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
                 } else {
@@ -357,6 +357,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                                 packed::OutPoint::new(tx_hash.clone(), output_index as u32);
                             live_cell_cache.insert(out_point, (output, data));
                         }
+                        // FIXME: use info.used_inputs to support offline sign
                     }
                     let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
                         get_live_cell_with_cache(
@@ -369,9 +370,9 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     };
 
                     let mut all_signatures: HashMap<String, HashMap<_, _>> = Default::default();
-                    if let Some(helper) = info.cell_tx_helper(network)? {
+                    if let Some(helper) = info.cell_tx_helper()? {
                         let signatures: HashMap<_, _> = helper
-                            .sign_inputs(&mut signer, &mut get_live_cell, false)
+                            .sign_inputs(&mut signer, &mut get_live_cell, skip_check)
                             .map_err(Error::msg)?
                             .into_iter()
                             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
@@ -397,9 +398,9 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         all_signatures.insert("cell_tx_signatures".to_string(), signatures);
                     }
 
-                    if let Some(helper) = info.dep_group_tx_helper(network)? {
+                    if let Some(helper) = info.dep_group_tx_helper()? {
                         let signatures: HashMap<_, _> = helper
-                            .sign_inputs(&mut signer, &mut get_live_cell, false)
+                            .sign_inputs(&mut signer, &mut get_live_cell, skip_check)
                             .map_err(Error::msg)?
                             .into_iter()
                             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
@@ -442,10 +443,10 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 let migration_dir: PathBuf =
                     DirPathParser::new(true).from_matches(m, "migration-dir")?;
 
-                let network = get_network_type(self.rpc_client)?;
                 let file = fs::File::open(tx_file).map_err(|err| err.to_string())?;
                 let info: IntermediumInfo =
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
+                let skip_check = false;
 
                 let (cell_tx_opt, dep_group_tx_opt) = {
                     let mut live_cell_cache: HashMap<
@@ -473,14 +474,14 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         .map(|(output, _)| output)
                     };
                     let cell_tx_opt = info
-                        .cell_tx_helper(network)
+                        .cell_tx_helper()
                         .map_err(|err| err.to_string())?
-                        .map(|helper| helper.build_tx(&mut get_live_cell, false))
+                        .map(|helper| helper.build_tx(&mut get_live_cell, skip_check))
                         .transpose()?;
                     let dep_group_tx_opt = info
-                        .dep_group_tx_helper(network)
+                        .dep_group_tx_helper()
                         .map_err(|err| err.to_string())?
-                        .map(|helper| helper.build_tx(&mut get_live_cell, false))
+                        .map(|helper| helper.build_tx(&mut get_live_cell, skip_check))
                         .transpose()?;
                     (cell_tx_opt, dep_group_tx_opt)
                 };
@@ -523,6 +524,12 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 let deployment_config: PathBuf =
                     FilePathParser::new(false).from_matches(m, "deployment-config")?;
 
+                if deployment_config.exists() {
+                    return Err(format!(
+                        "deployment-config already exists: {:?}",
+                        deployment_config
+                    ));
+                }
                 let _deployment: Deployment =
                     toml::from_str(DEPLOYMENT_TOML).map_err(|err| err.to_string())?;
                 let mut file =
@@ -942,8 +949,8 @@ struct IntermediumInfo {
     deployment: Deployment,
     last_recipe: Option<DeploymentRecipe>,
     new_recipe: DeploymentRecipe,
-    // For offline sign
-    used_inputs: HashMap<(H256, u32), json_types::CellOutput>,
+    // For offline sign (should verify the tx hash)
+    used_inputs: Vec<json_types::Transaction>,
     cell_tx: Option<json_types::Transaction>,
     cell_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
     dep_group_tx: Option<json_types::Transaction>,
@@ -951,7 +958,9 @@ struct IntermediumInfo {
 }
 
 impl IntermediumInfo {
-    fn multisig_configs(&self, network: NetworkType) -> Result<HashMap<H160, ReprMultisigConfig>> {
+    fn multisig_configs(&self) -> Result<HashMap<H160, ReprMultisigConfig>> {
+        // NOTE: we don't care the NetworkType here.
+        let network = NetworkType::Testnet;
         let mut multisig_configs = HashMap::default();
         if !self.deployment.multisig_config.sighash_addresses.is_empty() {
             let config = MultisigConfig::try_from(self.deployment.multisig_config.clone())
@@ -961,11 +970,11 @@ impl IntermediumInfo {
         Ok(multisig_configs)
     }
 
-    fn cell_tx_helper(&self, network: NetworkType) -> Result<Option<TxHelper>> {
+    fn cell_tx_helper(&self) -> Result<Option<TxHelper>> {
         if let Some(cell_tx) = self.cell_tx.as_ref() {
             let repr = ReprTxHelper {
                 transaction: cell_tx.clone(),
-                multisig_configs: self.multisig_configs(network)?,
+                multisig_configs: self.multisig_configs()?,
                 signatures: self.cell_tx_signatures.clone(),
             };
             let helper = TxHelper::try_from(repr).map_err(Error::msg)?;
@@ -975,11 +984,11 @@ impl IntermediumInfo {
         }
     }
 
-    fn dep_group_tx_helper(&self, network: NetworkType) -> Result<Option<TxHelper>> {
+    fn dep_group_tx_helper(&self) -> Result<Option<TxHelper>> {
         if let Some(dep_group_tx) = self.dep_group_tx.as_ref() {
             let repr = ReprTxHelper {
                 transaction: dep_group_tx.clone(),
-                multisig_configs: self.multisig_configs(network)?,
+                multisig_configs: self.multisig_configs()?,
                 signatures: self.dep_group_tx_signatures.clone(),
             };
             let helper = TxHelper::try_from(repr).map_err(Error::msg)?;

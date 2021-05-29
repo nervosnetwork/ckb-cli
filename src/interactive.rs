@@ -436,11 +436,10 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("deploy", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info()?;
                     let output = DeploySubCommand::new(
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
-                        Some(genesis_info),
+                        None,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,
