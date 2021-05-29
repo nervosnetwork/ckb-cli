@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ckb_hash::blake2b_256;
+use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_index::{LiveCellInfo, VERSION};
-use ckb_jsonrpc_types as rpc_types;
+use ckb_jsonrpc_types::{self as rpc_types};
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
@@ -20,7 +20,7 @@ use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
     h256,
-    packed::{CellOutput, OutPoint},
+    packed::{self, CellOutput, OutPoint},
     prelude::*,
     H160, H256,
 };
@@ -157,16 +157,16 @@ pub fn get_genesis_info(
 }
 
 pub fn get_live_cell_with_cache(
-    cache: &mut HashMap<(OutPoint, bool), (CellOutput, Bytes)>,
+    cache: &mut HashMap<OutPoint, (CellOutput, Bytes)>,
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
 ) -> Result<(CellOutput, Bytes), String> {
-    if let Some(output) = cache.get(&(out_point.clone(), with_data)).cloned() {
+    if let Some(output) = cache.get(&out_point).cloned() {
         Ok(output)
     } else {
         let output = get_live_cell(client, out_point.clone(), with_data)?;
-        cache.insert((out_point, with_data), output.clone());
+        cache.insert(out_point, output.clone());
         Ok(output)
     }
 }
@@ -330,6 +330,70 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
+pub fn get_keystore_signer(
+    keystore: KeyStoreHandler,
+    mut client: HttpRpcClient,
+    account: H160,
+    password: Option<String>,
+) -> SignerFn {
+    Box::new(
+        move |lock_args: &HashSet<H160>, message: &H256, tx: &rpc_types::Transaction| {
+            if lock_args.contains(&account) {
+                if message == &h256!("0x0") {
+                    Ok(Some([0u8; 65]))
+                } else {
+                    let root_key_path = keystore.root_key_path(account.clone())?;
+                    let sign_target = if keystore.has_account_in_default(account.clone())? {
+                        SignTarget::AnyData(Default::default())
+                    } else {
+                        let inputs = tx
+                            .inputs
+                            .iter()
+                            .map(|input| {
+                                let tx_hash = &input.previous_output.tx_hash;
+                                client
+                                    .get_transaction(tx_hash.clone())?
+                                    .and_then(|tx_with_status| {
+                                        tx_with_status.transaction.map(|tx| tx.inner)
+                                    })
+                                    .map(packed::Transaction::from)
+                                    .map(rpc_types::Transaction::from)
+                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
+                            })
+                            .collect::<Result<Vec<_>, String>>()?;
+                        SignTarget::Transaction {
+                            tx: tx.clone(),
+                            inputs,
+                            change_path: root_key_path.to_string(),
+                        }
+                    };
+                    let data = keystore.sign(
+                        account.clone(),
+                        &root_key_path,
+                        message.clone(),
+                        sign_target,
+                        password.clone(),
+                        true,
+                    )?;
+                    if data.len() != 65 {
+                        Err(format!(
+                            "Invalid signature data lenght: {}, data: {:?}",
+                            data.len(),
+                            data
+                        ))
+                    } else {
+                        let mut data_bytes = [0u8; 65];
+                        data_bytes.copy_from_slice(&data[..]);
+                        Ok(Some(data_bytes))
+                    }
+                }
+            } else {
+                Ok(None)
+            }
+        },
+    )
+}
+
 pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
     let (recov_id, data) = signature.serialize_compact();
     let mut signature_bytes = [0u8; 65];
@@ -351,4 +415,22 @@ pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String>
         .value_of(name)
         .map(|s| s.to_string())
         .ok_or_else(|| format!("<{}> is required", name))
+}
+
+pub fn calculate_type_id(first_cell_input: &packed::CellInput, output_index: u64) -> [u8; 32] {
+    let mut blake2b = new_blake2b();
+    blake2b.update(first_cell_input.as_slice());
+    blake2b.update(&output_index.to_le_bytes());
+    let mut ret = [0u8; 32];
+    blake2b.finalize(&mut ret);
+    ret
+}
+
+pub fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
+    if from_capacity < to_capacity + tx_fee {
+        false
+    } else {
+        let rest_capacity = from_capacity - to_capacity - tx_fee;
+        rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB
+    }
 }

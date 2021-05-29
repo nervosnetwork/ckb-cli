@@ -1,6 +1,7 @@
 pub mod account;
 pub mod api_server;
 pub mod dao;
+pub mod deploy;
 pub mod index;
 pub mod mock_tx;
 pub mod molecule;
@@ -19,6 +20,7 @@ pub use self::tui::TuiSubCommand;
 pub use account::AccountSubCommand;
 pub use api_server::ApiServerSubCommand;
 pub use dao::DAOSubCommand;
+pub use deploy::DeploySubCommand;
 pub use index::IndexSubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;

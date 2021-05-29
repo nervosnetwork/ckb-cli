@@ -96,6 +96,10 @@ impl AddressPayload {
         Self::new_full(ScriptHashType::Type, code_hash, args)
     }
 
+    pub fn is_sighash(&self) -> bool {
+        matches!(self, AddressPayload::Short { index, .. } if *index == CodeHashIndex::Sighash)
+    }
+
     pub fn ty(&self, is_new: bool) -> AddressType {
         match self {
             AddressPayload::Short { .. } => AddressType::Short,

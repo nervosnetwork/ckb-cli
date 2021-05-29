@@ -1,31 +1,28 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 use ckb_jsonrpc_types as json_types;
-use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, SignerFn, TxHelper,
+    MultisigConfig, NetworkType, TxHelper,
 };
+use ckb_sdk_types::tx_helper::ReprTxHelper;
 use ckb_types::{
     bytes::Bytes,
     core::Capacity,
-    h256,
     packed::{self, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
-use serde_derive::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
-use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
+use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{
@@ -33,8 +30,8 @@ use crate::utils::{
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{
-        check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password,
+        check_capacity, get_genesis_info, get_keystore_signer, get_live_cell,
+        get_live_cell_with_cache, get_network_type, get_privkey_signer, get_to_data, read_password,
     },
 };
 
@@ -246,7 +243,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_file_opt: Option<PathBuf> =
                     FilePathParser::new(false).from_matches_opt(m, "tx-file", false)?;
                 let helper = TxHelper::default();
-                let repr = ReprTxHelper::new(helper, network);
+                let repr = helper.into_repr(network);
 
                 if let Some(tx_file) = tx_file_opt {
                     let mut file = fs::File::create(&tx_file).map_err(|err| err.to_string())?;
@@ -375,7 +372,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("info", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+                let mut live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)> =
                     Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
@@ -468,7 +465,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .transpose()?;
                 let skip_check: bool = m.is_present("skip-check");
 
-                let signer = if let Some(privkey) = privkey_opt {
+                let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
                 } else {
                     let password = if self.plugin_mgr.keystore_require_password() {
@@ -482,7 +479,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     get_keystore_signer(keystore, new_client, account, password)
                 };
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+                let mut live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)> =
                     Default::default();
                 let get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
@@ -495,7 +492,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, get_live_cell, skip_check)?;
+                    let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
                     if m.is_present("add-signatures") {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
@@ -519,7 +516,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
                 let skip_check: bool = m.is_present("skip-check");
 
-                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+                let mut live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)> =
                     Default::default();
                 let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
                     get_live_cell_with_cache(
@@ -583,7 +580,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
                     "testnet": Address::new(NetworkType::Testnet, address_payload.clone(), true).to_string(),
                     "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref())),
-                    "lock-hash": format!("{:#x}", lock_script.calc_script_hash())
+                    "lock-hash": format!("{:#x}", lock_script.calc_script_hash()),
+                    "lock-script": json_types::Script::from(lock_script),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -623,70 +621,6 @@ fn print_cell_info(
     );
 }
 
-fn get_keystore_signer(
-    keystore: KeyStoreHandler,
-    mut client: HttpRpcClient,
-    account: H160,
-    password: Option<String>,
-) -> SignerFn {
-    Box::new(
-        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
-            if lock_args.contains(&account) {
-                if message == &h256!("0x0") {
-                    Ok(Some([0u8; 65]))
-                } else {
-                    let root_key_path = keystore.root_key_path(account.clone())?;
-                    let sign_target = if keystore.has_account_in_default(account.clone())? {
-                        SignTarget::AnyData(Default::default())
-                    } else {
-                        let inputs = tx
-                            .inputs
-                            .iter()
-                            .map(|input| {
-                                let tx_hash = &input.previous_output.tx_hash;
-                                client
-                                    .get_transaction(tx_hash.clone())?
-                                    .and_then(|tx_with_status| {
-                                        tx_with_status.transaction.map(|tx| tx.inner)
-                                    })
-                                    .map(packed::Transaction::from)
-                                    .map(json_types::Transaction::from)
-                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
-                            })
-                            .collect::<Result<Vec<_>, String>>()?;
-                        SignTarget::Transaction {
-                            tx: tx.clone(),
-                            inputs,
-                            change_path: root_key_path.to_string(),
-                        }
-                    };
-                    let data = keystore.sign(
-                        account.clone(),
-                        &root_key_path,
-                        message.clone(),
-                        sign_target,
-                        password.clone(),
-                        true,
-                    )?;
-                    if data.len() != 65 {
-                        Err(format!(
-                            "Invalid signature data lenght: {}, data: {:?}",
-                            data.len(),
-                            data
-                        ))
-                    } else {
-                        let mut data_bytes = [0u8; 65];
-                        data_bytes.copy_from_slice(&data[..]);
-                        Ok(Some(data_bytes))
-                    }
-                }
-            } else {
-                Ok(None)
-            }
-        },
-    )
-}
-
 fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
     path: &Path,
     network: NetworkType,
@@ -698,120 +632,10 @@ fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
 
     let result = func(&mut helper)?;
 
-    let repr = ReprTxHelper::new(helper, network);
+    let repr = helper.into_repr(network);
     let mut file = fs::File::create(path).map_err(|err| err.to_string())?;
     let content = serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
     file.write_all(content.as_bytes())
         .map_err(|err| err.to_string())?;
     Ok(result)
-}
-
-#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
-#[serde(deny_unknown_fields)]
-struct ReprTxHelper {
-    transaction: json_types::Transaction,
-    multisig_configs: HashMap<H160, ReprMultisigConfig>,
-    signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
-}
-
-impl ReprTxHelper {
-    fn new(tx: TxHelper, network: NetworkType) -> Self {
-        ReprTxHelper {
-            transaction: tx.transaction().data().into(),
-            multisig_configs: tx
-                .multisig_configs()
-                .iter()
-                .map(|(lock_arg, cfg)| {
-                    (
-                        lock_arg.clone(),
-                        ReprMultisigConfig::new(cfg.clone(), network),
-                    )
-                })
-                .collect(),
-            signatures: tx
-                .signatures()
-                .iter()
-                .map(|(lock_arg, signatures)| {
-                    (
-                        JsonBytes::from_bytes(lock_arg.clone()),
-                        signatures
-                            .iter()
-                            .cloned()
-                            .map(JsonBytes::from_bytes)
-                            .collect(),
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-
-impl TryFrom<ReprTxHelper> for TxHelper {
-    type Error = String;
-    fn try_from(repr: ReprTxHelper) -> Result<Self, Self::Error> {
-        let transaction = packed::Transaction::from(repr.transaction).into_view();
-        let multisig_configs = repr
-            .multisig_configs
-            .into_iter()
-            .map(|(_, repr_cfg)| MultisigConfig::try_from(repr_cfg))
-            .collect::<Result<Vec<_>, String>>()?;
-        let signatures: HashMap<Bytes, HashSet<Bytes>> = repr
-            .signatures
-            .into_iter()
-            .map(|(lock_arg, signatures)| {
-                (
-                    lock_arg.into_bytes(),
-                    signatures.into_iter().map(JsonBytes::into_bytes).collect(),
-                )
-            })
-            .collect();
-
-        let mut tx_helper = TxHelper::new(transaction);
-        for cfg in multisig_configs {
-            tx_helper.add_multisig_config(cfg);
-        }
-        for (lock_arg, sub_signatures) in signatures {
-            for sub_signature in sub_signatures {
-                tx_helper.add_signature(lock_arg.clone(), sub_signature)?;
-            }
-        }
-        Ok(tx_helper)
-    }
-}
-
-#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
-#[serde(deny_unknown_fields)]
-struct ReprMultisigConfig {
-    sighash_addresses: Vec<String>,
-    require_first_n: u8,
-    threshold: u8,
-}
-
-impl ReprMultisigConfig {
-    fn new(cfg: MultisigConfig, network: NetworkType) -> Self {
-        let sighash_addresses = cfg
-            .sighash_addresses()
-            .iter()
-            .map(|payload| Address::new(network, payload.clone(), false).to_string())
-            .collect();
-        ReprMultisigConfig {
-            sighash_addresses,
-            require_first_n: cfg.require_first_n(),
-            threshold: cfg.threshold(),
-        }
-    }
-}
-
-impl TryFrom<ReprMultisigConfig> for MultisigConfig {
-    type Error = String;
-    fn try_from(repr: ReprMultisigConfig) -> Result<Self, Self::Error> {
-        let sighash_addresses = repr
-            .sighash_addresses
-            .into_iter()
-            .map(|address_string| {
-                Address::from_str(&address_string).map(|addr| addr.payload().clone())
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        MultisigConfig::new_with(sighash_addresses, repr.require_first_n, repr.threshold)
-    }
 }
