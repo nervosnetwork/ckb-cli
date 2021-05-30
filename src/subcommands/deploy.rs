@@ -97,12 +97,12 @@ impl<'a> DeploySubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_tx_file = Arg::with_name("tx-file")
-            .long("tx-file")
+        let arg_info_file = Arg::with_name("info-file")
+            .long("info-file")
             .required(true)
             .takes_value(true)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .about("Saving deploy cell/dep_group transactions file (.json, may for unlocking inputs by multisig, same format as `tx` sub-command)");
+            .about("File path for saving deploy cell/dep_group transactions and metadata (json format)");
         let arg_migration_dir = Arg::with_name("migration-dir")
             .long("migration-dir")
             .required(true)
@@ -130,17 +130,17 @@ impl<'a> DeploySubCommand<'a> {
                     )
                     .arg(arg::tx_fee().required(true))
                     .arg(arg_deployment.clone())
-                    .arg(arg_tx_file.clone().validator(|input| FilePathParser::new(false).validate(input)))
+                    .arg(arg_info_file.clone().validator(|input| FilePathParser::new(false).validate(input)))
                     .arg(arg_migration_dir.clone())
                     .arg(
                         Arg::with_name("sign-now")
                             .long("sign-now")
-                            .about("Sign the cell/dep_group transaction add signatures to tx-file now"),
+                            .about("Sign the cell/dep_group transaction add signatures to info-file now"),
                     ),
                 App::new("sign-txs")
                     .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(arg::from_account().required_unless(arg::privkey_path().get_name()))
-                    .arg(arg_tx_file.clone())
+                    .arg(arg_info_file.clone())
                     .arg(
                         Arg::with_name("add-signatures")
                             .long("add-signatures")
@@ -148,10 +148,10 @@ impl<'a> DeploySubCommand<'a> {
                     )
                     .about("Sign cell/dep_group transactions"),
                 App::new("explain-txs")
-                    .arg(arg_tx_file.clone())
+                    .arg(arg_info_file.clone())
                     .about("Explain cell transaction and dep_group transaction"),
                 App::new("apply-txs")
-                    .arg(arg_tx_file.clone())
+                    .arg(arg_info_file.clone())
                     .arg(arg_migration_dir)
                     .about("Send cell/dep_group and write results to migration directory"),
                 App::new("init-config")
@@ -174,10 +174,10 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     FilePathParser::new(true).from_matches(m, "deployment-config")?;
                 let migration_dir: PathBuf =
                     DirPathParser::new(true).from_matches(m, "migration-dir")?;
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
 
-                if tx_file.exists() {
-                    return Err(format!("Output tx-file already exists: {:?}", tx_file));
+                if info_file.exists() {
+                    return Err(format!("Output info-file already exists: {:?}", info_file));
                 }
 
                 let genesis_info = self.genesis_info()?;
@@ -327,14 +327,14 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                 }
 
-                let mut file = fs::File::create(&tx_file).map_err(|err| err.to_string())?;
+                let mut file = fs::File::create(&info_file).map_err(|err| err.to_string())?;
                 let content = serde_json::to_string_pretty(&info).map_err(|err| err.to_string())?;
                 file.write_all(content.as_bytes())
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
             ("sign-txs", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
+                let info_file: PathBuf = FilePathParser::new(true).from_matches(m, "info-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let account_opt: Option<H160> = m
@@ -370,7 +370,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     get_keystore_signer(keystore, new_client, account, password)
                 };
 
-                let all_signatures = modify_tx_file(&tx_file, |info: &mut IntermediumInfo| {
+                let all_signatures = modify_info_file(&info_file, |info: &mut IntermediumInfo| {
                     sign_info(
                         info,
                         self.rpc_client,
@@ -384,9 +384,9 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
             ("explain-txs", Some(m)) => {
                 // * Report cell transaction summary
                 // * Report dep_group transaction summary
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
 
-                let file = fs::File::open(tx_file).map_err(|err| err.to_string())?;
+                let file = fs::File::open(info_file).map_err(|err| err.to_string())?;
                 let info: IntermediumInfo =
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
 
@@ -395,11 +395,11 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 Ok(Output::new_success())
             }
             ("apply-txs", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
                 let migration_dir: PathBuf =
                     DirPathParser::new(true).from_matches(m, "migration-dir")?;
 
-                let file = fs::File::open(tx_file).map_err(|err| err.to_string())?;
+                let file = fs::File::open(info_file).map_err(|err| err.to_string())?;
                 let info: IntermediumInfo =
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
                 let skip_check = false;
@@ -1564,7 +1564,7 @@ impl<'a> CellCollector<'a> {
     }
 }
 
-fn modify_tx_file<T, F: FnOnce(&mut IntermediumInfo) -> Result<T>>(
+fn modify_info_file<T, F: FnOnce(&mut IntermediumInfo) -> Result<T>>(
     path: &PathBuf,
     func: F,
 ) -> Result<T> {
