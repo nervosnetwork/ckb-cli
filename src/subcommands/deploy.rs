@@ -13,7 +13,8 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    Address, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, NetworkType, TxHelper,
+    Address, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, NetworkType, SignerFn,
+    TxHelper,
 };
 use ckb_sdk_types::{
     deployment::{
@@ -49,11 +50,12 @@ use crate::utils::{
 const DEPLOYMENT_TOML: &str = include_str!("../deployment.toml");
 
 // Features:
-//  * Support sighash/multisig lock
-//  * Support type id
-//  * Support dep group
-//  * Support migration
-//  * Support outpoint/file as data source
+//  * DONE Support sighash/multisig lock
+//  * DONE Support type id
+//  * DONE Support dep group
+//  * DONE Support migration
+//  * DONE Support outpoint/file as data source
+//  * TODO Support offline sign
 pub struct DeploySubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
@@ -129,7 +131,12 @@ impl<'a> DeploySubCommand<'a> {
                     .arg(arg::tx_fee().required(true))
                     .arg(arg_deployment.clone())
                     .arg(arg_tx_file.clone().validator(|input| FilePathParser::new(false).validate(input)))
-                    .arg(arg_migration_dir.clone()),
+                    .arg(arg_migration_dir.clone())
+                    .arg(
+                        Arg::with_name("sign-now")
+                            .long("sign-now")
+                            .about("Sign the cell/dep_group transaction add signatures to tx-file now"),
+                    ),
                 App::new("sign-txs")
                     .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(arg::from_account().required_unless(arg::privkey_path().get_name()))
@@ -185,10 +192,8 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 let last_recipe =
                     load_last_snapshot(&migration_dir).map_err(|err| err.to_string())?;
 
-                println!("> == Building cell transaction ==");
-
                 // * Load needed cells
-                let cell_infos = load_cells(
+                let cell_changes = load_cells(
                     self.rpc_client,
                     &deployment.cells,
                     last_recipe.as_ref().map(|recipe| &recipe.cell_recipes[..]),
@@ -215,21 +220,18 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         tx_fee,
                         cell_deps.clone(),
                         &lock_script,
-                        &cell_infos,
+                        &cell_changes,
                     )
                     .map_err(|err| err.to_string())?
                 };
 
                 // * Build new cell recipes
                 let new_cell_recipes =
-                    build_new_cell_recipes(&lock_script, cell_tx_opt.as_ref(), &cell_infos)
+                    build_new_cell_recipes(&lock_script, cell_tx_opt.as_ref(), &cell_changes)
                         .map_err(|err| err.to_string())?;
 
-                println!("--------");
-                println!("> == Building dep_group transaction ==");
-
                 // * Load needed dep groups
-                let dep_group_infos = load_dep_groups(
+                let dep_group_changes = load_dep_groups(
                     self.rpc_client,
                     &deployment.dep_groups,
                     last_recipe
@@ -258,7 +260,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         tx_fee,
                         cell_deps.clone(),
                         &lock_script,
-                        &dep_group_infos,
+                        &dep_group_changes,
                     )
                     .map_err(|err| err.to_string())?
                 };
@@ -270,23 +272,23 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 let new_dep_group_recipes = build_new_dep_group_recipes(
                     &lock_script,
                     dep_group_tx_opt.as_ref(),
-                    &dep_group_infos,
+                    &dep_group_changes,
                 );
 
-                // * Check transaction outputs
-                let txs: Vec<_> = cell_tx_opt
-                    .as_ref()
-                    .into_iter()
-                    .chain(dep_group_tx_opt.as_ref().into_iter())
-                    .collect();
-                check_txs(txs).map_err(|err| err.to_string())?;
-
                 // * Explain transactions
+                let repr_cell_changes: Vec<_> = cell_changes
+                    .iter()
+                    .map(|change| change.to_repr(&lock_script))
+                    .collect();
+                let repr_dep_group_changes: Vec<_> = dep_group_changes
+                    .iter()
+                    .map(|change| change.to_repr(&lock_script))
+                    .collect();
                 let new_recipe = DeploymentRecipe {
                     cell_recipes: new_cell_recipes,
                     dep_group_recipes: new_dep_group_recipes,
                 };
-                let info = IntermediumInfo {
+                let mut info = IntermediumInfo {
                     deployment,
                     last_recipe,
                     new_recipe,
@@ -294,10 +296,37 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     used_inputs: Vec::new(),
                     cell_tx: cell_tx_opt.map(Into::into),
                     cell_tx_signatures: HashMap::default(),
+                    cell_changes: repr_cell_changes,
                     dep_group_tx: dep_group_tx_opt.map(Into::into),
                     dep_group_tx_signatures: HashMap::default(),
+                    dep_group_changes: repr_dep_group_changes,
                 };
                 explain_txs(&info).map_err(|err| err.to_string())?;
+
+                // Sign if required
+                if m.is_present("sign-now") {
+                    let mut signer = {
+                        let password = if self.plugin_mgr.keystore_require_password() {
+                            Some(read_password(false, None)?)
+                        } else {
+                            None
+                        };
+                        if !from_address.payload().is_sighash() {
+                            return Err(format!(
+                                "Can not sign now, from-address is not a sighash address: {}",
+                                from_address
+                            ));
+                        }
+                        let account =
+                            H160::from_slice(from_address.payload().args().as_ref()).expect("H160");
+                        let keystore = self.plugin_mgr.keystore_handler();
+                        let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
+                        get_keystore_signer(keystore, new_client, account, password)
+                    };
+                    let _ = sign_info(&mut info, self.rpc_client, &mut signer, true)
+                        .map_err(|err| err.to_string())?;
+                }
+
                 let mut file = fs::File::create(&tx_file).map_err(|err| err.to_string())?;
                 let content = serde_json::to_string_pretty(&info).map_err(|err| err.to_string())?;
                 file.write_all(content.as_bytes())
@@ -327,7 +356,6 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     })
                     .transpose()?;
 
-                let skip_check = false;
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
                 } else {
@@ -343,92 +371,12 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 };
 
                 let all_signatures = modify_tx_file(&tx_file, |info: &mut IntermediumInfo| {
-                    let mut live_cell_cache: HashMap<
-                        packed::OutPoint,
-                        (packed::CellOutput, Bytes),
-                    > = Default::default();
-                    if let Some(cell_tx) = info.cell_tx.as_ref() {
-                        let cell_tx = packed::Transaction::from(cell_tx.clone()).into_view();
-                        let tx_hash = cell_tx.hash();
-                        for (output_index, (output, data)) in
-                            cell_tx.outputs_with_data_iter().enumerate()
-                        {
-                            let out_point =
-                                packed::OutPoint::new(tx_hash.clone(), output_index as u32);
-                            live_cell_cache.insert(out_point, (output, data));
-                        }
-                        // FIXME: use info.used_inputs to support offline sign
-                    }
-                    let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
-                        get_live_cell_with_cache(
-                            &mut live_cell_cache,
-                            self.rpc_client,
-                            out_point,
-                            with_data,
-                        )
-                        .map(|(output, _)| output)
-                    };
-
-                    let mut all_signatures: HashMap<String, HashMap<_, _>> = Default::default();
-                    if let Some(helper) = info.cell_tx_helper()? {
-                        let signatures: HashMap<_, _> = helper
-                            .sign_inputs(&mut signer, &mut get_live_cell, skip_check)
-                            .map_err(Error::msg)?
-                            .into_iter()
-                            .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
-                            .collect();
-                        if m.is_present("add-signatures") {
-                            let mut cell_tx_signatures: HashMap<JsonBytes, HashSet<JsonBytes>> =
-                                info.cell_tx_signatures
-                                    .clone()
-                                    .into_iter()
-                                    .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
-                                    .collect();
-                            for (lock_arg, signature) in signatures.clone() {
-                                cell_tx_signatures
-                                    .entry(lock_arg)
-                                    .or_default()
-                                    .insert(signature);
-                            }
-                            info.cell_tx_signatures = cell_tx_signatures
-                                .into_iter()
-                                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
-                                .collect();
-                        }
-                        all_signatures.insert("cell_tx_signatures".to_string(), signatures);
-                    }
-
-                    if let Some(helper) = info.dep_group_tx_helper()? {
-                        let signatures: HashMap<_, _> = helper
-                            .sign_inputs(&mut signer, &mut get_live_cell, skip_check)
-                            .map_err(Error::msg)?
-                            .into_iter()
-                            .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
-                            .collect();
-                        if m.is_present("add-signatures") {
-                            let mut dep_group_tx_signatures: HashMap<
-                                JsonBytes,
-                                HashSet<JsonBytes>,
-                            > = info
-                                .dep_group_tx_signatures
-                                .clone()
-                                .into_iter()
-                                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
-                                .collect();
-                            for (lock_arg, signature) in signatures.clone() {
-                                dep_group_tx_signatures
-                                    .entry(lock_arg)
-                                    .or_default()
-                                    .insert(signature);
-                            }
-                            info.dep_group_tx_signatures = dep_group_tx_signatures
-                                .into_iter()
-                                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
-                                .collect();
-                        }
-                        all_signatures.insert("dep_group_tx_signatures".to_string(), signatures);
-                    }
-                    Ok(all_signatures)
+                    sign_info(
+                        info,
+                        self.rpc_client,
+                        &mut signer,
+                        m.is_present("add-signatures"),
+                    )
                 })
                 .map_err(|err| err.to_string())?;
                 Ok(Output::new_output(all_signatures))
@@ -436,7 +384,15 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
             ("explain-txs", Some(m)) => {
                 // * Report cell transaction summary
                 // * Report dep_group transaction summary
-                Err("TODO".to_string())
+                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+
+                let file = fs::File::open(tx_file).map_err(|err| err.to_string())?;
+                let info: IntermediumInfo =
+                    serde_json::from_reader(&file).map_err(|err| err.to_string())?;
+
+                explain_txs(&info).map_err(|err| err.to_string())?;
+
+                Ok(Output::new_success())
             }
             ("apply-txs", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
@@ -476,12 +432,18 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     let cell_tx_opt = info
                         .cell_tx_helper()
                         .map_err(|err| err.to_string())?
-                        .map(|helper| helper.build_tx(&mut get_live_cell, skip_check))
+                        .map(|helper| {
+                            let _ = helper.check_tx(&mut get_live_cell)?;
+                            helper.build_tx(&mut get_live_cell, skip_check)
+                        })
                         .transpose()?;
                     let dep_group_tx_opt = info
                         .dep_group_tx_helper()
                         .map_err(|err| err.to_string())?
-                        .map(|helper| helper.build_tx(&mut get_live_cell, skip_check))
+                        .map(|helper| {
+                            let _ = helper.check_tx(&mut get_live_cell)?;
+                            helper.build_tx(&mut get_live_cell, skip_check)
+                        })
                         .transpose()?;
                     (cell_tx_opt, dep_group_tx_opt)
                 };
@@ -584,11 +546,95 @@ fn load_last_snapshot(migration_dir: &Path) -> Result<Option<DeploymentRecipe>> 
         .transpose()
 }
 
+fn sign_info(
+    info: &mut IntermediumInfo,
+    rpc_client: &mut HttpRpcClient,
+    signer: &mut SignerFn,
+    add_signatures: bool,
+) -> Result<HashMap<String, HashMap<JsonBytes, JsonBytes>>> {
+    let skip_check = false;
+    let mut live_cell_cache: HashMap<packed::OutPoint, (packed::CellOutput, Bytes)> =
+        Default::default();
+    if let Some(cell_tx) = info.cell_tx.as_ref() {
+        let cell_tx = packed::Transaction::from(cell_tx.clone()).into_view();
+        let tx_hash = cell_tx.hash();
+        for (output_index, (output, data)) in cell_tx.outputs_with_data_iter().enumerate() {
+            let out_point = packed::OutPoint::new(tx_hash.clone(), output_index as u32);
+            live_cell_cache.insert(out_point, (output, data));
+        }
+        // FIXME: use info.used_inputs to support offline sign
+    }
+    let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
+        get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
+            .map(|(output, _)| output)
+    };
+
+    let mut all_signatures: HashMap<String, HashMap<_, _>> = Default::default();
+    if let Some(helper) = info.cell_tx_helper()? {
+        let _ = helper.check_tx(&mut get_live_cell).map_err(Error::msg)?;
+        let signatures: HashMap<_, _> = helper
+            .sign_inputs(signer, &mut get_live_cell, skip_check)
+            .map_err(Error::msg)?
+            .into_iter()
+            .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
+            .collect();
+        if add_signatures {
+            let mut cell_tx_signatures: HashMap<JsonBytes, HashSet<JsonBytes>> = info
+                .cell_tx_signatures
+                .clone()
+                .into_iter()
+                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .collect();
+            for (lock_arg, signature) in signatures.clone() {
+                cell_tx_signatures
+                    .entry(lock_arg)
+                    .or_default()
+                    .insert(signature);
+            }
+            info.cell_tx_signatures = cell_tx_signatures
+                .into_iter()
+                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .collect();
+        }
+        all_signatures.insert("cell_tx_signatures".to_string(), signatures);
+    }
+
+    if let Some(helper) = info.dep_group_tx_helper()? {
+        let _ = helper.check_tx(&mut get_live_cell).map_err(Error::msg)?;
+        let signatures: HashMap<_, _> = helper
+            .sign_inputs(signer, &mut get_live_cell, skip_check)
+            .map_err(Error::msg)?
+            .into_iter()
+            .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
+            .collect();
+        if add_signatures {
+            let mut dep_group_tx_signatures: HashMap<JsonBytes, HashSet<JsonBytes>> = info
+                .dep_group_tx_signatures
+                .clone()
+                .into_iter()
+                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .collect();
+            for (lock_arg, signature) in signatures.clone() {
+                dep_group_tx_signatures
+                    .entry(lock_arg)
+                    .or_default()
+                    .insert(signature);
+            }
+            info.dep_group_tx_signatures = dep_group_tx_signatures
+                .into_iter()
+                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .collect();
+        }
+        all_signatures.insert("dep_group_tx_signatures".to_string(), signatures);
+    }
+    Ok(all_signatures)
+}
+
 fn load_cells(
     rpc_client: &mut HttpRpcClient,
     cells: &[Cell],
     cell_recipes_opt: Option<&[CellRecipe]>,
-) -> Result<Vec<CellInfo>> {
+) -> Result<Vec<CellChange>> {
     let mut cell_recipes_map: HashMap<&String, (&CellRecipe, bool)> =
         if let Some(cell_recipes) = cell_recipes_opt {
             cell_recipes
@@ -598,7 +644,7 @@ fn load_cells(
         } else {
             HashMap::default()
         };
-    let mut cell_infos = Vec::new();
+    let mut cell_changes = Vec::new();
 
     let mut output_index = 0;
     for cell in cells {
@@ -622,7 +668,6 @@ fn load_cells(
             let type_id_unchanged = old_recipe.type_id.is_some() == config.enable_type_id;
             // NOTE: we trust `old_recipe.data_hash` here
             if data_unchanged && type_id_unchanged {
-                println!("> [cell] unchanged: {}", cell.name);
                 StateChange::Unchanged {
                     data,
                     data_hash,
@@ -630,10 +675,6 @@ fn load_cells(
                     old_recipe,
                 }
             } else {
-                println!(
-                    "> [cell] changed: {}, data-changed: {}, type-id-changed: {}",
-                    cell.name, !data_unchanged, !type_id_unchanged,
-                );
                 StateChange::Changed {
                     data,
                     data_hash,
@@ -643,7 +684,6 @@ fn load_cells(
                 }
             }
         } else {
-            println!("> [cell] added: {}", cell.name);
             StateChange::NewAdded {
                 data,
                 data_hash,
@@ -654,22 +694,17 @@ fn load_cells(
         if change.has_new_output() {
             output_index += 1;
         }
-        let name = cell.name.clone();
-        cell_infos.push(CellInfo { name, change });
+        cell_changes.push(change);
     }
 
     for (old_recipe, removed) in cell_recipes_map.values() {
         if *removed {
-            println!("> [cell] removed: {}", old_recipe.name);
-            cell_infos.push(CellInfo {
-                name: old_recipe.name.clone(),
-                change: StateChange::Removed {
-                    old_recipe: (*old_recipe).clone(),
-                },
+            cell_changes.push(StateChange::Removed {
+                old_recipe: (*old_recipe).clone(),
             });
         }
     }
-    Ok(cell_infos)
+    Ok(cell_changes)
 }
 
 fn load_cell_data(
@@ -704,7 +739,7 @@ fn load_dep_groups(
     dep_groups: &[DepGroup],
     dep_group_recipes_opt: Option<&[DepGroupRecipe]>,
     new_cell_recipes: &[CellRecipe],
-) -> Result<Vec<DepGroupInfo>> {
+) -> Result<Vec<DepGroupChange>> {
     let mut dep_group_recipes_map: HashMap<&String, (&DepGroupRecipe, bool)> =
         if let Some(dep_group_recipes) = dep_group_recipes_opt {
             dep_group_recipes
@@ -718,7 +753,7 @@ fn load_dep_groups(
         .into_iter()
         .map(|recipe| (&recipe.name, recipe))
         .collect();
-    let mut dep_group_infos = Vec::new();
+    let mut dep_group_changes = Vec::new();
     let mut output_index: u64 = 0;
     for dep_group in dep_groups {
         let out_points: Vec<_> = dep_group
@@ -756,7 +791,6 @@ fn load_dep_groups(
                     old_recipe.data_hash.clone()
                 };
                 if data_hash == old_data_hash {
-                    println!("> [dep_group] unchanged: {}", dep_group.name);
                     StateChange::Unchanged {
                         data,
                         data_hash,
@@ -764,7 +798,6 @@ fn load_dep_groups(
                         old_recipe,
                     }
                 } else {
-                    println!("> [dep_group] changed: {}", dep_group.name);
                     StateChange::Changed {
                         data,
                         data_hash,
@@ -774,7 +807,6 @@ fn load_dep_groups(
                     }
                 }
             } else {
-                println!("> [dep_group] added: {}", dep_group.name);
                 StateChange::NewAdded {
                     data,
                     data_hash,
@@ -785,28 +817,23 @@ fn load_dep_groups(
         if change.has_new_output() {
             output_index += 1;
         }
-        let name = dep_group.name.clone();
-        dep_group_infos.push(DepGroupInfo { name, change });
+        dep_group_changes.push(change);
     }
 
     for (old_recipe, removed) in dep_group_recipes_map.values() {
         if *removed {
-            println!("> [dep_group] removed: {}", old_recipe.name);
-            dep_group_infos.push(DepGroupInfo {
-                name: old_recipe.name.clone(),
-                change: StateChange::Removed {
-                    old_recipe: (*old_recipe).clone(),
-                },
+            dep_group_changes.push(StateChange::Removed {
+                old_recipe: (*old_recipe).clone(),
             });
         }
     }
-    Ok(dep_group_infos)
+    Ok(dep_group_changes)
 }
 
 fn build_new_cell_recipes(
     lock_script: &packed::Script,
     cell_tx_opt: Option<&packed::Transaction>,
-    cell_infos: &[CellInfo],
+    cell_changes: &[CellChange],
 ) -> Result<Vec<CellRecipe>> {
     let (new_tx_hash, first_cell_input): (H256, packed::CellInput) = cell_tx_opt
         .map::<Result<(H256, packed::CellInput), Error>, _>(|cell_tx| {
@@ -820,7 +847,7 @@ fn build_new_cell_recipes(
         })
         .transpose()?
         .unwrap_or_default();
-    let new_recipes: Vec<_> = cell_infos
+    let new_recipes: Vec<_> = cell_changes
         .into_iter()
         .filter(|info| info.has_new_recipe())
         .map(|info| {
@@ -834,12 +861,12 @@ fn build_new_cell_recipes(
 fn build_new_dep_group_recipes(
     lock_script: &packed::Script,
     dep_group_tx_opt: Option<&packed::Transaction>,
-    dep_group_infos: &[DepGroupInfo],
+    dep_group_changes: &[DepGroupChange],
 ) -> Vec<DepGroupRecipe> {
     let new_tx_hash: H256 = dep_group_tx_opt
         .map(|dep_group_tx| dep_group_tx.calc_tx_hash().unpack())
         .unwrap_or_default();
-    dep_group_infos
+    dep_group_changes
         .into_iter()
         .filter(|info| info.has_new_recipe())
         .map(|info| {
@@ -850,7 +877,54 @@ fn build_new_dep_group_recipes(
 }
 
 fn explain_txs(info: &IntermediumInfo) -> Result<()> {
-    // FIXME: todo
+    fn print_total_change(changes: &[ReprStateChange]) {
+        let (old_capacities, new_capacities): (Vec<_>, Vec<_>) = changes
+            .iter()
+            .filter(|change| change.kind != "Removed")
+            .map(|change| (change.old_capacity, change.new_capacity))
+            .unzip();
+        let old_total: u64 = old_capacities.iter().sum();
+        let new_total: u64 = new_capacities.iter().sum();
+        println!(
+            "> old total capacity: {:#} (removed items not included)",
+            HumanCapacity(old_total)
+        );
+        println!("> new total capacity: {:#}", HumanCapacity(new_total));
+    }
+    fn print_item(tag: &str, max_width: usize, change: &ReprStateChange) {
+        println!(
+            "[{}] {:<9} name: {:>width$}, old-capacity: {:>7}, new-capacity: {:>7}",
+            tag,
+            change.kind,
+            change.name,
+            HumanCapacity(change.old_capacity).to_string(),
+            HumanCapacity(change.new_capacity).to_string(),
+            width = max_width
+        );
+    }
+
+    println!("==== Cell transaction ====");
+    let max_width: usize = info
+        .cell_changes
+        .iter()
+        .map(|change| change.name.len())
+        .max()
+        .unwrap_or_default();
+    for change in &info.cell_changes {
+        print_item("cell", max_width, change);
+    }
+    print_total_change(&info.cell_changes);
+    println!("==== DepGroup transaction ====");
+    let max_width: usize = info
+        .dep_group_changes
+        .iter()
+        .map(|change| change.name.len())
+        .max()
+        .unwrap_or_default();
+    for change in &info.dep_group_changes {
+        print_item("dep_group", max_width, change);
+    }
+    print_total_change(&info.dep_group_changes);
     Ok(())
 }
 
@@ -885,15 +959,6 @@ fn build_tx<T: DeployInfo>(
         .unzip();
 
     let mut from_capacity: u64 = input_capacities.into_iter().sum();
-    println!(
-        "> binary outputs total capacity: {:#}",
-        HumanCapacity(to_capacity)
-    );
-    println!(
-        "> binary inputs  total capacity: {:#}",
-        HumanCapacity(from_capacity)
-    );
-
     if !enough_capacity(from_capacity, to_capacity, tx_fee) {
         let needed_capacity = if to_capacity > from_capacity {
             to_capacity - from_capacity
@@ -939,11 +1004,6 @@ fn build_tx<T: DeployInfo>(
     Ok(Some(tx.data()))
 }
 
-fn check_txs(txs: Vec<&packed::Transaction>) -> Result<()> {
-    // FIXME: todo
-    Ok(())
-}
-
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 struct IntermediumInfo {
     deployment: Deployment,
@@ -953,8 +1013,10 @@ struct IntermediumInfo {
     used_inputs: Vec<json_types::Transaction>,
     cell_tx: Option<json_types::Transaction>,
     cell_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+    cell_changes: Vec<ReprStateChange>,
     dep_group_tx: Option<json_types::Transaction>,
     dep_group_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+    dep_group_changes: Vec<ReprStateChange>,
 }
 
 impl IntermediumInfo {
@@ -1001,9 +1063,6 @@ impl IntermediumInfo {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 enum StateChange<C, R> {
-    Removed {
-        old_recipe: R,
-    },
     Changed {
         // New data
         data: Bytes,
@@ -1012,17 +1071,20 @@ enum StateChange<C, R> {
         old_recipe: R,
         output_index: u64,
     },
+    NewAdded {
+        data: Bytes,
+        data_hash: H256,
+        config: C,
+        output_index: u64,
+    },
     Unchanged {
         data: Bytes,
         data_hash: H256,
         config: C,
         old_recipe: R,
     },
-    NewAdded {
-        data: Bytes,
-        data_hash: H256,
-        config: C,
-        output_index: u64,
+    Removed {
+        old_recipe: R,
     },
 }
 
@@ -1037,7 +1099,20 @@ impl<C, R> StateChange<C, R> {
     }
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+struct ReprStateChange {
+    name: String,
+    kind: String,
+    old_capacity: u64,
+    new_capacity: u64,
+}
+
+type CellChange = StateChange<Cell, CellRecipe>;
+type DepGroupChange = StateChange<DepGroup, DepGroupRecipe>;
+
 trait DeployInfo {
+    fn name(&self) -> &String;
+    fn to_repr(&self, lock_script: &packed::Script) -> ReprStateChange;
     fn has_new_output(&self) -> bool;
     fn has_new_recipe(&self) -> bool;
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64;
@@ -1049,25 +1124,45 @@ trait DeployInfo {
     ) -> Option<(packed::CellOutput, Bytes)>;
 }
 
-struct CellInfo {
-    name: String,
-    change: StateChange<Cell, CellRecipe>,
-}
+impl DeployInfo for CellChange {
+    fn name(&self) -> &String {
+        match self {
+            StateChange::Changed { config, .. } => &config.name,
+            StateChange::NewAdded { config, .. } => &config.name,
+            StateChange::Unchanged { config, .. } => &config.name,
+            StateChange::Removed { old_recipe } => &old_recipe.name,
+        }
+    }
 
-impl DeployInfo for CellInfo {
+    fn to_repr(&self, lock_script: &packed::Script) -> ReprStateChange {
+        let new_capacity = self.occupied_capacity(lock_script);
+        let (kind, old_capacity) = match self {
+            StateChange::Changed { old_recipe, .. } => ("Changed", old_recipe.occupied_capacity),
+            StateChange::NewAdded { .. } => ("NewAdded", 0),
+            StateChange::Unchanged { .. } => ("Unchanged", new_capacity),
+            StateChange::Removed { old_recipe } => ("Removed", old_recipe.occupied_capacity),
+        };
+        ReprStateChange {
+            name: self.name().clone(),
+            kind: kind.to_string(),
+            old_capacity,
+            new_capacity,
+        }
+    }
+
     fn has_new_output(&self) -> bool {
-        self.change.has_new_output()
+        StateChange::has_new_output(self)
     }
 
     fn has_new_recipe(&self) -> bool {
-        match self.change {
+        match self {
             StateChange::Removed { .. } => false,
             _ => true,
         }
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
-        let (data, config) = match &self.change {
+        let (data, config) = match self {
             StateChange::Removed { .. } => return 0,
             StateChange::Changed { data, config, .. } => (data, config),
             StateChange::Unchanged { data, config, .. } => (data, config),
@@ -1084,7 +1179,7 @@ impl DeployInfo for CellInfo {
     }
 
     fn build_input(&self) -> Option<(packed::CellInput, u64)> {
-        match &self.change {
+        match self {
             StateChange::Changed { old_recipe, .. } => {
                 let out_point = packed::OutPoint::new(old_recipe.tx_hash.pack(), old_recipe.index);
                 let input = packed::CellInput::new(out_point, 0);
@@ -1099,7 +1194,7 @@ impl DeployInfo for CellInfo {
         lock_script: &packed::Script,
         first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
-        let (data, config, output_index, old_type_id) = match &self.change {
+        let (data, config, output_index, old_type_id) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
@@ -1151,14 +1246,14 @@ impl DeployInfo for CellInfo {
     }
 }
 
-impl CellInfo {
+impl CellChange {
     fn build_new_recipe(
         &self,
         lock_script: &packed::Script,
         first_cell_input: &packed::CellInput,
         new_tx_hash: &H256,
     ) -> Option<CellRecipe> {
-        let (tx_hash, index, data_hash, config, old_type_id) = match &self.change {
+        let (tx_hash, index, data_hash, config, old_type_id) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
@@ -1211,7 +1306,7 @@ impl CellInfo {
             None
         };
         Some(CellRecipe {
-            name: self.name.clone(),
+            name: self.name().clone(),
             // To be replaced with final transaction hash
             tx_hash,
             index,
@@ -1222,25 +1317,45 @@ impl CellInfo {
     }
 }
 
-struct DepGroupInfo {
-    name: String,
-    change: StateChange<DepGroup, DepGroupRecipe>,
-}
+impl DeployInfo for DepGroupChange {
+    fn name(&self) -> &String {
+        match self {
+            StateChange::Changed { config, .. } => &config.name,
+            StateChange::NewAdded { config, .. } => &config.name,
+            StateChange::Unchanged { config, .. } => &config.name,
+            StateChange::Removed { old_recipe } => &old_recipe.name,
+        }
+    }
 
-impl DeployInfo for DepGroupInfo {
+    fn to_repr(&self, lock_script: &packed::Script) -> ReprStateChange {
+        let new_capacity = self.occupied_capacity(lock_script);
+        let (kind, old_capacity) = match self {
+            StateChange::Changed { old_recipe, .. } => ("Changed", old_recipe.occupied_capacity),
+            StateChange::NewAdded { .. } => ("NewAdded", 0),
+            StateChange::Unchanged { .. } => ("Unchanged", new_capacity),
+            StateChange::Removed { old_recipe } => ("Removed", old_recipe.occupied_capacity),
+        };
+        ReprStateChange {
+            name: self.name().clone(),
+            kind: kind.to_string(),
+            old_capacity,
+            new_capacity,
+        }
+    }
+
     fn has_new_output(&self) -> bool {
-        self.change.has_new_output()
+        StateChange::has_new_output(self)
     }
 
     fn has_new_recipe(&self) -> bool {
-        match self.change {
+        match self {
             StateChange::Removed { .. } => false,
             _ => true,
         }
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
-        let data = match &self.change {
+        let data = match self {
             StateChange::Removed { .. } => return 0,
             StateChange::Changed { data, .. } => data,
             StateChange::Unchanged { data, .. } => data,
@@ -1251,7 +1366,7 @@ impl DeployInfo for DepGroupInfo {
     }
 
     fn build_input(&self) -> Option<(packed::CellInput, u64)> {
-        match &self.change {
+        match self {
             StateChange::Changed { old_recipe, .. } => {
                 let out_point = packed::OutPoint::new(old_recipe.tx_hash.pack(), old_recipe.index);
                 let input = packed::CellInput::new(out_point, 0);
@@ -1266,7 +1381,7 @@ impl DeployInfo for DepGroupInfo {
         lock_script: &packed::Script,
         _first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
-        let data = match &self.change {
+        let data = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
@@ -1285,13 +1400,13 @@ impl DeployInfo for DepGroupInfo {
     }
 }
 
-impl DepGroupInfo {
+impl DepGroupChange {
     fn build_new_recipe(
         &self,
         lock_script: &packed::Script,
         new_tx_hash: H256,
     ) -> Option<DepGroupRecipe> {
-        let (tx_hash, index, data_hash) = match &self.change {
+        let (tx_hash, index, data_hash) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
@@ -1316,7 +1431,7 @@ impl DepGroupInfo {
             } => (new_tx_hash, *output_index as u32, data_hash.clone()),
         };
         Some(DepGroupRecipe {
-            name: self.name.clone(),
+            name: self.name().clone(),
             // To be replaced with final transaction hash
             tx_hash,
             index,
