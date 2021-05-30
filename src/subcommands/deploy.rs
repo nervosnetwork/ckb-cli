@@ -258,7 +258,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         &from_address,
                         &mut collector,
                         tx_fee,
-                        cell_deps.clone(),
+                        cell_deps,
                         &lock_script,
                         &dep_group_changes,
                     )
@@ -472,7 +472,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     None
                 };
 
-                let mut path = migration_dir.clone();
+                let mut path = migration_dir;
                 path.push(snapshot_name());
                 snapshot_recipe(&path, &info.new_recipe).map_err(|err| err.to_string())?;
 
@@ -638,7 +638,7 @@ fn load_cells(
     let mut cell_recipes_map: HashMap<&String, (&CellRecipe, bool)> =
         if let Some(cell_recipes) = cell_recipes_opt {
             cell_recipes
-                .into_iter()
+                .iter()
                 .map(|recipe| (&recipe.name, (recipe, true)))
                 .collect()
         } else {
@@ -743,14 +743,14 @@ fn load_dep_groups(
     let mut dep_group_recipes_map: HashMap<&String, (&DepGroupRecipe, bool)> =
         if let Some(dep_group_recipes) = dep_group_recipes_opt {
             dep_group_recipes
-                .into_iter()
+                .iter()
                 .map(|recipe| (&recipe.name, (recipe, true)))
                 .collect()
         } else {
             HashMap::default()
         };
     let new_cell_recipes_map: HashMap<&String, &CellRecipe> = new_cell_recipes
-        .into_iter()
+        .iter()
         .map(|recipe| (&recipe.name, recipe))
         .collect();
     let mut dep_group_changes = Vec::new();
@@ -848,7 +848,7 @@ fn build_new_cell_recipes(
         .transpose()?
         .unwrap_or_default();
     let new_recipes: Vec<_> = cell_changes
-        .into_iter()
+        .iter()
         .filter(|info| info.has_new_recipe())
         .map(|info| {
             info.build_new_recipe(lock_script, &first_cell_input, &new_tx_hash)
@@ -867,7 +867,7 @@ fn build_new_dep_group_recipes(
         .map(|dep_group_tx| dep_group_tx.calc_tx_hash().unpack())
         .unwrap_or_default();
     dep_group_changes
-        .into_iter()
+        .iter()
         .filter(|info| info.has_new_recipe())
         .map(|info| {
             info.build_new_recipe(lock_script, new_tx_hash.clone())
@@ -937,7 +937,7 @@ fn build_tx<T: DeployInfo>(
     infos: &[T],
 ) -> Result<Option<packed::Transaction>> {
     let to_capacity: u64 = infos
-        .into_iter()
+        .iter()
         .filter_map(|info| {
             if info.has_new_output() {
                 Some(info.occupied_capacity(lock_script))
@@ -953,10 +953,8 @@ fn build_tx<T: DeployInfo>(
     let from_lock_hash: H256 = packed::Script::from(from_address.payload())
         .calc_script_hash()
         .unpack();
-    let (mut inputs, input_capacities): (Vec<_>, Vec<_>) = infos
-        .into_iter()
-        .filter_map(|info| info.build_input())
-        .unzip();
+    let (mut inputs, input_capacities): (Vec<_>, Vec<_>) =
+        infos.iter().filter_map(|info| info.build_input()).unzip();
 
     let mut from_capacity: u64 = input_capacities.into_iter().sum();
     if !enough_capacity(from_capacity, to_capacity, tx_fee) {
@@ -981,7 +979,7 @@ fn build_tx<T: DeployInfo>(
 
     let first_cell_input = &inputs[0];
     let (mut outputs, mut outputs_data): (Vec<_>, Vec<_>) = infos
-        .into_iter()
+        .iter()
         .filter_map(|info| info.build_cell_output(lock_script, first_cell_input))
         .unzip();
 
