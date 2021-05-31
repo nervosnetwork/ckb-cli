@@ -476,7 +476,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     let account = account_opt.unwrap();
                     let keystore = self.plugin_mgr.keystore_handler();
                     let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
-                    get_keystore_signer(keystore, new_client, account, password)
+                    get_keystore_signer(keystore, new_client, Vec::new(), account, password)
                 };
 
                 let mut live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)> =

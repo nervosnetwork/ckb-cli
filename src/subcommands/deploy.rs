@@ -55,7 +55,7 @@ const DEPLOYMENT_TOML: &str = include_str!("../deployment.toml");
 //  * DONE Support dep group
 //  * DONE Support migration
 //  * DONE Support outpoint/file as data source
-//  * TODO Support offline sign
+//  * DONE Support offline sign
 pub struct DeploySubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
@@ -268,6 +268,19 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     return Err("No cells/dep_groups need update".to_string());
                 }
 
+                // * Load input transactions
+                let mut used_input_txs = HashMap::default();
+                if let Some(tx) = cell_tx_opt.as_ref() {
+                    load_input_txs(&mut used_input_txs, self.rpc_client, tx)
+                        .map_err(|err| err.to_string())?;
+                    let tx_hash = tx.calc_tx_hash().unpack();
+                    used_input_txs.insert(tx_hash, json_types::Transaction::from(tx.clone()));
+                }
+                if let Some(tx) = dep_group_tx_opt.as_ref() {
+                    load_input_txs(&mut used_input_txs, self.rpc_client, tx)
+                        .map_err(|err| err.to_string())?;
+                }
+
                 // * Build new dep_group recipes
                 let new_dep_group_recipes = build_new_dep_group_recipes(
                     &lock_script,
@@ -292,8 +305,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     deployment,
                     last_recipe,
                     new_recipe,
-                    // FIXME: fill this map to support offline sign
-                    used_inputs: Vec::new(),
+                    used_input_txs,
                     cell_tx: cell_tx_opt.map(Into::into),
                     cell_tx_signatures: HashMap::default(),
                     cell_changes: repr_cell_changes,
@@ -321,7 +333,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                             H160::from_slice(from_address.payload().args().as_ref()).expect("H160");
                         let keystore = self.plugin_mgr.keystore_handler();
                         let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
-                        get_keystore_signer(keystore, new_client, account, password)
+                        get_keystore_signer(keystore, new_client, Vec::new(), account, password)
                     };
                     let _ = sign_info(&mut info, self.rpc_client, &mut signer, true)
                         .map_err(|err| err.to_string())?;
@@ -343,10 +355,16 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         FixedHashParser::<H160>::default()
                             .parse(&input)
                             .or_else(|err| {
-                                let network = get_network_type(self.rpc_client)?;
-                                let result: Result<Address, String> = AddressParser::new_sighash()
-                                    .set_network(network)
-                                    .parse(&input);
+                                let mut parser = AddressParser::new_sighash();
+                                match get_network_type(self.rpc_client) {
+                                    Ok(network) => {
+                                        parser.set_network(network);
+                                    }
+                                    Err(err) => {
+                                        eprintln!("WARN: get network type failed: {}", err);
+                                    }
+                                }
+                                let result: Result<Address, String> = parser.parse(&input);
                                 result
                                     .map(|address| {
                                         H160::from_slice(&address.payload().args()).unwrap()
@@ -356,21 +374,23 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     })
                     .transpose()?;
 
-                let mut signer = if let Some(privkey) = privkey_opt {
-                    get_privkey_signer(privkey)
-                } else {
-                    let password = if self.plugin_mgr.keystore_require_password() {
-                        Some(read_password(false, None)?)
-                    } else {
-                        None
-                    };
-                    let account = account_opt.unwrap();
-                    let keystore = self.plugin_mgr.keystore_handler();
-                    let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
-                    get_keystore_signer(keystore, new_client, account, password)
-                };
-
                 let all_signatures = modify_info_file(&info_file, |info: &mut IntermediumInfo| {
+                    let mut signer = if let Some(privkey) = privkey_opt {
+                        get_privkey_signer(privkey)
+                    } else {
+                        let password = if self.plugin_mgr.keystore_require_password() {
+                            Some(read_password(false, None).map_err(Error::msg)?)
+                        } else {
+                            None
+                        };
+                        let account = account_opt.unwrap();
+                        let keystore = self.plugin_mgr.keystore_handler();
+                        let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
+                        let used_input_txs: Vec<_> =
+                            info.used_input_txs.values().cloned().collect();
+                        get_keystore_signer(keystore, new_client, used_input_txs, account, password)
+                    };
+
                     sign_info(
                         info,
                         self.rpc_client,
@@ -555,14 +575,14 @@ fn sign_info(
     let skip_check = false;
     let mut live_cell_cache: HashMap<packed::OutPoint, (packed::CellOutput, Bytes)> =
         Default::default();
-    if let Some(cell_tx) = info.cell_tx.as_ref() {
-        let cell_tx = packed::Transaction::from(cell_tx.clone()).into_view();
+    for input_tx in info.used_input_txs.values() {
+        let cell_tx = packed::Transaction::from(input_tx.clone()).into_view();
+        // For security reason, we must calculate transaction hash from transaction.
         let tx_hash = cell_tx.hash();
         for (output_index, (output, data)) in cell_tx.outputs_with_data_iter().enumerate() {
             let out_point = packed::OutPoint::new(tx_hash.clone(), output_index as u32);
             live_cell_cache.insert(out_point, (output, data));
         }
-        // FIXME: use info.used_inputs to support offline sign
     }
     let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
         get_live_cell_with_cache(&mut live_cell_cache, rpc_client, out_point, with_data)
@@ -1002,13 +1022,41 @@ fn build_tx<T: DeployInfo>(
     Ok(Some(tx.data()))
 }
 
+fn load_input_txs(
+    input_txs: &mut HashMap<H256, json_types::Transaction>,
+    rpc_client: &mut HttpRpcClient,
+    tx: &packed::Transaction,
+) -> Result<()> {
+    for input in tx.raw().inputs().into_iter() {
+        let tx_hash: H256 = input.previous_output().tx_hash().unpack();
+        if input_txs.contains_key(&tx_hash) {
+            continue;
+        }
+        let input_tx = rpc_client
+            .get_transaction(tx_hash.clone())
+            .map_err(Error::msg)?
+            .and_then(|tx_with_status| {
+                if tx_with_status.tx_status.status == json_types::Status::Committed {
+                    Some(json_types::Transaction::from(packed::Transaction::from(
+                        tx_with_status.transaction.inner,
+                    )))
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| anyhow!("Can not load input transaction {:#x}", tx_hash))?;
+        input_txs.insert(tx_hash, input_tx);
+    }
+    Ok(())
+}
+
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 struct IntermediumInfo {
     deployment: Deployment,
     last_recipe: Option<DeploymentRecipe>,
     new_recipe: DeploymentRecipe,
     // For offline sign (should verify the tx hash)
-    used_inputs: Vec<json_types::Transaction>,
+    used_input_txs: HashMap<H256, json_types::Transaction>,
     cell_tx: Option<json_types::Transaction>,
     cell_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
     cell_changes: Vec<ReprStateChange>,

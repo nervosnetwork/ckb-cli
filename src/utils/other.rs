@@ -332,10 +332,21 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
 
 pub fn get_keystore_signer(
     keystore: KeyStoreHandler,
-    mut client: HttpRpcClient,
+    mut rpc_client: HttpRpcClient,
+    // This argument is for offline sign by keystore plugin (ledger for example)
+    used_input_txs: Vec<rpc_types::Transaction>,
     account: H160,
     password: Option<String>,
 ) -> SignerFn {
+    let used_input_txs: HashMap<_, _> = used_input_txs
+        .into_iter()
+        .map(|tx| {
+            let tx_hash: H256 = packed::Transaction::from(tx.clone())
+                .calc_tx_hash()
+                .unpack();
+            (tx_hash, tx)
+        })
+        .collect();
     Box::new(
         move |lock_args: &HashSet<H160>, message: &H256, tx: &rpc_types::Transaction| {
             if lock_args.contains(&account) {
@@ -351,7 +362,10 @@ pub fn get_keystore_signer(
                             .iter()
                             .map(|input| {
                                 let tx_hash = &input.previous_output.tx_hash;
-                                client
+                                if let Some(tx) = used_input_txs.get(&tx_hash) {
+                                    return Ok(tx.clone());
+                                }
+                                rpc_client
                                     .get_transaction(tx_hash.clone())?
                                     .and_then(|tx_with_status| {
                                         tx_with_status.transaction.map(|tx| tx.inner)
