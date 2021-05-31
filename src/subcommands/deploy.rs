@@ -102,7 +102,7 @@ impl<'a> DeploySubCommand<'a> {
             .required(true)
             .takes_value(true)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .about("File path for saving deploy cell/dep_group transactions and metadata (json format)");
+            .about("File path for saving deploy cell/dep_group transactions and metadata (format: json)");
         let arg_migration_dir = Arg::with_name("migration-dir")
             .long("migration-dir")
             .required(true)
@@ -146,7 +146,7 @@ impl<'a> DeploySubCommand<'a> {
                             .long("add-signatures")
                             .about("Sign and add signatures"),
                     )
-                    .about("Sign cell/dep_group transactions"),
+                    .about("Sign cell/dep_group transactions (support offline sign)"),
                 App::new("explain-txs")
                     .arg(arg_info_file.clone())
                     .about("Explain cell transaction and dep_group transaction"),
@@ -156,7 +156,7 @@ impl<'a> DeploySubCommand<'a> {
                     .about("Send cell/dep_group and write results to migration directory"),
                 App::new("init-config")
                     .arg(arg_deployment.validator(|input| FilePathParser::new(false).validate(input)))
-                    .about("Initialize default deployment config")
+                    .about("Initialize default deployment config (format: toml)")
             ])
     }
 }
@@ -361,7 +361,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                                         parser.set_network(network);
                                     }
                                     Err(err) => {
-                                        eprintln!("WARN: get network type failed: {}", err);
+                                        eprintln!("WARNING: get network type failed: {}", err);
                                     }
                                 }
                                 let result: Result<Address, String> = parser.parse(&input);
@@ -557,12 +557,15 @@ fn snapshot_recipe(path: &PathBuf, recipe: &DeploymentRecipe) -> Result<()> {
 }
 
 fn load_last_snapshot(migration_dir: &Path) -> Result<Option<DeploymentRecipe>> {
+    let re = regex::Regex::new(r"^\d{4}-\d{2}-\d{2}-\d{6}\.json$").unwrap();
     fs::read_dir(migration_dir)?
         .map(|d| d.map(|d| d.file_name()))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
+        .map(|filename| filename.into_string().unwrap())
+        .filter(|filename| re.is_match(filename))
         .max()
-        .map(|last_filename| load_snapshot(migration_dir, last_filename.into_string().unwrap()))
+        .map(|last_filename| load_snapshot(migration_dir, last_filename))
         .transpose()
 }
 
