@@ -3,7 +3,7 @@ name = "my_cell"
 enable_type_id = true
 location = { file = "build/release/my_cell" }
 
-# reference to on-chain cells
+# reference to on-chain cells (copy the cell data)
 [[cells]]
 name = "genesis_cell"
 enable_type_id = true
