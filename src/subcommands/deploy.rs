@@ -1035,7 +1035,7 @@ fn build_tx<T: DeployInfo>(
     let (mut inputs, mut input_capacities): (Vec<_>, Vec<_>) =
         infos.iter().filter_map(|info| info.build_input()).unzip();
     if inputs.is_empty() {
-        let (more_infos, more_capacity) = collector.collect_one(from_lock_hash.clone(), true)?;
+        let (more_infos, more_capacity) = collector.collect_one(from_lock_hash, true)?;
         inputs.extend(more_infos.into_iter().map(|info| info.input()));
         input_capacities.push(more_capacity);
     }
