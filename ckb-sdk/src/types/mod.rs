@@ -7,7 +7,8 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 
 pub use address::{
-    Address, AddressPayload, AddressType, CodeHashIndex, OldAddress, OldAddressFormat,
+    AcpConfig, Address, AddressPayload, AddressPayloadWithAcpConfig, AddressType, CodeHashIndex,
+    OldAddress, OldAddressFormat,
 };
 pub use human_capacity::HumanCapacity;
 pub use since::{Since, SinceType};
@@ -19,7 +20,6 @@ use crate::constants::{
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NetworkType {
     Mainnet,
-    // Aggron
     Testnet,
     Dev,
 }
