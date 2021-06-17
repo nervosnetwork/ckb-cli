@@ -13,14 +13,14 @@ pub use human_capacity::HumanCapacity;
 pub use since::{Since, SinceType};
 
 use crate::constants::{
-    NETWORK_DEV, NETWORK_MAINNET, NETWORK_STAGING, NETWORK_TESTNET, PREFIX_MAINNET, PREFIX_TESTNET,
+    NETWORK_DEV, NETWORK_MAINNET, NETWORK_TESTNET, PREFIX_MAINNET, PREFIX_TESTNET,
 };
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum NetworkType {
     Mainnet,
+    // Aggron
     Testnet,
-    Staging,
     Dev,
 }
 
@@ -36,9 +36,7 @@ impl NetworkType {
     pub fn to_prefix(self) -> &'static str {
         match self {
             NetworkType::Mainnet => PREFIX_MAINNET,
-            NetworkType::Testnet => PREFIX_TESTNET,
-            NetworkType::Staging => PREFIX_TESTNET,
-            NetworkType::Dev => PREFIX_TESTNET,
+            _ => PREFIX_TESTNET,
         }
     }
 
@@ -46,7 +44,6 @@ impl NetworkType {
         match value {
             NETWORK_MAINNET => Some(NetworkType::Mainnet),
             NETWORK_TESTNET => Some(NetworkType::Testnet),
-            NETWORK_STAGING => Some(NetworkType::Staging),
             NETWORK_DEV => Some(NetworkType::Dev),
             _ => None,
         }
@@ -56,7 +53,6 @@ impl NetworkType {
         match self {
             NetworkType::Mainnet => NETWORK_MAINNET,
             NetworkType::Testnet => NETWORK_TESTNET,
-            NetworkType::Staging => NETWORK_STAGING,
             NetworkType::Dev => NETWORK_DEV,
         }
     }

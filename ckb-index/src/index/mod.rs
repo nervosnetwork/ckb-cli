@@ -54,7 +54,6 @@ impl<'a> IndexDatabase<'a> {
                 .map(|bytes| match bytes[0] {
                     0 => NetworkType::Mainnet,
                     1 => NetworkType::Testnet,
-                    254 => NetworkType::Staging,
                     255 => NetworkType::Dev,
                     _ => panic!("Corrupted index database (network field)"),
                 });

@@ -5,7 +5,6 @@ pub const PREFIX_TESTNET: &str = "ckt";
 
 pub const NETWORK_MAINNET: &str = "ckb";
 pub const NETWORK_TESTNET: &str = "ckb_testnet";
-pub const NETWORK_STAGING: &str = "ckb_staging";
 pub const NETWORK_DEV: &str = "ckb_dev";
 
 pub const SECP_SIGNATURE_SIZE: usize = 65;

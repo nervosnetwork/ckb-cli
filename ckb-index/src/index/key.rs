@@ -375,7 +375,6 @@ impl Key {
         let value_byte = match value {
             NetworkType::Mainnet => 0,
             NetworkType::Testnet => 1,
-            NetworkType::Staging => 254,
             NetworkType::Dev => 255,
         };
         (Key::Network.to_bytes(), vec![value_byte])
