@@ -296,13 +296,14 @@ impl AddressPayload {
 }
 
 pub struct AddressPayloadWithAcpConfig<'a> {
-    payload: &'a AddressPayload,
-    acp_config: &'a AcpConfig,
+    pub payload: &'a AddressPayload,
+    pub acp_config: &'a AcpConfig,
 }
 
 pub struct ScriptWithAcpConfig<'a> {
-    lock: &'a Script,
-    acp_config: &'a AcpConfig,
+    pub lock: &'a Script,
+    /// When acp_config is None and got an invalid acp Script, convert to AddressPayload::Full
+    pub acp_config_opt: Option<&'a AcpConfig>,
 }
 
 impl fmt::Debug for AddressPayload {
@@ -352,7 +353,10 @@ impl<'a> From<AddressPayloadWithAcpConfig<'a>> for Script {
 impl<'a> TryFrom<ScriptWithAcpConfig<'a>> for AddressPayload {
     type Error = String;
     fn try_from(lock_with_cfg: ScriptWithAcpConfig) -> Result<AddressPayload, String> {
-        let ScriptWithAcpConfig { lock, acp_config } = lock_with_cfg;
+        let ScriptWithAcpConfig {
+            lock,
+            acp_config_opt,
+        } = lock_with_cfg;
         let hash_type: ScriptHashType = lock.hash_type().try_into().expect("Invalid hash_type");
         let code_hash = lock.code_hash();
         let code_hash_h256: H256 = code_hash.unpack();
@@ -369,7 +373,9 @@ impl<'a> TryFrom<ScriptWithAcpConfig<'a>> for AddressPayload {
         {
             let index = CodeHashIndex::Multisig;
             Ok(AddressPayload::Short { index, args })
-        } else if hash_type == acp_config.hash_type && &code_hash == acp_config.code_hash() {
+        } else if Some(hash_type) == acp_config_opt.as_ref().map(|cfg| cfg.hash_type)
+            && Some(&code_hash) == acp_config_opt.as_ref().map(|cfg| cfg.code_hash())
+        {
             if args.len() < 20 || args.len() > 22 {
                 return Err(format!(
                     "Invalid anyone-can-pay lock script args: {:?}",

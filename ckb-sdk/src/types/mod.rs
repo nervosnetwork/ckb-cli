@@ -8,7 +8,7 @@ use std::fmt;
 
 pub use address::{
     AcpConfig, Address, AddressPayload, AddressPayloadWithAcpConfig, AddressType, CodeHashIndex,
-    OldAddress, OldAddressFormat,
+    OldAddress, OldAddressFormat, ScriptWithAcpConfig,
 };
 pub use human_capacity::HumanCapacity;
 pub use since::{Since, SinceType};
