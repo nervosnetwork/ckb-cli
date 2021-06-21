@@ -6,7 +6,7 @@ use super::KeyStoreError;
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display = "BIP32 error: {}", _0)]
-    BIP32(Bip32Error),
+    Bip32(Bip32Error),
 
     #[fail(display = "KeyStore error: {}", _0)]
     KeyStore(KeyStoreError),

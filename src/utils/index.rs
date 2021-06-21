@@ -1,5 +1,5 @@
 use std::fmt;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -87,16 +87,10 @@ impl IndexThreadState {
         }
     }
     pub fn is_started(&self) -> bool {
-        match self {
-            IndexThreadState::WaitToStart => false,
-            _ => true,
-        }
+        matches!(self, IndexThreadState::WaitToStart)
     }
     pub fn is_stopped(&self) -> bool {
-        match self {
-            IndexThreadState::Stopped => true,
-            _ => false,
-        }
+        matches!(self, IndexThreadState::Stopped)
     }
     pub fn is_synced(&self) -> bool {
         match self {
@@ -107,17 +101,11 @@ impl IndexThreadState {
         }
     }
     pub fn is_error(&self) -> bool {
-        match self {
-            IndexThreadState::Error(_) => true,
-            _ => false,
-        }
+        matches!(self, IndexThreadState::Error(_))
     }
     #[cfg_attr(windows, allow(dead_code))]
     pub fn is_processing(&self) -> bool {
-        match self {
-            IndexThreadState::Processing(Some(_), _) => true,
-            _ => false,
-        }
+        matches!(self, IndexThreadState::Processing(Some(_), _))
     }
 }
 
@@ -208,7 +196,7 @@ pub fn with_db<F, T>(
     func: F,
     rpc_client: &mut HttpRpcClient,
     genesis_info: GenesisInfo,
-    index_dir: &PathBuf,
+    index_dir: &Path,
     index_controller: IndexController,
     wait_for_sync: bool,
 ) -> Result<T, String>

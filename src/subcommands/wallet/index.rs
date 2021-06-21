@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -102,7 +102,7 @@ pub fn start_index_thread(
 fn process(
     receiver: &Receiver<Request<IndexRequest, IndexResponse>>,
     rpc_client: &mut HttpRpcClient,
-    index_dir: &PathBuf,
+    index_dir: &Path,
     state: &Arc<RwLock<IndexThreadState>>,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<(bool, bool), String> {
@@ -198,7 +198,7 @@ Or you can use follow command to rebuild index database:
     }
 }
 
-fn remove_db(index_dir: &PathBuf, rpc_client: &mut HttpRpcClient) -> Result<(), String> {
+fn remove_db(index_dir: &Path, rpc_client: &mut HttpRpcClient) -> Result<(), String> {
     let genesis_block: BlockView = rpc_client
         .get_block_by_number(0)?
         .expect("Can not get genesis block?")

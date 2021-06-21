@@ -101,6 +101,7 @@ impl Spec for DaoPrepareMultiple {
 pub struct DaoWithdrawMultiple;
 
 impl Spec for DaoWithdrawMultiple {
+    #[allow(clippy::needless_collect)]
     fn run(&self, setup: &mut Setup) {
         assert_eq!(deposited_capacity(setup), 0);
         assert_eq!(prepared_capacity(setup), 0);
@@ -194,7 +195,7 @@ fn deposit(setup: &mut Setup, shannons: &[u64]) -> Vec<String> {
             shannon2ckb(*shannon),
             privkey_path,
         ));
-        assert!(deposit_tx_hash.starts_with("0x"), deposit_tx_hash);
+        assert!(deposit_tx_hash.starts_with("0x"), "{}", deposit_tx_hash);
         setup.miner().generate_blocks(3);
         deposit_tx_hashes.push(deposit_tx_hash);
     }
@@ -213,7 +214,7 @@ fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
     }
 
     let prepare_tx_hash = setup.cli(&command);
-    assert!(prepare_tx_hash.starts_with("0x"), prepare_tx_hash);
+    assert!(prepare_tx_hash.starts_with("0x"), "{}", prepare_tx_hash);
     setup.miner().generate_blocks(3);
     prepare_tx_hash
 }
@@ -231,12 +232,12 @@ fn withdraw(setup: &mut Setup, out_points: &[String]) -> String {
 
     let withdraw_tx_hash = setup.cli(&command);
     setup.miner().generate_blocks(3);
-    assert!(withdraw_tx_hash.starts_with("0x"), withdraw_tx_hash);
+    assert!(withdraw_tx_hash.starts_with("0x"), "{}", withdraw_tx_hash);
 
     let output = setup.cli(&format!(
         "wallet get-live-cells --address {} --limit 99999999",
         Miner::address(),
     ));
-    assert!(output.contains(&withdraw_tx_hash), output);
+    assert!(output.contains(&withdraw_tx_hash), "{}", output);
     withdraw_tx_hash
 }

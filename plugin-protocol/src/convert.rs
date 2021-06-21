@@ -317,10 +317,6 @@ impl From<RpcRequest> for (&'static str, Vec<serde_json::Value>) {
             RpcRequest::GetBlockHash { number } => {
                 (method::RPC_GET_BLOCK_HASH, vec![serde_json::json!(number)])
             }
-            RpcRequest::GetCellbaseOutputCapacityDetails { hash } => (
-                method::RPC_GET_CELLBASE_OUTPUT_CAPACITY_DETAILS,
-                vec![serde_json::json!(hash)],
-            ),
         }
     }
 }
@@ -337,11 +333,6 @@ impl TryFrom<&JsonrpcRequest> for RpcRequest {
             method::RPC_GET_BLOCK_HASH => RpcRequest::GetBlockHash {
                 number: parse_param(data, 0, "number")?,
             },
-            method::RPC_GET_CELLBASE_OUTPUT_CAPACITY_DETAILS => {
-                RpcRequest::GetCellbaseOutputCapacityDetails {
-                    hash: parse_param(data, 0, "hash")?,
-                }
-            }
             _ => {
                 return Err(format!("Invalid request method: {}", data.method));
             }

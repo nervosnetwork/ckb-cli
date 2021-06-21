@@ -33,7 +33,7 @@ macro_rules! impl_array_newtype {
             fn from(data: &'a [$ty]) -> $thing {
                 assert_eq!(data.len(), $len);
                 let mut ret = [0; $len];
-                ret.copy_from_slice(&data[..]);
+                ret.copy_from_slice(data);
                 $thing(ret)
             }
         }
@@ -316,9 +316,9 @@ impl From<Vec<ChildNumber>> for DerivationPath {
     }
 }
 
-impl Into<Vec<ChildNumber>> for DerivationPath {
-    fn into(self) -> Vec<ChildNumber> {
-        self.0
+impl From<DerivationPath> for Vec<ChildNumber> {
+    fn from(dpath: DerivationPath) -> Vec<ChildNumber> {
+        dpath.0
     }
 }
 

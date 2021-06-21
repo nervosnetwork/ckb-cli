@@ -212,7 +212,7 @@ impl<'a> UtilSubCommand<'a> {
                                      let input = if input.starts_with("0x") || input.starts_with("0X") {
                                          &input[2..]
                                      } else {
-                                         &input[..]
+                                         input
                                      };
                                      u32::from_str_radix(input, 16).map(|_| ()).map_err(|err| err.to_string())
                                  })
@@ -229,7 +229,7 @@ impl<'a> UtilSubCommand<'a> {
                              let input = if input.starts_with("0x") || input.starts_with("0X") {
                                  &input[2..]
                              } else {
-                                 &input[..]
+                                 input
                              };
                              U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
                          })
@@ -310,7 +310,7 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                     PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
                 let pubkey_opt = privkey_opt
                     .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
-                    .or_else(|| pubkey_opt);
+                    .or(pubkey_opt);
                 let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
                     hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
                 });
@@ -603,7 +603,7 @@ message = "0x"
                         let input = if input.starts_with("0x") || input.starts_with("0X") {
                             &input[2..]
                         } else {
-                            &input[..]
+                            input
                         };
                         u32::from_str_radix(input, 16).map_err(|err| err.to_string())
                     })?;
@@ -617,7 +617,7 @@ message = "0x"
                 let input = if input.starts_with("0x") || input.starts_with("0X") {
                     &input[2..]
                 } else {
-                    &input[..]
+                    input
                 };
                 let difficulty = U256::from_hex_str(input).map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({

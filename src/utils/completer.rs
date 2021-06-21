@@ -125,7 +125,7 @@ impl<'a> Completer for CkbCompleter<'a> {
         let args = shell_words::split(&line[..pos]).unwrap();
         let word_lower = word.to_lowercase();
         let tmp_pair = Self::find_subcommand(
-            self.clap_app.clone(),
+            Arc::clone(&self.clap_app),
             args.iter().map(String::as_str).peekable(),
         )
         .map(|current_app| Self::get_completions(&current_app, &args))
