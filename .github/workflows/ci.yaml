@@ -21,6 +21,13 @@ jobs:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
     - uses: actions/checkout@v2
+    - if: matrix.os == 'windows-latest'
+      name: Windows Dependencies
+      run: |
+        Set-ExecutionPolicy RemoteSigned -scope CurrentUser
+        Invoke-Expression (New-Object System.Net.WebClient).DownloadString('https://get.scoop.sh')
+        scoop install yasm
+        echo ("PATH=" + $env:PATH + ";" + $env:USERPROFILE + "\scoop\shims;C:\msys64\mingw64\bin") >> $env:GITHUB_ENV
     - name: UnitTest
       run: make test
 
