@@ -176,11 +176,7 @@ impl<'a> IndexDatabase<'a> {
             .map(|bytes| {
                 let script = Script::new_unchecked(bytes.into());
                 // Meaningless AcpConfig
-                AddressPayload::try_from(ScriptWithAcpConfig {
-                    lock: &script,
-                    acp_config_opt: None,
-                })
-                .unwrap()
+                AddressPayload::try_from(ScriptWithAcpConfig::new(&script, None)).unwrap()
             })
     }
 

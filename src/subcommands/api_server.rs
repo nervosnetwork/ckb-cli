@@ -5,11 +5,13 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, NetworkType};
+use ckb_sdk::{
+    AcpConfig, Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, NetworkType,
+    ReprAcpConfig,
+};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView},
-    packed::Script,
     prelude::*,
     H256,
 };
@@ -165,7 +167,11 @@ pub trait ApiRpc {
     fn transfer(&self, _args: HttpTransferArgs) -> RpcResult<H256>;
 
     #[rpc(name = "get_capacity_by_address")]
-    fn get_capacity_by_address(&self, _address: String) -> RpcResult<GetCapacityResponse>;
+    fn get_capacity_by_address(
+        &self,
+        _address: String,
+        _acp_config: Option<ReprAcpConfig>,
+    ) -> RpcResult<GetCapacityResponse>;
 
     #[rpc(name = "get_capacity_by_lock_hash")]
     fn get_capacity_by_lock_hash(&self, _lock_hash: H256) -> RpcResult<GetCapacityResponse>;
@@ -174,6 +180,7 @@ pub trait ApiRpc {
     fn get_live_cells_by_address(
         &self,
         _address: String,
+        _acp_config: Option<ReprAcpConfig>,
         _from_number_opt: Option<u64>,
         _to_number_opt: Option<u64>,
         _limit: usize,
@@ -266,8 +273,16 @@ impl ApiRpc for ApiRpcImpl {
         }
     }
 
-    fn get_capacity_by_address(&self, address: String) -> RpcResult<GetCapacityResponse> {
-        log::info!("[call]: get_capacity_by_address({})", address);
+    fn get_capacity_by_address(
+        &self,
+        address: String,
+        acp_config: Option<ReprAcpConfig>,
+    ) -> RpcResult<GetCapacityResponse> {
+        log::info!(
+            "[call]: get_capacity_by_address({}, acp_config: {:?})",
+            address,
+            acp_config
+        );
         let network = {
             let mut rpc_client = self.rpc_client.lock().unwrap();
             get_network_type(&mut rpc_client).map_err(internal_err)?
@@ -276,7 +291,14 @@ impl ApiRpc for ApiRpcImpl {
             .set_network(network)
             .parse(&address)
             .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
+        let acp_config = acp_config.map(AcpConfig::from);
+        let acp_config = AcpConfig::from_network(network, acp_config.as_ref());
+        let lock_hash: H256 = address
+            .payload()
+            .try_to_script(acp_config.as_ref())
+            .map_err(RpcError::invalid_params)?
+            .calc_script_hash()
+            .unpack();
         self.get_capacity_by_lock_hash(lock_hash)
     }
 
@@ -297,6 +319,7 @@ impl ApiRpc for ApiRpcImpl {
     fn get_live_cells_by_address(
         &self,
         address: String,
+        acp_config: Option<ReprAcpConfig>,
         from_number_opt: Option<u64>,
         to_number_opt: Option<u64>,
         limit: usize,
@@ -316,7 +339,14 @@ impl ApiRpc for ApiRpcImpl {
             .set_network(network)
             .parse(&address)
             .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
+        let acp_config = acp_config.map(AcpConfig::from);
+        let acp_config = AcpConfig::from_network(network, acp_config.as_ref());
+        let lock_hash: H256 = address
+            .payload()
+            .try_to_script(acp_config.as_ref())
+            .map_err(RpcError::invalid_params)?
+            .calc_script_hash()
+            .unpack();
         self.get_live_cells_by_lock_hash(lock_hash, from_number_opt, to_number_opt, limit)
     }
 
@@ -424,6 +454,7 @@ pub struct HttpTransferArgs {
     pub to_address: String,
     pub from_locked_address: Option<String>,
     pub to_data: Option<Bytes>,
+    pub acp_config: Option<ReprAcpConfig>,
 }
 
 impl HttpTransferArgs {
@@ -431,6 +462,7 @@ impl HttpTransferArgs {
         let capacity = HumanCapacity::from(self.capacity).to_string();
         let tx_fee = HumanCapacity::from(self.tx_fee).to_string();
         TransferArgs {
+            acp_config: self.acp_config.map(Into::into),
             privkey_path: Some(privkey_path),
             from_account: None,
             from_locked_address: self.from_locked_address,

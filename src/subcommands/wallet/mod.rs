@@ -21,7 +21,7 @@ use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
+        AcpConfigParser, AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
     index::{with_db, IndexController},
@@ -38,8 +38,8 @@ use ckb_sdk::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
     wallet::DerivationPath,
-    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
-    Since, SinceType, TxHelper, SECP256K1,
+    AcpConfig, Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig,
+    SignerFn, Since, SinceType, TxHelper, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -115,6 +115,7 @@ impl<'a> WalletSubCommand<'a> {
                     )
                     .arg(arg::from_locked_address())
                     .arg(arg::to_address().required(true))
+                    .arg(arg::acp_config())
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
@@ -138,6 +139,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::address())
                     .arg(arg::pubkey())
                     .arg(arg::lock_arg())
+                    .arg(arg::acp_config())
                     .arg(arg::derive_receiving_address_length())
                     .arg(arg::derive_change_address_length())
                     .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
@@ -150,6 +152,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::live_cells_limit())
                     .arg(arg::from_block_number())
                     .arg(arg::to_block_number())
+                    .arg(arg::acp_config())
                     .arg(
                         Arg::with_name("fast-mode")
                             .long("fast-mode")
@@ -167,6 +170,7 @@ impl<'a> WalletSubCommand<'a> {
         skip_check: bool,
     ) -> Result<TransactionView, String> {
         let TransferArgs {
+            acp_config,
             privkey_path,
             from_account,
             from_locked_address,
@@ -182,19 +186,29 @@ impl<'a> WalletSubCommand<'a> {
         } = args;
 
         let network_type = get_network_type(self.rpc_client)?;
+        let acp_config = AcpConfig::from_network(network_type, acp_config.as_ref());
         let from_privkey: Option<PrivkeyWrapper> = privkey_path
             .map(|input| PrivkeyPathParser.parse(&input))
             .transpose()?;
-        let from_account: Option<H160> = from_account
+        let from_address_payload_opt: Option<AddressPayload> = from_account
             .map(|input| {
                 FixedHashParser::<H160>::default()
                     .parse(&input)
+                    .map(AddressPayload::new_short_sighash)
                     .or_else(|err| {
-                        let result: Result<Address, String> = AddressParser::new_sighash()
+                        let result: Result<Address, String> = AddressParser::new_short_sighash()
                             .set_network(network_type)
                             .parse(&input);
                         result
-                            .map(|address| H160::from_slice(&address.payload().args()).unwrap())
+                            .map(|address| address.into_payload())
+                            .map_err(|_| err)
+                    })
+                    .or_else(|err| {
+                        let result: Result<Address, String> = AddressParser::new_short_acp()
+                            .set_network(network_type)
+                            .parse(&input);
+                        result
+                            .map(|address| address.into_payload())
                             .map_err(|_| err)
                     })
             })
@@ -236,10 +250,7 @@ impl<'a> WalletSubCommand<'a> {
             } else {
                 None
             };
-            (
-                AddressPayload::from_pubkey_hash(from_account.unwrap()),
-                password,
-            )
+            (from_address_payload_opt.unwrap(), password)
         };
         let from_address = Address::new(network_type, from_address_payload.clone(), false);
 
@@ -264,8 +275,10 @@ impl<'a> WalletSubCommand<'a> {
             }
         }
 
-        let to_address_hash_type = to_address.payload().hash_type();
-        let to_address_code_hash: H256 = to_address.payload().code_hash().unpack();
+        // FIXME: to ACP address
+        let to_address_hash_type = to_address.payload().hash_type(ScriptHashType::Type);
+        let to_address_code_hash: H256 =
+            to_address.payload().code_hash(&Default::default()).unpack();
         let to_address_args_len = to_address.payload().args().len();
         if !skip_check_to_address
             && !(to_address_hash_type == ScriptHashType::Type
@@ -288,7 +301,9 @@ impl<'a> WalletSubCommand<'a> {
         let genesis_info_clone = genesis_info.clone();
 
         // The lock hashes for search live cells
-        let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
+        let mut lock_hashes = vec![from_address_payload
+            .try_to_script(acp_config.as_ref())?
+            .calc_script_hash()];
         let mut helper = TxHelper::default();
 
         let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
@@ -311,8 +326,12 @@ impl<'a> WalletSubCommand<'a> {
                         change_path_opt = Some(path.clone());
                     }
                     path_map.insert(hash160.clone(), path.clone());
-                    let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                    lock_hashes.push(Script::from(&payload).calc_script_hash());
+                    let payload = AddressPayload::new_short_sighash(hash160.clone());
+                    lock_hashes.push(
+                        payload
+                            .try_to_script(acp_config.as_ref())?
+                            .calc_script_hash(),
+                    );
                 }
                 (
                     last_change_address.payload().clone(),
@@ -328,11 +347,14 @@ impl<'a> WalletSubCommand<'a> {
         if let Some(from_locked_address) = from_locked_address.as_ref() {
             lock_hashes.insert(
                 0,
-                Script::from(from_locked_address.payload()).calc_script_hash(),
+                from_locked_address
+                    .payload()
+                    .try_to_script(acp_config.as_ref())?
+                    .calc_script_hash(),
             );
             for lock_arg in std::iter::once(&from_lock_arg).chain(path_map.keys()) {
                 let mut sighash_addresses = Vec::default();
-                sighash_addresses.push(AddressPayload::from_pubkey_hash(lock_arg.clone()));
+                sighash_addresses.push(AddressPayload::new_short_sighash(lock_arg.clone()));
                 let require_first_n = 0;
                 let threshold = 1;
                 let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
@@ -451,14 +473,14 @@ impl<'a> WalletSubCommand<'a> {
         };
         let to_output = CellOutput::new_builder()
             .capacity(Capacity::shannons(to_capacity).pack())
-            .lock(to_address.payload().into())
+            .lock(to_address.payload().try_to_script(acp_config.as_ref())?)
             .type_(ScriptOpt::new_builder().set(type_script).build())
             .build();
         helper.add_output(to_output, to_data);
         if rest_capacity >= MIN_SECP_CELL_CAPACITY {
             let change_output = CellOutput::new_builder()
                 .capacity(Capacity::shannons(rest_capacity).pack())
-                .lock((&change_address_payload).into())
+                .lock(change_address_payload.try_to_script(acp_config.as_ref())?)
                 .build();
             helper.add_output(change_output, Bytes::default());
         }
@@ -592,7 +614,10 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {
                 let to_data = get_to_data(m)?;
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let args = TransferArgs {
+                    acp_config,
                     privkey_path: m.value_of("privkey-path").map(|s| s.to_string()),
                     from_account: m.value_of("from-account").map(|s| s.to_string()),
                     from_locked_address: m.value_of("from-locked-address").map(|s| s.to_string()),
@@ -621,12 +646,15 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 }
             }
             ("get-capacity", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
                 let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
                     vec![lock_hash.pack()]
                 } else {
                     let network_type = get_network_type(self.rpc_client)?;
+                    let acp_config = AcpConfig::from_network(network_type, acp_config.as_ref());
 
                     let receiving_address_length: u32 = FromStrParser::<u32>::default()
                         .from_matches(m, "derive-receiving-address-length")?;
@@ -641,7 +669,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     } else {
                         get_address(Some(network_type), m)?
                     };
-                    let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
+                    let mut lock_hashes = vec![address_payload
+                        .try_to_script(acp_config.as_ref())?
+                        .calc_script_hash()];
                     if m.is_present("derived") {
                         let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
 
@@ -657,8 +687,12 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                                 None,
                             )?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                            let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                            lock_hashes.push(Script::from(&payload).calc_script_hash());
+                            let payload = AddressPayload::new_short_sighash(hash160.clone());
+                            lock_hashes.push(
+                                payload
+                                    .try_to_script(acp_config.as_ref())?
+                                    .calc_script_hash(),
+                            );
                         }
                     }
                     lock_hashes
@@ -692,14 +726,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let to_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
                 let fast_mode = m.is_present("fast-mode");
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
 
                 let network_type = get_network_type(self.rpc_client)?;
+                let acp_config = AcpConfig::from_network(network_type, acp_config.as_ref());
                 let lock_hash_opt = if lock_hash_opt.is_none() {
                     let address_opt: Option<Address> = AddressParser::default()
                         .set_network_opt(Some(network_type))
                         .from_matches_opt(m, "address", false)?;
                     address_opt
-                        .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
+                        .map(|address| {
+                            address
+                                .payload()
+                                .try_to_script(acp_config.as_ref())
+                                .map(|script| script.calc_script_hash().unpack())
+                        })
+                        .transpose()?
                 } else {
                     lock_hash_opt
                 };
@@ -861,6 +904,7 @@ fn get_keystore_signer(
 
 #[derive(Clone, Debug)]
 pub struct TransferArgs {
+    pub acp_config: Option<AcpConfig>,
     pub privkey_path: Option<String>,
     pub from_account: Option<String>,
     pub from_locked_address: Option<String>,

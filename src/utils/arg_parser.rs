@@ -10,9 +10,15 @@ use std::time::Duration;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     wallet::{zeroize_privkey, MasterPrivKey},
-    Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
+    AcpConfig, Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType,
+    OldAddress, ReprAcpConfig,
 };
-use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
+use ckb_types::{
+    core::ScriptHashType,
+    packed::{Byte32, OutPoint},
+    prelude::*,
+    H160, H256,
+};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
@@ -214,6 +220,27 @@ impl ArgParser<PathBuf> for FilePathParser {
     }
 }
 
+pub struct AcpConfigParser {
+    file_path_parser: FilePathParser,
+}
+
+impl Default for AcpConfigParser {
+    fn default() -> AcpConfigParser {
+        AcpConfigParser {
+            file_path_parser: FilePathParser::new(true),
+        }
+    }
+}
+
+impl ArgParser<AcpConfig> for AcpConfigParser {
+    fn parse(&self, input: &str) -> Result<AcpConfig, String> {
+        let path = self.file_path_parser.parse(input)?;
+        let file = fs::File::open(path).map_err(|err| err.to_string())?;
+        let repr: ReprAcpConfig = serde_json::from_reader(&file).map_err(|err| err.to_string())?;
+        Ok(AcpConfig::from(repr))
+    }
+}
+
 #[derive(Default)]
 pub struct DirPathParser {
     path_parser: PathParser,
@@ -351,16 +378,22 @@ impl AddressParser {
         AddressParser { network, payload }
     }
 
-    pub fn new_sighash() -> Self {
+    pub fn new_short_sighash() -> Self {
         AddressParser {
             network: None,
             payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
         }
     }
-    pub fn new_multisig() -> Self {
+    pub fn new_short_multisig() -> Self {
         AddressParser {
             network: None,
             payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Multisig))),
+        }
+    }
+    pub fn new_short_acp() -> Self {
+        AddressParser {
+            network: None,
+            payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Acp))),
         }
     }
 
@@ -411,7 +444,8 @@ impl ArgParser<Address> for AddressParser {
             code_hash_opt: Option<&H256>,
         ) -> Result<(), String> {
             if let Some(code_hash) = code_hash_opt {
-                let payload_code_hash: H256 = payload.code_hash().unpack();
+                let acp_code_hash = Byte32::default();
+                let payload_code_hash: H256 = payload.code_hash(&acp_code_hash).unpack();
                 if code_hash != &payload_code_hash {
                     return Err(format!(
                         "Invalid code hash: {:#x}, expected: {:#x}",
@@ -467,7 +501,7 @@ impl ArgParser<Address> for AddressParser {
                     AddressPayloadOption::FullData(code_hash_opt) => {
                         if payload.ty(is_new) != AddressType::FullData
                             && !(payload.ty(is_new) == AddressType::Full
-                                && payload.hash_type() != ScriptHashType::Type)
+                                && payload.hash_type(ScriptHashType::Type) != ScriptHashType::Type)
                         {
                             return Err(format!(
                                 "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?}/{:?})",
@@ -483,7 +517,7 @@ impl ArgParser<Address> for AddressParser {
                     AddressPayloadOption::FullType(code_hash_opt) => {
                         if payload.ty(is_new) != AddressType::FullType
                             && !(payload.ty(is_new) == AddressType::Full
-                                && payload.hash_type() == ScriptHashType::Type)
+                                && payload.hash_type(ScriptHashType::Type) == ScriptHashType::Type)
                         {
                             return Err(format!(
                                 "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?})",
@@ -505,7 +539,7 @@ impl ArgParser<Address> for AddressParser {
         let network = NetworkType::from_prefix(prefix.as_str())
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
-        let payload = AddressPayload::from_pubkey_hash(old_address.hash().clone());
+        let payload = AddressPayload::new_short_sighash(old_address.hash().clone());
         Ok(Address::new(NetworkType::Testnet, payload, false))
     }
 }
@@ -633,10 +667,9 @@ mod tests {
             AddressParser::default().parse("ckt1q9gry5zgughh7wzcxzn4u59t0lzl6np4ky60r6ztpw69rl"),
             Ok(Address::new(
                 NetworkType::Testnet,
-                AddressPayload::new_short(
-                    CodeHashIndex::Sighash,
-                    h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b")
-                ),
+                AddressPayload::new_short_sighash(h160!(
+                    "0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b"
+                )),
                 false,
             ))
         );
@@ -645,11 +678,10 @@ mod tests {
             AddressParser::default().parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
             Ok(Address::new(
                 NetworkType::Mainnet,
-                AddressPayload::new_short(
-                    CodeHashIndex::Sighash,
-                    h160!("0x13e41d6F9292555916f17B4882a5477C01270142")
-                ),
-                false
+                AddressPayload::new_short_sighash(h160!(
+                    "0x13e41d6F9292555916f17B4882a5477C01270142"
+                )),
+                false,
             ))
         );
 
