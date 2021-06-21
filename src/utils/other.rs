@@ -70,7 +70,7 @@ pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<Addre
     let address = address_opt
         .map(|address| address.payload().clone())
         .or_else(|| pubkey.map(|pubkey| AddressPayload::from_pubkey(&pubkey)))
-        .or_else(|| lock_arg.map(AddressPayload::from_pubkey_hash))
+        .or_else(|| lock_arg.map(AddressPayload::new_short_sighash))
         .ok_or_else(|| "Please give one argument".to_owned())?;
     Ok(address)
 }

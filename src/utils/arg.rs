@@ -1,6 +1,6 @@
 use crate::utils::arg_parser::{
-    AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-    HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
+    AcpConfigParser, AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
+    FromStrParser, HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
 use ckb_types::{H160, H256};
 use clap::Arg;
@@ -29,6 +29,14 @@ pub fn address<'a>() -> Arg<'a> {
         .about(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
+}
+
+pub fn acp_config<'a>() -> Arg<'a> {
+    Arg::with_name("acp-config")
+        .long("acp-config")
+        .takes_value(true)
+        .validator(|input| AcpConfigParser::default().validate(input))
+        .about("Anyone can pay josn config, required when connect to dev-chain.\nContent example:\n{\"code_hash\": \"0x..\", \"hash_type\": \"type\", \"tx_hash\": \"0x..\", \"index\": 0, \"dep_type\": \"dep_group\"} ")
 }
 
 pub fn lock_hash<'a>() -> Arg<'a> {
@@ -89,7 +97,7 @@ pub fn from_account<'a>() -> Arg<'a> {
                 .or_else(|err| {
                     AddressParser::default()
                         .validate(input)
-                        .and_then(|()| AddressParser::new_sighash().validate(input))
+                        .and_then(|()| AddressParser::new_short_sighash().validate(input))
                         .map_err(|_| err)
                 })
         })

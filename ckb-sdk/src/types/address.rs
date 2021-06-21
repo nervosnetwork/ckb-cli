@@ -1,20 +1,25 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
 
 use bech32::{convert_bits, Bech32, ToBase32};
 use ckb_hash::blake2b_256;
+use ckb_jsonrpc_types as json_types;
 use ckb_types::{
     bytes::Bytes,
-    core::ScriptHashType,
-    packed::{Byte32, Script},
+    core::{DepType, ScriptHashType},
+    packed::{Byte32, CellDep, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
 use serde_derive::{Deserialize, Serialize};
 
 use super::NetworkType;
-use crate::constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
+use crate::constants::{
+    AGGRON_ACP_CODE_HASH, AGGRON_ACP_DEP_TYPE, AGGRON_ACP_HASH_TYPE, AGGRON_ACP_INDEX,
+    AGGRON_ACP_TX_HASH, LINA_ACP_CODE_HASH, LINA_ACP_DEP_TYPE, LINA_ACP_HASH_TYPE, LINA_ACP_INDEX,
+    LINA_ACP_TX_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH,
+};
 pub use old_addr::{Address as OldAddress, AddressFormat as OldAddressFormat};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
@@ -43,6 +48,8 @@ pub enum CodeHashIndex {
     Sighash = 0x00,
     // SECP256K1 + multisig
     Multisig = 0x01,
+    // anyone_can_pay blake160(PK)
+    Acp = 0x02,
 }
 
 impl CodeHashIndex {
@@ -50,6 +57,7 @@ impl CodeHashIndex {
         match value {
             0x00 => Ok(CodeHashIndex::Sighash),
             0x01 => Ok(CodeHashIndex::Multisig),
+            0x02 => Ok(CodeHashIndex::Acp),
             _ => Err(format!("Invalid code hash index value: {}", value)),
         }
     }
@@ -69,7 +77,28 @@ pub enum AddressPayload {
 }
 
 impl AddressPayload {
-    pub fn new_short(index: CodeHashIndex, hash: H160) -> AddressPayload {
+    pub fn try_to_script(&self, acp_config: Option<&AcpConfig>) -> Result<Script, String> {
+        Script::try_from(AddressPayloadWithAcpConfig::new(self, acp_config))
+    }
+    pub fn try_from_script(
+        script: &Script,
+        acp_config: Option<&AcpConfig>,
+    ) -> Result<AddressPayload, String> {
+        AddressPayload::try_from(ScriptWithAcpConfig {
+            lock: script,
+            acp_config,
+        })
+    }
+    pub fn new_short_sighash(hash: H160) -> AddressPayload {
+        let index = CodeHashIndex::Sighash;
+        AddressPayload::Short { index, hash }
+    }
+    pub fn new_short_multisig(hash: H160) -> AddressPayload {
+        let index = CodeHashIndex::Multisig;
+        AddressPayload::Short { index, hash }
+    }
+    pub fn new_short_acp(hash: H160) -> AddressPayload {
+        let index = CodeHashIndex::Acp;
         AddressPayload::Short { index, hash }
     }
 
@@ -96,19 +125,35 @@ impl AddressPayload {
             },
         }
     }
-
-    pub fn hash_type(&self) -> ScriptHashType {
+    pub fn is_sighash(&self) -> bool {
         match self {
-            AddressPayload::Short { .. } => ScriptHashType::Type,
+            AddressPayload::Short { index, .. } if *index == CodeHashIndex::Sighash => true,
+            _ => false,
+        }
+    }
+    pub fn is_multisig(&self) -> bool {
+        match self {
+            AddressPayload::Short { index, .. } if *index == CodeHashIndex::Multisig => true,
+            _ => false,
+        }
+    }
+
+    pub fn hash_type(&self, acp_hash_type: ScriptHashType) -> ScriptHashType {
+        match self {
+            AddressPayload::Short { index, .. } => match index {
+                CodeHashIndex::Acp => acp_hash_type,
+                _ => ScriptHashType::Type,
+            },
             AddressPayload::Full { hash_type, .. } => *hash_type,
         }
     }
 
-    pub fn code_hash(&self) -> Byte32 {
+    pub fn code_hash(&self, acp_code_hash: &Byte32) -> Byte32 {
         match self {
             AddressPayload::Short { index, .. } => match index {
                 CodeHashIndex::Sighash => SIGHASH_TYPE_HASH.clone().pack(),
                 CodeHashIndex::Multisig => MULTISIG_TYPE_HASH.clone().pack(),
+                CodeHashIndex::Acp => acp_code_hash.clone(),
             },
             AddressPayload::Full { code_hash, .. } => code_hash.clone(),
         }
@@ -125,12 +170,7 @@ impl AddressPayload {
         // Serialize pubkey as compressed format
         let hash = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed");
-        AddressPayload::from_pubkey_hash(hash)
-    }
-
-    pub fn from_pubkey_hash(hash: H160) -> AddressPayload {
-        let index = CodeHashIndex::Sighash;
-        AddressPayload::Short { index, hash }
+        AddressPayload::new_short_sighash(hash)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -153,57 +193,288 @@ impl AddressPayload {
     }
 }
 
-impl fmt::Debug for AddressPayload {
+#[derive(Hash, Eq, PartialEq, Clone, Default)]
+pub struct AcpConfig {
+    code_hash: Byte32,
+    hash_type: ScriptHashType,
+    // CellDep
+    tx_hash: Byte32,
+    index: u32,
+    dep_type: DepType,
+}
+
+#[derive(Hash, Eq, PartialEq, Clone, Default, Serialize, Deserialize)]
+pub struct ReprAcpConfig {
+    code_hash: H256,
+    hash_type: json_types::ScriptHashType,
+    // CellDep
+    tx_hash: H256,
+    index: u32,
+    dep_type: json_types::DepType,
+}
+
+impl fmt::Debug for AcpConfig {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let hash_type = if self.hash_type() == ScriptHashType::Type {
+        let hash_type_str = if self.hash_type == ScriptHashType::Type {
             "type"
         } else {
             "data"
         };
-        f.debug_struct("AddressPayload")
-            .field("hash_type", &hash_type)
-            .field("code_hash", &self.code_hash())
-            .field("args", &self.args())
+        let dep_type_str = if self.dep_type == DepType::DepGroup {
+            "dep_group"
+        } else {
+            "code"
+        };
+        f.debug_struct("AcpConfig")
+            .field("code_hash", &self.code_hash)
+            .field("hash_type", &hash_type_str)
+            .field("tx_hash", &self.tx_hash)
+            .field("index", &self.index)
+            .field("dep_type", &dep_type_str)
             .finish()
     }
 }
 
-impl From<&AddressPayload> for Script {
-    fn from(payload: &AddressPayload) -> Script {
-        Script::new_builder()
-            .hash_type(payload.hash_type().into())
-            .code_hash(payload.code_hash())
-            .args(payload.args().pack())
+impl fmt::Debug for ReprAcpConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let hash_type_str = if self.hash_type == json_types::ScriptHashType::Type {
+            "type"
+        } else {
+            "data"
+        };
+        let dep_type_str = if self.dep_type == json_types::DepType::DepGroup {
+            "dep_group"
+        } else {
+            "code"
+        };
+        f.debug_struct("ReprAcpConfig")
+            .field("code_hash", &self.code_hash)
+            .field("hash_type", &hash_type_str)
+            .field("tx_hash", &self.tx_hash)
+            .field("index", &self.index)
+            .field("dep_type", &dep_type_str)
+            .finish()
+    }
+}
+
+impl From<AcpConfig> for ReprAcpConfig {
+    fn from(cfg: AcpConfig) -> ReprAcpConfig {
+        ReprAcpConfig {
+            code_hash: cfg.code_hash.unpack(),
+            hash_type: cfg.hash_type.into(),
+            tx_hash: cfg.tx_hash.unpack(),
+            index: cfg.index,
+            dep_type: cfg.dep_type.into(),
+        }
+    }
+}
+impl From<ReprAcpConfig> for AcpConfig {
+    fn from(cfg: ReprAcpConfig) -> AcpConfig {
+        AcpConfig {
+            code_hash: cfg.code_hash.pack(),
+            hash_type: cfg.hash_type.into(),
+            tx_hash: cfg.tx_hash.pack(),
+            index: cfg.index,
+            dep_type: cfg.dep_type.into(),
+        }
+    }
+}
+
+impl AcpConfig {
+    pub fn new(
+        code_hash: Byte32,
+        hash_type: ScriptHashType,
+        tx_hash: Byte32,
+        index: u32,
+        dep_type: DepType,
+    ) -> AcpConfig {
+        AcpConfig {
+            code_hash,
+            hash_type,
+            tx_hash,
+            index,
+            dep_type,
+        }
+    }
+    pub fn from_network(network: NetworkType, acp_config: Option<&AcpConfig>) -> Option<AcpConfig> {
+        match network {
+            NetworkType::Mainnet => Some(AcpConfig::mainnet()),
+            NetworkType::Testnet => Some(AcpConfig::testnet()),
+            NetworkType::Dev => acp_config.cloned(),
+        }
+    }
+    pub fn mainnet() -> AcpConfig {
+        Self::lina()
+    }
+    pub fn testnet() -> AcpConfig {
+        Self::aggron()
+    }
+    pub fn lina() -> AcpConfig {
+        AcpConfig::new(
+            LINA_ACP_CODE_HASH.pack(),
+            LINA_ACP_HASH_TYPE,
+            LINA_ACP_TX_HASH.pack(),
+            LINA_ACP_INDEX,
+            LINA_ACP_DEP_TYPE,
+        )
+    }
+    pub fn aggron() -> AcpConfig {
+        AcpConfig::new(
+            AGGRON_ACP_CODE_HASH.pack(),
+            AGGRON_ACP_HASH_TYPE,
+            AGGRON_ACP_TX_HASH.pack(),
+            AGGRON_ACP_INDEX,
+            AGGRON_ACP_DEP_TYPE,
+        )
+    }
+
+    pub fn code_hash(&self) -> &Byte32 {
+        &self.code_hash
+    }
+    pub fn hash_type(&self) -> ScriptHashType {
+        self.hash_type
+    }
+    pub fn script_match(&self, code_hash: &Byte32, hash_type: ScriptHashType) -> bool {
+        &self.code_hash == code_hash && self.hash_type == hash_type
+    }
+    pub fn tx_hash(&self) -> &Byte32 {
+        &self.tx_hash
+    }
+    pub fn index(&self) -> u32 {
+        self.index
+    }
+    pub fn dep_type(&self) -> DepType {
+        self.dep_type
+    }
+    pub fn cell_dep(&self) -> CellDep {
+        let out_point = OutPoint::new_builder()
+            .tx_hash(self.tx_hash.clone())
+            .index(self.index.pack())
+            .build();
+        CellDep::new_builder()
+            .out_point(out_point)
+            .dep_type(self.dep_type.into())
             .build()
     }
 }
 
-impl From<Script> for AddressPayload {
-    fn from(lock: Script) -> AddressPayload {
-        let hash_type: ScriptHashType = lock.hash_type().try_into().expect("Invalid hash_type");
-        let code_hash = lock.code_hash();
-        let code_hash_h256: H256 = code_hash.unpack();
-        let args = lock.args().raw_data();
-        if hash_type == ScriptHashType::Type
-            && code_hash_h256 == SIGHASH_TYPE_HASH
-            && args.len() == 20
-        {
-            let index = CodeHashIndex::Sighash;
-            let hash = H160::from_slice(args.as_ref()).unwrap();
-            AddressPayload::Short { index, hash }
-        } else if hash_type == ScriptHashType::Type
-            && code_hash_h256 == MULTISIG_TYPE_HASH
-            && args.len() == 20
-        {
-            let index = CodeHashIndex::Multisig;
-            let hash = H160::from_slice(args.as_ref()).unwrap();
-            AddressPayload::Short { index, hash }
-        } else {
+pub struct AddressPayloadWithAcpConfig<'a> {
+    pub payload: &'a AddressPayload,
+    pub acp_config: Option<&'a AcpConfig>,
+}
+
+impl<'a> AddressPayloadWithAcpConfig<'a> {
+    pub fn new(
+        payload: &'a AddressPayload,
+        acp_config: Option<&'a AcpConfig>,
+    ) -> AddressPayloadWithAcpConfig<'a> {
+        AddressPayloadWithAcpConfig {
+            payload,
+            acp_config,
+        }
+    }
+}
+
+pub struct ScriptWithAcpConfig<'a> {
+    pub lock: &'a Script,
+    /// When acp_config is None and got an invalid acp Script, convert to AddressPayload::Full
+    pub acp_config: Option<&'a AcpConfig>,
+}
+
+impl<'a> ScriptWithAcpConfig<'a> {
+    pub fn new(lock: &'a Script, acp_config: Option<&'a AcpConfig>) -> ScriptWithAcpConfig<'a> {
+        ScriptWithAcpConfig { lock, acp_config }
+    }
+}
+
+impl fmt::Debug for AddressPayload {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AddressPayload::Short { index, hash } => f
+                .debug_struct("AddressPayload")
+                .field("category", &"short")
+                .field("index", index)
+                .field("hash", hash)
+                .finish(),
             AddressPayload::Full {
                 hash_type,
                 code_hash,
                 args,
+            } => {
+                let hash_type_str = if *hash_type == ScriptHashType::Type {
+                    "type"
+                } else {
+                    "data"
+                };
+                f.debug_struct("AddressPayload")
+                    .field("category", &"full")
+                    .field("hash_type", &hash_type_str)
+                    .field("code_hash", code_hash)
+                    .field("args", args)
+                    .finish()
             }
+        }
+    }
+}
+
+impl<'a> TryFrom<AddressPayloadWithAcpConfig<'a>> for Script {
+    type Error = String;
+    fn try_from(payload_with_cfg: AddressPayloadWithAcpConfig) -> Result<Script, String> {
+        let AddressPayloadWithAcpConfig {
+            payload,
+            acp_config,
+        } = payload_with_cfg;
+        if let AddressPayload::Short { index, .. } = payload {
+            if *index == CodeHashIndex::Acp && acp_config.is_none() {
+                return Err(
+                    "Anyone can pay config is required when convert from anyone can pay address to script"
+                        .to_string(),
+                );
+            }
+        }
+        let hash_type = acp_config
+            .as_ref()
+            .map(|cfg| cfg.hash_type)
+            .unwrap_or_default();
+        let code_hash = acp_config
+            .as_ref()
+            .map(|cfg| cfg.code_hash.clone())
+            .unwrap_or_default();
+        Ok(Script::new_builder()
+            .hash_type(payload.hash_type(hash_type).into())
+            .code_hash(payload.code_hash(&code_hash))
+            .args(payload.args().pack())
+            .build())
+    }
+}
+
+impl<'a> TryFrom<ScriptWithAcpConfig<'a>> for AddressPayload {
+    type Error = String;
+    fn try_from(lock_with_cfg: ScriptWithAcpConfig) -> Result<AddressPayload, String> {
+        let ScriptWithAcpConfig { lock, acp_config } = lock_with_cfg;
+        let hash_type: ScriptHashType = lock.hash_type().try_into().expect("Invalid hash_type");
+        let code_hash = lock.code_hash();
+        let code_hash_h256: H256 = code_hash.unpack();
+        let args = lock.args().raw_data();
+        if args.len() == 20 {
+            let hash = H160::from_slice(args.as_ref()).unwrap();
+            if hash_type == ScriptHashType::Type && code_hash_h256 == SIGHASH_TYPE_HASH {
+                Ok(AddressPayload::new_short_sighash(hash))
+            } else if hash_type == ScriptHashType::Type && code_hash_h256 == MULTISIG_TYPE_HASH {
+                Ok(AddressPayload::new_short_multisig(hash))
+            } else if (hash_type == LINA_ACP_HASH_TYPE && code_hash_h256 == LINA_ACP_CODE_HASH)
+                || (hash_type == AGGRON_ACP_HASH_TYPE && code_hash_h256 == AGGRON_ACP_CODE_HASH)
+                || acp_config
+                    .as_ref()
+                    .map(|cfg| cfg.script_match(&code_hash, hash_type))
+                    .unwrap_or(false)
+            {
+                Ok(AddressPayload::new_short_acp(hash))
+            } else {
+                Ok(AddressPayload::new_full(hash_type, code_hash, args))
+            }
+        } else {
+            Ok(AddressPayload::new_full(hash_type, code_hash, args))
         }
     }
 }
@@ -221,6 +492,9 @@ impl Address {
 
     pub fn network(&self) -> NetworkType {
         self.network
+    }
+    pub fn into_payload(self) -> AddressPayload {
+        self.payload
     }
     pub fn payload(&self) -> &AddressPayload {
         &self.payload
@@ -267,7 +541,10 @@ impl FromStr for Address {
         match ty {
             AddressType::Short => {
                 if data.len() != 22 {
-                    return Err(format!("Invalid input data length {}", data.len()));
+                    return Err(format!(
+                        "Invalid data length for short address: {}, expected: 20",
+                        data.len()
+                    ));
                 }
                 let index = CodeHashIndex::from_u8(data[1])?;
                 let hash = H160::from_slice(&data[2..22]).unwrap();
@@ -275,8 +552,11 @@ impl FromStr for Address {
                 Ok(Address { network, payload })
             }
             AddressType::FullData | AddressType::FullType => {
-                if data.len() < 32 {
-                    return Err(format!("Insufficient data length: {}", data.len()));
+                if data.len() < 32 + 1 {
+                    return Err(format!(
+                        "Insufficient data length for full address: {}",
+                        data.len()
+                    ));
                 }
                 let hash_type = if ty == AddressType::FullData {
                     ScriptHashType::Data
@@ -431,7 +711,7 @@ mod test {
     #[test]
     fn test_short_address() {
         let payload =
-            AddressPayload::from_pubkey_hash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
+            AddressPayload::new_short_sighash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
         let address = Address::new(NetworkType::Mainnet, payload);
         assert_eq!(
             address.to_string(),
@@ -442,9 +722,8 @@ mod test {
             Address::from_str("ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v").unwrap()
         );
 
-        let index = CodeHashIndex::Multisig;
         let payload =
-            AddressPayload::new_short(index, h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
+            AddressPayload::new_short_multisig(h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
         let address = Address::new(NetworkType::Mainnet, payload);
         assert_eq!(
             address.to_string(),
@@ -453,6 +732,14 @@ mod test {
         assert_eq!(
             address,
             Address::from_str("ckb1qyq5lv479ewscx3ms620sv34pgeuz6zagaaqklhtgg").unwrap()
+        );
+
+        let payload =
+            AddressPayload::new_short_acp(h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
+        let address = Address::new(NetworkType::Mainnet, payload);
+        assert_eq!(
+            address.to_string(),
+            "ckb1qypylv479ewscx3ms620sv34pgeuz6zagaaqvrugu7"
         );
     }
 

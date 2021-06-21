@@ -2,10 +2,11 @@ mod key;
 mod types;
 
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::io;
 
-use ckb_sdk::{AddressPayload, GenesisInfo, NetworkType};
+use ckb_sdk::{AddressPayload, GenesisInfo, NetworkType, ScriptWithAcpConfig};
 use ckb_types::{
     core::{BlockView, HeaderView},
     packed::{Byte32, Header, OutPoint, Script},
@@ -54,7 +55,6 @@ impl<'a> IndexDatabase<'a> {
                 .map(|bytes| match bytes[0] {
                     0 => NetworkType::Mainnet,
                     1 => NetworkType::Testnet,
-                    254 => NetworkType::Staging,
                     255 => NetworkType::Dev,
                     _ => panic!("Corrupted index database (network field)"),
                 });
@@ -173,7 +173,11 @@ impl<'a> IndexDatabase<'a> {
     fn get_address_inner(&self, reader: &RocksReader, lock_hash: Byte32) -> Option<AddressPayload> {
         reader
             .get(&Key::LockScript(lock_hash.unpack()).to_bytes())
-            .map(|bytes| AddressPayload::from(Script::new_unchecked(bytes.into())))
+            .map(|bytes| {
+                let script = Script::new_unchecked(bytes.into());
+                // Meaningless AcpConfig
+                AddressPayload::try_from(ScriptWithAcpConfig::new(&script, None)).unwrap()
+            })
     }
 
     pub fn get_capacity(&self, lock_hash: Byte32) -> Option<u64> {

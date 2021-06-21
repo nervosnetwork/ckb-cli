@@ -68,7 +68,7 @@ impl Miner {
             lock_arg.copy_from_slice(Self::block_assembler().args.as_bytes());
             H160(lock_arg)
         };
-        let payload = AddressPayload::from_pubkey_hash(lock_arg);
+        let payload = AddressPayload::new_short_sighash(lock_arg);
         Address::new(NetworkType::Dev, payload)
     }
 }

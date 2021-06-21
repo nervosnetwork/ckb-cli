@@ -6,14 +6,14 @@ use ckb_sdk::{
     wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
     Address, AddressPayload, NetworkType,
 };
-use ckb_types::{packed::Script, prelude::*, H160, H256};
+use ckb_types::{prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg::lock_arg,
+    arg,
     arg_parser::{
         ArgParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
@@ -104,13 +104,13 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 App::new("update")
                     .about("Update password of an account")
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
                 App::new("upgrade")
                     .about("Upgrade an account to latest json format")
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
                 App::new("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
-                    .arg(lock_arg().required(true))
+                    .arg(arg::lock_arg().required(true))
                     .arg(
                         arg_extended_privkey_path
                             .clone()
@@ -159,10 +159,10 @@ impl<'a> AccountSubCommand<'a> {
                             .possible_values(&["mainnet", "testnet"])
                             .about("The network type")
                     )
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
                 App::new("extended-address")
                     .about("Extended address (see: BIP-44)")
-                    .arg(lock_arg().required(true))
+                    .arg(arg::lock_arg().required(true))
                     .arg(
                         Arg::with_name("path")
                             .long("path")
@@ -172,7 +172,7 @@ impl<'a> AccountSubCommand<'a> {
                     ),
                 App::new("remove")
                     .about("Print information about how to remove an account")
-                    .arg(lock_arg().required(true)),
+                    .arg(arg::lock_arg().required(true)),
             ])
     }
 }
@@ -196,8 +196,9 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .map(|(idx, (data, source))| {
                         if data.len() == 20 {
                             let lock_arg = H160::from_slice(data.as_ref()).expect("H160");
-                            let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
-                            let lock_hash: H256 = Script::from(&address_payload)
+                            let address_payload = AddressPayload::new_short_sighash(lock_arg.clone());
+                            let lock_hash: H256 = address_payload.try_to_script(None)
+                                .unwrap()
                                 .calc_script_hash()
                                 .unpack();
                             if partial_fields {
@@ -245,8 +246,12 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .plugin_mgr
                     .keystore_handler()
                     .create_account(password)?;
-                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
-                let lock_hash: H256 = Script::from(&address_payload).calc_script_hash().unpack();
+                let address_payload = AddressPayload::new_short_sighash(lock_arg.clone());
+                let lock_hash: H256 = address_payload
+                    .try_to_script(None)
+                    .unwrap()
+                    .calc_script_hash()
+                    .unpack();
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
@@ -276,7 +281,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .plugin_mgr
                     .keystore_handler()
                     .import_key(master_privkey, password)?;
-                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                let address_payload = AddressPayload::new_short_sighash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
@@ -297,7 +302,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .plugin_mgr
                     .keystore_handler()
                     .import_account(account_id.into(), password)?;
-                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                let address_payload = AddressPayload::new_short_sighash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
@@ -323,7 +328,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     .plugin_mgr
                     .keystore_handler()
                     .import_key(master_privkey, new_password)?;
-                let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
+                let address_payload = AddressPayload::new_short_sighash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
@@ -414,7 +419,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let get_addresses = |set: &[(DerivationPath, H160)]| {
                     set.iter()
                         .map(|(path, hash160)| {
-                            let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                            let payload = AddressPayload::new_short_sighash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
                                 "address": Address::new(network, payload).to_string(),

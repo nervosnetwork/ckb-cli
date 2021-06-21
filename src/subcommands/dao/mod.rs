@@ -68,7 +68,7 @@ impl<'a> DAOSubCommand<'a> {
     pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
         self.check_db_ready()?;
         let tx_fee = self.transact_args().tx_fee;
-        let lock_hash = self.transact_args().lock_hash();
+        let lock_hash = self.transact_args().lock_hash.clone();
         let cells = {
             let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
             let mut to_prepare = {
@@ -84,7 +84,7 @@ impl<'a> DAOSubCommand<'a> {
 
     pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
         self.check_db_ready()?;
-        let lock_hash = self.transact_args().lock_hash();
+        let lock_hash = self.transact_args().lock_hash.clone();
         let cells = {
             let prepare_cells = self.query_prepare_cells(lock_hash)?;
             take_by_out_points(prepare_cells, &out_points)?
@@ -157,15 +157,9 @@ impl<'a> DAOSubCommand<'a> {
             (enough, true)
         };
 
-        let cells: Vec<LiveCellInfo> = {
-            self.with_db(|db| {
-                db.get_live_cells_by_lock(
-                    Script::from(from_address.payload()).calc_script_hash(),
-                    None,
-                    terminator,
-                )
-            })?
-        };
+        let lock_hash = self.transact_args().lock_hash.clone();
+        let cells: Vec<LiveCellInfo> =
+            { self.with_db(|db| db.get_live_cells_by_lock(lock_hash, None, terminator))? };
 
         if !enough {
             return Err(format!(

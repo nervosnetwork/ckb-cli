@@ -3,18 +3,14 @@ use crate::subcommands::{CliSubCommand, DAOSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, OutPointParser,
+        AcpConfigParser, AddressParser, ArgParser, CapacityParser, FixedHashParser, OutPointParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{get_address, get_network_type},
 };
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
-use ckb_types::{
-    packed::{Byte32, Script},
-    prelude::*,
-    H160, H256,
-};
+use ckb_sdk::{constants::SIGHASH_TYPE_HASH, AcpConfig, Address, AddressPayload, NetworkType};
+use ckb_types::{packed::Byte32, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
@@ -118,30 +114,37 @@ pub(crate) struct QueryArgs {
 pub(crate) struct TransactArgs {
     pub(crate) privkey: Option<PrivkeyWrapper>,
     pub(crate) address: Address,
+    pub(crate) lock_hash: Byte32,
     pub(crate) tx_fee: u64,
 }
 
 impl QueryArgs {
     fn from_matches(m: &ArgMatches, network_type: NetworkType) -> Result<Self, String> {
+        let acp_config: Option<AcpConfig> =
+            AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
         let lock_hash_opt: Option<H256> =
             FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
         let lock_hash = if let Some(lock_hash) = lock_hash_opt {
             lock_hash.pack()
         } else {
             let address = get_address(Some(network_type), m)?;
-            Script::from(&address).calc_script_hash()
+            address
+                .try_to_script(acp_config.as_ref())?
+                .calc_script_hash()
         };
 
         Ok(Self { lock_hash })
     }
 
     fn args<'a>() -> Vec<Arg<'a>> {
-        vec![arg::lock_hash(), arg::address()]
+        vec![arg::acp_config(), arg::lock_hash(), arg::address()]
     }
 }
 
 impl TransactArgs {
     fn from_matches(m: &ArgMatches, network_type: NetworkType) -> Result<Self, String> {
+        let acp_config: Option<AcpConfig> =
+            AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
         let privkey: Option<PrivkeyWrapper> =
             PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
         let address = if let Some(privkey) = privkey.as_ref() {
@@ -152,9 +155,10 @@ impl TransactArgs {
             let account: H160 = FixedHashParser::<H160>::default()
                 .from_matches_opt(m, "from-account", false)
                 .or_else(|err| {
-                    let result: Result<Option<Address>, String> = AddressParser::new_sighash()
-                        .set_network(network_type)
-                        .from_matches_opt(m, "from-account", false);
+                    let result: Result<Option<Address>, String> =
+                        AddressParser::new_short_sighash()
+                            .set_network(network_type)
+                            .from_matches_opt(m, "from-account", false);
                     result
                         .map(|address_opt| {
                             address_opt
@@ -167,20 +171,29 @@ impl TransactArgs {
                     // The bug only happen when put <tx-fee> before <out-point>.
                     String::from("<privkey-path> or <from-account> is required!")
                 })?;
-            let payload = AddressPayload::from_pubkey_hash(account);
+            let payload = AddressPayload::new_short_sighash(account);
             Address::new(network_type, payload)
         };
-        assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());
+        assert_eq!(
+            address.payload().code_hash(&Default::default()),
+            SIGHASH_TYPE_HASH.pack()
+        );
+        let lock_hash = address
+            .payload()
+            .try_to_script(acp_config.as_ref())?
+            .calc_script_hash();
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
         Ok(Self {
             privkey,
             address,
+            lock_hash,
             tx_fee,
         })
     }
 
     fn args<'a>() -> Vec<Arg<'a>> {
         vec![
+            arg::acp_config(),
             arg::privkey_path().required_unless(arg::from_account().get_name()),
             arg::from_account().required_unless(arg::privkey_path().get_name()),
             arg::tx_fee().required(true),
@@ -189,9 +202,5 @@ impl TransactArgs {
 
     pub(crate) fn sighash_args(&self) -> H160 {
         H160::from_slice(self.address.payload().args().as_ref()).unwrap()
-    }
-
-    pub(crate) fn lock_hash(&self) -> Byte32 {
-        Script::from(self.address.payload()).calc_script_hash()
     }
 }

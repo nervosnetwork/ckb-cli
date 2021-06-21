@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
-use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
+use crate::{AcpConfig, AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
 
 // TODO: Add dao support
 
@@ -383,6 +383,7 @@ impl MultisigConfig {
         threshold: u8,
     ) -> Result<MultisigConfig, String> {
         let mut addr_set: HashSet<&AddressPayload> = HashSet::default();
+        let dummy_acp_config = AcpConfig::default();
         for addr in &sighash_addresses {
             if !addr_set.insert(addr) {
                 return Err(format!("Duplicated address: {:?}", addr));
@@ -403,9 +404,12 @@ impl MultisigConfig {
         }
         for address_payload in &sighash_addresses {
             if address_payload.ty() != AddressType::Short {
-                return Err(format!("Expected a short payload format address, got a full payload format address: {:?}", address_payload));
+                return Err(format!(
+                    "Expected a short payload format address, got a full payload format address: {:?}",
+                    address_payload,
+                ));
             }
-            if address_payload.code_hash() != SIGHASH_TYPE_HASH.pack() {
+            if address_payload.code_hash(dummy_acp_config.code_hash()) != SIGHASH_TYPE_HASH.pack() {
                 return Err("Invalid code hash expected sighash, got multisig".to_string());
             }
         }
@@ -434,10 +438,10 @@ impl MultisigConfig {
         self.sighash_addresses
             .iter()
             .map(|address| match address {
-                AddressPayload::Short { hash, .. } => hash.clone(),
-                _ => panic!(
-                    "MultisigConfig sighash_addresses can not have full payload format address"
-                ),
+                AddressPayload::Short { hash, index } if *index == CodeHashIndex::Sighash => {
+                    hash.clone()
+                }
+                _ => panic!("MultisigConfig sighash_addresses have invalid address format"),
             })
             .collect()
     }
@@ -456,7 +460,7 @@ impl MultisigConfig {
             args.extend_from_slice(&since_value.to_le_bytes()[..]);
             AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args.freeze())
         } else {
-            AddressPayload::new_short(CodeHashIndex::Multisig, hash160)
+            AddressPayload::new_short_multisig(hash160)
         }
     }
 

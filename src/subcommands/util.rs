@@ -6,7 +6,7 @@ use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
     wallet::{ChildNumber, DerivationPath},
-    Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
+    AcpConfig, Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
@@ -30,8 +30,9 @@ use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
-        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AcpConfigParser, AddressParser, AddressPayloadOption, ArgParser, FilePathParser,
+        FixedHashParser, FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper,
+        PubkeyHexParser,
     },
     other::{get_address, get_network_type, read_password, serialize_signature},
 };
@@ -87,7 +88,7 @@ impl<'a> UtilSubCommand<'a> {
             .long("sighash-address")
             .required(true)
             .takes_value(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
+            .validator(|input| AddressParser::new_short_sighash().validate(input))
             .about("The address in single signature format");
 
         let arg_recoverable = Arg::with_name("recoverable")
@@ -103,7 +104,7 @@ impl<'a> UtilSubCommand<'a> {
         let arg_extended_address = Arg::with_name("extended-address")
             .long("extended-address")
             .takes_value(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
+            .validator(|input| AddressParser::new_short_sighash().validate(input))
             .conflicts_with(arg::privkey_path().get_name())
             .about("The address extended from `m/44'/309'/0'` (Search 2000 receiving addresses and 2000 change addresses max)");
 
@@ -114,6 +115,7 @@ impl<'a> UtilSubCommand<'a> {
                     .about(
                         "Show public information of a secp256k1 private key (from file) or public key",
                     )
+                    .arg(arg::acp_config())
                     .arg(arg_privkey.clone().conflicts_with("pubkey"))
                     .arg(arg_pubkey.clone().required(false))
                     .arg(arg_address.clone().required(false))
@@ -238,6 +240,7 @@ impl<'a> UtilSubCommand<'a> {
                     ),
                 App::new("to-genesis-multisig-addr")
                     .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
+                    .arg(arg::acp_config())
                     .arg(
                         arg_sighash_address
                             .clone()
@@ -256,6 +259,7 @@ impl<'a> UtilSubCommand<'a> {
                     ),
                 App::new("to-multisig-addr")
                     .about("Convert address in single signature format to multisig format")
+                    .arg(arg::acp_config())
                     .arg(arg_sighash_address.clone())
                     .arg(
                         Arg::with_name("locktime")
@@ -267,6 +271,7 @@ impl<'a> UtilSubCommand<'a> {
                     ),
                 App::new("cell-meta")
                     .about("Query live cell's metadata")
+                    .arg(arg::acp_config())
                     .arg(
                         Arg::with_name("tx-hash")
                             .long("tx-hash")
@@ -304,6 +309,8 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
                 let pubkey_opt: Option<secp256k1::PublicKey> =
@@ -314,7 +321,6 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
                     hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
                 });
-
                 let address_payload = match pubkey_opt {
                     Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
                     None => get_address(None, m)?,
@@ -334,7 +340,8 @@ message = "0x"
                     SIGHASH_TYPE_HASH, lock_arg,
                 );
 
-                let lock_hash: H256 = packed::Script::from(&address_payload)
+                let lock_hash: H256 = address_payload
+                    .try_to_script(acp_config.as_ref())?
                     .calc_script_hash()
                     .unpack();
                 let resp = serde_json::json!({
@@ -360,7 +367,11 @@ message = "0x"
                     .from_matches_opt(m, "from-account", false)
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_short_sighash().from_matches_opt(
+                                m,
+                                "from-account",
+                                false,
+                            );
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -376,8 +387,8 @@ message = "0x"
                     } else {
                         None
                     };
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let extended_address_opt: Option<Address> = AddressParser::new_short_sighash()
+                    .from_matches_opt(m, "extended-address", false)?;
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
@@ -435,7 +446,11 @@ message = "0x"
                     .from_matches_opt(m, "from-account", false)
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_short_sighash().from_matches_opt(
+                                m,
+                                "from-account",
+                                false,
+                            );
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -450,8 +465,8 @@ message = "0x"
                     } else {
                         None
                     };
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let extended_address_opt: Option<Address> = AddressParser::new_short_sighash()
+                    .from_matches_opt(m, "extended-address", false)?;
 
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
@@ -496,7 +511,11 @@ message = "0x"
                     .from_matches_opt(m, "from-account", false)
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_short_sighash().from_matches_opt(
+                                m,
+                                "from-account",
+                                false,
+                            );
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -505,8 +524,8 @@ message = "0x"
                             })
                             .map_err(|_| err)
                     })?;
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                let extended_address_opt: Option<Address> = AddressParser::new_short_sighash()
+                    .from_matches_opt(m, "extended-address", false)?;
                 let password =
                     if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
                         Some(read_password(false, None)?)
@@ -695,6 +714,8 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             ("cell-meta", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
@@ -713,7 +734,10 @@ message = "0x"
                     let data = info.data.expect("info.data");
                     let packed_output = packed::CellOutput::from(output.clone());
                     let lock_hash: H256 = packed_output.lock().calc_script_hash().unpack();
-                    let address_payload = AddressPayload::from(packed_output.lock());
+                    let address_payload = AddressPayload::try_from_script(
+                        &packed_output.lock(),
+                        acp_config.as_ref(),
+                    )?;
                     let address = Address::new(network, address_payload);
                     let type_hash: Option<H256> = packed_output
                         .type_()
@@ -859,7 +883,7 @@ mod test {
     use super::*;
     #[test]
     fn test_gen_multisig_addr() {
-        let payload = AddressPayload::new_short(CodeHashIndex::Sighash, H160::default());
+        let payload = AddressPayload::new_short_sighash(H160::default());
 
         let (epoch, _) = gen_multisig_addr(&payload, None, BLOCK_PERIOD * 2000);
         assert_eq!(epoch, EpochNumberWithFraction::new(1, 200, EPOCH_LENGTH));

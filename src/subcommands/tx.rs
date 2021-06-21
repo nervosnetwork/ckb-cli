@@ -9,14 +9,14 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
+    AcpConfig, Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
     MultisigConfig, NetworkType, SignerFn, TxHelper,
 };
 use ckb_types::{
     bytes::Bytes,
     core::Capacity,
     h256,
-    packed::{self, CellOutput, OutPoint, Script},
+    packed::{self, CellOutput, OutPoint},
     prelude::*,
     H160, H256,
 };
@@ -29,8 +29,8 @@ use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-        HexParser, PrivkeyPathParser, PrivkeyWrapper,
+        AcpConfigParser, AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser,
+        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
@@ -69,7 +69,7 @@ impl<'a> TxSubCommand<'a> {
             .takes_value(true)
             .multiple(true)
             .required(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
+            .validator(|input| AddressParser::new_short_sighash().validate(input))
             .about("Normal sighash address");
         let arg_require_first_n = Arg::with_name("require-first-n")
             .long("require-first-n")
@@ -146,7 +146,7 @@ impl<'a> TxSubCommand<'a> {
                                 "to-long-multisig-address",
                             ])
                             .takes_value(true)
-                            .validator(|input| AddressParser::new_sighash().validate(input))
+                            .validator(|input| AddressParser::new_short_sighash().validate(input))
                             .about("To normal sighash address"),
                     )
                     .arg(
@@ -154,7 +154,7 @@ impl<'a> TxSubCommand<'a> {
                             .long("to-short-multisig-address")
                             .conflicts_with("to-long-multisig-address")
                             .takes_value(true)
-                            .validator(|input| AddressParser::new_multisig().validate(input))
+                            .validator(|input| AddressParser::new_short_multisig().validate(input))
                             .about("To short multisig address"),
                     )
                     .arg(
@@ -168,6 +168,7 @@ impl<'a> TxSubCommand<'a> {
                             })
                             .about("To long multisig address (special case, include since)"),
                     )
+                    .arg(arg::acp_config())
                     .arg(arg::capacity().required(true))
                     .arg(arg::to_data())
                     .arg(arg::to_data_path())
@@ -201,6 +202,7 @@ impl<'a> TxSubCommand<'a> {
                     .arg(arg_tx_file.clone()),
                 App::new("info")
                     .about("Show detail of this multisig transaction (capacity, tx-fee, etc.)")
+                    .arg(arg::acp_config())
                     .arg(arg_tx_file.clone()),
                 App::new("sign-inputs")
                     .about("Sign all sighash/multisig inputs in this transaction")
@@ -229,6 +231,7 @@ impl<'a> TxSubCommand<'a> {
                     .about(
                         "Build multisig address with multisig config and since(optional) argument",
                     )
+                    .arg(arg::acp_config())
                     .arg(arg_sighash_address.clone())
                     .arg(arg_require_first_n.clone())
                     .arg(arg_threshold.clone())
@@ -303,16 +306,23 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 Ok(Output::new_success())
             }
             ("add-output", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-                let to_sighash_address_opt: Option<Address> = AddressParser::new_sighash()
+                let to_sighash_address_opt: Option<Address> = AddressParser::new_short_sighash()
                     .from_matches_opt(m, "to-sighash-address", false)?;
-                let to_short_multisig_address_opt: Option<Address> = AddressParser::new_multisig()
-                    .from_matches_opt(m, "to-short-multisig-address", false)?;
+                let to_short_multisig_address_opt: Option<Address> =
+                    AddressParser::new_short_multisig().from_matches_opt(
+                        m,
+                        "to-short-multisig-address",
+                        false,
+                    )?;
                 let to_long_multisig_address_opt: Option<Address> = AddressParser::default()
                     .set_full_type(MULTISIG_TYPE_HASH)
                     .from_matches_opt(m, "to-long-multisig-address", false)?;
 
+                let acp_config = AcpConfig::from_network(network, acp_config.as_ref());
                 let to_data = get_to_data(m)?;
                 check_capacity(capacity, to_data.len())?;
                 if let Some(address) = to_long_multisig_address_opt.as_ref() {
@@ -327,8 +337,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let lock_script = to_sighash_address_opt
                     .or_else(|| to_short_multisig_address_opt)
                     .or_else(|| to_long_multisig_address_opt)
-                    .map(|address| Script::from(address.payload()))
-                    .ok_or_else(|| "missing target address".to_string())?;
+                    .map(|address| address.payload().try_to_script(acp_config.as_ref()))
+                    .ok_or_else(|| "missing target address".to_string())??;
                 let output = CellOutput::new_builder()
                     .capacity(Capacity::shannons(capacity).pack())
                     .lock(lock_script)
@@ -373,7 +383,11 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 Ok(Output::new_success())
             }
             ("info", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+
+                let acp_config = AcpConfig::from_network(network, acp_config.as_ref());
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -409,12 +423,13 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     };
                     print_cell_info(
                         prefix,
+                        acp_config.as_ref(),
                         network,
                         output.lock(),
                         capacity,
                         data.len(),
                         type_script_empty,
-                    );
+                    )?;
                 }
 
                 let mut output_total = 0;
@@ -425,12 +440,13 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     let type_script_empty = output.type_().is_none();
                     print_cell_info(
                         "output",
+                        acp_config.as_ref(),
                         network,
                         output.lock(),
                         capacity,
                         data_len,
                         type_script_empty,
-                    );
+                    )?;
                 }
                 let tx_fee_string = if input_total >= output_total {
                     format!("{:#}", HumanCapacity(input_total - output_total))
@@ -455,9 +471,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                         FixedHashParser::<H160>::default()
                             .parse(&input)
                             .or_else(|err| {
-                                let result: Result<Address, String> = AddressParser::new_sighash()
-                                    .set_network(network)
-                                    .parse(&input);
+                                let result: Result<Address, String> =
+                                    AddressParser::new_short_sighash()
+                                        .set_network(network)
+                                        .parse(&input);
                                 result
                                     .map(|address| {
                                         H160::from_slice(&address.payload().args()).unwrap()
@@ -562,6 +579,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 Ok(Output::new_output(resp))
             }
             ("build-multisig-address", Some(m)) => {
+                let acp_config: Option<AcpConfig> =
+                    AcpConfigParser::default().from_matches_opt(m, "acp-config", false)?;
                 let sighash_addresses: Vec<Address> = AddressParser::default()
                     .set_network(network)
                     .set_short(CodeHashIndex::Sighash)
@@ -572,13 +591,14 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let since_absolute_epoch_opt: Option<u64> = FromStrParser::<u64>::default()
                     .from_matches_opt(m, "since-absolute-epoch", false)?;
 
+                let acp_config = AcpConfig::from_network(network, acp_config.as_ref());
                 let sighash_addresses = sighash_addresses
                     .into_iter()
                     .map(|address| address.payload().clone())
                     .collect::<Vec<_>>();
                 let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
                 let address_payload = cfg.to_address_payload(since_absolute_epoch_opt);
-                let lock_script = Script::from(&address_payload);
+                let lock_script = address_payload.try_to_script(acp_config.as_ref())?;
                 let resp = serde_json::json!({
                     "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                     "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
@@ -594,14 +614,15 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
 
 fn print_cell_info(
     prefix: &str,
+    acp_config: Option<&AcpConfig>,
     network: NetworkType,
     lock: packed::Script,
     capacity: u64,
     data_len: usize,
     type_script_empty: bool,
-) {
-    let address_payload = AddressPayload::from(lock);
-    let lock_kind = if address_payload.code_hash() == MULTISIG_TYPE_HASH.pack() {
+) -> Result<(), String> {
+    let address_payload = AddressPayload::try_from_script(&lock, acp_config)?;
+    let lock_kind = if address_payload.code_hash(&Default::default()) == MULTISIG_TYPE_HASH.pack() {
         if address_payload.args().len() == 20 {
             "multisig without since"
         } else {
@@ -621,6 +642,7 @@ fn print_cell_info(
         type_script_status,
         lock_kind,
     );
+    Ok(())
 }
 
 fn get_keystore_signer(
