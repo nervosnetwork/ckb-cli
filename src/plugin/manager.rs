@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::str::FromStr;
 use std::sync::atomic::AtomicU64;
@@ -58,9 +58,7 @@ pub type PluginHandler = Sender<Request<(u64, PluginRequest), (u64, PluginRespon
 pub type ServiceHandler = Sender<Request<ServiceRequest, ServiceResponse>>;
 
 impl PluginManager {
-    pub fn load(
-        ckb_cli_dir: &PathBuf,
-    ) -> Result<HashMap<String, (Plugin, PluginConfig)>, io::Error> {
+    pub fn load(ckb_cli_dir: &Path) -> Result<HashMap<String, (Plugin, PluginConfig)>, io::Error> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let inactive_plugin_dir = plugin_dir.join(INACTIVE_DIRNAME);
 
@@ -99,12 +97,12 @@ impl PluginManager {
         Ok(plugins)
     }
 
-    pub fn init(ckb_cli_dir: &PathBuf, rpc_url: String) -> Result<PluginManager, String> {
+    pub fn init(ckb_cli_dir: &Path, rpc_url: String) -> Result<PluginManager, String> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let plugins = Self::load(ckb_cli_dir).map_err(|err| err.to_string())?;
         let default_keystore = DefaultKeyStore::start(ckb_cli_dir)?;
         // TODO: impl indexer thread
-        let default_indexer = DefaultIndexer::start()?;
+        let default_indexer = DefaultIndexer::start();
 
         // Make sure ServiceProvider start before all daemon processes
         let mut daemon_plugins = Vec::new();
@@ -787,13 +785,6 @@ impl ServiceProvider {
                                             .get_block_hash(BlockNumber::from(number))
                                             .map(PluginResponse::H256Opt)
                                             .map_err(|err| err.to_string()),
-                                        RpcRequest::GetCellbaseOutputCapacityDetails { hash } => {
-                                            rpc_client
-                                                .client()
-                                                .get_cellbase_output_capacity_details(hash)
-                                                .map(PluginResponse::BlockRewardOpt)
-                                                .map_err(|err| err.to_string())
-                                        } // TODO: more rpc methods
                                     };
                                     response_result.unwrap_or_else(|err| {
                                         PluginResponse::Error(JsonrpcError {

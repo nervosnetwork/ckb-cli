@@ -489,15 +489,15 @@ impl Key {
     }
 }
 
-impl Into<Vec<u8>> for &Key {
-    fn into(self) -> Vec<u8> {
-        self.to_bytes()
+impl From<&Key> for Vec<u8> {
+    fn from(key: &Key) -> Vec<u8> {
+        key.to_bytes()
     }
 }
 
-impl Into<Vec<u8>> for Key {
-    fn into(self) -> Vec<u8> {
-        (&self).into()
+impl From<Key> for Vec<u8> {
+    fn from(key: Key) -> Vec<u8> {
+        From::from(&key)
     }
 }
 

@@ -237,10 +237,7 @@ impl<'a> YamlEmitter<'a> {
         } else {
             self.level += 1;
             for (cnt, (k, v)) in h.iter().enumerate() {
-                let complex_key = match *k {
-                    Yaml::Hash(_) | Yaml::Array(_) => true,
-                    _ => false,
-                };
+                let complex_key = matches!(*k, Yaml::Hash(_) | Yaml::Array(_));
                 if cnt > 0 {
                     writeln!(self.writer)?;
                     self.write_indent()?;
@@ -320,31 +317,34 @@ fn need_quotes(string: &str) -> bool {
         string.starts_with(' ') || string.ends_with(' ')
     }
 
-    string == ""
+    string.is_empty()
         || need_quotes_spaces(string)
-        || string.starts_with(|character: char| match character {
-            '&' | '*' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@' => true,
-            _ => false,
+        || string.starts_with(|character: char| {
+            matches!(
+                character,
+                '&' | '*' | '?' | '|' | '-' | '<' | '>' | '=' | '!' | '%' | '@'
+            )
         })
-        || string.contains(|character: char| match character {
-            ':'
-            | '{'
-            | '}'
-            | '['
-            | ']'
-            | ','
-            | '#'
-            | '`'
-            | '\"'
-            | '\''
-            | '\\'
-            | '\0'..='\x06'
-            | '\t'
-            | '\n'
-            | '\r'
-            | '\x0e'..='\x1a'
-            | '\x1c'..='\x1f' => true,
-            _ => false,
+        || string.contains(|character: char| {
+            matches!(character,
+                ':'
+                | '{'
+                | '}'
+                | '['
+                | ']'
+                | ','
+                | '#'
+                | '`'
+                | '\"'
+                | '\''
+                | '\\'
+                | '\0'..='\x06'
+                | '\t'
+                | '\n'
+                | '\r'
+                | '\x0e'..='\x1a'
+                | '\x1c'..='\x1f'
+            )
         })
         || [
             // http://yaml.org/type/bool.html
@@ -814,7 +814,7 @@ pub fn to_string<T: ?Sized>(value: &T, color: bool) -> Result<String, String>
 where
     T: ser::Serialize,
 {
-    Ok(String::from_utf8(to_vec(value, color)?).map_err(|err| err.to_string())?)
+    String::from_utf8(to_vec(value, color)?).map_err(|err| err.to_string())
 }
 
 fn to_yaml<T>(elem: T) -> Result<Yaml, SerError>

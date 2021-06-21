@@ -61,7 +61,7 @@ impl<'a> DAOSubCommand<'a> {
         self.check_db_ready()?;
         let target_capacity = capacity + self.transact_args().tx_fee;
         let cells = self.collect_sighash_cells(target_capacity)?;
-        let raw_transaction = self.build(cells).deposit(capacity)?;
+        let raw_transaction = self.build(cells).deposit(capacity);
         self.sign(raw_transaction)
     }
 

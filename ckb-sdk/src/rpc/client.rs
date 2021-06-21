@@ -1,7 +1,7 @@
 use ckb_jsonrpc_types::{
-    BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellWithStatus,
-    ChainInfo, Consensus, Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
-    LocalNode, MainLoggerConfig, OutPoint, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
+    BannedAddr, Block, BlockNumber, BlockTemplate, BlockView, CellWithStatus, ChainInfo, Consensus,
+    Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes, LocalNode,
+    MainLoggerConfig, OutPoint, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
     TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
@@ -70,7 +70,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_block(&mut self, hash: H256) -> Option<BlockView>;
     pub fn get_block_by_number(&mut self, number: BlockNumber) -> Option<BlockView>;
     pub fn get_block_hash(&mut self, number: BlockNumber) -> Option<H256>;
-    pub fn get_cellbase_output_capacity_details(&mut self, hash: H256) -> Option<BlockReward>;
     pub fn get_current_epoch(&mut self) -> EpochView;
     pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> Option<EpochView>;
     pub fn get_header(&mut self, hash: H256) -> Option<HeaderView>;
@@ -168,15 +167,6 @@ impl HttpRpcClient {
     pub fn get_block_hash(&mut self, number: u64) -> Result<Option<H256>, String> {
         self.client
             .get_block_hash(BlockNumber::from(number))
-            .map(|opt| opt.map(Into::into))
-            .map_err(|err| err.to_string())
-    }
-    pub fn get_cellbase_output_capacity_details(
-        &mut self,
-        hash: H256,
-    ) -> Result<Option<types::BlockReward>, String> {
-        self.client
-            .get_cellbase_output_capacity_details(hash)
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }

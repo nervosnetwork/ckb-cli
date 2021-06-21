@@ -179,6 +179,7 @@ impl From<&AddressPayload> for Script {
 }
 
 impl From<Script> for AddressPayload {
+    #[allow(clippy::fallible_impl_from)]
     fn from(lock: Script) -> AddressPayload {
         let hash_type: ScriptHashType = lock.hash_type().try_into().expect("Invalid hash_type");
         let code_hash = lock.code_hash();
@@ -311,34 +312,34 @@ mod old_addr {
     pub enum AddressFormat {
         // SECP256K1 algorithm	PK
         #[allow(dead_code)]
-        SP2K,
+        Sp2k,
         // SECP256R1 algorithm	PK
         #[allow(dead_code)]
-        SP2R,
+        Sp2r,
         // SECP256K1 + blake160	blake160(pk)
-        P2PH,
+        P2ph,
         // Alias of SP2K	PK
         #[allow(dead_code)]
-        P2PK,
+        P2pk,
     }
 
     impl Default for AddressFormat {
         fn default() -> AddressFormat {
-            AddressFormat::P2PH
+            AddressFormat::P2ph
         }
     }
 
     impl AddressFormat {
         pub fn from_bytes(format: &[u8]) -> Result<AddressFormat, String> {
             match format {
-                P2PH_MARK => Ok(AddressFormat::P2PH),
+                P2PH_MARK => Ok(AddressFormat::P2ph),
                 _ => Err(format!("Unsupported address format data: {:?}", format)),
             }
         }
 
         pub fn to_bytes(self) -> Result<Vec<u8>, String> {
             match self {
-                AddressFormat::P2PH => Ok(P2PH_MARK.to_vec()),
+                AddressFormat::P2ph => Ok(P2PH_MARK.to_vec()),
                 _ => Err(format!("Unsupported address format: {:?}", self)),
             }
         }
@@ -352,7 +353,7 @@ mod old_addr {
 
     impl Address {
         pub fn new_default(hash: H160) -> Address {
-            let format = AddressFormat::P2PH;
+            let format = AddressFormat::P2ph;
             Address { format, hash }
         }
 
@@ -369,7 +370,7 @@ mod old_addr {
         }
 
         pub fn from_pubkey(format: AddressFormat, pubkey: &Pubkey) -> Result<Address, String> {
-            if format != AddressFormat::P2PH {
+            if format != AddressFormat::P2ph {
                 return Err("Only support P2PH for now".to_owned());
             }
             // Serialize pubkey as compressed format
@@ -379,7 +380,7 @@ mod old_addr {
         }
 
         pub fn from_lock_arg(bytes: &[u8]) -> Result<Address, String> {
-            let format = AddressFormat::P2PH;
+            let format = AddressFormat::P2ph;
             let hash = H160::from_slice(bytes).map_err(|err| err.to_string())?;
             Ok(Address { format, hash })
         }

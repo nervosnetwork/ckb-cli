@@ -48,8 +48,8 @@ pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, Strin
     Ok(pass)
 }
 
-pub fn get_key_store(ckb_cli_dir: &PathBuf) -> Result<KeyStore, String> {
-    let mut keystore_dir = ckb_cli_dir.clone();
+pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
+    let mut keystore_dir = ckb_cli_dir;
     keystore_dir.push("keystore");
     fs::create_dir_all(&keystore_dir)
         .map_err(|err| err.to_string())
@@ -346,7 +346,7 @@ pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
         || info.number <= max_mature_number
 }
 
-pub fn get_arg_value<'a>(matches: &'a ArgMatches, name: &str) -> Result<String, String> {
+pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {
     matches
         .value_of(name)
         .map(|s| s.to_string())

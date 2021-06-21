@@ -6,7 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use ckb_index::LiveCellInfo;
-use ckb_jsonrpc_types::{BlockReward, BlockView, HeaderView, JsonBytes, Script, Transaction};
+use ckb_jsonrpc_types::{BlockView, HeaderView, JsonBytes, Script, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
@@ -115,7 +115,6 @@ pub enum PluginResponse {
     HeaderView(Box<HeaderView>),
     HeaderViewOpt(Box<Option<HeaderView>>),
     BlockViewOpt(Box<Option<BlockView>>),
-    BlockRewardOpt(Option<BlockReward>),
     Bytes(JsonBytes),
     BytesVec(Vec<JsonBytes>),
 
@@ -250,7 +249,6 @@ pub enum RpcRequest {
     GetBlock { hash: H256 },
     GetBlockByNumber { number: u64 },
     GetBlockHash { number: u64 },
-    GetCellbaseOutputCapacityDetails { hash: H256 },
     // TODO: add more
 }
 

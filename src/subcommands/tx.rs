@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use ckb_jsonrpc_types as json_types;
@@ -325,8 +325,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                 }
                 let lock_script = to_sighash_address_opt
-                    .or_else(|| to_short_multisig_address_opt)
-                    .or_else(|| to_long_multisig_address_opt)
+                    .or(to_short_multisig_address_opt)
+                    .or(to_long_multisig_address_opt)
                     .map(|address| Script::from(address.payload()))
                     .ok_or_else(|| "missing target address".to_string())?;
                 let output = CellOutput::new_builder()
@@ -686,7 +686,7 @@ fn get_keystore_signer(
 }
 
 fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
-    path: &PathBuf,
+    path: &Path,
     network: NetworkType,
     func: F,
 ) -> Result<T, String> {

@@ -3,8 +3,8 @@ use ckb_jsonrpc_types::{
 };
 use ckb_sdk::{
     rpc::{
-        BannedAddr, BlockReward, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode,
-        Timestamp, TransactionProof, TransactionWithStatus,
+        BannedAddr, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode, Timestamp,
+        TransactionProof, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -75,9 +75,6 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
-                App::new("get_cellbase_output_capacity_details")
-                    .about("Get block header content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
                 App::new("get_current_epoch").about("Get current epoch information"),
                 App::new("get_epoch_by_number")
                     .about("Get epoch information by epoch number")
@@ -316,25 +313,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self.rpc_client.get_block_hash(number).map(OptionH256)?;
                 Ok(Output::new_output(resp))
-            }
-            ("get_cellbase_output_capacity_details", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_cellbase_output_capacity_details(hash)
-                        .map(RawOptionBlockReward)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    let resp = self
-                        .rpc_client
-                        .get_cellbase_output_capacity_details(hash)
-                        .map(OptionBlockReward)?;
-                    Ok(Output::new_output(resp))
-                }
             }
             ("get_current_epoch", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -763,9 +741,6 @@ pub struct OptionEpochView(pub Option<EpochView>);
 pub struct BannedAddrList(pub Vec<BannedAddr>);
 
 #[derive(Serialize, Deserialize)]
-pub struct OptionBlockReward(pub Option<BlockReward>);
-
-#[derive(Serialize, Deserialize)]
 pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
@@ -785,6 +760,3 @@ pub struct RawOptionEpochView(pub Option<rpc_types::EpochView>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawBannedAddrList(pub Vec<rpc_types::BannedAddr>);
-
-#[derive(Serialize, Deserialize)]
-pub struct RawOptionBlockReward(pub Option<rpc_types::BlockReward>);

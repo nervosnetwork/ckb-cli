@@ -121,7 +121,7 @@ impl<'a> IndexDatabase<'a> {
                     reader
                         .get(&Key::BlockDelta(last_header.number()).to_bytes())
                         .map(|bytes| bincode::deserialize(&bytes).unwrap())
-                        .ok_or_else(|| IndexError::LongFork)?
+                        .ok_or(IndexError::LongFork)?
                 };
                 let mut txn = RocksTxn::new(self.db, self.cf);
                 last_block_delta.rollback(&mut txn);
