@@ -341,7 +341,11 @@ message = "0x"
                     "pubkey": pubkey_string_opt,
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
@@ -688,7 +692,11 @@ message = "0x"
                 let resp = serde_json::json!({
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, multisig_addr).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, multisig_addr.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": multisig_addr.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": multisig_addr.display_with_network(NetworkType::Testnet, false),
                     },
                     "target_epoch": epoch.to_string(),
                 });

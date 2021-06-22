@@ -223,7 +223,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                     "has_ckb_root": has_ckb_root,
                                     "address": {
                                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                                    },
+                                    "legacy_bech32_address": {
+                                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                                     },
                                 })
                             }
@@ -281,7 +285,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -302,7 +310,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -328,7 +340,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -417,7 +433,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(network, payload).to_string(),
+                                "address": Address::new(network, payload.clone()).to_string(),
+                                "legacy_bech32_address": payload.display_with_network(network, false),
                             })
                         })
                         .collect::<Vec<_>>()
@@ -450,7 +467,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    },
+                    "legacy_bech32_address": {
+                        "mainnet": address_payload.display_with_network(NetworkType::Mainnet, false),
+                        "testnet": address_payload.display_with_network(NetworkType::Testnet, false),
                     },
                 });
                 Ok(Output::new_output(resp))

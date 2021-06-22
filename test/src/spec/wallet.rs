@@ -171,12 +171,16 @@ impl Spec for WalletTransfer {
         assert!(tx_hash.starts_with("0x"));
 
         // test skip check to-address
-        let anyone_can_pay_address = "ckt1qg8mxsu48mncexvxkzgaa7mz2g25uza4zpz062relhjmyuc52ps3rjpj324umxu73ej0h3txcsu9cw77kgvawjvpsjg";
+        let anyone_can_pay_address = "ckt1qg8mxsu48mncexvxkzgaa7mz2g25uza4zpz062relhjmyuc52ps3rjpj324umxu73ej0h3txcsu9cw77kgvaw8s3uh2";
         let output = setup.cli(&format!(
             "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001",
             miner_privkey, anyone_can_pay_address,
         ));
-        assert!(output.contains(format!("Invalid to-address: {}", anyone_can_pay_address).as_str()));
+        assert!(
+            output.contains(format!("Invalid to-address: {}", anyone_can_pay_address).as_str()),
+            "{}",
+            output
+        );
 
         let tx_hash = setup.cli(&format!(
             "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001 --skip-check-to-address",

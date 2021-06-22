@@ -75,12 +75,12 @@ impl Spec for Plugin {
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(
             value["receiving"][0]["address"],
-            "ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"
+            "ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqk0px5r"
         );
         assert_eq!(value["receiving"][0]["path"], "m/44'/309'/0'/0/19");
         assert_eq!(
             value["change"][1]["address"],
-            "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
+            "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jquj5z3w"
         );
         assert_eq!(value["change"][1]["path"], "m/44'/309'/0'/1/20");
 
