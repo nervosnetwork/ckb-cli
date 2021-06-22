@@ -616,9 +616,20 @@ mod tests {
                 )
             ))
         );
-        // New address, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
+        // New address bech32, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
         assert_eq!(
             AddressParser::default().parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"),
+            Ok(Address::new(
+                NetworkType::Mainnet,
+                AddressPayload::new_short(
+                    CodeHashIndex::Sighash,
+                    h160!("0x13e41d6F9292555916f17B4882a5477C01270142")
+                )
+            ))
+        );
+        // New address bech32m, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
+        assert_eq!(
+            AddressParser::default().parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqk0px5r"),
             Ok(Address::new(
                 NetworkType::Mainnet,
                 AddressPayload::new_short(
