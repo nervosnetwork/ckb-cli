@@ -170,6 +170,9 @@ impl<'a> AccountSubCommand<'a> {
                             .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
                             .about("The address path")
                     ),
+                App::new("remove")
+                    .about("Print information about how to remove an account")
+                    .arg(lock_arg().required(true)),
             ])
     }
 }
@@ -449,6 +452,19 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
                     },
+                });
+                Ok(Output::new_output(resp))
+            }
+            ("remove", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let filepath = self
+                    .key_store
+                    .get_filepath(&lock_arg)
+                    .map_err(|err| err.to_string())?;
+                eprintln!("WARNING: please remove it CAREFULLY! Once you remove it you may lost all assets owned by this key and it's sub-keys");
+                let resp = serde_json::json!({
+                    "filepath": filepath.to_string_lossy()
                 });
                 Ok(Output::new_output(resp))
             }

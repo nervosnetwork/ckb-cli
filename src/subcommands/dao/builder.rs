@@ -32,7 +32,7 @@ impl DAOBuilder {
         }
     }
 
-    pub(crate) fn deposit(&self, deposit_capacity: u64) -> Result<TransactionView, String> {
+    pub(crate) fn deposit(&self, deposit_capacity: u64) -> TransactionView {
         let genesis_info = &self.genesis_info;
         let inputs = self
             .live_cells
@@ -47,7 +47,7 @@ impl DAOBuilder {
             // NOTE: Here give null lock script to the output. It's caller's duty to fill the lock
             let output = CellOutput::new_builder()
                 .capacity(deposit_capacity.pack())
-                .type_(Some(dao_type_script(&self.genesis_info)?).pack())
+                .type_(Some(dao_type_script(&self.genesis_info)).pack())
                 .build();
             let output_data = Bytes::from(&[0u8; 8][..]).pack();
             (output, output_data)
@@ -66,9 +66,9 @@ impl DAOBuilder {
             let change = CellOutput::new_builder()
                 .capacity(change_capacity.pack())
                 .build();
-            Ok(tx.output(change).output_data(Default::default()).build())
+            tx.output(change).output_data(Default::default()).build()
         } else {
-            Ok(tx.build())
+            tx.build()
         }
     }
 
@@ -272,9 +272,9 @@ impl DAOBuilder {
     }
 }
 
-fn dao_type_script(genesis_info: &GenesisInfo) -> Result<Script, String> {
-    Ok(Script::new_builder()
+fn dao_type_script(genesis_info: &GenesisInfo) -> Script {
+    Script::new_builder()
         .hash_type(ScriptHashType::Type.into())
         .code_hash(genesis_info.dao_type_hash().clone())
-        .build())
+        .build()
 }

@@ -1,13 +1,7 @@
 #!/bin/bash
 set -eu
 
-if [ -z "${TRAVIS_TAG:-}" ]; then
-  if [ -n "${TRAVIS_BRANCH}" ]; then
-    TRAVIS_TAG="${TRAVIS_BRANCH##*/}"
-  else
-    TRAVIS_TAG="$(git describe)"
-  fi
-fi
+GIT_TAG_NAME="${GIT_TAG_NAME:-"$(git describe)"}"
 if [ -z "${REL_PKG:-}" ]; then
   if [ "$(uname)" = Darwin ]; then
     REL_PKG=x86_64-apple-darwin.zip
@@ -16,9 +10,8 @@ if [ -z "${REL_PKG:-}" ]; then
   fi
 fi
 
-PKG_NAME="ckb-cli_${TRAVIS_TAG}_${REL_PKG%%.*}"
-ARCHIVE_NAME="ckb-cli_${TRAVIS_TAG}_${REL_PKG}"
-
+PKG_NAME="ckb-cli_${GIT_TAG_NAME}_${REL_PKG%%.*}"
+ARCHIVE_NAME="ckb-cli_${GIT_TAG_NAME}_${REL_PKG}"
 echo "ARCHIVE_NAME=$ARCHIVE_NAME"
 
 rm -rf releases

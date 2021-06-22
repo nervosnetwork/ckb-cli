@@ -1,10 +1,10 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, PeerState, Script, Transaction,
+    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
 };
 use ckb_sdk::{
     rpc::{
-        BannedAddr, BlockReward, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode,
-        Timestamp, TransactionProof, TransactionWithStatus,
+        BannedAddr, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode, Timestamp,
+        TransactionProof, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -75,9 +75,6 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
-                App::new("get_cellbase_output_capacity_details")
-                    .about("Get block header content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
                 App::new("get_current_epoch").about("Get current epoch information"),
                 App::new("get_epoch_by_number")
                     .about("Get epoch information by epoch number")
@@ -232,7 +229,15 @@ impl<'a> RpcSubCommand<'a> {
                          .validator(|input| FilePathParser::new(true).validate(input))
                          .about("Transaction content (json format, see rpc send_transaction)")
                     )
-                    .about("Broadcast transaction without verify"),
+                    .arg(
+                        Arg::with_name("cycles")
+                            .long("cycles")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .required(true)
+                            .about("The cycles of the transaction")
+                    )
+                    .about("[TEST ONLY] Broadcast transaction without verify"),
                 App::new("truncate")
                     .arg(
                         Arg::with_name("tip-hash")
@@ -242,7 +247,7 @@ impl<'a> RpcSubCommand<'a> {
                             .required(true)
                             .about("Target tip block hash")
                     )
-                    .about("Truncate blocks to target tip block"),
+                    .about("[TEST ONLY] Truncate blocks to target tip block"),
                 App::new("generate_block")
                     .arg(
                         Arg::with_name("json-path")
@@ -258,6 +263,7 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| HexParser.validate(input))
                             .about("Block assembler message (hex format)")
                     )
+                    .about("[TEST ONLY] Generate an empty block")
             ])
     }
 }
@@ -307,25 +313,6 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
 
                 let resp = self.rpc_client.get_block_hash(number).map(OptionH256)?;
                 Ok(Output::new_output(resp))
-            }
-            ("get_cellbase_output_capacity_details", Some(m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
-
-                if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_cellbase_output_capacity_details(hash)
-                        .map(RawOptionBlockReward)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
-                } else {
-                    let resp = self
-                        .rpc_client
-                        .get_cellbase_output_capacity_details(hash)
-                        .map(OptionBlockReward)?;
-                    Ok(Output::new_output(resp))
-                }
             }
             ("get_current_epoch", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -694,12 +681,13 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             // [IntegrationTest]
             ("broadcast_transaction", Some(m)) => {
+                let cycles: u64 = FromStrParser::<u64>::default().from_matches(m, "cycles")?;
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
 
-                let resp = self.rpc_client.broadcast_transaction(tx.into())?;
+                let resp = self.rpc_client.broadcast_transaction(tx.into(), cycles)?;
                 Ok(Output::new_output(resp))
             }
             ("truncate", Some(m)) => {
@@ -750,13 +738,7 @@ pub struct OptionH256(pub Option<H256>);
 pub struct OptionEpochView(pub Option<EpochView>);
 
 #[derive(Serialize, Deserialize)]
-pub struct PeerStates(pub Vec<PeerState>);
-
-#[derive(Serialize, Deserialize)]
 pub struct BannedAddrList(pub Vec<BannedAddr>);
-
-#[derive(Serialize, Deserialize)]
-pub struct OptionBlockReward(pub Option<BlockReward>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
@@ -778,6 +760,3 @@ pub struct RawOptionEpochView(pub Option<rpc_types::EpochView>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawBannedAddrList(pub Vec<rpc_types::BannedAddr>);
-
-#[derive(Serialize, Deserialize)]
-pub struct RawOptionBlockReward(pub Option<rpc_types::BlockReward>);

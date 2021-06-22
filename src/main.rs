@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
-use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
@@ -51,7 +50,7 @@ fn main() -> Result<(), io::Error> {
     let version_long = version.long();
     let matches = build_cli(&version_short, &version_long).get_matches();
 
-    let mut env_map: HashMap<String, String> = HashMap::from_iter(env::vars());
+    let mut env_map: HashMap<String, String> = env::vars().collect();
     let api_uri_opt = matches
         .value_of("url")
         .map(ToOwned::to_owned)
@@ -120,7 +119,7 @@ fn main() -> Result<(), io::Error> {
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
-    let mut key_store = get_key_store(&ckb_cli_dir).map_err(|err| {
+    let mut key_store = get_key_store(ckb_cli_dir.clone()).map_err(|err| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("Open file based key store error: {}", err),
@@ -241,7 +240,7 @@ pub fn get_version() -> Version {
         .expect("CARGO_PKG_VERSION_PATCH parse success");
     let dash_pre = {
         let pre = env!("CARGO_PKG_VERSION_PRE");
-        if pre == "" {
+        if pre.is_empty() {
             pre.to_string()
         } else {
             "-".to_string() + pre

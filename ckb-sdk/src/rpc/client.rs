@@ -1,8 +1,8 @@
 use ckb_jsonrpc_types::{
-    BannedAddr, Block, BlockNumber, BlockReward, BlockTemplate, BlockView, CellWithStatus,
-    ChainInfo, Consensus, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes,
-    LocalNode, MainLoggerConfig, OutPoint, PeerState, RawTxPool, RemoteNode, Script, Timestamp,
-    Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    BannedAddr, Block, BlockNumber, BlockTemplate, BlockView, CellWithStatus, ChainInfo, Consensus,
+    Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes, LocalNode,
+    MainLoggerConfig, OutPoint, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
+    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::primitive;
@@ -70,7 +70,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_block(&mut self, hash: H256) -> Option<BlockView>;
     pub fn get_block_by_number(&mut self, number: BlockNumber) -> Option<BlockView>;
     pub fn get_block_hash(&mut self, number: BlockNumber) -> Option<H256>;
-    pub fn get_cellbase_output_capacity_details(&mut self, hash: H256) -> Option<BlockReward>;
     pub fn get_current_epoch(&mut self) -> EpochView;
     pub fn get_epoch_by_number(&mut self, number: EpochNumber) -> Option<EpochView>;
     pub fn get_header(&mut self, hash: H256) -> Option<HeaderView>;
@@ -115,7 +114,6 @@ jsonrpc!(pub struct RawHttpRpcClient {
 
     // Stats
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
-    pub fn get_peers_state(&mut self) -> Vec<PeerState>;
 
     // Miner
     pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> BlockTemplate;
@@ -125,7 +123,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn process_block_without_verify(&mut self, data: Block, broadcast: bool) -> Option<H256>;
     pub fn truncate(&mut self, target_tip_hash: H256) -> ();
     pub fn generate_block(&mut self, block_assembler_script: Option<Script>, block_assembler_message: Option<JsonBytes>) -> H256;
-    pub fn broadcast_transaction(&mut self, tx: Transaction) -> H256;
+    pub fn broadcast_transaction(&mut self, tx: Transaction, cycles: Cycle) -> H256;
 
     // Debug
     pub fn jemalloc_profiling_dump(&mut self) -> String;
@@ -169,15 +167,6 @@ impl HttpRpcClient {
     pub fn get_block_hash(&mut self, number: u64) -> Result<Option<H256>, String> {
         self.client
             .get_block_hash(BlockNumber::from(number))
-            .map(|opt| opt.map(Into::into))
-            .map_err(|err| err.to_string())
-    }
-    pub fn get_cellbase_output_capacity_details(
-        &mut self,
-        hash: H256,
-    ) -> Result<Option<types::BlockReward>, String> {
-        self.client
-            .get_cellbase_output_capacity_details(hash)
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -367,9 +356,6 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
-    pub fn get_peers_state(&mut self) -> Result<Vec<PeerState>, String> {
-        self.client.get_peers_state().map_err(|err| err.to_string())
-    }
 
     // Miner
     pub fn get_block_template(
@@ -393,9 +379,13 @@ impl HttpRpcClient {
     }
 
     // IntegrationTest
-    pub fn broadcast_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
+    pub fn broadcast_transaction(
+        &mut self,
+        tx: packed::Transaction,
+        cycles: u64,
+    ) -> Result<H256, String> {
         self.client
-            .broadcast_transaction(tx.into())
+            .broadcast_transaction(tx.into(), Cycle::from(cycles))
             .map_err(|err| err.to_string())
     }
 

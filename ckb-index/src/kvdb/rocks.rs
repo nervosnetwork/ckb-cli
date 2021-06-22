@@ -123,7 +123,7 @@ impl<'a> KVTxn<'a> for RocksTxn<'a> {
                 .expect("Put kv to rocks batch failed")
         }
         self.db
-            .write(batch)
+            .write(&batch)
             .expect("Commit rocks txn transaction failed");
         log::debug!("Rocks txn commited!");
     }

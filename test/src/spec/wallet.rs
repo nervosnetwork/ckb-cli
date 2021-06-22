@@ -104,11 +104,11 @@ impl Spec for WalletTransfer {
             "transfer from account1 to account2 with more than 1.0 CKB tx fee: {}",
             output
         );
-        assert!(output.contains("Transaction fee (2.00001) can not be more than 1.0 CKB, please change to-capacity value to adjust (not enough live cells to adjust)"), output);
+        assert!(output.contains("Transaction fee (2.00001) can not be more than 1.0 CKB, please change to-capacity value to adjust (not enough live cells to adjust)"), "{}", output);
 
         // Transfer from miner to account2 (include input maturity filter)
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.0001",
             miner_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!(
@@ -211,7 +211,7 @@ impl Spec for WalletTimelockedAddress {
 
         for _ in 0..4 {
             let tx_hash = setup.cli(&format!(
-                "wallet transfer --privkey-path {} --to-address {} --capacity 50000 --tx-fee 0.00001",
+                "wallet transfer --privkey-path {} --to-address {} --capacity 50000 --tx-fee 0.0001",
                 miner_privkey,
                 ACCOUNT1_ADDRESS,
             ));

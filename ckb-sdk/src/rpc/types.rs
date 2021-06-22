@@ -569,37 +569,6 @@ impl From<rpc_types::EpochView> for EpochView {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
-pub struct BlockReward {
-    pub total: Capacity,
-    pub primary: Capacity,
-    pub secondary: Capacity,
-    pub tx_fee: Capacity,
-    pub proposal_reward: Capacity,
-}
-impl From<rpc_types::BlockReward> for BlockReward {
-    fn from(json: rpc_types::BlockReward) -> BlockReward {
-        BlockReward {
-            total: json.total.into(),
-            primary: json.primary.into(),
-            secondary: json.secondary.into(),
-            tx_fee: json.tx_fee.into(),
-            proposal_reward: json.proposal_reward.into(),
-        }
-    }
-}
-impl From<BlockReward> for core::BlockReward {
-    fn from(json: BlockReward) -> Self {
-        Self {
-            total: core::Capacity::shannons(json.total.0),
-            primary: core::Capacity::shannons(json.primary.0),
-            secondary: core::Capacity::shannons(json.secondary.0),
-            tx_fee: core::Capacity::shannons(json.tx_fee.0),
-            proposal_reward: core::Capacity::shannons(json.proposal_reward.0),
-        }
-    }
-}
-
-#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionProof {
     /// Block hash
     pub block_hash: H256,
@@ -1133,27 +1102,3 @@ impl From<rpc_types::RawTxPool> for RawTxPool {
         }
     }
 }
-
-// =========
-//  sync.rs
-// =========
-//// TODO make PeerState fields public
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct PeerState {
-//     // TODO use peer_id
-//     // peer session id
-//     pub peer: Uint32,
-//     // last updated timestamp
-//     pub last_updated: Timestamp,
-//     // blocks count has request but not receive response yet
-//     pub blocks_in_flight: Uint32,
-// }
-// impl From<rpc_types::PeerState> for PeerState {
-//     fn from(json: rpc_types::PeerState) -> PeerState {
-//         PeerState {
-//             peer: json.peer.into(),
-//             last_updated: json.last_updated.into(),
-//             blocks_in_flight: json.blocks_in_flight.into()
-//         }
-//     }
-// }

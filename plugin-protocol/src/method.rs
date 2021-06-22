@@ -13,8 +13,6 @@ pub const RPC_PREFIX: &str = "rpc_";
 pub const RPC_GET_BLOCK: &str = "rpc_get_block";
 pub const RPC_GET_BLOCK_BY_NUMBER: &str = "rpc_get_block_by_number";
 pub const RPC_GET_BLOCK_HASH: &str = "rpc_get_block_hash";
-pub const RPC_GET_CELLBASE_OUTPUT_CAPACITY_DETAILS: &str =
-    "rpc_get_cellbase_output_capacity_details";
 
 pub const INDEXER_PREFIX: &str = "indexer_";
 pub const INDEXER_TIP_HEADER: &str = "indexer_tip_header";

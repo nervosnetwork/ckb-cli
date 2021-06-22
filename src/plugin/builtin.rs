@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 
@@ -21,7 +21,7 @@ pub(crate) struct DefaultKeyStore {
 }
 
 impl DefaultKeyStore {
-    pub(crate) fn start(ckb_cli_dir: &PathBuf) -> Result<DefaultKeyStore, String> {
+    pub(crate) fn start(ckb_cli_dir: &Path) -> Result<DefaultKeyStore, String> {
         fn serilize_key_set(key_set: DerivedKeySet) -> PluginResponse {
             let external = key_set
                 .external
@@ -222,7 +222,7 @@ impl DefaultKeyStore {
         }
 
         let (keystore_sender, keystore_receiver) = bounded(1);
-        let mut keystore = get_key_store(ckb_cli_dir)?;
+        let mut keystore = get_key_store(ckb_cli_dir.to_path_buf())?;
 
         let keystore_thread = thread::spawn(move || loop {
             match keystore_receiver.recv() {
@@ -278,14 +278,14 @@ pub(crate) struct DefaultIndexer {
 }
 
 impl DefaultIndexer {
-    pub(crate) fn start() -> Result<DefaultIndexer, String> {
+    pub(crate) fn start() -> DefaultIndexer {
         // TODO:
         let (sender, _receiver) = bounded(1);
         let thread = thread::spawn(|| {});
-        Ok(DefaultIndexer {
+        DefaultIndexer {
             handler: sender,
             _thread: thread,
-        })
+        }
     }
 
     pub(crate) fn handler(&self) -> &PluginHandler {
