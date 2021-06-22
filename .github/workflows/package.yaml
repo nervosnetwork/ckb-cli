@@ -45,7 +45,7 @@ jobs:
       run: |
         export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
         echo "GIT_TAG_NAME=$GIT_TAG_NAME" >> $GITHUB_ENV
-    - name: Build CKB and Package ckb-cli
+    - name: Build and package ckb-cli
       env:
         LARGE_SECRET_PASSPHRASE: ${{ secrets.LARGE_SECRET_PASSPHRASE }}
         GPG_SIGNER: ${{ secrets.GPG_SIGNER }}
@@ -81,7 +81,7 @@ jobs:
       run: |
         export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
         echo "GIT_TAG_NAME=$GIT_TAG_NAME" >> $GITHUB_ENV
-    - name: Build CKB and Package ckb-cli
+    - name: Build and package ckb-cli
       env:
         LARGE_SECRET_PASSPHRASE: ${{ secrets.LARGE_SECRET_PASSPHRASE }}
         GPG_SIGNER: ${{ secrets.GPG_SIGNER }}
@@ -117,7 +117,7 @@ jobs:
       run: |
         export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
         echo "GIT_TAG_NAME=$GIT_TAG_NAME" >> $GITHUB_ENV
-    - name: Build CKB and Package ckb-cli
+    - name: Build and package ckb-cli
       env:
         LARGE_SECRET_PASSPHRASE: ${{ secrets.LARGE_SECRET_PASSPHRASE }}
         GPG_SIGNER: ${{ secrets.GPG_SIGNER }}
