@@ -406,7 +406,7 @@ dependencies = [
  "futures 0.3.15",
  "ipnetwork",
  "itertools",
- "jsonrpc-core 17.0.0",
+ "jsonrpc-core 17.1.0",
  "jsonrpc-core-client",
  "jsonrpc-derive",
  "jsonrpc-http-server",
@@ -1636,7 +1636,7 @@ checksum = "15b6c6ad01c7354d60de493148c30ac8a82b759e22ae678c8705e9b8e0c566a4"
 dependencies = [
  "derive_more",
  "futures 0.3.15",
- "jsonrpc-core 17.0.0",
+ "jsonrpc-core 17.1.0",
  "jsonrpc-pubsub",
  "log",
  "serde",
@@ -1659,11 +1659,13 @@ dependencies = [
 
 [[package]]
 name = "jsonrpc-core"
-version = "17.0.0"
+version = "17.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07569945133257ff557eb37b015497104cea61a2c9edaf126c1cbd6e8332397f"
+checksum = "d4467ab6dfa369b69e52bd0692e480c4d117410538526a57a304a0f2250fd95e"
 dependencies = [
  "futures 0.3.15",
+ "futures-executor",
+ "futures-util",
  "log",
  "serde",
  "serde_derive",
@@ -1700,7 +1702,7 @@ checksum = "eff2303c4f0562afcbd2dae75e3e21815095f8994749a80fbcd365877e44ed64"
 dependencies = [
  "futures 0.3.15",
  "hyper 0.13.10",
- "jsonrpc-core 17.0.0",
+ "jsonrpc-core 17.1.0",
  "jsonrpc-server-utils",
  "log",
  "net2",
@@ -1715,7 +1717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c48dbebce7a9c88ab272a4db7d6478aa4c6d9596e6c086366e89efc4e9ed89e"
 dependencies = [
  "futures 0.3.15",
- "jsonrpc-core 17.0.0",
+ "jsonrpc-core 17.1.0",
  "lazy_static",
  "log",
  "parking_lot",
@@ -1732,7 +1734,7 @@ dependencies = [
  "bytes 0.5.6",
  "futures 0.3.15",
  "globset",
- "jsonrpc-core 17.0.0",
+ "jsonrpc-core 17.1.0",
  "lazy_static",
  "log",
  "tokio 0.2.25",
