@@ -402,7 +402,7 @@ dependencies = [
  "dtoa",
  "eaglesong",
  "env_logger",
- "faster-hex 0.4.1",
+ "faster-hex",
  "futures 0.3.15",
  "ipnetwork",
  "itertools",
@@ -436,7 +436,7 @@ dependencies = [
  "ckb-index",
  "ckb-jsonrpc-types",
  "ckb-types",
- "faster-hex 0.3.1",
+ "faster-hex",
  "serde",
  "serde_derive",
  "serde_json",
@@ -449,7 +449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c23fb466dd3511efe3aedfdddbca626f18221e2e7ccd5c9a26956042665c043e"
 dependencies = [
  "ckb-fixed-hash",
- "faster-hex 0.6.0",
+ "faster-hex",
  "lazy_static",
  "rand 0.7.3",
  "secp256k1",
@@ -495,7 +495,7 @@ version = "0.43.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c5fa9ee9e7c100ce2c645182ee4a495d71971d3193ce8eeffabf2b26f401674"
 dependencies = [
- "faster-hex 0.6.0",
+ "faster-hex",
  "serde",
  "thiserror",
 ]
@@ -543,7 +543,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "104ed751a955058782af060ae430c4fd5da2a8dfc49ece375e93a43818b967e3"
 dependencies = [
  "ckb-types",
- "faster-hex 0.6.0",
+ "faster-hex",
  "jsonrpc-core 14.2.0",
  "serde",
  "serde_json",
@@ -665,7 +665,7 @@ dependencies = [
  "ckb-types",
  "ckb-vm",
  "ckb-vm-definitions",
- "faster-hex 0.6.0",
+ "faster-hex",
  "goblin",
  "serde",
 ]
@@ -689,7 +689,7 @@ dependencies = [
  "ckb-sdk-types",
  "ckb-types",
  "failure",
- "faster-hex 0.4.1",
+ "faster-hex",
  "fnv",
  "futures 0.3.15",
  "log",
@@ -727,7 +727,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfbce46ad2de7563c7e456888d4a29df3d461106a989836c08627d044409e928"
 dependencies = [
  "blake2b-rs",
- "faster-hex 0.6.0",
+ "faster-hex",
  "includedir",
  "includedir_codegen",
  "phf",
@@ -1055,18 +1055,6 @@ name = "fake-simd"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
-
-[[package]]
-name = "faster-hex"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b8cccaafb5aae8c282692e5590f341925edea6c696e8715ff0d973320b2646"
-
-[[package]]
-name = "faster-hex"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "348138dd23e03bb0018caef99647fb1a5befec5ff4b501991de88f09854d4c28"
 
 [[package]]
 name = "faster-hex"
@@ -1900,7 +1888,7 @@ checksum = "c58d1147f4d0d51ce72c56a6099ae5dbfd007b250271bb965f82dd10fca2bf02"
 dependencies = [
  "bytes 1.0.1",
  "cfg-if 1.0.0",
- "faster-hex 0.6.0",
+ "faster-hex",
 ]
 
 [[package]]
