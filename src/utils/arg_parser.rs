@@ -218,11 +218,13 @@ pub struct DirPathParser {
     path_parser: PathParser,
 }
 
-// impl DirPathParser {
-//     pub fn new(should_exists: bool) -> DirPathParser {
-//         DirPathParser { path_parser: PathParser { should_exists } }
-//     }
-// }
+impl DirPathParser {
+    pub fn new(should_exists: bool) -> DirPathParser {
+        DirPathParser {
+            path_parser: PathParser { should_exists },
+        }
+    }
+}
 
 impl ArgParser<PathBuf> for DirPathParser {
     fn parse(&self, input: &str) -> Result<PathBuf, String> {

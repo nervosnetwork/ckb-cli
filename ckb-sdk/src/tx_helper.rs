@@ -1,5 +1,6 @@
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
+use ckb_jsonrpc_types::JsonBytes;
 use ckb_types::{
     bytes::{Bytes, BytesMut},
     core::{ScriptHashType, TransactionBuilder, TransactionView},
@@ -11,10 +12,13 @@ use ckb_types::{
     H160, H256,
 };
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
+use std::str::FromStr;
+
+use ckb_sdk_types::tx_helper::{ReprMultisigConfig, ReprTxHelper};
 
 use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
-use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
+use crate::{Address, AddressPayload, AddressType, CodeHashIndex, GenesisInfo, NetworkType, Since};
 
 // TODO: Add dao support
 
@@ -207,7 +211,7 @@ impl TxHelper {
 
     pub fn sign_inputs<C>(
         &self,
-        mut signer: SignerFn,
+        signer: &mut SignerFn,
         get_live_cell: C,
         skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
@@ -583,6 +587,104 @@ pub fn build_signature<
         .set_witnesses(new_witnesses)
         .build();
     signer(&message, &new_tx.data().into()).map(|data| Bytes::from(data.to_vec()))
+}
+
+impl MultisigConfig {
+    pub fn into_repr(self, network: NetworkType) -> ReprMultisigConfig {
+        let sighash_addresses = self
+            .sighash_addresses()
+            .iter()
+            .map(|payload| Address::new(network, payload.clone()).to_string())
+            .collect();
+        ReprMultisigConfig {
+            sighash_addresses,
+            require_first_n: self.require_first_n(),
+            threshold: self.threshold(),
+        }
+    }
+}
+
+impl TryFrom<ReprMultisigConfig> for MultisigConfig {
+    type Error = String;
+    fn try_from(repr: ReprMultisigConfig) -> Result<Self, Self::Error> {
+        let sighash_addresses = repr
+            .sighash_addresses
+            .into_iter()
+            .map(|address_string| {
+                let result = Address::from_str(&address_string).map(|addr| addr.payload().clone());
+                if !result
+                    .as_ref()
+                    .map(|payload| payload.is_sighash())
+                    .unwrap_or(false)
+                {
+                    Err(format!("address is not sighash: {}", address_string))
+                } else {
+                    result
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        MultisigConfig::new_with(sighash_addresses, repr.require_first_n, repr.threshold)
+    }
+}
+
+impl TxHelper {
+    pub fn into_repr(self, network: NetworkType) -> ReprTxHelper {
+        ReprTxHelper {
+            transaction: self.transaction().data().into(),
+            multisig_configs: self
+                .multisig_configs()
+                .iter()
+                .map(|(lock_arg, cfg)| (lock_arg.clone(), cfg.clone().into_repr(network)))
+                .collect(),
+            signatures: self
+                .signatures()
+                .iter()
+                .map(|(lock_arg, signatures)| {
+                    (
+                        JsonBytes::from_bytes(lock_arg.clone()),
+                        signatures
+                            .iter()
+                            .cloned()
+                            .map(JsonBytes::from_bytes)
+                            .collect(),
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<ReprTxHelper> for TxHelper {
+    type Error = String;
+    fn try_from(repr: ReprTxHelper) -> Result<Self, Self::Error> {
+        let transaction = packed::Transaction::from(repr.transaction).into_view();
+        let multisig_configs = repr
+            .multisig_configs
+            .into_iter()
+            .map(|(_, repr_cfg)| MultisigConfig::try_from(repr_cfg))
+            .collect::<Result<Vec<_>, String>>()?;
+        let signatures: HashMap<Bytes, HashSet<Bytes>> = repr
+            .signatures
+            .into_iter()
+            .map(|(lock_arg, signatures)| {
+                (
+                    lock_arg.into_bytes(),
+                    signatures.into_iter().map(JsonBytes::into_bytes).collect(),
+                )
+            })
+            .collect();
+
+        let mut tx_helper = TxHelper::new(transaction);
+        for cfg in multisig_configs {
+            tx_helper.add_multisig_config(cfg);
+        }
+        for (lock_arg, sub_signatures) in signatures {
+            for sub_signature in sub_signatures {
+                tx_helper.add_signature(lock_arg.clone(), sub_signature)?;
+            }
+        }
+        Ok(tx_helper)
+    }
 }
 
 #[cfg(test)]

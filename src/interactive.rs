@@ -15,9 +15,9 @@ use serde_json::json;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, DAOSubCommand, IndexSubCommand, MockTxSubCommand,
-    MoleculeSubCommand, PluginSubCommand, RpcSubCommand, TxSubCommand, UtilSubCommand,
-    WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, DeploySubCommand, IndexSubCommand,
+    MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, RpcSubCommand, TxSubCommand,
+    UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -427,6 +427,19 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
+                        self.index_dir.clone(),
+                        self.index_controller.clone(),
+                        wait_for_sync,
+                    )
+                    .process(&sub_matches, debug)?;
+                    output.print(format, color);
+                    Ok(())
+                }
+                ("deploy", Some(sub_matches)) => {
+                    let output = DeploySubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.plugin_mgr,
+                        None,
                         self.index_dir.clone(),
                         self.index_controller.clone(),
                         wait_for_sync,

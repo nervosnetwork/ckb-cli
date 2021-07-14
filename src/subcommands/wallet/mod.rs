@@ -3,7 +3,6 @@ mod index;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
 use ckb_types::{
     bytes::Bytes,
@@ -26,9 +25,9 @@ use crate::utils::{
     },
     index::{with_db, IndexController},
     other::{
-        check_capacity, get_address, get_arg_value, get_live_cell_with_cache,
-        get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        read_password, sync_to_tip,
+        calculate_type_id, check_capacity, enough_capacity, get_address, get_arg_value,
+        get_live_cell_with_cache, get_max_mature_number, get_network_type, get_privkey_signer,
+        get_to_data, is_mature, read_password, sync_to_tip,
     },
 };
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
@@ -352,14 +351,6 @@ impl<'a> WalletSubCommand<'a> {
         let mut from_capacity = 0;
         let mut infos: Vec<LiveCellInfo> = Default::default();
 
-        fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
-            if from_capacity < to_capacity + tx_fee {
-                false
-            } else {
-                let rest_capacity = from_capacity - to_capacity - tx_fee;
-                rest_capacity >= MIN_SECP_CELL_CAPACITY || tx_fee + rest_capacity < ONE_CKB
-            }
-        }
         let mut terminator = |_, info: &LiveCellInfo| {
             if enough_capacity(from_capacity, to_capacity, tx_fee) {
                 (true, false)
@@ -410,8 +401,7 @@ impl<'a> WalletSubCommand<'a> {
 
         let rpc_url = self.rpc_client.url().to_string();
         let keystore = self.plugin_mgr.keystore_handler();
-        let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
-            Default::default();
+        let mut live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes)> = Default::default();
         let mut get_live_cell_fn = |out_point: OutPoint, with_data: bool| {
             get_live_cell_with_cache(&mut live_cell_cache, self.rpc_client, out_point, with_data)
                 .map(|(output, _)| output)
@@ -428,22 +418,18 @@ impl<'a> WalletSubCommand<'a> {
 
         // Add outputs
         let type_script = if is_type_id {
-            let mut blake2b = new_blake2b();
             let first_cell_input = helper
                 .transaction()
                 .inputs()
                 .into_iter()
                 .next()
                 .expect("inputs empty");
-            blake2b.update(first_cell_input.as_slice());
-            blake2b.update(&0u64.to_le_bytes());
-            let mut ret = [0; 32];
-            blake2b.finalize(&mut ret);
+            let type_id_args = calculate_type_id(&first_cell_input, 0);
             Some(
                 Script::new_builder()
                     .code_hash(TYPE_ID_CODE_HASH.pack())
                     .hash_type(ScriptHashType::Type.into())
-                    .args(Bytes::from(ret[..].to_vec()).pack())
+                    .args(Bytes::from(type_id_args[..].to_vec()).pack())
                     .build(),
             )
         } else {
@@ -463,7 +449,7 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_output(change_output, Bytes::default());
         }
 
-        let signer = if let Some(from_privkey) = from_privkey {
+        let mut signer = if let Some(from_privkey) = from_privkey {
             get_privkey_signer(from_privkey)
         } else {
             let new_client = HttpRpcClient::new(rpc_url);
@@ -477,7 +463,7 @@ impl<'a> WalletSubCommand<'a> {
             )
         };
         for (lock_arg, signature) in
-            helper.sign_inputs(signer, &mut get_live_cell_fn, skip_check)?
+            helper.sign_inputs(&mut signer, &mut get_live_cell_fn, skip_check)?
         {
             helper.add_signature(lock_arg, signature)?;
         }
