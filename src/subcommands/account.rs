@@ -231,7 +231,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             serde_json::json!({
                                 "#": idx,
                                 "source": source,
-                                "account-id": format!("0x{}", hex_string(data.as_ref()).expect("hex")),
+                                "account-id": format!("0x{}", hex_string(data.as_ref())),
                             })
                         }
                     })
