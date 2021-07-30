@@ -91,7 +91,7 @@ impl AddressPayload {
         match self {
             AddressPayload::Short { .. } => AddressType::Short,
             AddressPayload::Full { hash_type, .. } => match hash_type {
-                ScriptHashType::Data => AddressType::FullData,
+                ScriptHashType::Data | ScriptHashType::Data1 => AddressType::FullData,
                 ScriptHashType::Type => AddressType::FullType,
             },
         }

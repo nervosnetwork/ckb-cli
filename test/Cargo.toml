@@ -1,6 +1,6 @@
 [package]
 name = "cli-test"
-version = "0.43.0"
+version = "0.100.0-rc2"
 authors = ["Linfeng Qian <thewawar@gmail.com>"]
 edition = "2018"
 
@@ -13,12 +13,12 @@ log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-ckb-sdk = { path = "../ckb-sdk", version = "0.43.0" }
-ckb-types = "=0.43.0"
-ckb-app-config = "=0.43.0"
-ckb-chain-spec = "=0.43.0"
-ckb-crypto = { version = "=0.43.0", features = ["secp"] }
-ckb-hash = "=0.43.0"
+ckb-sdk = { path = "../ckb-sdk", version = "0.100.0-rc2" }
+ckb-types = "=0.100.0-rc2"
+ckb-app-config = "=0.100.0-rc2"
+ckb-chain-spec = "=0.100.0-rc2"
+ckb-crypto = { version = "=0.100.0-rc2", features = ["secp"] }
+ckb-hash = "=0.100.0-rc2"
 regex = "1.1.6"
 
 # Prevent this from interfering with workspaces

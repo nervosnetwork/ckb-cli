@@ -1,6 +1,6 @@
 [package]
 name = "ckb-sdk"
-version = "0.43.0"
+version = "0.100.0-rc2"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -29,12 +29,14 @@ tokio-util = { version = "0.6", features = ["codec"] }
 tokio = { version = "1" }
 bytes = "1"
 futures = "0.3"
+jsonrpc-core = "17"
 
-ckb-types = "=0.43.0"
-ckb-error = "=0.43.0"
-ckb-script = "=0.43.0"
-ckb-jsonrpc-types = "=0.43.0"
-ckb-hash = "=0.43.0"
-ckb-resource = "=0.43.0"
-ckb-crypto = { version = "=0.43.0", features = ["secp"] }
-ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.43.0" }
+ckb-types = "=0.100.0-rc2"
+ckb-error = "=0.100.0-rc2"
+ckb-script = "=0.100.0-rc2"
+ckb-jsonrpc-types = "=0.100.0-rc2"
+ckb-chain-spec = "=0.100.0-rc2"
+ckb-hash = "=0.100.0-rc2"
+ckb-resource = "=0.100.0-rc2"
+ckb-crypto = { version = "=0.100.0-rc2", features = ["secp"] }
+ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.100.0-rc2" }
