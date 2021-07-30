@@ -60,7 +60,11 @@ impl Spec for Plugin {
 
         let output = setup.cli(&format!("wallet transfer --from-account {} --to-address ckt1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jq5t63cs --capacity 1000 --tx-fee 0.1", Miner::address()));
         // Means the signature is filled but is wrong: https://github.com/nervosnetwork/ckb-system-scripts/wiki/Error-codes
-        assert!(output.contains("ValidationFailure(-31)"));
+        assert!(
+            output.contains("cause: ValidationFailure: see the error code -31 in the page"),
+            "{}",
+            output
+        );
 
         let output = setup
             .cli("account extended-address --lock-arg 0xef8484612fefa725097ecef6dce0e19e0d77fb79");

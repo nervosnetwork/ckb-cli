@@ -482,9 +482,14 @@ impl<'a> WalletSubCommand<'a> {
             helper.add_signature(lock_arg, signature)?;
         }
         let tx = helper.build_tx(&mut get_live_cell_fn, skip_check)?;
+        let outputs_validator = if is_type_id || skip_check || skip_check_to_address {
+            Some(json_types::OutputsValidator::Passthrough)
+        } else {
+            None
+        };
         let tx_hash = self
             .rpc_client
-            .send_transaction(tx.data())
+            .send_transaction(tx.data(), outputs_validator)
             .map_err(|err| format!("Send transaction error: {}", err))?;
         assert_eq!(tx.hash(), tx_hash.pack());
         Ok(tx)

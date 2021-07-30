@@ -322,16 +322,17 @@ impl<'a> MockTransactionHelper<'a> {
         max_cycle: Cycle,
         loader: L,
     ) -> Result<Cycle, String> {
-        // FIXME: use the right TxVerifyEnv & Consensus
         let (consensus, tx_env) = {
-            let epoch = EpochNumberWithFraction::new(300, 0, 1);
+            let enable_epoch_number = 200;
+            let commit_epoch_number = 200 + 100;
+            let epoch = EpochNumberWithFraction::new(commit_epoch_number, 0, 1);
             let header = HeaderView::new_advanced_builder()
                 .epoch(epoch.pack())
                 .build();
             let tx_env = TxVerifyEnv::new_commit(&header);
             let hardfork_switch = HardForkSwitch::new_without_any_enabled()
                 .as_builder()
-                .rfc_0232(200)
+                .rfc_0232(enable_epoch_number)
                 .build()
                 .unwrap();
             let consensus = ConsensusBuilder::default()

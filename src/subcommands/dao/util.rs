@@ -106,7 +106,7 @@ pub(crate) fn send_transaction(
         );
     }
 
-    let resp = rpc_client.send_transaction(transaction.data())?;
+    let resp = rpc_client.send_transaction(transaction.data(), None)?;
     Ok(Output::new_output(resp))
 }
 

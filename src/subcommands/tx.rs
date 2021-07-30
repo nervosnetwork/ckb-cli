@@ -557,7 +557,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 }
                 let resp = self
                     .rpc_client
-                    .send_transaction(tx.data())
+                    .send_transaction(tx.data(), Some(json_types::OutputsValidator::Passthrough))
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
