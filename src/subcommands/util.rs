@@ -311,9 +311,9 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
                 let pubkey_opt = privkey_opt
                     .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
                     .or(pubkey_opt);
-                let pubkey_string_opt = pubkey_opt.as_ref().map(|pubkey| {
-                    hex_string(&pubkey.serialize()[..]).expect("encode pubkey failed")
-                });
+                let pubkey_string_opt = pubkey_opt
+                    .as_ref()
+                    .map(|pubkey| hex_string(&pubkey.serialize()[..]));
 
                 let address_payload = match pubkey_opt {
                     Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
@@ -419,7 +419,7 @@ message = "0x"
                 )?;
                 let result = serde_json::json!({
                     "message": format!("{:#x}", message),
-                    "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                    "signature": format!("0x{}", hex_string(&signature)),
                     "recoverable": recoverable,
                     "path": target_path.to_string(),
                 });
@@ -478,7 +478,7 @@ message = "0x"
                     password,
                 )?;
                 let result = serde_json::json!({
-                    "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                    "signature": format!("0x{}", hex_string(&signature)),
                     "recoverable": recoverable,
                     "path": target_path.to_string(),
                 });
@@ -558,7 +558,7 @@ message = "0x"
                     .expect("Convert to message failed");
                 let verify_ok = SECP256K1.verify(&message, &signature, &pubkey).is_ok();
                 let result = serde_json::json!({
-                    "pubkey": format!("0x{}", hex_string(&pubkey.serialize()[..]).unwrap()),
+                    "pubkey": format!("0x{}", hex_string(&pubkey.serialize()[..])),
                     "recoverable": recoverable,
                     "verify-ok": verify_ok,
                 });
@@ -592,7 +592,7 @@ message = "0x"
                 } else {
                     &hash_data[..]
                 };
-                let output_string = format!("0x{}", hex_string(slice).unwrap());
+                let output_string = format!("0x{}", hex_string(slice));
                 Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             ("compact-to-difficulty", Some(m)) => {
@@ -661,7 +661,7 @@ message = "0x"
                         NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
                         elapsed / 1000,
                         epoch_fraction,
-                        hex_string(multisig_addr.payload().args().as_ref()).unwrap(),
+                        hex_string(multisig_addr.payload().args().as_ref()),
                         MULTISIG_TYPE_HASH,
                     );
                 }
