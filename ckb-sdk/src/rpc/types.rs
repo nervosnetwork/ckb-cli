@@ -356,7 +356,7 @@ pub struct Header {
     pub parent_hash: H256,
     pub transactions_root: H256,
     pub proposals_hash: H256,
-    pub uncles_hash: H256,
+    pub extra_hash: H256,
     pub dao: Byte32,
     pub nonce: Uint128,
 }
@@ -371,7 +371,7 @@ impl From<rpc_types::Header> for Header {
             parent_hash: json.parent_hash,
             transactions_root: json.transactions_root,
             proposals_hash: json.proposals_hash,
-            uncles_hash: json.uncles_hash,
+            extra_hash: json.extra_hash,
             dao: json.dao,
             nonce: json.nonce,
         }
@@ -388,7 +388,7 @@ impl From<Header> for packed::Header {
             transactions_root,
             proposals_hash,
             compact_target,
-            uncles_hash,
+            extra_hash,
             dao,
             nonce,
         } = json;
@@ -401,7 +401,7 @@ impl From<Header> for packed::Header {
             .transactions_root(transactions_root.pack())
             .proposals_hash(proposals_hash.pack())
             .compact_target(compact_target.pack())
-            .uncles_hash(uncles_hash.pack())
+            .extra_hash(extra_hash.pack())
             .dao(dao.into())
             .build();
         packed::Header::new_builder()
