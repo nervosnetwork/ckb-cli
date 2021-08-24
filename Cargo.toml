@@ -19,11 +19,11 @@ ckb-chain-spec = "=0.100.0-rc2"
 ckb-sdk = { path = "ckb-sdk", version = "=0.100.0-rc2" }
 ckb-index = { path = "ckb-index", version = "=0.100.0-rc2" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.100.0-rc2" }
-jsonrpc-core-client = "17"
-jsonrpc-core = "17"
-jsonrpc-derive = "17"
-jsonrpc-http-server = "17"
-jsonrpc-server-utils = "17"
+jsonrpc-core-client = "18"
+jsonrpc-core = "18"
+jsonrpc-derive = "18"
+jsonrpc-http-server = "18"
+jsonrpc-server-utils = "18"
 secp256k1 = { version = "0.19", features = ["recovery"] }
 faster-hex = "0.6"
 env_logger = "0.6"
