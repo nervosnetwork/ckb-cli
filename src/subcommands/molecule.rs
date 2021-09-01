@@ -10,7 +10,7 @@ use clap::{App, Arg, ArgMatches};
 use serde_derive::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
-use crate::utils::arg_parser::{ArgParser, FilePathParser, HexParser};
+use crate::utils::arg_parser::{ArgParser, FilePathParser, HexFilePathParser, HexParser};
 
 pub struct MoleculeSubCommand {}
 
@@ -27,10 +27,16 @@ impl MoleculeSubCommand {
             .about("The molecule type name defined in blockchain.mol (and extra OutPointVec)");
         let arg_binary_hex = Arg::with_name("binary-hex")
             .long("binary-hex")
+            .required_unless("hex-binary-path")
             .takes_value(true)
-            .required(true)
             .validator(|input| HexParser.validate(input))
             .about("Binary data hex format");
+        let arg_hex_binary_path = Arg::with_name("hex-binary-path")
+            .long("hex-binary-path")
+            .required_unless("binary-hex")
+            .takes_value(true)
+            .validator(|input| HexFilePathParser.validate(input))
+            .about("The hex binary file path of molecule data");
 
         let arg_json_path = Arg::with_name("json-path")
             .long("json-path")
@@ -50,7 +56,8 @@ impl MoleculeSubCommand {
                 App::new("decode")
                     .about("Decode molecule type from binary")
                     .arg(arg_type.clone())
-                    .arg(arg_binary_hex.clone()),
+                    .arg(arg_binary_hex)
+                    .arg(arg_hex_binary_path),
                 App::new("encode")
                     .about("Encode molecule type from json to binary")
                     .arg(arg_type.clone())
@@ -74,7 +81,13 @@ impl CliSubCommand for MoleculeSubCommand {
         match matches.subcommand() {
             ("decode", Some(m)) => {
                 let type_name = m.value_of("type").unwrap();
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+                let binary_opt: Option<Vec<u8>> =
+                    HexParser.from_matches_opt(m, "binary-hex", false)?;
+                let binary = if let Some(binary) = binary_opt {
+                    binary
+                } else {
+                    HexFilePathParser.from_matches(m, "hex-binary-path")?
+                };
                 match type_name {
                     "Uint32" => packed::Uint32::from_slice(&binary)
                         .map(|s| Unpack::<u32>::unpack(&s).to_string())
