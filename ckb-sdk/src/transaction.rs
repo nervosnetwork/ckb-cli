@@ -332,7 +332,7 @@ impl<'a> MockTransactionHelper<'a> {
             let tx_env = TxVerifyEnv::new_commit(&header);
             let hardfork_switch = HardForkSwitch::new_without_any_enabled()
                 .as_builder()
-                .rfc_0232(enable_epoch_number)
+                .rfc_0032(enable_epoch_number)
                 .build()
                 .unwrap();
             let consensus = ConsensusBuilder::default()
