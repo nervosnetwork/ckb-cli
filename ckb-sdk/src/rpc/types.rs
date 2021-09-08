@@ -1028,7 +1028,7 @@ impl From<rpc_types::TxPoolInfo> for TxPoolInfo {
 
 /// Transaction verbose info
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
-pub struct TxVerbosity {
+pub struct TxPoolEntry {
     /// Consumed cycles.
     pub cycles: Uint64,
     /// The transaction serialized size in block.
@@ -1042,9 +1042,9 @@ pub struct TxVerbosity {
     /// Number of in-tx-pool ancestor transactions
     pub ancestors_count: Uint64,
 }
-impl From<rpc_types::TxVerbosity> for TxVerbosity {
-    fn from(json: rpc_types::TxVerbosity) -> TxVerbosity {
-        TxVerbosity {
+impl From<rpc_types::TxPoolEntry> for TxPoolEntry {
+    fn from(json: rpc_types::TxPoolEntry) -> TxPoolEntry {
+        TxPoolEntry {
             cycles: json.cycles.into(),
             size: json.size.into(),
             fee: json.fee.into(),
@@ -1056,15 +1056,15 @@ impl From<rpc_types::TxVerbosity> for TxVerbosity {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct TxPoolVerbosity {
+pub struct TxPoolEntries {
     /// Pending tx verbose info
-    pub pending: HashMap<H256, TxVerbosity>,
+    pub pending: HashMap<H256, TxPoolEntry>,
     /// Proposed tx verbose info
-    pub proposed: HashMap<H256, TxVerbosity>,
+    pub proposed: HashMap<H256, TxPoolEntry>,
 }
-impl From<rpc_types::TxPoolVerbosity> for TxPoolVerbosity {
-    fn from(json: rpc_types::TxPoolVerbosity) -> TxPoolVerbosity {
-        TxPoolVerbosity {
+impl From<rpc_types::TxPoolEntries> for TxPoolEntries {
+    fn from(json: rpc_types::TxPoolEntries) -> TxPoolEntries {
+        TxPoolEntries {
             pending: json
                 .pending
                 .into_iter()
@@ -1081,17 +1081,17 @@ impl From<rpc_types::TxPoolVerbosity> for TxPoolVerbosity {
 
 /// All transactions in tx-pool.
 ///
-/// `RawTxPool` is equivalent to [`TxPoolIds`][] `|` [`TxPoolVerbosity`][].
+/// `RawTxPool` is equivalent to [`TxPoolIds`][] `|` [`TxPoolEntries`][].
 ///
 /// [`TxPoolIds`]: struct.TxPoolIds.html
-/// [`TxPoolVerbosity`]: struct.TxPoolVerbosity.html
+/// [`TxPoolEntries`]: struct.TxPoolEntries.html
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(untagged)]
 pub enum RawTxPool {
     /// verbose = false
     Ids(TxPoolIds),
     /// verbose = true
-    Verbose(TxPoolVerbosity),
+    Verbose(TxPoolEntries),
 }
 
 impl From<rpc_types::RawTxPool> for RawTxPool {

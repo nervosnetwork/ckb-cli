@@ -1,24 +1,24 @@
 [package]
 name = "ckb-cli"
-version = "0.100.0-rc2"
+version = "0.100.0-rc5"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 description = "ckb command line interface"
 
 [dependencies]
-ckb-jsonrpc-types = "=0.100.0-rc2"
-ckb-hash = "=0.100.0-rc2"
-ckb-crypto = { version = "=0.100.0-rc2", features = ["secp"] }
-ckb-build-info = "=0.100.0-rc2"
-ckb-types = "=0.100.0-rc2"
-ckb-util = "=0.100.0-rc2"
-ckb-resource = "=0.100.0-rc2"
-ckb-dao-utils = "=0.100.0-rc2"
-ckb-chain-spec = "=0.100.0-rc2"
-ckb-sdk = { path = "ckb-sdk", version = "=0.100.0-rc2" }
-ckb-index = { path = "ckb-index", version = "=0.100.0-rc2" }
-plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.100.0-rc2" }
+ckb-jsonrpc-types = "=0.100.0-rc5"
+ckb-hash = "=0.100.0-rc5"
+ckb-crypto = { version = "=0.100.0-rc5", features = ["secp"] }
+ckb-build-info = "=0.100.0-rc5"
+ckb-types = "=0.100.0-rc5"
+ckb-util = "=0.100.0-rc5"
+ckb-resource = "=0.100.0-rc5"
+ckb-dao-utils = "=0.100.0-rc5"
+ckb-chain-spec = "=0.100.0-rc5"
+ckb-sdk = { path = "ckb-sdk", version = "=0.100.0-rc5" }
+ckb-index = { path = "ckb-index", version = "=0.100.0-rc5" }
+plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.100.0-rc5" }
 jsonrpc-core-client = "18"
 jsonrpc-core = "18"
 jsonrpc-derive = "18"
@@ -27,7 +27,7 @@ jsonrpc-server-utils = "18"
 secp256k1 = { version = "0.19", features = ["recovery"] }
 faster-hex = "0.6"
 env_logger = "0.6"
-crossbeam-channel = "0.3"
+crossbeam-channel = "0.5.1"
 clap = "=3.0.0-beta.1"
 clap_generate = "=3.0.0-beta.1"
 serde = { version = "1.0", features = ["derive"] }
@@ -61,7 +61,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-ckb-build-info = "=0.100.0-rc2"
+ckb-build-info = "=0.100.0-rc5"
 
 [workspace]
 members = ["ckb-sdk", "ckb-index", "ckb-sdk-types", "plugin-protocol"]
