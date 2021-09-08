@@ -87,7 +87,7 @@ impl IndexThreadState {
         }
     }
     pub fn is_started(&self) -> bool {
-        matches!(self, IndexThreadState::WaitToStart)
+        !matches!(self, IndexThreadState::WaitToStart)
     }
     pub fn is_stopped(&self) -> bool {
         matches!(self, IndexThreadState::Stopped)
