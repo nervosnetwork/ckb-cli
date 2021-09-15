@@ -1,8 +1,8 @@
 use ckb_jsonrpc_types::{
     BannedAddr, Block, BlockNumber, BlockTemplate, BlockView, CellWithStatus, ChainInfo, Consensus,
     Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes, LocalNode,
-    MainLoggerConfig, OutPoint, RawTxPool, RemoteNode, Script, Timestamp, Transaction,
-    TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    MainLoggerConfig, OutPoint, OutputsValidator, RawTxPool, RemoteNode, Script, Timestamp,
+    Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
 };
 
 use super::primitive;
@@ -45,12 +45,12 @@ macro_rules! jsonrpc {
                     req_json.insert("params".to_owned(), params);
 
                     let resp = $selff.client.post($selff.url.clone()).json(&req_json).send()?;
-                    let output = resp.json::<ckb_jsonrpc_types::response::Output>()?;
+                    let output = resp.json::<jsonrpc_core::response::Output>()?;
                     match output {
-                        ckb_jsonrpc_types::response::Output::Success(success) => {
+                        jsonrpc_core::response::Output::Success(success) => {
                             serde_json::from_value(success.result).map_err(Into::into)
                         },
-                        ckb_jsonrpc_types::response::Output::Failure(failure) => {
+                        jsonrpc_core::response::Output::Failure(failure) => {
                             Err(failure.error.into())
                         }
                     }
@@ -108,7 +108,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn ping_peers(&mut self) -> ();
 
     // Pool
-    pub fn send_transaction(&mut self, tx: Transaction) -> H256;
+    pub fn send_transaction(&mut self, tx: Transaction, outputs_validator: Option<OutputsValidator>) -> H256;
     pub fn tx_pool_info(&mut self) -> TxPoolInfo;
     pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> RawTxPool;
 
@@ -330,9 +330,13 @@ impl HttpRpcClient {
     }
 
     // Pool
-    pub fn send_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
+    pub fn send_transaction(
+        &mut self,
+        tx: packed::Transaction,
+        outputs_validator: Option<OutputsValidator>,
+    ) -> Result<H256, String> {
         self.client
-            .send_transaction(tx.into())
+            .send_transaction(tx.into(), outputs_validator)
             .map_err(|err| err.to_string())
     }
     pub fn tx_pool_info(&mut self) -> Result<types::TxPoolInfo, String> {

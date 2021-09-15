@@ -211,18 +211,18 @@ where
 
             // Since the current subscription state, the return value may be a notification,
             // we need to ensure that the unsubscribed message returns before jumping out
-            match serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(&resp) {
+            match serde_json::from_slice::<jsonrpc_core::response::Output>(&resp) {
                 Ok(output) => break output,
                 Err(_) => self.pending_recv.push_back(resp),
             }
         };
 
         match output {
-            ckb_jsonrpc_types::response::Output::Success(_) => {
+            jsonrpc_core::response::Output::Success(_) => {
                 self.topic_list.remove(&id);
                 Ok(())
             }
-            ckb_jsonrpc_types::response::Output::Failure(e) => {
+            jsonrpc_core::response::Output::Failure(e) => {
                 Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
             }
         }
@@ -251,7 +251,7 @@ where
         let parse = |data: bytes::BytesMut,
                      topic_list: &HashMap<String, String>|
          -> io::Result<(String, F)> {
-            let output = serde_json::from_slice::<ckb_jsonrpc_types::request::Notification>(&data)
+            let output = serde_json::from_slice::<jsonrpc_core::request::Notification>(&data)
                 .expect("must parse to notification");
             let message = output
                 .params
@@ -309,14 +309,14 @@ async fn subscribe<T: tokio::io::AsyncWrite + tokio::io::AsyncRead + Unpin>(
     loop {
         let resp = io.next().await;
         let resp = resp.ok_or_else::<io::Error, _>(|| io::ErrorKind::BrokenPipe.into())??;
-        match serde_json::from_slice::<ckb_jsonrpc_types::response::Output>(&resp) {
+        match serde_json::from_slice::<jsonrpc_core::response::Output>(&resp) {
             Ok(output) => match output {
-                ckb_jsonrpc_types::response::Output::Success(success) => {
+                jsonrpc_core::response::Output::Success(success) => {
                     let res = serde_json::from_value::<String>(success.result).unwrap();
                     topic_list.insert(res, topic.as_ref().to_owned());
                     break Ok(());
                 }
-                ckb_jsonrpc_types::response::Output::Failure(e) => {
+                jsonrpc_core::response::Output::Failure(e) => {
                     return Err(io::Error::new(io::ErrorKind::InvalidData, e.error))
                 }
             },

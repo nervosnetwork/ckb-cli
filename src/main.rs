@@ -46,9 +46,12 @@ fn main() -> Result<(), io::Error> {
     let ansi_support = ansi_term::enable_ansi_support().is_ok();
 
     let version = get_version();
-    let version_short = version.short();
-    let version_long = version.long();
-    let matches = build_cli(&version_short, &version_long).get_matches();
+    // TODO:
+    //   It will not print newline with --version or -V, it's a bug of clap. https://github.com/clap-rs/clap/issues/1960
+    //   revisit here when clap updated.
+    let version_short = format!("{}\n", version.short());
+    let version_long = format!("{}\n", version.long());
+    let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
 
     let mut env_map: HashMap<String, String> = env::vars().collect();
     let api_uri_opt = matches

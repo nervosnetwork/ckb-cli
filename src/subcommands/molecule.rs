@@ -398,7 +398,7 @@ struct RawHeader {
     pub epoch: json_types::EpochNumberWithFraction,
     pub transactions_root: H256,
     pub proposals_hash: H256,
-    pub uncles_hash: H256,
+    pub extra_hash: H256,
     pub dao: json_types::Byte32,
 }
 
@@ -413,7 +413,7 @@ impl From<packed::RawHeader> for RawHeader {
             transactions_root: input.transactions_root().unpack(),
             proposals_hash: input.proposals_hash().unpack(),
             compact_target: input.compact_target().unpack(),
-            uncles_hash: input.uncles_hash().unpack(),
+            extra_hash: input.extra_hash().unpack(),
             dao: input.dao().into(),
         }
     }
@@ -430,7 +430,7 @@ impl From<RawHeader> for packed::RawHeader {
             .transactions_root(json.transactions_root.pack())
             .proposals_hash(json.proposals_hash.pack())
             .compact_target(json.compact_target.pack())
-            .uncles_hash(json.uncles_hash.pack())
+            .extra_hash(json.extra_hash.pack())
             .dao(json.dao.into())
             .build()
     }

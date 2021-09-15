@@ -1,14 +1,19 @@
+use ckb_chain_spec::consensus::ConsensusBuilder;
 use ckb_error::OtherError;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
-use ckb_script::TransactionScriptsVerifier;
+use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_types::{
     bytes::Bytes,
-    core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
+    core::{
+        cell::resolve_transaction, hardfork::HardForkSwitch, Capacity, Cycle,
+        EpochNumberWithFraction, HeaderView, ScriptHashType,
+    },
     packed::{Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
+
 use fnv::FnvHashSet;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -157,7 +162,7 @@ impl<'a> MockTransactionHelper<'a> {
         let sighash_type_hash = genesis_info.sighash_type_hash();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
-                (ScriptHashType::Data, data_hash) => {
+                (ScriptHashType::Data, data_hash) | (ScriptHashType::Data1, data_hash) => {
                     let dep = data_deps.get(data_hash).cloned().ok_or_else(|| {
                         format!("Can not find data hash in mock deps: {}", data_hash)
                     })?;
@@ -317,6 +322,25 @@ impl<'a> MockTransactionHelper<'a> {
         max_cycle: Cycle,
         loader: L,
     ) -> Result<Cycle, String> {
+        let (consensus, tx_env) = {
+            let enable_epoch_number = 200;
+            let commit_epoch_number = 200 + 100;
+            let epoch = EpochNumberWithFraction::new(commit_epoch_number, 0, 1);
+            let header = HeaderView::new_advanced_builder()
+                .epoch(epoch.pack())
+                .build();
+            let tx_env = TxVerifyEnv::new_commit(&header);
+            let hardfork_switch = HardForkSwitch::new_without_any_enabled()
+                .as_builder()
+                .rfc_0032(enable_epoch_number)
+                .build()
+                .unwrap();
+            let consensus = ConsensusBuilder::default()
+                .hardfork_switch(hardfork_switch)
+                .build();
+            (consensus, tx_env)
+        };
+
         let resource = Resource::from_both(self.mock_tx, loader)?;
         let tx = self.mock_tx.core_transaction();
         let rtx = {
@@ -325,7 +349,7 @@ impl<'a> MockTransactionHelper<'a> {
                 .map_err(|err| format!("Resolve transaction error: {:?}", err))?
         };
 
-        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource);
+        let mut verifier = TransactionScriptsVerifier::new(&rtx, &consensus, &resource, &tx_env);
         verifier.set_debug_printer(|script_hash, message| {
             println!("script: {:x}, debug: {}", script_hash, message);
         });

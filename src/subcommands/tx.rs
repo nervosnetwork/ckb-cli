@@ -507,8 +507,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .into_iter()
                     .map(|(lock_arg, signature)| {
                         serde_json::json!({
-                            "lock-arg": format!("0x{}", hex_string(&lock_arg).unwrap()),
-                            "signature": format!("0x{}", hex_string(&signature).unwrap()),
+                            "lock-arg": format!("0x{}", hex_string(&lock_arg)),
+                            "signature": format!("0x{}", hex_string(&signature)),
                         })
                     })
                     .collect::<Vec<_>>();
@@ -557,7 +557,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 }
                 let resp = self
                     .rpc_client
-                    .send_transaction(tx.data())
+                    .send_transaction(tx.data(), Some(json_types::OutputsValidator::Passthrough))
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
@@ -582,7 +582,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let resp = serde_json::json!({
                     "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                     "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
-                    "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref()).unwrap()),
+                    "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref())),
                     "lock-hash": format!("{:#x}", lock_script.calc_script_hash())
                 });
                 Ok(Output::new_output(resp))

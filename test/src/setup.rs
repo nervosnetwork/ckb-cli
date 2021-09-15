@@ -107,7 +107,7 @@ impl Setup {
     fn modify_ckb_toml(&self, spec: &dyn Spec) {
         let path = Path::new(&self.ckb_dir).join("ckb.toml");
         let content = fs::read_to_string(&path).unwrap();
-        let mut ckb_toml: CKBAppConfig = toml::from_str(&content).unwrap();
+        let mut ckb_toml: CKBAppConfig = CKBAppConfig::load_from_slice(content.as_bytes()).unwrap();
 
         // Setup [block_assembler]
         ckb_toml.block_assembler = Some(Miner::block_assembler());

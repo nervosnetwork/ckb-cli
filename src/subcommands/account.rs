@@ -59,7 +59,20 @@ impl<'a> AccountSubCommand<'a> {
                             .long("only-testnet-address")
                             .about("Only show CKB testnet address")
                     )
-                    .about("List all accounts"),
+                    .about("List all accounts")
+                    .long_about("List all accounts. There are two kinds of account item indicated by `source` field:
+
+  When `source` is \"Local File System\" means the account is stored in json keystore file, the output fields are:
+    * lock_arg: The blake2b160 hash of the public key.
+    * lock_hash: The lock script hash of secp256k1_blake160_sighash_all lock (See [1]).
+    * has_ckb_pubkey_derivation_root_path: The ckb publick key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
+    * address: The Mainnet/Testnet addresses of secp256k1_blake160_sighash_all lock (See [1]).
+
+  When `source` is \"[plugin]: xxx_keysotre_plugin\" means the account is stored in keystore plugin (Ledger plugin like [2]). If the account metadata is imported by `ckb-cli account import-from-plugin` the output fields are just like \"Local File System\". If the account is not imported, the output fields are:
+    * account-id: The account id used to import the account metadata from plugin.
+
+[1]: https://github.com/nervosnetwork/ckb-system-scripts/blob/master/c/secp256k1_blake160_sighash_all.c
+[2]: https://github.com/obsidiansystems/ckb-plugin-ledger"),
                 App::new("new").about("Create a new account and print related information."),
                 App::new("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
@@ -220,7 +233,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                     "source": source,
                                     "lock_arg": format!("{:#x}", lock_arg),
                                     "lock_hash": format!("{:#x}", lock_hash),
-                                    "has_ckb_root": has_ckb_root,
+                                    "has_ckb_pubkey_derivation_root_path": has_ckb_root,
                                     "address": {
                                         "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
                                         "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
@@ -231,7 +244,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             serde_json::json!({
                                 "#": idx,
                                 "source": source,
-                                "account-id": format!("0x{}", hex_string(data.as_ref()).expect("hex")),
+                                "account-id": format!("0x{}", hex_string(data.as_ref())),
                             })
                         }
                     })

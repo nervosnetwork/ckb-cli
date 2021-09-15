@@ -409,7 +409,10 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let (mock_tx, _cycle) = complete_tx(m, false, true)?;
                 let resp = self
                     .rpc_client
-                    .send_transaction(mock_tx.core_transaction().data())
+                    .send_transaction(
+                        mock_tx.core_transaction().data(),
+                        Some(json_types::OutputsValidator::Passthrough),
+                    )
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
