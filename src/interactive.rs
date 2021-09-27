@@ -22,7 +22,7 @@ use crate::subcommands::{
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
-    index::{IndexController, IndexRequest, IndexThreadState},
+    index::{CommonIndexer, IndexController, IndexRequest, IndexThreadState},
     other::{check_alerts, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
 };
@@ -44,6 +44,7 @@ pub struct InteractiveEnv {
     index_controller: IndexController,
     index_state: Arc<RwLock<IndexThreadState>>,
     genesis_info: Option<GenesisInfo>,
+    indexer: CommonIndexer,
 }
 
 impl InteractiveEnv {
@@ -54,6 +55,7 @@ impl InteractiveEnv {
         key_store: KeyStore,
         index_controller: IndexController,
         index_state: Arc<RwLock<IndexThreadState>>,
+        indexer: CommonIndexer,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
             fs::create_dir(&ckb_cli_dir).map_err(|err| err.to_string())?;
@@ -92,6 +94,7 @@ impl InteractiveEnv {
             index_controller,
             index_state,
             genesis_info: None,
+            indexer,
         })
     }
 
@@ -236,6 +239,7 @@ impl InteractiveEnv {
                 .expect("Can not get genesis block?")
                 .into();
             self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+            self.indexer.set_genesis_info(self.genesis_info.clone());
         }
         Ok(self.genesis_info.clone().unwrap())
     }
@@ -286,7 +290,12 @@ impl InteractiveEnv {
                         self.config
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
+                        self.indexer.set_ckb_rpc_url(url.to_string());
                     };
+                    if let Some(ckb_indexer_url) = m.value_of("ckb-indexer-url") {
+                        self.config.set_ckb_indexer_url(ckb_indexer_url.to_string());
+                        self.indexer.set_ckb_indexer_url(ckb_indexer_url);
+                    }
                     if m.is_present("color") {
                         self.config.switch_color();
                     }
@@ -302,6 +311,7 @@ impl InteractiveEnv {
                     }
                     if m.is_present("no-sync") {
                         self.config.switch_no_sync();
+                        self.indexer.set_wait_for_sync(!self.config.no_sync());
                     }
 
                     if m.is_present("edit_style") {
@@ -317,6 +327,7 @@ impl InteractiveEnv {
                         .map_err(|err| format!("open config error: {:?}", err))?;
                     let content = serde_json::to_string_pretty(&json!({
                         "url": self.config.get_url().to_string(),
+                        "ckb-indexer-url": self.config.get_ckb_indexer_url().to_string(),
                         "color": self.config.color(),
                         "debug": self.config.debug(),
                         "no-sync": self.config.no_sync(),
@@ -413,9 +424,7 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         Some(genesis_info),
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
+                        &mut self.indexer,
                     )
                     .process(&sub_matches, debug)?;
                     output.print(format, color);
@@ -427,9 +436,7 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
+                        &mut self.indexer,
                     )
                     .process(&sub_matches, debug)?;
                     output.print(format, color);

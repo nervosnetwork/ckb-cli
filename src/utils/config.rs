@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ansi_term::Colour::Yellow;
-use ckb_sdk::NetworkType;
+use ckb_sdk::{
+    rpc::ckb_indexer::{IndexerRpcClient, Tip},
+    NetworkType,
+};
 use ckb_util::RwLock;
 use regex::{Captures, Regex};
 
@@ -18,6 +21,7 @@ const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
 
 pub struct GlobalConfig {
     url: Option<String>,
+    ckb_indexer_url: String,
     network: Option<NetworkType>,
     color: bool,
     debug: bool,
@@ -31,9 +35,14 @@ pub struct GlobalConfig {
 }
 
 impl GlobalConfig {
-    pub fn new(url: Option<String>, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
+    pub fn new(
+        url: Option<String>,
+        ckb_indexer_url: String,
+        index_state: Arc<RwLock<IndexThreadState>>,
+    ) -> Self {
         GlobalConfig {
             url,
+            ckb_indexer_url,
             network: None,
             color: true,
             debug: false,
@@ -113,11 +122,21 @@ impl GlobalConfig {
         if value.starts_with("http://") || value.starts_with("https://") {
             self.url = Some(value);
         } else {
-            self.url = Some("http://".to_owned() + &value);
+            self.url = Some(format!("http://{}", value));
         }
     }
     pub fn get_url(&self) -> &str {
         &self.url.as_deref().unwrap_or(DEFAULT_JSONRPC_URL)
+    }
+    pub fn set_ckb_indexer_url(&mut self, value: String) {
+        if value == "disable" || value.starts_with("http://") || value.starts_with("https://") {
+            self.ckb_indexer_url = value;
+        } else {
+            self.ckb_indexer_url = format!("http://{}", value);
+        }
+    }
+    pub fn get_ckb_indexer_url(&self) -> &str {
+        &self.ckb_indexer_url.as_str()
     }
 
     pub fn set_network(&mut self, network: Option<NetworkType>) {
@@ -214,10 +233,29 @@ impl GlobalConfig {
             .network()
             .map(|value| format!("{:?}", value))
             .unwrap_or_else(|| "unknown".to_string());
+        let ckb_indexer_url = if self.get_ckb_indexer_url() != "disable" {
+            if let Ok(Some(Tip {
+                block_hash,
+                block_number,
+            })) = IndexerRpcClient::new(self.get_ckb_indexer_url()).get_tip()
+            {
+                format!(
+                    "{} (#{} 0x{})",
+                    self.get_ckb_indexer_url(),
+                    block_number.value(),
+                    faster_hex::hex_string(&block_hash.as_bytes()[0..3]),
+                )
+            } else {
+                format!("{} (error request tip)", self.get_ckb_indexer_url())
+            }
+        } else {
+            "disable".to_owned()
+        };
         let url_string = format!("{} (network: {})", self.get_url(), network_string);
         let values = [
             ("ckb-cli version", version_long.as_str()),
             ("url", url_string.as_str()),
+            ("ckb-indexer", ckb_indexer_url.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),

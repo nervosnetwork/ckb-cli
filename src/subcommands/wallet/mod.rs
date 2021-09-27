@@ -1,7 +1,6 @@
 mod index;
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
@@ -24,15 +23,15 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    index::{with_db, IndexController},
+    index::{CommonIndexer, Indexer},
     other::{
         check_capacity, get_address, get_arg_value, get_live_cell_with_cache,
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
-        read_password, sync_to_tip,
+        read_password,
     },
 };
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
-use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
+use ckb_index::LiveCellInfo;
 use ckb_sdk::{
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
@@ -50,9 +49,7 @@ pub struct WalletSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
     genesis_info: Option<GenesisInfo>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
-    wait_for_sync: bool,
+    indexer: &'a mut CommonIndexer,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -60,17 +57,13 @@ impl<'a> WalletSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
-        index_dir: PathBuf,
-        index_controller: IndexController,
-        wait_for_sync: bool,
+        indexer: &'a mut CommonIndexer,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
             plugin_mgr,
             genesis_info,
-            index_dir,
-            index_controller,
-            wait_for_sync,
+            indexer,
         }
     }
 
@@ -84,21 +77,6 @@ impl<'a> WalletSubCommand<'a> {
             self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
         }
         Ok(self.genesis_info.clone().unwrap())
-    }
-
-    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
-    where
-        F: FnOnce(IndexDatabase) -> T,
-    {
-        let genesis_info = self.genesis_info()?;
-        with_db(
-            func,
-            self.rpc_client,
-            genesis_info,
-            &self.index_dir,
-            self.index_controller.clone(),
-            self.wait_for_sync,
-        )
     }
 
     pub fn subcommand() -> App<'static> {
@@ -142,7 +120,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::derive_change_address_length())
                     .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
                 App::new("get-live-cells")
-                    .about("Get live cells by lock/type/code  hash")
+                    .about("Get live cells by lock/type/code  hash (only address/code-hash argument support ckb-indexer)")
                     .arg(arg::lock_hash())
                     .arg(arg::type_hash())
                     .arg(arg::code_hash())
@@ -282,13 +260,10 @@ impl<'a> WalletSubCommand<'a> {
         let genesis_info = self.genesis_info()?;
 
         // For check index database is ready
-        self.with_db(|_| ())?;
-        let index_dir = self.index_dir.clone();
-        let genesis_hash = genesis_info.header().hash();
-        let genesis_info_clone = genesis_info.clone();
+        // self.with_db(|_| ())?;
 
         // The lock hashes for search live cells
-        let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
+        let mut lock_scripts = vec![Script::from(&from_address_payload)];
         let mut helper = TxHelper::default();
 
         let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
@@ -312,7 +287,7 @@ impl<'a> WalletSubCommand<'a> {
                     }
                     path_map.insert(hash160.clone(), path.clone());
                     let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                    lock_hashes.push(Script::from(&payload).calc_script_hash());
+                    lock_scripts.push(Script::from(&payload));
                 }
                 (
                     last_change_address.payload().clone(),
@@ -326,10 +301,7 @@ impl<'a> WalletSubCommand<'a> {
             };
 
         if let Some(from_locked_address) = from_locked_address.as_ref() {
-            lock_hashes.insert(
-                0,
-                Script::from(from_locked_address.payload()).calc_script_hash(),
-            );
+            lock_scripts.insert(0, Script::from(from_locked_address.payload()));
             for lock_arg in std::iter::once(&from_lock_arg).chain(path_map.keys()) {
                 let mut sighash_addresses = Vec::default();
                 sighash_addresses.push(AddressPayload::from_pubkey_hash(lock_arg.clone()));
@@ -350,7 +322,6 @@ impl<'a> WalletSubCommand<'a> {
 
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let mut from_capacity = 0;
-        let mut infos: Vec<LiveCellInfo> = Default::default();
 
         fn enough_capacity(from_capacity: u64, to_capacity: u64, tx_fee: u64) -> bool {
             if from_capacity < to_capacity + tx_fee {
@@ -368,29 +339,18 @@ impl<'a> WalletSubCommand<'a> {
                 && is_mature(info, max_mature_number)
             {
                 from_capacity += info.capacity;
-                infos.push(info.clone());
-                (enough_capacity(from_capacity, to_capacity, tx_fee), false)
+                (enough_capacity(from_capacity, to_capacity, tx_fee), true)
             } else {
                 (false, false)
             }
         };
-        if self.wait_for_sync {
-            sync_to_tip(&self.index_controller)?;
-        }
-        if let Err(err) = with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-            IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)
-                .map(|db| {
-                    for lock_hash in lock_hashes {
-                        db.get_live_cells_by_lock(lock_hash, None, &mut terminator);
-                    }
-                })
-                .map_err(Into::into)
-        }) {
-            return Err(format!(
-                "Index database may not ready, sync process: {}, error: {}",
-                self.index_controller.state().read().to_string(),
-                err.to_string(),
-            ));
+        let mut infos: Vec<LiveCellInfo> = Default::default();
+        for lock_script in lock_scripts {
+            infos.extend(self.indexer.get_live_cells_by_lock_script(
+                lock_script,
+                None,
+                &mut terminator,
+            )?);
         }
 
         if tx_fee > ONE_CKB {
@@ -497,30 +457,30 @@ impl<'a> WalletSubCommand<'a> {
 
     pub fn get_capacity(&mut self, lock_hashes: Vec<Byte32>) -> Result<(u64, u64, u64), String> {
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
-        self.with_db(|db| {
-            let mut total_capacity = 0;
-            let mut dao_capacity = 0;
-            let mut immature_capacity = 0;
-            let mut terminator = |_idx: usize, info: &LiveCellInfo| {
-                if !is_mature(info, max_mature_number) {
-                    immature_capacity += info.capacity;
-                }
-                if info
-                    .type_hashes
-                    .as_ref()
-                    .filter(|(code_hash, _)| code_hash == &DAO_TYPE_HASH)
-                    .is_some()
-                {
-                    dao_capacity += info.capacity;
-                }
-                total_capacity += info.capacity;
-                (false, false)
-            };
-            for lock_hash in lock_hashes {
-                let _ = db.get_live_cells_by_lock(lock_hash, None, &mut terminator);
+        let mut total_capacity = 0;
+        let mut dao_capacity = 0;
+        let mut immature_capacity = 0;
+        let mut terminator = |_idx: usize, info: &LiveCellInfo| {
+            if !is_mature(info, max_mature_number) {
+                immature_capacity += info.capacity;
             }
-            (total_capacity, immature_capacity, dao_capacity)
-        })
+            if info
+                .type_hashes
+                .as_ref()
+                .filter(|(code_hash, _)| code_hash == &DAO_TYPE_HASH)
+                .is_some()
+            {
+                dao_capacity += info.capacity;
+            }
+            total_capacity += info.capacity;
+            (false, false)
+        };
+        for lock_hash in lock_hashes {
+            let _ = self
+                .indexer
+                .get_live_cells_by_lock_hash(lock_hash, None, &mut terminator);
+        }
+        Ok((total_capacity, immature_capacity, dao_capacity))
     }
 
     pub fn get_live_cells<F>(
@@ -532,36 +492,26 @@ impl<'a> WalletSubCommand<'a> {
     ) -> Result<(LiveCells, Option<(u32, u64)>), String>
     where
         F: FnMut(
-            &IndexDatabase,
+            &mut dyn Indexer,
             &mut dyn FnMut(usize, &LiveCellInfo) -> (bool, bool),
-        ) -> Vec<LiveCellInfo>,
+        ) -> Result<Vec<LiveCellInfo>, String>,
     {
-        let (infos, total_count, total_capacity, current_count, current_capacity) =
-            self.with_db(|db| {
-                let mut total_count: u32 = 0;
-                let mut total_capacity: u64 = 0;
-                let mut current_count: u32 = 0;
-                let mut current_capacity: u64 = 0;
-                let mut terminator = |idx, info: &LiveCellInfo| {
-                    let stop = idx >= limit || info.number > to_number;
-                    let push_info = !stop;
-                    total_count += 1;
-                    total_capacity += info.capacity;
-                    if push_info {
-                        current_count += 1;
-                        current_capacity += info.capacity;
-                    }
-                    (fast_mode && stop, push_info)
-                };
-                let infos = func(&db, &mut terminator);
-                (
-                    infos,
-                    total_count,
-                    total_capacity,
-                    current_count,
-                    current_capacity,
-                )
-            })?;
+        let mut total_count: u32 = 0;
+        let mut total_capacity: u64 = 0;
+        let mut current_count: u32 = 0;
+        let mut current_capacity: u64 = 0;
+        let mut terminator = |idx, info: &LiveCellInfo| {
+            let stop = idx >= limit || info.number > to_number;
+            let push_info = !stop;
+            total_count += 1;
+            total_capacity += info.capacity;
+            if push_info {
+                current_count += 1;
+                current_capacity += info.capacity;
+            }
+            (fast_mode && stop, push_info)
+        };
+        let infos = func(self.indexer, &mut terminator)?;
 
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let live_cells = infos
@@ -694,17 +644,20 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let fast_mode = m.is_present("fast-mode");
 
                 let network_type = get_network_type(self.rpc_client)?;
-                let lock_hash_opt = if lock_hash_opt.is_none() {
+                let lock_script_opt = if lock_hash_opt.is_none() {
                     let address_opt: Option<Address> = AddressParser::default()
                         .set_network_opt(Some(network_type))
                         .from_matches_opt(m, "address", false)?;
-                    address_opt
-                        .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
+                    address_opt.map(|address| Script::from(address.payload()))
                 } else {
-                    lock_hash_opt
+                    None
                 };
 
-                if lock_hash_opt.is_none() && type_hash_opt.is_none() && code_hash_opt.is_none() {
+                if lock_script_opt.is_none()
+                    && lock_hash_opt.is_none()
+                    && type_hash_opt.is_none()
+                    && code_hash_opt.is_none()
+                {
                     return Err(
                         "lock-hash or type-hash or code-hash or address is required".to_owned()
                     );
@@ -721,21 +674,27 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 ) = self.get_live_cells(
                     to_number,
                     limit,
-                    |db, terminator| {
-                        if let Some(lock_hash) = &lock_hash_opt {
-                            db.get_live_cells_by_lock(
+                    |indexer, terminator| {
+                        if let Some(lock_script) = &lock_script_opt {
+                            indexer.get_live_cells_by_lock_script(
+                                lock_script.clone(),
+                                from_number_opt,
+                                terminator,
+                            )
+                        } else if let Some(lock_hash) = &lock_hash_opt {
+                            indexer.get_live_cells_by_lock_hash(
                                 lock_hash.clone().pack(),
                                 from_number_opt,
                                 terminator,
                             )
                         } else if let Some(type_hash) = &type_hash_opt {
-                            db.get_live_cells_by_type(
+                            indexer.get_live_cells_by_type_hash(
                                 type_hash.clone().pack(),
                                 from_number_opt,
                                 terminator,
                             )
                         } else {
-                            db.get_live_cells_by_code(
+                            indexer.get_live_cells_by_code_hash(
                                 code_hash_opt.clone().unwrap().pack(),
                                 from_number_opt,
                                 terminator,
@@ -772,18 +731,17 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     .map(|n_str| n_str.parse().unwrap())
                     .unwrap();
                 let network_type = get_network_type(self.rpc_client)?;
-                let resp = self.with_db(|db| {
-                    db.get_top_n(n)
-                        .into_iter()
-                        .map(|(lock_hash, payload_opt, capacity)| {
-                            serde_json::json!({
-                                "lock_hash": format!("{:#x}", lock_hash),
-                                "address": payload_opt.map(|payload| Address::new(network_type, payload, true).to_string()),
-                                "capacity": format!("{:#}", HumanCapacity::from(capacity)),
-                            })
+                let resp = self.indexer
+                    .get_top_n(n)?
+                    .into_iter()
+                    .map(|(lock_hash, payload_opt, capacity)| {
+                        serde_json::json!({
+                            "lock_hash": format!("{:#x}", lock_hash),
+                            "address": payload_opt.map(|payload| Address::new(network_type, payload, true).to_string()),
+                            "capacity": format!("{:#}", HumanCapacity::from(capacity)),
                         })
-                        .collect::<Vec<_>>()
-                })?;
+                    })
+                    .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),

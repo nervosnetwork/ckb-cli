@@ -1,3 +1,4 @@
+pub mod ckb_indexer;
 mod client;
 mod primitive;
 mod types;

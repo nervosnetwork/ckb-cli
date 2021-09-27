@@ -10,11 +10,7 @@ use crate::utils::{
 };
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
-use ckb_types::{
-    packed::{Byte32, Script},
-    prelude::*,
-    H160, H256,
-};
+use ckb_types::{packed::Script, prelude::*, H160};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
@@ -48,8 +44,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
             }
             ("query-deposited-cells", Some(m)) => {
                 let query_args = QueryArgs::from_matches(m, network_type)?;
-                let lock_hash = query_args.lock_hash;
-                let cells = self.query_deposit_cells(lock_hash)?;
+                let cells = self.query_deposit_cells(query_args.lock_script)?;
                 let total_capacity = cells.iter().map(|live| live.capacity).sum::<u64>();
                 let resp = serde_json::json!({
                     "live_cells": cells.into_iter().map(|info| {
@@ -61,8 +56,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
             }
             ("query-prepared-cells", Some(m)) => {
                 let query_args = QueryArgs::from_matches(m, network_type)?;
-                let lock_hash = query_args.lock_hash;
-                let cells = self.query_prepare_cells(lock_hash)?;
+                let cells = self.query_prepare_cells(query_args.lock_script)?;
                 let maximum_withdraws: Vec<_> = cells
                     .iter()
                     .map(|cell| calculate_dao_maximum_withdraw(self.rpc_client(), cell))
@@ -112,7 +106,7 @@ impl<'a> DAOSubCommand<'a> {
 }
 
 pub(crate) struct QueryArgs {
-    pub(crate) lock_hash: Byte32,
+    pub(crate) lock_script: Script,
 }
 
 pub(crate) struct TransactArgs {
@@ -123,20 +117,12 @@ pub(crate) struct TransactArgs {
 
 impl QueryArgs {
     fn from_matches(m: &ArgMatches, network_type: NetworkType) -> Result<Self, String> {
-        let lock_hash_opt: Option<H256> =
-            FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
-        let lock_hash = if let Some(lock_hash) = lock_hash_opt {
-            lock_hash.pack()
-        } else {
-            let address = get_address(Some(network_type), m)?;
-            Script::from(&address).calc_script_hash()
-        };
-
-        Ok(Self { lock_hash })
+        let lock_script = Script::from(&get_address(Some(network_type), m)?);
+        Ok(Self { lock_script })
     }
 
     fn args<'a>() -> Vec<Arg<'a>> {
-        vec![arg::lock_hash(), arg::address()]
+        vec![arg::address()]
     }
 }
 
@@ -191,7 +177,7 @@ impl TransactArgs {
         H160::from_slice(self.address.payload().args().as_ref()).unwrap()
     }
 
-    pub(crate) fn lock_hash(&self) -> Byte32 {
-        Script::from(self.address.payload()).calc_script_hash()
+    pub(crate) fn lock_script(&self) -> Script {
+        Script::from(self.address.payload())
     }
 }

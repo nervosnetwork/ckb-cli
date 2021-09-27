@@ -25,7 +25,7 @@ use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    index::IndexThreadState,
+    index::{CommonIndexer, IndexThreadState, LocalIndexer},
     other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
 };
@@ -58,6 +58,7 @@ fn main() -> Result<(), io::Error> {
         .value_of("url")
         .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("API_URL"));
+    let ckb_indexer_uri_opt = matches.value_of("ckb-indexer-url").map(ToOwned::to_owned);
 
     let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
         let dir = PathBuf::from(dir_string.as_str());
@@ -81,7 +82,13 @@ fn main() -> Result<(), io::Error> {
     index_dir.push(index_dirname());
     let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
 
-    let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
+    let mut config = GlobalConfig::new(
+        api_uri_opt.clone(),
+        ckb_indexer_uri_opt
+            .clone()
+            .unwrap_or_else(|| "disable".to_string()),
+        Arc::clone(&index_state),
+    );
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
 
@@ -94,6 +101,11 @@ fn main() -> Result<(), io::Error> {
         if api_uri_opt.is_none() {
             if let Some(value) = configs["url"].as_str() {
                 config.set_url(value.to_string());
+            }
+        }
+        if ckb_indexer_uri_opt.is_none() {
+            if let Some(value) = configs["ckb-indexer-url"].as_str() {
+                config.set_ckb_indexer_url(value.to_string());
             }
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
@@ -118,6 +130,16 @@ fn main() -> Result<(), io::Error> {
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
     let wait_for_sync = !matches.is_present("no-sync");
+
+    let local_indexer = LocalIndexer::new(
+        index_dir.clone(),
+        index_controller.clone(),
+        HttpRpcClient::new(config.get_url().to_string()),
+        None,
+        wait_for_sync,
+    );
+    let mut indexer = CommonIndexer::new(local_indexer, None);
+    indexer.set_ckb_indexer_url(config.get_ckb_indexer_url());
 
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
@@ -154,14 +176,10 @@ fn main() -> Result<(), io::Error> {
         ("util", Some(sub_matches)) => {
             UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(&sub_matches, debug)
         }
-        ("server", Some(sub_matches)) => ApiServerSubCommand::new(
-            &mut rpc_client,
-            plugin_mgr,
-            None,
-            index_dir,
-            index_controller.clone(),
-        )
-        .process(&sub_matches, debug),
+        ("server", Some(sub_matches)) => {
+            ApiServerSubCommand::new(&mut rpc_client, plugin_mgr, None, indexer)
+                .process(&sub_matches, debug)
+        }
         ("plugin", Some(sub_matches)) => {
             PluginSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
         }
@@ -175,26 +193,14 @@ fn main() -> Result<(), io::Error> {
             wait_for_sync,
         )
         .process(&sub_matches, debug),
-        ("wallet", Some(sub_matches)) => WalletSubCommand::new(
-            &mut rpc_client,
-            &mut plugin_mgr,
-            None,
-            index_dir,
-            index_controller.clone(),
-            wait_for_sync,
-        )
-        .process(&sub_matches, debug),
+        ("wallet", Some(sub_matches)) => {
+            WalletSubCommand::new(&mut rpc_client, &mut plugin_mgr, None, &mut indexer)
+                .process(&sub_matches, debug)
+        }
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
-                DAOSubCommand::new(
-                    &mut rpc_client,
-                    &mut plugin_mgr,
-                    genesis_info,
-                    index_dir.clone(),
-                    index_controller.clone(),
-                    wait_for_sync,
-                )
-                .process(&sub_matches, debug)
+                DAOSubCommand::new(&mut rpc_client, &mut plugin_mgr, genesis_info, &mut indexer)
+                    .process(&sub_matches, debug)
             })
         }
         _ => {
@@ -205,6 +211,7 @@ fn main() -> Result<(), io::Error> {
                 key_store,
                 index_controller.clone(),
                 index_state_clone,
+                indexer,
             )
             .and_then(|mut env| env.start())
             {
@@ -290,6 +297,18 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .about("RPC API server url"),
         )
         .arg(
+            Arg::with_name("ckb-indexer-url")
+                .long("ckb-indexer-url")
+                .takes_value(true)
+                .validator(|input| {
+                    if input.trim().is_empty() || input.trim() == "disable" {
+                        return Ok(());
+                    }
+                    UrlParser.validate(input)
+                })
+                .about("CKB indexer server RPC url, set this value to use ckb-indexer as backend index database, typical default value is http://127.0.0.1:8116, set \"disable\" to disable it"),
+        )
+        .arg(
             Arg::with_name("output-format")
                 .long("output-format")
                 .takes_value(true)
@@ -316,7 +335,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .conflicts_with("no-sync")
                 .global(true)
                 .about(
-                    "Ensure the index-store synchronizes completely before command being executed",
+                    "Ensure the local index-store synchronizes completely before command being executed",
                 ),
         )
         .arg(
@@ -324,11 +343,12 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .long("no-sync")
                 .conflicts_with("wait-for-sync")
                 .global(true)
-                .about("Don't wait index database sync to tip"),
+                .about("Don't wait local index database sync to tip"),
         );
 
     #[cfg(unix)]
-    let app = app.subcommand(App::new("tui").about("Enter TUI mode"));
+    let app =
+        app.subcommand(App::new("tui").about("Enter TUI mode (only support local index database)"));
 
     app
 }
@@ -349,6 +369,18 @@ pub fn build_interactive() -> App<'static> {
                         .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
                         .about("Config RPC API url"),
+                )
+                .arg(
+                    Arg::with_name("ckb-indexer-url")
+                        .long("ckb-indexer-url")
+                        .takes_value(true)
+                        .validator(|input| {
+                            if input.trim().is_empty() || input.trim() == "disable" {
+                                return Ok(());
+                            }
+                            UrlParser.validate(input)
+                        })
+                        .about("CKB indexer server RPC url, set this value to use ckb-indexer as backend index database, typical default value is http://127.0.0.1:8116, set \"disable\" to disable it"),
                 )
                 .arg(
                     Arg::with_name("color")

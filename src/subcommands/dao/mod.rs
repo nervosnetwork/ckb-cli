@@ -1,11 +1,11 @@
 use self::builder::DAOBuilder;
 use self::command::TransactArgs;
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
-use crate::utils::index::{with_db, IndexController};
+use crate::utils::index::{CommonIndexer, Indexer};
 use crate::utils::other::{get_max_mature_number, get_privkey_signer, is_mature, read_password};
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
-use ckb_index::{IndexDatabase, LiveCellInfo};
+use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
@@ -20,7 +20,6 @@ use ckb_types::{
 };
 use itertools::Itertools;
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 mod builder;
 mod command;
@@ -31,10 +30,8 @@ pub struct DAOSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
     genesis_info: GenesisInfo,
-    index_dir: PathBuf,
-    index_controller: IndexController,
     transact_args: Option<TransactArgs>,
-    wait_for_sync: bool,
+    indexer: &'a mut CommonIndexer,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -42,23 +39,18 @@ impl<'a> DAOSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: GenesisInfo,
-        index_dir: PathBuf,
-        index_controller: IndexController,
-        wait_for_sync: bool,
+        indexer: &'a mut CommonIndexer,
     ) -> Self {
         Self {
             rpc_client,
             plugin_mgr,
             genesis_info,
-            index_dir,
-            index_controller,
             transact_args: None,
-            wait_for_sync,
+            indexer,
         }
     }
 
     pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
         let target_capacity = capacity + self.transact_args().tx_fee;
         let cells = self.collect_sighash_cells(target_capacity)?;
         let raw_transaction = self.build(cells).deposit(capacity);
@@ -66,13 +58,12 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
         let tx_fee = self.transact_args().tx_fee;
-        let lock_hash = self.transact_args().lock_hash();
+        let lock_script = self.transact_args().lock_script();
         let cells = {
             let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
             let mut to_prepare = {
-                let deposit_cells = self.query_deposit_cells(lock_hash)?;
+                let deposit_cells = self.query_deposit_cells(lock_script)?;
                 take_by_out_points(deposit_cells, &out_points)?
             };
             to_prepare.append(&mut to_pay_fee);
@@ -83,18 +74,20 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let lock_hash = self.transact_args().lock_hash();
+        let lock_script = self.transact_args().lock_script();
         let cells = {
-            let prepare_cells = self.query_prepare_cells(lock_hash)?;
+            let prepare_cells = self.query_prepare_cells(lock_script)?;
             take_by_out_points(prepare_cells, &out_points)?
         };
         let raw_transaction = self.build(cells).withdraw(self.rpc_client())?;
         self.sign(raw_transaction)
     }
 
-    pub fn query_deposit_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_cells = self.collect_dao_cells(lock_hash)?;
+    pub fn query_deposit_cells(
+        &mut self,
+        lock_script: Script,
+    ) -> Result<Vec<LiveCellInfo>, String> {
+        let dao_cells = self.collect_dao_cells(lock_script)?;
         assert!(dao_cells.iter().all(|cell| cell.data_bytes == 8));
         let mut ret = Vec::with_capacity(dao_cells.len());
         for cell in dao_cells {
@@ -105,8 +98,11 @@ impl<'a> DAOSubCommand<'a> {
         Ok(ret)
     }
 
-    pub fn query_prepare_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_cells = self.collect_dao_cells(lock_hash)?;
+    pub fn query_prepare_cells(
+        &mut self,
+        lock_script: Script,
+    ) -> Result<Vec<LiveCellInfo>, String> {
+        let dao_cells = self.collect_dao_cells(lock_script)?;
         assert!(dao_cells.iter().all(|cell| cell.data_bytes == 8));
         let mut ret = Vec::with_capacity(dao_cells.len());
         for cell in dao_cells {
@@ -117,23 +113,23 @@ impl<'a> DAOSubCommand<'a> {
         Ok(ret)
     }
 
-    fn collect_dao_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
+    fn collect_dao_cells(&mut self, lock_script: Script) -> Result<Vec<LiveCellInfo>, String> {
         let dao_type_hash = self.dao_type_hash().clone();
-        self.with_db(|db| {
-            let cells_by_lock = db
-                .get_live_cells_by_lock(lock_hash, Some(0), |_, _| (false, true))
-                .into_iter()
-                .collect::<HashSet<_>>();
-            let cells_by_code = db
-                .get_live_cells_by_code(dao_type_hash.clone(), Some(0), |_, _| (false, true))
-                .into_iter()
-                .collect::<HashSet<_>>();
-            cells_by_lock
-                .intersection(&cells_by_code)
-                .sorted_by_key(|live| (live.number, live.index.tx_index, live.index.output_index))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
+        let cells_by_lock = self
+            .indexer
+            .get_live_cells_by_lock_script(lock_script, Some(0), &mut |_, _| (false, true))?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let cells_by_code = self
+            .indexer
+            .get_live_cells_by_code_hash(dao_type_hash, Some(0), &mut |_, _| (false, true))?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        Ok(cells_by_lock
+            .intersection(&cells_by_code)
+            .sorted_by_key(|live| (live.number, live.index.tx_index, live.index.output_index))
+            .cloned()
+            .collect::<Vec<_>>())
     }
 
     fn collect_sighash_cells(&mut self, target_capacity: u64) -> Result<Vec<LiveCellInfo>, String> {
@@ -141,7 +137,7 @@ impl<'a> DAOSubCommand<'a> {
         let mut enough = false;
         let mut take_capacity = 0;
         let max_mature_number = get_max_mature_number(self.rpc_client())?;
-        let terminator = |_, cell: &LiveCellInfo| {
+        let mut terminator = |_, cell: &LiveCellInfo| {
             if !(cell.type_hashes.is_none() && cell.data_bytes == 0)
                 && is_mature(cell, max_mature_number)
             {
@@ -157,15 +153,11 @@ impl<'a> DAOSubCommand<'a> {
             (enough, true)
         };
 
-        let cells: Vec<LiveCellInfo> = {
-            self.with_db(|db| {
-                db.get_live_cells_by_lock(
-                    Script::from(from_address.payload()).calc_script_hash(),
-                    None,
-                    terminator,
-                )
-            })?
-        };
+        let cells: Vec<LiveCellInfo> = self.indexer.get_live_cells_by_lock_hash(
+            Script::from(from_address.payload()).calc_script_hash(),
+            None,
+            &mut terminator,
+        )?;
 
         if !enough {
             return Err(format!(
@@ -296,25 +288,6 @@ impl<'a> DAOSubCommand<'a> {
             .as_advanced_builder()
             .set_witnesses(witnesses.into_iter().map(|w| w.pack()).collect::<Vec<_>>())
             .build())
-    }
-
-    fn check_db_ready(&mut self) -> Result<(), String> {
-        self.with_db(|_| ())
-    }
-
-    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
-    where
-        F: FnOnce(IndexDatabase) -> T,
-    {
-        let genesis_info = self.genesis_info.clone();
-        with_db(
-            func,
-            self.rpc_client,
-            genesis_info,
-            &self.index_dir,
-            self.index_controller.clone(),
-            self.wait_for_sync,
-        )
     }
 
     fn transact_args(&self) -> &TransactArgs {

@@ -9,6 +9,7 @@ use super::primitive;
 use super::types;
 use ckb_types::{packed, H256};
 
+#[macro_export]
 macro_rules! jsonrpc {
     (
         $(#[$struct_attr:meta])*
@@ -60,6 +61,7 @@ macro_rules! jsonrpc {
     )
 }
 
+#[macro_export]
 macro_rules! serialize_parameters {
     () => ( serde_json::Value::Null );
     ($($arg_name:ident,)+) => ( serde_json::to_value(($($arg_name,)+))?)

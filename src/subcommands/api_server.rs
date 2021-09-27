@@ -1,5 +1,4 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -26,7 +25,7 @@ use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
-    index::{IndexController, IndexRequest},
+    index::{CommonIndexer, IndexRequest},
     other::get_network_type,
 };
 
@@ -34,8 +33,7 @@ pub struct ApiServerSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: Option<PluginManager>,
     genesis_info: Option<GenesisInfo>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
+    indexer: CommonIndexer,
 }
 
 impl<'a> ApiServerSubCommand<'a> {
@@ -43,15 +41,13 @@ impl<'a> ApiServerSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: PluginManager,
         genesis_info: Option<GenesisInfo>,
-        index_dir: PathBuf,
-        index_controller: IndexController,
+        indexer: CommonIndexer,
     ) -> ApiServerSubCommand<'a> {
         ApiServerSubCommand {
             rpc_client,
             plugin_mgr: Some(plugin_mgr),
             genesis_info,
-            index_dir,
-            index_controller,
+            indexer,
         }
     }
 
@@ -104,7 +100,10 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             Address::new(network, payload, false).to_string()
         });
 
-        Request::call(self.index_controller.sender(), IndexRequest::Kick);
+        Request::call(
+            self.indexer.local().index_controller.sender(),
+            IndexRequest::Kick,
+        );
 
         let mut io_handler = IoHandler::new();
         let handler = ApiRpcImpl {
@@ -114,18 +113,26 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             plugin_mgr: Arc::new(Mutex::new(self.plugin_mgr.take().unwrap())),
             genesis_info: Arc::new(Mutex::new(self.genesis_info.clone())),
             privkey_path,
-            index_dir: self.index_dir.clone(),
-            index_controller: self.index_controller.clone(),
+            indexer: Arc::new(Mutex::new(self.indexer.clone())),
         };
         io_handler.extend_with(handler.to_delegate());
 
         thread::sleep(Duration::from_millis(200));
         log::info!("Node rpc server: {}", self.rpc_client.url());
         log::info!("Network: {:?}", network_result);
-        log::info!("Index database directory: {:?}", self.index_dir);
+        log::info!(
+            "Index database directory: {:?}",
+            self.indexer.local().index_dir
+        );
         log::info!(
             "Index database state: {}",
-            *self.index_controller.state().read()
+            *self.indexer.local().index_controller.state().read()
+        );
+        log::info!(
+            "ckb indexer url: {:?}",
+            self.indexer
+                .remote()
+                .map(|client| &client.indexer_client.url)
         );
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
@@ -212,8 +219,7 @@ struct ApiRpcImpl {
     plugin_mgr: Arc<Mutex<PluginManager>>,
     genesis_info: Arc<Mutex<Option<GenesisInfo>>>,
     privkey_path: Option<String>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
+    indexer: Arc<Mutex<CommonIndexer>>,
 }
 
 impl ApiRpcImpl {
@@ -239,13 +245,12 @@ impl ApiRpcImpl {
         let genesis_info = self.genesis_info().map_err(internal_err)?;
         let mut rpc_client = self.rpc_client.lock().unwrap();
         let mut plugin_mgr = self.plugin_mgr.lock().unwrap();
+        let mut indexer = self.indexer.lock().unwrap();
         func(&mut WalletSubCommand::new(
             &mut rpc_client,
             &mut plugin_mgr,
             Some(genesis_info),
-            self.index_dir.clone(),
-            self.index_controller.clone(),
-            true,
+            &mut indexer,
         ))
     }
 }
@@ -339,8 +344,12 @@ impl ApiRpc for ApiRpcImpl {
             cmd.get_live_cells(
                 to_number,
                 limit,
-                |db, terminator| {
-                    db.get_live_cells_by_lock(lock_hash.pack(), from_number_opt, terminator)
+                |indexer, terminator| {
+                    indexer.get_live_cells_by_lock_hash(
+                        lock_hash.pack(),
+                        from_number_opt,
+                        terminator,
+                    )
                 },
                 true,
             )
@@ -368,8 +377,12 @@ impl ApiRpc for ApiRpcImpl {
             cmd.get_live_cells(
                 to_number,
                 limit,
-                |db, terminator| {
-                    db.get_live_cells_by_type(type_hash.pack(), from_number_opt, terminator)
+                |indexer, terminator| {
+                    indexer.get_live_cells_by_type_hash(
+                        type_hash.pack(),
+                        from_number_opt,
+                        terminator,
+                    )
                 },
                 true,
             )
@@ -398,7 +411,7 @@ impl ApiRpc for ApiRpcImpl {
                 to_number,
                 limit,
                 |db, terminator| {
-                    db.get_live_cells_by_code(code_hash.pack(), from_number_opt, terminator)
+                    db.get_live_cells_by_code_hash(code_hash.pack(), from_number_opt, terminator)
                 },
                 true,
             )
