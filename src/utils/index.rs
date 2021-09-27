@@ -418,30 +418,44 @@ impl RemoteIndexer {
     }
 
     pub fn check_ckb_chain(&mut self) -> Result<(), String> {
-        match self
-            .indexer_client
-            .get_tip()
-            .map_err(|err| err.to_string())?
-        {
-            Some(Tip {
-                block_hash,
-                block_number,
-            }) => {
-                let tip_header = self.rpc_client.get_tip_header()?;
-                if tip_header.hash == block_hash && tip_header.inner.number == block_number.value()
-                {
-                    log::info!("ckb-indexer ready!");
-                    Ok(())
-                } else {
-                    log::info!("ckb-indexer server inconsistent with currently connected ckb node or not synced!");
-                    Err("ckb-indexer server inconsistent with currently connected ckb node or not synced!".to_owned())
+        let tip_header = self.rpc_client.get_tip_header()?;
+        let tip_hash = tip_header.hash;
+        let tip_number = tip_header.inner.number;
+        let mut retry = 10;
+        while retry > 0 {
+            match self
+                .indexer_client
+                .get_tip()
+                .map_err(|err| err.to_string())?
+            {
+                Some(Tip {
+                    block_hash,
+                    block_number,
+                }) => {
+                    if tip_number > block_number.value() {
+                        log::info!("ckb-indexer not ready, wait for 50ms");
+                        thread::sleep(Duration::from_millis(50));
+                        retry -= 1;
+                        continue;
+                    } else if tip_hash == block_hash && tip_number == block_number.value() {
+                        log::info!("ckb-indexer ready!");
+                        return Ok(());
+                    } else {
+                        log::info!("ckb-indexer server inconsistent with currently connected ckb node or not synced!");
+                        return Err("ckb-indexer server inconsistent with currently connected ckb node or not synced!".to_owned());
+                    }
+                }
+                None => {
+                    log::info!("ckb-indexer server not synced");
+                    return Err("ckb-indexer server not synced".to_owned());
                 }
             }
-            None => {
-                log::info!("ckb-indexer server not synced");
-                Err("ckb-indexer server not synced".to_owned())
-            }
         }
+        log::info!("wait for ckb-indexer timeout(500ms)");
+        Err(
+            "ckb-indexer server inconsistent with currently connected ckb node or not synced!"
+                .to_owned(),
+        )
     }
 
     fn get_live_cells<F: FnMut(usize, &LiveCellInfo) -> (bool, bool)>(
