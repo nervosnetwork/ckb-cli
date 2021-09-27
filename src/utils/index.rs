@@ -536,6 +536,7 @@ impl Indexer for RemoteIndexer {
         from_number: Option<u64>,
         mut terminator: &mut dyn FnMut(usize, &LiveCellInfo) -> (bool, bool),
     ) -> Result<Vec<LiveCellInfo>, String> {
+        // FIXME: seems have bug
         let filter = from_number.map(|number| SearchKeyFilter {
             script: None,
             output_data_len_range: None,

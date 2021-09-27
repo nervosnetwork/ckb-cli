@@ -13,40 +13,50 @@ use std::time::{Duration, Instant};
 
 pub struct Setup {
     ckb_bin: String,
+    ckb_indexer_bin: String,
     cli_bin: String,
     pub keystore_plugin_bin: String,
     ckb_dir: String,
+    ckb_indexer_dir: String,
     _ckb_cli_dir: String,
     rpc_port: u16,
+    indexer_port: u16,
     miner: Option<Miner>,
 }
 
 // TODO Make CLI base_dir configurable
 impl Setup {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ckb_bin: String,
+        ckb_indexer_bin: String,
         cli_bin: String,
         keystore_plugin_bin: String,
         ckb_dir: String,
+        ckb_indexer_dir: String,
         ckb_cli_dir: String,
         rpc_port: u16,
+        indexer_port: u16,
     ) -> Self {
         Self {
             ckb_bin,
+            ckb_indexer_bin,
             cli_bin,
             keystore_plugin_bin,
             ckb_dir,
+            ckb_indexer_dir,
             _ckb_cli_dir: ckb_cli_dir,
             rpc_port,
+            indexer_port,
             miner: None,
         }
     }
 
-    pub fn ready(&mut self, spec: &dyn Spec) -> ProcessGuard {
+    pub fn ready(&mut self, spec: &dyn Spec) -> (ProcessGuard, Option<ProcessGuard>) {
         self.modify_ckb_toml(&*spec);
         self.modify_spec_toml(&*spec);
 
-        let child_process = Command::new(&self.ckb_bin)
+        let ckb_child_process = Command::new(&self.ckb_bin)
             .env("RUST_BACKTRACE", "full")
             .args(&["-C", &self.ckb_dir, "run", "--ba-advanced"])
             .stdin(Stdio::null())
@@ -54,8 +64,30 @@ impl Setup {
             .stderr(Stdio::inherit())
             .spawn()
             .expect("Run `ckb run` failed");
-        sleep(Duration::from_secs(3)); // Wait for ckb starting RPC thread
-        ProcessGuard(child_process)
+        sleep(Duration::from_secs(1)); // Wait for ckb starting RPC thread
+        let ckb_indexer_guard = if self.ckb_indexer_bin.is_empty() {
+            None
+        } else {
+            Some(ProcessGuard(
+                Command::new(&self.ckb_indexer_bin)
+                    .env("RUST_BACKTRACE", "full")
+                    .args(&[
+                        "-c",
+                        self.rpc_url().as_str(),
+                        "-s",
+                        self.ckb_indexer_dir.as_str(),
+                        "-l",
+                        self.indexer_addr().as_str(),
+                    ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .expect("Run `ckb-indexer` failed"),
+            ))
+        };
+        sleep(Duration::from_secs(2)); // Wait for ckb starting RPC thread
+        (ProcessGuard(ckb_child_process), ckb_indexer_guard)
     }
 
     pub fn miner(&mut self) -> &Miner {
@@ -68,6 +100,12 @@ impl Setup {
     pub fn rpc_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.rpc_port)
     }
+    pub fn indexer_url(&self) -> String {
+        format!("http://{}", self.indexer_addr())
+    }
+    pub fn indexer_addr(&self) -> String {
+        format!("127.0.0.1:{}", self.indexer_port)
+    }
 
     pub fn consensus(&self) -> Consensus {
         let path = Path::new(&self.ckb_dir).join("specs").join("dev.toml");
@@ -78,9 +116,16 @@ impl Setup {
 
     pub fn cli(&self, command: &str) -> String {
         log::info!("[Execute]: {}", command);
+        let rpc_url = self.rpc_url();
+        let indexer_url = self.indexer_url();
         loop {
+            let mut args = vec!["--url", &rpc_url];
+            if !self.ckb_indexer_bin.is_empty() {
+                args.push("--ckb-indexer-url");
+                args.push(&indexer_url);
+            }
             let mut child = Command::new(&self.cli_bin)
-                .args(vec!["--url", &self.rpc_url()])
+                .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

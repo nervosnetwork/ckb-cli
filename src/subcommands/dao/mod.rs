@@ -1,4 +1,4 @@
-use self::builder::DAOBuilder;
+use self::builder::{dao_type_script, DAOBuilder};
 use self::command::TransactArgs;
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::index::{CommonIndexer, Indexer};
@@ -14,7 +14,7 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{ScriptHashType, TransactionView},
-    packed::{self, Byte32, CellOutput, OutPoint, Script, WitnessArgs},
+    packed::{self, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     {h256, H160, H256},
 };
@@ -114,19 +114,19 @@ impl<'a> DAOSubCommand<'a> {
     }
 
     fn collect_dao_cells(&mut self, lock_script: Script) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_type_hash = self.dao_type_hash().clone();
+        let dao_type_script = dao_type_script(&self.genesis_info);
         let cells_by_lock = self
             .indexer
             .get_live_cells_by_lock_script(lock_script, Some(0), &mut |_, _| (false, true))?
             .into_iter()
             .collect::<HashSet<_>>();
-        let cells_by_code = self
+        let cells_by_type = self
             .indexer
-            .get_live_cells_by_code_hash(dao_type_hash, Some(0), &mut |_, _| (false, true))?
+            .get_live_cells_by_type_script(dao_type_script, Some(0), &mut |_, _| (false, true))?
             .into_iter()
             .collect::<HashSet<_>>();
         Ok(cells_by_lock
-            .intersection(&cells_by_code)
+            .intersection(&cells_by_type)
             .sorted_by_key(|live| (live.number, live.index.tx_index, live.index.output_index))
             .cloned()
             .collect::<Vec<_>>())
@@ -153,8 +153,8 @@ impl<'a> DAOSubCommand<'a> {
             (enough, true)
         };
 
-        let cells: Vec<LiveCellInfo> = self.indexer.get_live_cells_by_lock_hash(
-            Script::from(from_address.payload()).calc_script_hash(),
+        let cells: Vec<LiveCellInfo> = self.indexer.get_live_cells_by_lock_script(
+            Script::from(from_address.payload()),
             None,
             &mut terminator,
         )?;
@@ -292,10 +292,6 @@ impl<'a> DAOSubCommand<'a> {
 
     fn transact_args(&self) -> &TransactArgs {
         self.transact_args.as_ref().expect("exist")
-    }
-
-    fn dao_type_hash(&self) -> &Byte32 {
-        self.genesis_info.dao_type_hash()
     }
 
     pub(crate) fn rpc_client(&mut self) -> &mut HttpRpcClient {

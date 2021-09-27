@@ -277,7 +277,7 @@ impl DAOBuilder {
     }
 }
 
-fn dao_type_script(genesis_info: &GenesisInfo) -> Script {
+pub(crate) fn dao_type_script(genesis_info: &GenesisInfo) -> Script {
     Script::new_builder()
         .hash_type(ScriptHashType::Type.into())
         .code_hash(genesis_info.dao_type_hash().clone())

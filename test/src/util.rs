@@ -15,7 +15,7 @@ impl Drop for ProcessGuard {
 }
 
 pub fn run_cmd(bin: &str, args: Vec<&str>) -> String {
-    log::info!("[Execute]: {} {:?}", bin, args.join(" "));
+    log::info!("[Execute]: {} {}", bin, args.join(" "));
     let init_output = Command::new(bin.to_owned())
         .env("RUST_BACKTRACE", "full")
         .args(&args)

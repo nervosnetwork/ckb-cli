@@ -28,8 +28,10 @@ fn main() {
 
 fn run_spec(spec: Box<dyn Spec>, app: &App) {
     let (_tempdir, ckb_dir) = temp_dir();
-    let rpc_port = find_available_port(8000, 8999);
-    let p2p_port = find_available_port(9000, 9999);
+    let (_, ckb_indexer_dir) = temp_dir();
+    let rpc_port = find_available_port(8000, 8099);
+    let p2p_port = find_available_port(8100, 8199);
+    let indexer_port = find_available_port(8200, 8299);
     let _stdout = run_cmd(
         app.ckb_bin(),
         vec![
@@ -51,13 +53,16 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
 
     let mut setup = Setup::new(
         app.ckb_bin().to_string(),
+        app.ckb_indexer_bin().to_string(),
         app.cli_bin().to_string(),
         app.keystore_plugin_bin().to_string(),
         ckb_dir,
+        ckb_indexer_dir,
         ckb_cli_dir.to_str().unwrap().to_owned(),
         rpc_port,
+        indexer_port,
     );
-    let _guard = setup.ready(&*spec);
+    let (_ckb_guard, _indexer_guard) = setup.ready(&*spec);
     spec.run(&mut setup);
 }
 
