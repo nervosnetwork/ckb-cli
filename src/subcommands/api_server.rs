@@ -8,7 +8,7 @@ use ckb_sdk::{Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView},
-    packed::Script,
+    packed::{Byte32, Script},
     prelude::*,
     H256,
 };
@@ -253,6 +253,22 @@ impl ApiRpcImpl {
             &mut indexer,
         ))
     }
+
+    fn get_capacity_by_lock(
+        &self,
+        lock_hashes: Vec<Byte32>,
+        lock_scripts: Vec<Script>,
+    ) -> RpcResult<GetCapacityResponse> {
+        self.with_wallet(|cmd| {
+            cmd.get_capacity(lock_hashes, lock_scripts)
+                .map(|(total, immature, dao)| GetCapacityResponse {
+                    total,
+                    immature,
+                    dao,
+                })
+                .map_err(RpcError::invalid_params)
+        })
+    }
 }
 
 impl ApiRpc for ApiRpcImpl {
@@ -281,22 +297,12 @@ impl ApiRpc for ApiRpcImpl {
             .set_network(network)
             .parse(&address)
             .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
-        self.get_capacity_by_lock_hash(lock_hash)
+        self.get_capacity_by_lock(Vec::new(), vec![Script::from(address.payload())])
     }
 
     fn get_capacity_by_lock_hash(&self, lock_hash: H256) -> RpcResult<GetCapacityResponse> {
         log::info!("[call]: get_capacity_by_lock_hash({:#x})", lock_hash);
-        let lock_hashes = vec![lock_hash.pack()];
-        self.with_wallet(|cmd| {
-            cmd.get_capacity(lock_hashes)
-                .map(|(total, immature, dao)| GetCapacityResponse {
-                    total,
-                    immature,
-                    dao,
-                })
-                .map_err(RpcError::invalid_params)
-        })
+        self.get_capacity_by_lock(vec![lock_hash.pack()], Vec::new())
     }
 
     fn get_live_cells_by_address(
@@ -321,8 +327,20 @@ impl ApiRpc for ApiRpcImpl {
             .set_network(network)
             .parse(&address)
             .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
-        self.get_live_cells_by_lock_hash(lock_hash, from_number_opt, to_number_opt, limit)
+        let lock_script = Script::from(address.payload());
+        let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+        self.with_wallet(|cmd| {
+            cmd.get_live_cells(
+                to_number,
+                limit,
+                |indexer, terminator| {
+                    indexer.get_live_cells_by_lock_script(lock_script, from_number_opt, terminator)
+                },
+                true,
+            )
+            .map(|result| result.0)
+            .map_err(RpcError::invalid_params)
+        })
     }
 
     fn get_live_cells_by_lock_hash(

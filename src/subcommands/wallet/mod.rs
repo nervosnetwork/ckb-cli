@@ -455,7 +455,11 @@ impl<'a> WalletSubCommand<'a> {
         Ok(tx)
     }
 
-    pub fn get_capacity(&mut self, lock_hashes: Vec<Byte32>) -> Result<(u64, u64, u64), String> {
+    pub fn get_capacity(
+        &mut self,
+        lock_hashes: Vec<Byte32>,
+        lock_scripts: Vec<Script>,
+    ) -> Result<(u64, u64, u64), String> {
         let max_mature_number = get_max_mature_number(self.rpc_client)?;
         let mut total_capacity = 0;
         let mut dao_capacity = 0;
@@ -480,6 +484,11 @@ impl<'a> WalletSubCommand<'a> {
                 .indexer
                 .get_live_cells_by_lock_hash(lock_hash, None, &mut terminator);
         }
+        for lock_script in lock_scripts {
+            let _ = self
+                .indexer
+                .get_live_cells_by_lock_script(lock_script, None, &mut terminator);
+        }
         Ok((total_capacity, immature_capacity, dao_capacity))
     }
 
@@ -487,11 +496,11 @@ impl<'a> WalletSubCommand<'a> {
         &mut self,
         to_number: u64,
         limit: usize,
-        mut func: F,
+        func: F,
         fast_mode: bool,
     ) -> Result<(LiveCells, Option<(u32, u64)>), String>
     where
-        F: FnMut(
+        F: FnOnce(
             &mut dyn Indexer,
             &mut dyn FnMut(usize, &LiveCellInfo) -> (bool, bool),
         ) -> Result<Vec<LiveCellInfo>, String>,
@@ -573,8 +582,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             ("get-capacity", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
                     FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
-                let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
-                    vec![lock_hash.pack()]
+                let (lock_hashes, lock_scripts) = if let Some(lock_hash) = lock_hash_opt {
+                    (vec![lock_hash.pack()], Vec::new())
                 } else {
                     let network_type = get_network_type(self.rpc_client)?;
 
@@ -591,7 +600,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     } else {
                         get_address(Some(network_type), m)?
                     };
-                    let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
+                    let mut lock_scripts = vec![Script::from(&address_payload)];
                     if m.is_present("derived") {
                         let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
 
@@ -608,13 +617,13 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                             )?;
                         for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                            lock_hashes.push(Script::from(&payload).calc_script_hash());
+                            lock_scripts.push(Script::from(&payload));
                         }
                     }
-                    lock_hashes
+                    (Vec::new(), lock_scripts)
                 };
 
-                let (total, immature, dao) = self.get_capacity(lock_hashes)?;
+                let (total, immature, dao) = self.get_capacity(lock_hashes, lock_scripts)?;
 
                 let mut resp =
                     serde_json::json!({ "total": format!("{:#}", HumanCapacity::from(total)) });

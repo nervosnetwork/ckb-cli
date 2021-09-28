@@ -146,7 +146,6 @@ fn deposited_capacity(setup: &Setup) -> u64 {
         "dao query-deposited-cells --address {}",
         Miner::address(),
     ));
-    log::info!("query-deposited-cells otuput: {}", output);
     // "total_capacity: 10200000000"
     if let Some(line) = output
         .lines()
