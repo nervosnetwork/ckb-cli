@@ -13,7 +13,7 @@ use ckb_sdk::rpc::ckb_indexer::{
 };
 use ckb_sdk::{AddressPayload, GenesisInfo, HttpRpcClient};
 use ckb_types::{
-    core::{service::Request, BlockView, HeaderView},
+    core::{service::Request, BlockView, HeaderView, ScriptHashType},
     packed::{Byte32, Script},
     prelude::*,
     H256,
@@ -536,7 +536,6 @@ impl Indexer for RemoteIndexer {
         from_number: Option<u64>,
         mut terminator: &mut dyn FnMut(usize, &LiveCellInfo) -> (bool, bool),
     ) -> Result<Vec<LiveCellInfo>, String> {
-        // FIXME: seems have bug
         let filter = from_number.map(|number| SearchKeyFilter {
             script: None,
             output_data_len_range: None,
@@ -546,23 +545,30 @@ impl Indexer for RemoteIndexer {
                 BlockNumber::from(u64::max_value()),
             ]),
         });
-        let script = Script::new_builder().code_hash(code_hash).build();
-        let type_search_key = SearchKey {
-            script: script.clone().into(),
-            script_type: ScriptType::Type,
-            filter: filter.clone(),
-        };
-        let lock_search_key = SearchKey {
-            script: script.into(),
-            script_type: ScriptType::Lock,
-            filter,
-        };
-        let (finished, mut infos) = self.get_live_cells(type_search_key, &mut terminator)?;
-        if !finished {
-            let (_, lock_infos) = self.get_live_cells(lock_search_key, &mut terminator)?;
-            infos.extend(lock_infos);
+        let mut all_infos = Vec::new();
+        for script_type in &[ScriptType::Type, ScriptType::Lock] {
+            for hash_type in &[
+                ScriptHashType::Type,
+                ScriptHashType::Data,
+                ScriptHashType::Data1,
+            ] {
+                let script = Script::new_builder()
+                    .code_hash(code_hash.clone())
+                    .hash_type((*hash_type).into())
+                    .build();
+                let search_key = SearchKey {
+                    script: script.into(),
+                    script_type: script_type.clone(),
+                    filter: filter.clone(),
+                };
+                let (finished, infos) = self.get_live_cells(search_key, &mut terminator)?;
+                all_infos.extend(infos);
+                if finished {
+                    return Ok(all_infos);
+                }
+            }
         }
-        Ok(infos)
+        Ok(all_infos)
     }
     // By type script hash
     fn get_live_cells_by_type_hash(
