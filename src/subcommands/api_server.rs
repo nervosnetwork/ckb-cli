@@ -410,8 +410,12 @@ impl ApiRpc for ApiRpcImpl {
             cmd.get_live_cells(
                 to_number,
                 limit,
-                |db, terminator| {
-                    db.get_live_cells_by_code_hash(code_hash.pack(), from_number_opt, terminator)
+                |indexer, terminator| {
+                    indexer.get_live_cells_by_code_hash(
+                        code_hash.pack(),
+                        from_number_opt,
+                        terminator,
+                    )
                 },
                 true,
             )
