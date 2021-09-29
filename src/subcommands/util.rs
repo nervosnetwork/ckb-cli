@@ -840,7 +840,8 @@ fn gen_multisig_addr(
         data.extend_from_slice(&since.to_le_bytes()[..]);
         data.freeze()
     };
-    let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+    let payload =
+        AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args, true);
     (epoch_fraction, payload)
 }
 

@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     wallet::{zeroize_privkey, MasterPrivKey},
     Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
 };
-use ckb_types::{packed::OutPoint, prelude::*, H160, H256};
+use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
@@ -463,21 +464,32 @@ impl ArgParser<Address> for AddressParser {
                         check_code_hash(payload, code_hash_opt.as_ref())?;
                     }
                     AddressPayloadOption::FullData(code_hash_opt) => {
-                        if payload.ty() != AddressType::FullData {
+                        if payload.ty() != AddressType::FullData
+                            && !(payload.ty() == AddressType::Full
+                                && payload.hash_type() != ScriptHashType::Type)
+                        {
                             return Err(format!(
-                                "Unexpected address type: {:?}, expected: {:?}",
+                                "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?}/{:?})",
                                 payload.ty(),
-                                AddressType::FullData
+                                AddressType::FullData,
+                                AddressType::Full,
+                                rpc_types::ScriptHashType::Data,
+                                rpc_types::ScriptHashType::Data1,
                             ));
                         }
                         check_code_hash(payload, code_hash_opt.as_ref())?;
                     }
                     AddressPayloadOption::FullType(code_hash_opt) => {
-                        if payload.ty() != AddressType::FullType {
+                        if payload.ty() != AddressType::FullType
+                            && !(payload.ty() == AddressType::Full
+                                && payload.hash_type() == ScriptHashType::Type)
+                        {
                             return Err(format!(
-                                "Unexpected address type: {:?}, expected: {:?}",
+                                "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?})",
                                 payload.ty(),
-                                AddressType::FullType
+                                AddressType::FullType,
+                                AddressType::Full,
+                                rpc_types::ScriptHashType::Type,
                             ));
                         }
                         check_code_hash(payload, code_hash_opt.as_ref())?;
@@ -562,7 +574,7 @@ impl ArgParser<::std::net::SocketAddr> for SocketParser {
 
 #[cfg(test)]
 mod tests {
-    use ckb_types::{h160, h256};
+    use ckb_types::{bytes::Bytes, core::ScriptHashType, h160, h256, prelude::*};
     use std::net::IpAddr;
 
     use super::*;
@@ -652,5 +664,21 @@ mod tests {
         assert!(AddressParser::default()
             .parse("kb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p")
             .is_err());
+
+        // ckb2021 format address
+        let mut args = vec![0u8; 20];
+        faster_hex::hex_decode(b"b39bbc0b3673c7d36450bc14cfcdad2d559c6c64", &mut args).unwrap();
+        assert_eq!(
+            AddressParser::default().parse("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4"),
+            Ok(Address::new(
+                NetworkType::Mainnet,
+                AddressPayload::new_full(
+                    ScriptHashType::Type,
+                    h256!("0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").pack(),
+                    Bytes::from(args),
+                    true,
+                )
+            ))
+        )
     }
 }
