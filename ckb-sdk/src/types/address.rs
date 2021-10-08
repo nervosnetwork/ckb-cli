@@ -88,11 +88,6 @@ impl AddressPayload {
         args: Bytes,
         is_new: bool,
     ) -> AddressPayload {
-        let is_new = if hash_type == ScriptHashType::Data {
-            false
-        } else {
-            is_new
-        };
         AddressPayload::Full {
             hash_type,
             code_hash,
