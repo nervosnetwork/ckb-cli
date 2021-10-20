@@ -241,7 +241,7 @@ impl<'a> WalletSubCommand<'a> {
                 password,
             )
         };
-        let from_address = Address::new(network_type, from_address_payload.clone());
+        let from_address = Address::new(network_type, from_address_payload.clone(), false);
 
         if let Some(from_locked_address) = from_locked_address.as_ref() {
             let args = from_locked_address.payload().args();
@@ -778,7 +778,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         .map(|(lock_hash, payload_opt, capacity)| {
                             serde_json::json!({
                                 "lock_hash": format!("{:#x}", lock_hash),
-                                "address": payload_opt.map(|payload| Address::new(network_type, payload).to_string()),
+                                "address": payload_opt.map(|payload| Address::new(network_type, payload, true).to_string()),
                                 "capacity": format!("{:#}", HumanCapacity::from(capacity)),
                             })
                         })

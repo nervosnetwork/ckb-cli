@@ -580,8 +580,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let address_payload = cfg.to_address_payload(since_absolute_epoch_opt);
                 let lock_script = Script::from(&address_payload);
                 let resp = serde_json::json!({
-                    "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                    "testnet": Address::new(NetworkType::Testnet, address_payload.clone()).to_string(),
+                    "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
+                    "testnet": Address::new(NetworkType::Testnet, address_payload.clone(), true).to_string(),
                     "lock-arg": format!("0x{}", hex_string(address_payload.args().as_ref())),
                     "lock-hash": format!("{:#x}", lock_script.calc_script_hash())
                 });
@@ -610,7 +610,7 @@ fn print_cell_info(
     } else {
         "sighash(secp)"
     };
-    let address = Address::new(network, address_payload);
+    let address = Address::new(network, address_payload, true);
     let type_script_status = if type_script_empty { "none" } else { "some" };
     eprintln!(
         "[{}] {} => {}, (data-length: {}, type-script: {}, lock-kind: {})",
@@ -792,7 +792,7 @@ impl ReprMultisigConfig {
         let sighash_addresses = cfg
             .sighash_addresses()
             .iter()
-            .map(|payload| Address::new(network, payload.clone()).to_string())
+            .map(|payload| Address::new(network, payload.clone(), false).to_string())
             .collect();
         ReprMultisigConfig {
             sighash_addresses,

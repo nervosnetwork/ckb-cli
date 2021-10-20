@@ -101,7 +101,7 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
         let address_opt = privkey_opt.map(|privkey| {
             let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
             let payload = AddressPayload::from_pubkey(&pubkey);
-            Address::new(network, payload).to_string()
+            Address::new(network, payload, false).to_string()
         });
 
         Request::call(self.index_controller.sender(), IndexRequest::Kick);
