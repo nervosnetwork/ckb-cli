@@ -268,8 +268,9 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 } else if let Some(tx_hash) = tx_hash_opt {
                     self.rpc_client
                         .get_transaction(tx_hash.clone())?
+                        .filter(|tx_with_status| tx_with_status.transaction.is_some())
                         .map(|tx_with_status| {
-                            packed::Transaction::from(tx_with_status.transaction.inner)
+                            packed::Transaction::from(tx_with_status.transaction.unwrap().inner)
                         })
                         .ok_or_else(|| format!("Transaction not found on chain: {:x}", tx_hash))?
                         .into()
@@ -286,9 +287,10 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     let (tx, block_hash) = rpc_client
                         .get_transaction(tx_hash.clone())?
                         .filter(|tx_with_status| tx_with_status.tx_status.block_hash.is_some())
+                        .filter(|tx_with_status| tx_with_status.transaction.is_some())
                         .map(|tx_with_status| {
                             let tx = json_types::Transaction::from(packed::Transaction::from(
-                                tx_with_status.transaction.inner,
+                                tx_with_status.transaction.unwrap().inner,
                             ));
                             let block_hash = tx_with_status
                                 .tx_status
@@ -444,11 +446,13 @@ impl<'a> MockResourceLoader for Loader<'a> {
             Ok(self
                 .rpc_client
                 .get_transaction(out_point.tx_hash().unpack())?
+                .filter(|tx_with_status| tx_with_status.transaction.is_some())
                 .and_then(|tx_with_status| {
                     let output_index: u32 = out_point.index().unpack();
                     let block_hash = tx_with_status.tx_status.block_hash.unwrap_or_default();
                     tx_with_status
                         .transaction
+                        .unwrap()
                         .inner
                         .outputs_data
                         .get(output_index as usize)

@@ -63,7 +63,10 @@ jobs:
     - name: Security Audit & Licenses
       run: |
         rustup toolchain install nightly --allow-downgrade --profile minimal
+        cargo deny --version || cargo install cargo-deny --locked
         make security-audit
+        make check-crates
+        make check-licenses
 
   ci-success:
     name: ci
