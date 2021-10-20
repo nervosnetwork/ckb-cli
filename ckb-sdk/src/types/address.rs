@@ -535,15 +535,21 @@ mod test {
 
     #[test]
     fn test_new_full_address() {
-        let hash_type = ScriptHashType::Type;
         let code_hash = Byte32::from_slice(
             h256!("0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").as_bytes(),
         )
         .unwrap();
         let args = Bytes::from(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64").as_bytes());
-        let payload = AddressPayload::new_full(hash_type, code_hash, args, true);
+
+        let payload =
+            AddressPayload::new_full(ScriptHashType::Type, code_hash.clone(), args.clone(), true);
         let address = Address::new(NetworkType::Mainnet, payload);
         assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4");
         assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4").unwrap());
+
+        let payload = AddressPayload::new_full(ScriptHashType::Data1, code_hash, args, true);
+        let address = Address::new(NetworkType::Mainnet, payload);
+        assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq4nnw7qkdnnclfkg59uzn8umtfd2kwxceqcydzyt");
+        assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq4nnw7qkdnnclfkg59uzn8umtfd2kwxceqcydzyt").unwrap());
     }
 }
