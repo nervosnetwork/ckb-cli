@@ -100,7 +100,8 @@ impl AddressPayload {
         match self {
             AddressPayload::Short { .. } => AddressType::Short,
             AddressPayload::Full { hash_type, .. } => match (hash_type, is_new) {
-                (ScriptHashType::Data, _) => AddressType::FullData,
+                (ScriptHashType::Data, true) => AddressType::Full,
+                (ScriptHashType::Data, false) => AddressType::FullData,
                 (ScriptHashType::Data1, _) => AddressType::Full,
                 (ScriptHashType::Type, true) => AddressType::Full,
                 (ScriptHashType::Type, false) => AddressType::FullType,
@@ -552,6 +553,12 @@ mod test {
         let address = Address::new(NetworkType::Mainnet, payload, true);
         assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4");
         assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4").unwrap());
+
+        let payload =
+            AddressPayload::new_full(ScriptHashType::Data, code_hash.clone(), args.clone());
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq9nnw7qkdnnclfkg59uzn8umtfd2kwxceqvguktl");
+        assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq9nnw7qkdnnclfkg59uzn8umtfd2kwxceqvguktl").unwrap());
 
         let payload = AddressPayload::new_full(ScriptHashType::Data1, code_hash, args);
         let address = Address::new(NetworkType::Mainnet, payload, true);
