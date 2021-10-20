@@ -1,5 +1,5 @@
 /// NOTE: this example is for plugin integration tests
-use ckb_types::{h160, H160};
+use ckb_types::h160;
 
 use ckb_cli_plugin_protocol::{
     JsonrpcError, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginConfig, PluginRequest,

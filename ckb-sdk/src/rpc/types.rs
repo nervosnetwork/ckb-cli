@@ -332,14 +332,14 @@ impl From<rpc_types::TransactionView> for TransactionView {
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionWithStatus {
-    pub transaction: TransactionView,
+    pub transaction: Option<TransactionView>,
     /// Indicate the Transaction status
     pub tx_status: TxStatus,
 }
 impl From<rpc_types::TransactionWithStatus> for TransactionWithStatus {
     fn from(json: rpc_types::TransactionWithStatus) -> TransactionWithStatus {
         TransactionWithStatus {
-            transaction: json.transaction.into(),
+            transaction: json.transaction.map(|tx| tx.into()),
             tx_status: json.tx_status,
         }
     }

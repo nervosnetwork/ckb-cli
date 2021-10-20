@@ -113,7 +113,12 @@ impl Setup {
         ckb_toml.block_assembler = Some(Miner::block_assembler());
 
         spec.modify_ckb_toml(&mut ckb_toml);
-        let value = toml::Value::try_from(&ckb_toml).unwrap();
+        let mut value = toml::Value::try_from(&ckb_toml).unwrap();
+        // FIXME: remove this when use v0.101.0 ckb binary
+        let tx_pool = value["tx_pool"].as_table_mut().unwrap();
+        let _ = tx_pool.remove("keep_rejected_tx_hashes_count");
+        let _ = tx_pool.remove("keep_rejected_tx_hashes_days");
+        let _ = tx_pool.remove("recent_reject");
         fs::write(&path, toml::to_string(&value).unwrap()).expect("Dump ckb.toml");
     }
 

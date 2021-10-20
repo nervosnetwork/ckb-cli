@@ -27,7 +27,11 @@ pub(crate) fn calculate_dao_maximum_withdraw(
         .block_hash
         .ok_or("invalid prepare out_point, the tx is not committed")?;
     let prepare_tx = {
-        let tx: packed::Transaction = prepare_tx_status.transaction.inner.into();
+        let tx: packed::Transaction = prepare_tx_status
+            .transaction
+            .ok_or("rejected transaction")?
+            .inner
+            .into();
         tx.into_view()
     };
     let deposit_out_point = prepare_tx
@@ -46,7 +50,11 @@ pub(crate) fn calculate_dao_maximum_withdraw(
         .block_hash
         .ok_or("invalid deposit out_point, the tx is not committed")?;
     let deposit_tx = {
-        let tx: packed::Transaction = deposit_tx_status.transaction.inner.into();
+        let tx: packed::Transaction = deposit_tx_status
+            .transaction
+            .ok_or("rejected transaction")?
+            .inner
+            .into();
         tx.into_view()
     };
     let (output, output_data) = {

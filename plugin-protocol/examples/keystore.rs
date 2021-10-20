@@ -1,4 +1,4 @@
-use ckb_types::{h160, h256, H160, H256};
+use ckb_types::{h160, h256};
 
 use ckb_cli_plugin_protocol::{
     JsonrpcError, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginConfig, PluginRequest,
