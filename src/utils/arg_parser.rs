@@ -434,6 +434,7 @@ impl ArgParser<Address> for AddressParser {
             }
             if let Some(payload_option) = self.payload.as_ref() {
                 let payload = address.payload();
+                let is_new = address.is_new();
                 match payload_option {
                     AddressPayloadOption::Short(index_opt) => match payload {
                         AddressPayload::Short { index, .. } => {
@@ -449,13 +450,13 @@ impl ArgParser<Address> for AddressParser {
                         _ => {
                             return Err(format!(
                                 "Invalid address type: {:?}, expected: {:?}",
-                                payload.ty(),
+                                payload.ty(is_new),
                                 AddressType::Short,
                             ));
                         }
                     },
                     AddressPayloadOption::Full(code_hash_opt) => {
-                        if payload.ty() == AddressType::Short {
+                        if payload.ty(is_new) == AddressType::Short {
                             return Err(format!(
                                 "Unexpected address type: {:?}",
                                 AddressType::Short
@@ -464,13 +465,13 @@ impl ArgParser<Address> for AddressParser {
                         check_code_hash(payload, code_hash_opt.as_ref())?;
                     }
                     AddressPayloadOption::FullData(code_hash_opt) => {
-                        if payload.ty() != AddressType::FullData
-                            && !(payload.ty() == AddressType::Full
+                        if payload.ty(is_new) != AddressType::FullData
+                            && !(payload.ty(is_new) == AddressType::Full
                                 && payload.hash_type() != ScriptHashType::Type)
                         {
                             return Err(format!(
                                 "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?}/{:?})",
-                                payload.ty(),
+                                payload.ty(is_new),
                                 AddressType::FullData,
                                 AddressType::Full,
                                 rpc_types::ScriptHashType::Data,
@@ -480,13 +481,13 @@ impl ArgParser<Address> for AddressParser {
                         check_code_hash(payload, code_hash_opt.as_ref())?;
                     }
                     AddressPayloadOption::FullType(code_hash_opt) => {
-                        if payload.ty() != AddressType::FullType
-                            && !(payload.ty() == AddressType::Full
+                        if payload.ty(is_new) != AddressType::FullType
+                            && !(payload.ty(is_new) == AddressType::Full
                                 && payload.hash_type() == ScriptHashType::Type)
                         {
                             return Err(format!(
                                 "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?})",
-                                payload.ty(),
+                                payload.ty(is_new),
                                 AddressType::FullType,
                                 AddressType::Full,
                                 rpc_types::ScriptHashType::Type,
@@ -505,7 +506,7 @@ impl ArgParser<Address> for AddressParser {
             .ok_or_else(|| format!("Invalid address prefix: {}", prefix))?;
         let old_address = OldAddress::from_input(network, input)?;
         let payload = AddressPayload::from_pubkey_hash(old_address.hash().clone());
-        Ok(Address::new(NetworkType::Testnet, payload))
+        Ok(Address::new(NetworkType::Testnet, payload, false))
     }
 }
 
@@ -635,7 +636,8 @@ mod tests {
                 AddressPayload::new_short(
                     CodeHashIndex::Sighash,
                     h160!("0xe22f7f385830a75e50ab7fc5fd4c35b134f1e84b")
-                )
+                ),
+                false,
             ))
         );
         // New address, lock-arg: 13e41d6F9292555916f17B4882a5477C01270142
@@ -646,7 +648,8 @@ mod tests {
                 AddressPayload::new_short(
                     CodeHashIndex::Sighash,
                     h160!("0x13e41d6F9292555916f17B4882a5477C01270142")
-                )
+                ),
+                false
             ))
         );
 
@@ -676,8 +679,8 @@ mod tests {
                     ScriptHashType::Type,
                     h256!("0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").pack(),
                     Bytes::from(args),
-                    true,
-                )
+                ),
+                true,
             ))
         )
     }

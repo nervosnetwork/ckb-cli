@@ -340,8 +340,8 @@ message = "0x"
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, true).to_string(),
                     },
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
@@ -652,7 +652,7 @@ message = "0x"
                 let elapsed = target_timestamp.saturating_sub(genesis_timestamp);
                 let (epoch_fraction, addr_payload) =
                     gen_multisig_addr(address.payload(), None, elapsed);
-                let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload);
+                let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload, true);
                 let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
                     eprintln!(
@@ -687,8 +687,8 @@ message = "0x"
                     gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
                 let resp = serde_json::json!({
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, multisig_addr).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone(), true).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, multisig_addr, true).to_string(),
                     },
                     "target_epoch": epoch.to_string(),
                 });
@@ -714,7 +714,7 @@ message = "0x"
                     let packed_output = packed::CellOutput::from(output.clone());
                     let lock_hash: H256 = packed_output.lock().calc_script_hash().unpack();
                     let address_payload = AddressPayload::from(packed_output.lock());
-                    let address = Address::new(network, address_payload);
+                    let address = Address::new(network, address_payload, true);
                     let type_hash: Option<H256> = packed_output
                         .type_()
                         .to_opt()
@@ -840,8 +840,7 @@ fn gen_multisig_addr(
         data.extend_from_slice(&since.to_le_bytes()[..]);
         data.freeze()
     };
-    let payload =
-        AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args, true);
+    let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
     (epoch_fraction, payload)
 }
 

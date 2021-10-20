@@ -519,7 +519,7 @@ fn render_top_capacity<B: Backend>(
                             "  [address ]: {}",
                             payload_opt
                                 .as_ref()
-                                .map(|payload| Address::new(network_type, payload.clone())
+                                .map(|payload| Address::new(network_type, payload.clone(), true)
                                     .to_string())
                                 .unwrap_or_else(|| "null".to_owned())
                         )),

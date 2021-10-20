@@ -147,7 +147,7 @@ impl TransactArgs {
         let address = if let Some(privkey) = privkey.as_ref() {
             let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, privkey);
             let payload = AddressPayload::from_pubkey(&pubkey);
-            Address::new(network_type, payload)
+            Address::new(network_type, payload, false)
         } else {
             let account: H160 = FixedHashParser::<H160>::default()
                 .from_matches_opt(m, "from-account", false)
@@ -168,7 +168,7 @@ impl TransactArgs {
                     String::from("<privkey-path> or <from-account> is required!")
                 })?;
             let payload = AddressPayload::from_pubkey_hash(account);
-            Address::new(network_type, payload)
+            Address::new(network_type, payload, false)
         };
         assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());
         let tx_fee: u64 = CapacityParser.from_matches(m, "tx-fee")?;
