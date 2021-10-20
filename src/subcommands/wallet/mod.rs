@@ -822,7 +822,9 @@ fn get_keystore_signer(
                         let tx_hash = &input.previous_output.tx_hash;
                         client
                             .get_transaction(tx_hash.clone())?
-                            .map(|tx_with_status| tx_with_status.transaction.inner)
+                            .and_then(|tx_with_status| {
+                                tx_with_status.transaction.map(|tx| tx.inner)
+                            })
                             .map(packed::Transaction::from)
                             .map(json_types::Transaction::from)
                             .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))

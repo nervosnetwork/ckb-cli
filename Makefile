@@ -13,18 +13,22 @@ clippy:
 test:
 	RUST_BACKTRACE=full cargo test --all
 
-ci: fmt clippy test security-audit
+ci: fmt clippy test security-audit check-crates check-licenses
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh v0.100.0-rc5
+	bash devtools/ci/integration.sh v0.100.0
 
 prod: ## Build binary with release profile.
 	cargo build --release
 
-security-audit: ## Use cargo-audit to audit Cargo.lock for crates with security vulnerabilities.
-	@cargo +nightly install cargo-audit
-	cargo audit
-	# expecting to see "Success No vulnerable packages found"
+security-audit: ## Use cargo-deny to audit Cargo.lock for crates with security vulnerabilities.
+	cargo deny check --hide-inclusion-graph --show-stats advisories sources
 
-.PHONY: test clippy fmt integration ci prod security-audit
+check-crates: ## Use cargo-deny to check specific crates, detect and handle multiple versions of the same crate and wildcards version requirement.
+	cargo deny check --hide-inclusion-graph --show-stats bans
+
+check-licenses: ## Use cargo-deny to check licenses for all dependencies.
+	cargo deny check --hide-inclusion-graph --show-stats licenses
+
+.PHONY: test clippy fmt integration ci prod security-audit check-crates check-licenses

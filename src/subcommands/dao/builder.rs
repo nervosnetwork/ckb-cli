@@ -161,6 +161,7 @@ impl DAOBuilder {
                         .get_transaction(out_point.tx_hash().unpack())?
                         .expect("checked above")
                         .transaction
+                        .ok_or("rejected transaction")?
                         .inner
                         .into();
                     let tx = tx.into_view();
@@ -248,7 +249,11 @@ impl DAOBuilder {
             let tx_status = rpc_client
                 .get_transaction(out_point.tx_hash().unpack())?
                 .ok_or_else(|| "get_transaction None".to_string())?;
-            let tx: packed::Transaction = tx_status.transaction.inner.into();
+            let tx: packed::Transaction = tx_status
+                .transaction
+                .ok_or("rejected transaction")?
+                .inner
+                .into();
             let tx = tx.into_view();
             let header: HeaderView = {
                 let block_hash = tx_status
