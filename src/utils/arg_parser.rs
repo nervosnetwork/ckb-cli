@@ -253,6 +253,16 @@ impl std::ops::Deref for PrivkeyWrapper {
     }
 }
 
+pub struct HexFilePathParser;
+
+impl ArgParser<Vec<u8>> for HexFilePathParser {
+    fn parse(&self, input: &str) -> Result<Vec<u8>, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        HexParser.parse(content.as_str())
+    }
+}
+
 pub struct PrivkeyPathParser;
 
 impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
