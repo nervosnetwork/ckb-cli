@@ -513,6 +513,14 @@ mod test {
             Address::from_str("ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v").unwrap()
         );
 
+        let payload =
+            AddressPayload::from_pubkey_hash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(
+            address.to_string(),
+            "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
+        );
+
         let index = CodeHashIndex::Multisig;
         let payload =
             AddressPayload::new_short(index, h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
