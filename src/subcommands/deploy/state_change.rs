@@ -105,10 +105,7 @@ impl ChangeInfo for CellChange {
     }
 
     fn has_new_recipe(&self) -> bool {
-        match self {
-            StateChange::Removed { .. } => false,
-            _ => true,
-        }
+        !matches!(self, StateChange::Removed { .. })
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
@@ -298,10 +295,7 @@ impl ChangeInfo for DepGroupChange {
     }
 
     fn has_new_recipe(&self) -> bool {
-        match self {
-            StateChange::Removed { .. } => false,
-            _ => true,
-        }
+        !matches!(self, StateChange::Removed { .. })
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {

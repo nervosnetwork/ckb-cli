@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::{Error, Result};
 use ckb_index::{CellIndex, IndexDatabase, LiveCellInfo};
@@ -14,7 +14,7 @@ use crate::utils::{
 pub struct CellCollector<'a> {
     rpc_client: &'a mut HttpRpcClient,
     genesis_info: &'a GenesisInfo,
-    index_dir: &'a PathBuf,
+    index_dir: &'a Path,
     index_controller: IndexController,
     wait_for_sync: bool,
     max_mature_number: u64,
@@ -27,7 +27,7 @@ impl<'a> CellCollector<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
         genesis_info: &'a GenesisInfo,
-        index_dir: &'a PathBuf,
+        index_dir: &'a Path,
         index_controller: IndexController,
         wait_for_sync: bool,
         max_mature_number: u64,

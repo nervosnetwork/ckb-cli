@@ -552,7 +552,7 @@ fn snapshot_name() -> String {
     now.format("%Y-%m-%d-%H%M%S.json").to_string()
 }
 
-fn snapshot_recipe(path: &PathBuf, recipe: &DeploymentRecipe) -> Result<()> {
+fn snapshot_recipe(path: &Path, recipe: &DeploymentRecipe) -> Result<()> {
     let content = serde_json::to_vec_pretty(recipe)?;
     fs::OpenOptions::new()
         .write(true)
@@ -1019,7 +1019,7 @@ fn load_input_txs(
             .and_then(|tx_with_status| {
                 if tx_with_status.tx_status.status == json_types::Status::Committed {
                     Some(json_types::Transaction::from(packed::Transaction::from(
-                        tx_with_status.transaction.inner,
+                        tx_with_status.transaction.unwrap().inner,
                     )))
                 } else {
                     None
@@ -1032,7 +1032,7 @@ fn load_input_txs(
 }
 
 fn modify_info_file<T, F: FnOnce(&mut IntermediumInfo) -> Result<T>>(
-    path: &PathBuf,
+    path: &Path,
     func: F,
 ) -> Result<T> {
     let file = fs::File::open(path)?;
