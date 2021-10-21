@@ -138,16 +138,10 @@ impl AddressPayload {
         }
     }
     pub fn is_sighash(&self) -> bool {
-        match self {
-            AddressPayload::Short { index, .. } if *index == CodeHashIndex::Sighash => true,
-            _ => false,
-        }
+        matches!(self, AddressPayload::Short { index, .. } if *index == CodeHashIndex::Sighash)
     }
     pub fn is_multisig(&self) -> bool {
-        match self {
-            AddressPayload::Short { index, .. } if *index == CodeHashIndex::Multisig => true,
-            _ => false,
-        }
+        matches!(self, AddressPayload::Short { index, .. } if *index == CodeHashIndex::Multisig)
     }
 
     pub fn hash_type(&self, acp_hash_type: ScriptHashType) -> ScriptHashType {
@@ -805,7 +799,7 @@ mod test {
 
         let payload =
             AddressPayload::new_short_acp(h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
-        let address = Address::new(NetworkType::Mainnet, payload);
+        let address = Address::new(NetworkType::Mainnet, payload, false);
         assert_eq!(
             address.to_string(),
             "ckb1qypylv479ewscx3ms620sv34pgeuz6zagaaqvrugu7"

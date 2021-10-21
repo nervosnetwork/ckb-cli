@@ -335,8 +335,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     }
                 }
                 let lock_script = to_sighash_address_opt
-                    .or_else(|| to_short_multisig_address_opt)
-                    .or_else(|| to_long_multisig_address_opt)
+                    .or(to_short_multisig_address_opt)
+                    .or(to_long_multisig_address_opt)
                     .map(|address| address.payload().try_to_script(acp_config.as_ref()))
                     .ok_or_else(|| "missing target address".to_string())??;
                 let output = CellOutput::new_builder()
