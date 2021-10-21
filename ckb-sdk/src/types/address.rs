@@ -145,13 +145,14 @@ impl AddressPayload {
         AddressPayload::Short { index, hash }
     }
 
-    pub fn display_with_network(&self, network: NetworkType, is_new: bool) -> String {
+    pub fn display_with_network(&self, network: NetworkType, mut is_new: bool) -> String {
         let hrp = network.to_prefix();
         let data = match self {
             // payload = 0x01 | code_hash_index | args
             AddressPayload::Short { index, hash } => {
                 let mut data = vec![0u8; 22];
-                let is_new = false;
+                // short address always use bech32
+                is_new = false;
                 data[0] = self.ty(is_new) as u8;
                 data[1] = (*index) as u8;
                 data[2..].copy_from_slice(hash.as_bytes());
