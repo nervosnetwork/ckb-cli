@@ -147,15 +147,15 @@ impl AddressPayload {
 
     pub fn display_with_network(&self, network: NetworkType, is_new: bool) -> String {
         let hrp = network.to_prefix();
-        let data = match self {
+        let (data, variant) = match self {
             // payload = 0x01 | code_hash_index | args
             AddressPayload::Short { index, hash } => {
                 let mut data = vec![0u8; 22];
-                let is_new = false;
                 data[0] = self.ty(is_new) as u8;
                 data[1] = (*index) as u8;
                 data[2..].copy_from_slice(hash.as_bytes());
-                data
+                // short address always use bech32
+                (data, bech32::Variant::Bech32)
             }
             AddressPayload::Full {
                 code_hash,
@@ -169,21 +169,16 @@ impl AddressPayload {
                     data[1..33].copy_from_slice(code_hash.as_slice());
                     data[33] = (*hash_type) as u8;
                     data[34..].copy_from_slice(args.as_ref());
-                    data
+                    (data, bech32::Variant::Bech32m)
                 } else {
                     // payload = 0x02/0x04 | code_hash | args
                     let mut data = vec![0u8; 33 + args.len()];
                     data[0] = self.ty(is_new) as u8;
                     data[1..33].copy_from_slice(code_hash.as_slice());
                     data[33..].copy_from_slice(args.as_ref());
-                    data
+                    (data, bech32::Variant::Bech32)
                 }
             }
-        };
-        let variant = if is_new {
-            bech32::Variant::Bech32m
-        } else {
-            bech32::Variant::Bech32
         };
         bech32::encode(hrp, data.to_base32(), variant)
             .unwrap_or_else(|_| panic!("Encode address failed: payload={:?}", self))
@@ -510,6 +505,14 @@ mod test {
         assert_eq!(
             address,
             Address::from_str("ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v").unwrap()
+        );
+
+        let payload =
+            AddressPayload::from_pubkey_hash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(
+            address.to_string(),
+            "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
         );
 
         let index = CodeHashIndex::Multisig;
