@@ -1,8 +1,8 @@
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
 
-use bech32::{convert_bits, Bech32, ToBase32};
+use bech32::{self, convert_bits, ToBase32, Variant};
 use ckb_hash::blake2b_256;
 use ckb_types::{
     bytes::Bytes,
@@ -20,14 +20,20 @@ pub use old_addr::{Address as OldAddress, AddressFormat as OldAddressFormat};
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum AddressType {
+    // full version identifies the hash_type and vm_version
+    Full = 0x00,
+    // short version for locks with popular code_hash
     Short = 0x01,
+    // full version with hash_type = "Data", deprecated
     FullData = 0x02,
+    // full version with hash_type = "Type", deprecated
     FullType = 0x04,
 }
 
 impl AddressType {
     pub fn from_u8(value: u8) -> Result<AddressType, String> {
         match value {
+            0x00 => Ok(AddressType::Full),
             0x01 => Ok(AddressType::Short),
             0x02 => Ok(AddressType::FullData),
             0x04 => Ok(AddressType::FullType),
@@ -57,6 +63,7 @@ impl CodeHashIndex {
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub enum AddressPayload {
+    // Remain the address format before ckb2021.
     Short {
         index: CodeHashIndex,
         hash: H160,
@@ -80,19 +87,24 @@ impl AddressPayload {
             args,
         }
     }
+    #[deprecated(since = "0.100.0-rc5", note = "Use AddressType::Full instead")]
     pub fn new_full_data(code_hash: Byte32, args: Bytes) -> AddressPayload {
         Self::new_full(ScriptHashType::Data, code_hash, args)
     }
+    #[deprecated(since = "0.100.0-rc5", note = "Use AddressType::Full instead")]
     pub fn new_full_type(code_hash: Byte32, args: Bytes) -> AddressPayload {
         Self::new_full(ScriptHashType::Type, code_hash, args)
     }
 
-    pub fn ty(&self) -> AddressType {
+    pub fn ty(&self, is_new: bool) -> AddressType {
         match self {
             AddressPayload::Short { .. } => AddressType::Short,
-            AddressPayload::Full { hash_type, .. } => match hash_type {
-                ScriptHashType::Data | ScriptHashType::Data1 => AddressType::FullData,
-                ScriptHashType::Type => AddressType::FullType,
+            AddressPayload::Full { hash_type, .. } => match (hash_type, is_new) {
+                (ScriptHashType::Data, true) => AddressType::Full,
+                (ScriptHashType::Data, false) => AddressType::FullData,
+                (ScriptHashType::Data1, _) => AddressType::Full,
+                (ScriptHashType::Type, true) => AddressType::Full,
+                (ScriptHashType::Type, false) => AddressType::FullType,
             },
         }
     }
@@ -133,23 +145,43 @@ impl AddressPayload {
         AddressPayload::Short { index, hash }
     }
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
+    pub fn display_with_network(&self, network: NetworkType, is_new: bool) -> String {
+        let hrp = network.to_prefix();
+        let (data, variant) = match self {
+            // payload = 0x01 | code_hash_index | args
             AddressPayload::Short { index, hash } => {
-                let mut data = vec![0u8; 21];
-                data[0] = (*index) as u8;
-                data[1..21].copy_from_slice(hash.as_bytes());
-                data
+                let mut data = vec![0u8; 22];
+                data[0] = self.ty(is_new) as u8;
+                data[1] = (*index) as u8;
+                data[2..].copy_from_slice(hash.as_bytes());
+                // short address always use bech32
+                (data, bech32::Variant::Bech32)
             }
             AddressPayload::Full {
-                code_hash, args, ..
+                code_hash,
+                hash_type,
+                args,
             } => {
-                let mut data = vec![0u8; 32 + args.len()];
-                data[0..32].copy_from_slice(code_hash.as_slice());
-                data[32..].copy_from_slice(args.as_ref());
-                data
+                if is_new {
+                    // payload = 0x00 | code_hash | hash_type | args
+                    let mut data = vec![0u8; 34 + args.len()];
+                    data[0] = self.ty(is_new) as u8;
+                    data[1..33].copy_from_slice(code_hash.as_slice());
+                    data[33] = (*hash_type) as u8;
+                    data[34..].copy_from_slice(args.as_ref());
+                    (data, bech32::Variant::Bech32m)
+                } else {
+                    // payload = 0x02/0x04 | code_hash | args
+                    let mut data = vec![0u8; 33 + args.len()];
+                    data[0] = self.ty(is_new) as u8;
+                    data[1..33].copy_from_slice(code_hash.as_slice());
+                    data[33..].copy_from_slice(args.as_ref());
+                    (data, bech32::Variant::Bech32)
+                }
             }
-        }
+        };
+        bech32::encode(hrp, data.to_base32(), variant)
+            .unwrap_or_else(|_| panic!("Encode address failed: payload={:?}", self))
     }
 }
 
@@ -213,46 +245,38 @@ impl From<Script> for AddressPayload {
 pub struct Address {
     network: NetworkType,
     payload: AddressPayload,
+    is_new: bool,
 }
 
 impl Address {
-    pub fn new(network: NetworkType, payload: AddressPayload) -> Address {
-        Address { network, payload }
+    pub fn new(network: NetworkType, payload: AddressPayload, is_new: bool) -> Address {
+        Address {
+            network,
+            payload,
+            is_new,
+        }
     }
-
+    /// The network type of current address
     pub fn network(&self) -> NetworkType {
         self.network
     }
+    /// The address payload
     pub fn payload(&self) -> &AddressPayload {
         &self.payload
     }
-
-    pub fn display_with_network(&self, network: NetworkType) -> String {
-        let hrp = network.to_prefix();
-        let data = match self.payload.ty() {
-            AddressType::Short => {
-                let mut data = vec![0; 22];
-                data[0] = self.payload.ty() as u8;
-                data[1..].copy_from_slice(self.payload.to_bytes().as_slice());
-                data
-            }
-            AddressType::FullData | AddressType::FullType => {
-                let payload_data = self.payload.to_bytes();
-                let mut data = vec![0; payload_data.len() + 1];
-                data[0] = self.payload.ty() as u8;
-                data[1..].copy_from_slice(payload_data.as_slice());
-                data
-            }
-        };
-        let value = Bech32::new(hrp.to_string(), data.to_base32())
-            .unwrap_or_else(|_| panic!("Encode address failed: payload={:?}", self.payload));
-        format!("{}", value)
+    /// If true the address is ckb2021 format, short address always use old format, see RFC21 for more details.
+    pub fn is_new(&self) -> bool {
+        self.is_new
     }
 }
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", self.display_with_network(self.network))
+        write!(
+            f,
+            "{}",
+            self.payload.display_with_network(self.network, self.is_new)
+        )
     }
 }
 
@@ -260,23 +284,37 @@ impl FromStr for Address {
     type Err = String;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let value = Bech32::from_str(input).map_err(|err| err.to_string())?;
-        let network = NetworkType::from_prefix(value.hrp())
-            .ok_or_else(|| format!("Invalid hrp: {}", value.hrp()))?;
-        let data = convert_bits(value.data(), 5, 8, false).unwrap();
+        let (hrp, data, variant) = bech32::decode(input).map_err(|err| err.to_string())?;
+        let network =
+            NetworkType::from_prefix(&hrp).ok_or_else(|| format!("Invalid hrp: {}", hrp))?;
+        let data = convert_bits(&data, 5, 8, false).unwrap();
         let ty = AddressType::from_u8(data[0])?;
         match ty {
+            // payload = 0x01 | code_hash_index | args
             AddressType::Short => {
+                if variant != Variant::Bech32 {
+                    return Err("short address must use bech32 encoding".to_string());
+                }
                 if data.len() != 22 {
                     return Err(format!("Invalid input data length {}", data.len()));
                 }
                 let index = CodeHashIndex::from_u8(data[1])?;
                 let hash = H160::from_slice(&data[2..22]).unwrap();
                 let payload = AddressPayload::Short { index, hash };
-                Ok(Address { network, payload })
+                Ok(Address {
+                    network,
+                    payload,
+                    is_new: false,
+                })
             }
+            // payload = 0x02/0x04 | code_hash | args
             AddressType::FullData | AddressType::FullType => {
-                if data.len() < 32 {
+                if variant != Variant::Bech32 {
+                    return Err(
+                        "non-ckb2021 format full address must use bech32 encoding".to_string()
+                    );
+                }
+                if data.len() < 33 {
                     return Err(format!("Insufficient data length: {}", data.len()));
                 }
                 let hash_type = if ty == AddressType::FullData {
@@ -291,7 +329,34 @@ impl FromStr for Address {
                     code_hash,
                     args,
                 };
-                Ok(Address { network, payload })
+                Ok(Address {
+                    network,
+                    payload,
+                    is_new: false,
+                })
+            }
+            // payload = 0x00 | code_hash | hash_type | args
+            AddressType::Full => {
+                if variant != Variant::Bech32m {
+                    return Err("ckb2021 format full address must use bech32m encoding".to_string());
+                }
+                if data.len() < 34 {
+                    return Err(format!("Insufficient data length: {}", data.len()));
+                }
+                let code_hash = Byte32::from_slice(&data[1..33]).unwrap();
+                let hash_type =
+                    ScriptHashType::try_from(data[33]).map_err(|err| err.to_string())?;
+                let args = Bytes::from(data[34..].to_vec());
+                let payload = AddressPayload::Full {
+                    hash_type,
+                    code_hash,
+                    args,
+                };
+                Ok(Address {
+                    network,
+                    payload,
+                    is_new: true,
+                })
             }
         }
     }
@@ -299,8 +364,8 @@ impl FromStr for Address {
 
 mod old_addr {
     use super::{
-        blake2b_256, convert_bits, Bech32, Deserialize, FromStr, NetworkType, Script,
-        ScriptHashType, Serialize, ToBase32, H160, H256,
+        bech32, blake2b_256, convert_bits, Deserialize, NetworkType, Script, ScriptHashType,
+        Serialize, ToBase32, H160, H256,
     };
     use ckb_crypto::secp::Pubkey;
     use ckb_types::prelude::*;
@@ -386,14 +451,14 @@ mod old_addr {
         }
 
         pub fn from_input(network: NetworkType, input: &str) -> Result<Address, String> {
-            let value = Bech32::from_str(input).map_err(|err| err.to_string())?;
-            if NetworkType::from_prefix(value.hrp())
+            let (hrp, data, _variant) = bech32::decode(input).map_err(|err| err.to_string())?;
+            if NetworkType::from_prefix(&hrp)
                 .filter(|input_network| input_network == &network)
                 .is_none()
             {
-                return Err(format!("Invalid hrp({}) for {}", value.hrp(), network));
+                return Err(format!("Invalid hrp({}) for {}", hrp, network));
             }
-            let data = convert_bits(value.data(), 5, 8, false).unwrap();
+            let data = convert_bits(&data, 5, 8, false).unwrap();
             if data.len() != 25 {
                 return Err(format!("Invalid input data length {}", data.len()));
             }
@@ -408,9 +473,8 @@ mod old_addr {
             let format_data = self.format.to_bytes().expect("Invalid address format");
             data[0..5].copy_from_slice(&format_data[0..5]);
             data[5..25].copy_from_slice(self.hash.as_bytes());
-            let value = Bech32::new(hrp.to_string(), data.to_base32())
-                .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash));
-            format!("{}", value)
+            bech32::encode(hrp, data.to_base32(), bech32::Variant::Bech32)
+                .unwrap_or_else(|_| panic!("Encode address failed: hash={:?}", self.hash))
         }
 
         #[allow(clippy::inherent_to_string)]
@@ -433,7 +497,7 @@ mod test {
     fn test_short_address() {
         let payload =
             AddressPayload::from_pubkey_hash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
-        let address = Address::new(NetworkType::Mainnet, payload);
+        let address = Address::new(NetworkType::Mainnet, payload, false);
         assert_eq!(
             address.to_string(),
             "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
@@ -443,10 +507,18 @@ mod test {
             Address::from_str("ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v").unwrap()
         );
 
+        let payload =
+            AddressPayload::from_pubkey_hash(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64"));
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(
+            address.to_string(),
+            "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
+        );
+
         let index = CodeHashIndex::Multisig;
         let payload =
             AddressPayload::new_short(index, h160!("0x4fb2be2e5d0c1a3b8694f832350a33c1685d477a"));
-        let address = Address::new(NetworkType::Mainnet, payload);
+        let address = Address::new(NetworkType::Mainnet, payload, false);
         assert_eq!(
             address.to_string(),
             "ckb1qyq5lv479ewscx3ms620sv34pgeuz6zagaaqklhtgg"
@@ -458,7 +530,7 @@ mod test {
     }
 
     #[test]
-    fn test_full_address() {
+    fn test_old_full_address() {
         let hash_type = ScriptHashType::Type;
         let code_hash = Byte32::from_slice(
             h256!("0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").as_bytes(),
@@ -466,8 +538,34 @@ mod test {
         .unwrap();
         let args = Bytes::from(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64").as_bytes());
         let payload = AddressPayload::new_full(hash_type, code_hash, args);
-        let address = Address::new(NetworkType::Mainnet, payload);
+        let address = Address::new(NetworkType::Mainnet, payload, false);
         assert_eq!(address.to_string(), "ckb1qjda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xw3vumhs9nvu786dj9p0q5elx66t24n3kxgj53qks");
         assert_eq!(address, Address::from_str("ckb1qjda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xw3vumhs9nvu786dj9p0q5elx66t24n3kxgj53qks").unwrap());
+    }
+
+    #[test]
+    fn test_new_full_address() {
+        let code_hash = Byte32::from_slice(
+            h256!("0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8").as_bytes(),
+        )
+        .unwrap();
+        let args = Bytes::from(h160!("0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64").as_bytes());
+
+        let payload =
+            AddressPayload::new_full(ScriptHashType::Type, code_hash.clone(), args.clone());
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4");
+        assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdnnw7qkdnnclfkg59uzn8umtfd2kwxceqxwquc4").unwrap());
+
+        let payload =
+            AddressPayload::new_full(ScriptHashType::Data, code_hash.clone(), args.clone());
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq9nnw7qkdnnclfkg59uzn8umtfd2kwxceqvguktl");
+        assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq9nnw7qkdnnclfkg59uzn8umtfd2kwxceqvguktl").unwrap());
+
+        let payload = AddressPayload::new_full(ScriptHashType::Data1, code_hash, args);
+        let address = Address::new(NetworkType::Mainnet, payload, true);
+        assert_eq!(address.to_string(), "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq4nnw7qkdnnclfkg59uzn8umtfd2kwxceqcydzyt");
+        assert_eq!(address, Address::from_str("ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq4nnw7qkdnnclfkg59uzn8umtfd2kwxceqcydzyt").unwrap());
     }
 }

@@ -217,11 +217,11 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                 let key = format!("{:#x}", lock_arg);
                                 if only_mainnet_address {
                                     serde_json::json!({
-                                        key: Address::new(NetworkType::Mainnet, address_payload).to_string()
+                                        key: Address::new(NetworkType::Mainnet, address_payload, false).to_string()
                                     })
                                 } else if only_testnet_address {
                                     serde_json::json!({
-                                        key: Address::new(NetworkType::Testnet, address_payload).to_string()
+                                        key: Address::new(NetworkType::Testnet, address_payload, false).to_string()
                                     })
                                 } else {
                                     unreachable!();
@@ -235,8 +235,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                     "lock_hash": format!("{:#x}", lock_hash),
                                     "has_ckb_pubkey_derivation_root_path": has_ckb_root,
                                     "address": {
-                                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                                     },
                                 })
                             }
@@ -264,8 +264,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -293,8 +293,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -314,8 +314,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -340,8 +340,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                     },
                 });
                 Ok(Output::new_output(resp))
@@ -430,7 +430,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(network, payload).to_string(),
+                                "address": Address::new(network, payload, false).to_string(),
                             })
                         })
                         .collect::<Vec<_>>()
@@ -462,8 +462,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
                     "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone()).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload).to_string(),
+                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
+                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
                     },
                 });
                 Ok(Output::new_output(resp))

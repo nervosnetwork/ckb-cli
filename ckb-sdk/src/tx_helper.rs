@@ -402,7 +402,7 @@ impl MultisigConfig {
             ));
         }
         for address_payload in &sighash_addresses {
-            if address_payload.ty() != AddressType::Short {
+            if address_payload.ty(false) != AddressType::Short {
                 return Err(format!("Expected a short payload format address, got a full payload format address: {:?}", address_payload));
             }
             if address_payload.code_hash() != SIGHASH_TYPE_HASH.pack() {
@@ -454,7 +454,11 @@ impl MultisigConfig {
             let since_value = Since::new_absolute_epoch(absolute_epoch_number).value();
             let mut args = BytesMut::from(hash160.as_bytes());
             args.extend_from_slice(&since_value.to_le_bytes()[..]);
-            AddressPayload::new_full_type(MULTISIG_TYPE_HASH.pack(), args.freeze())
+            AddressPayload::new_full(
+                ScriptHashType::Type,
+                MULTISIG_TYPE_HASH.pack(),
+                args.freeze(),
+            )
         } else {
             AddressPayload::new_short(CodeHashIndex::Multisig, hash160)
         }
