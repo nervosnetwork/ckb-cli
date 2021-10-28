@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::JsonBytes;
+use ckb_jsonrpc_types::{self, JsonBytes};
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     rpc::ChainInfo,
@@ -236,6 +236,9 @@ impl<'a> UtilSubCommand<'a> {
                          .required(true)
                          .about("The difficulty value")
                     ),
+                App::new("address-info")
+                    .about("Show information about an address")
+                    .arg(arg_address),
                 App::new("to-genesis-multisig-addr")
                     .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
                     .arg(
@@ -622,6 +625,22 @@ message = "0x"
                 let difficulty = U256::from_hex_str(input).map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
                     "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
+                });
+                Ok(Output::new_output(resp))
+            }
+            ("address-info", Some(m)) => {
+                let address: Address = AddressParser::default().from_matches(m, "address")?;
+                let resp = serde_json::json!({
+                    "extra": {
+                        "data-encoding": if address.is_new() { "bech32m" } else { "bech32"},
+                        "address-type": address.payload().ty(address.is_new()),
+                    },
+                    "network": address.network().to_str(),
+                    "lock_script": {
+                        "code_hash": format!("{:#x}", address.payload().code_hash()),
+                        "hash_type": ckb_jsonrpc_types::ScriptHashType::from(address.payload().hash_type()),
+                        "args": format!("0x{}", hex_string(address.payload().args().as_ref())),
+                    },
                 });
                 Ok(Output::new_output(resp))
             }
