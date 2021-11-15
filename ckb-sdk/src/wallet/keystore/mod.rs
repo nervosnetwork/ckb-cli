@@ -548,8 +548,8 @@ impl CkbRoot {
             ChildNumber::from_hardened_idx(0).expect("child number"),
             "child_number is wrong",
         );
-        let pubkey_hex = hex_string(&self.extended_pubkey.public_key.serialize()[..]).expect("hex");
-        let chain_code_hex = hex_string(&self.extended_pubkey.chain_code[..]).unwrap();
+        let pubkey_hex = hex_string(&self.extended_pubkey.public_key.serialize()[..]);
+        let chain_code_hex = hex_string(&self.extended_pubkey.chain_code[..]);
         serde_json::json!({
             "path": self.path,
             "pubkey": pubkey_hex,

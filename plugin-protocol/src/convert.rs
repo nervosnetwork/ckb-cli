@@ -148,8 +148,8 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
                 chain_code,
                 password,
             } => {
-                let privkey = format!("0x{}", hex_string(&privkey).expect("Hex failed"));
-                let chain_code = format!("0x{}", hex_string(&chain_code).expect("Hex failed"));
+                let privkey = format!("0x{}", hex_string(&privkey));
+                let chain_code = format!("0x{}", hex_string(&chain_code));
                 let params = vec![
                     serde_json::json!(privkey),
                     serde_json::json!(chain_code),
@@ -161,10 +161,7 @@ impl From<KeyStoreRequest> for (&'static str, Vec<serde_json::Value>) {
                 account_id,
                 password,
             } => {
-                let account_id = format!(
-                    "0x{}",
-                    hex_string(account_id.as_bytes()).expect("Hex failed")
-                );
+                let account_id = format!("0x{}", hex_string(account_id.as_bytes()));
                 let params = vec![serde_json::json!(account_id), serde_json::json!(password)];
                 (method::KEYSTORE_IMPORT_ACCOUNT, params)
             }
