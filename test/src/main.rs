@@ -63,6 +63,7 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
+        Box::new(Util),
         Box::new(Plugin),
         Box::new(RpcGetTipBlockNumber),
         Box::new(WalletTransfer),
@@ -70,6 +71,5 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(DaoPrepareOne),
         Box::new(DaoPrepareMultiple),
         Box::new(DaoWithdrawMultiple),
-        Box::new(Util),
     ]
 }

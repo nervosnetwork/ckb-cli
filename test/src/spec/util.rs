@@ -115,5 +115,17 @@ impl Spec for Util {
         let verify_ok = value["verify-ok"].as_bool().unwrap();
         assert_eq!(recoverable, true);
         assert_eq!(verify_ok, false);
+
+        let output = setup.cli("util address-info --address ckt1qn0wcya8hrssq4u4gyuyejh5k53rwvly54yrcwhvjhwufsw4afdjynxzuefxyp9wdghglncj77k5wt6p59sx6kukyjlwh5s467qgp8m2jyzt6r7d9jr0s9q8764qnqvze3mzrdks4p5c3j");
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        assert_eq!(value["extra"]["address-type"].as_str().unwrap(), "FullType");
+        assert_eq!(value["extra"]["data-encoding"].as_str().unwrap(), "bech32");
+        assert_eq!(value["network"].as_str().unwrap(), "ckb_testnet");
+        assert_eq!(
+            value["lock_script"]["code_hash"].as_str().unwrap(),
+            "0xdeec13a7b8e100579541384ccaf4b5223733e4a5483c3aec95ddc4c1d5ea5b22"
+        );
+        assert_eq!(value["lock_script"]["hash_type"].as_str().unwrap(), "type");
+        assert_eq!(value["lock_script"]["args"].as_str().unwrap(), "0x4cc2e6526204ae6a2e8fcf12f7ad472f41a1606d5b9624beebd215d780809f6a9104bd0fcd2c86f81407f6aa098182cc7621b6d0");
     }
 }
