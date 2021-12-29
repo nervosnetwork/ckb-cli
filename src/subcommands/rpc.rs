@@ -1,10 +1,10 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
+    self as rpc_types, Alert, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
 };
 use ckb_sdk::{
     rpc::{
-        BannedAddr, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode, Timestamp,
-        TransactionProof, TransactionWithStatus,
+        BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, RawHttpRpcClient,
+        RemoteNode, Timestamp, TransactionProof, TransactionWithStatus,
     },
     HttpRpcClient,
 };
@@ -148,6 +148,9 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_block_median_time")
                     .about("Returns the past median time by block hash")
                     .arg(arg_hash.clone().about("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
+                App::new("get_block_economic_state")
+                    .about("Returns increased issuance, miner reward, and the total transaction fee of a block")
+                    .arg(arg_hash.clone().about("Specifies the block hash which rewards should be analyzed")),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -213,31 +216,46 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("clear_banned_addresses").about("Clears all banned IPs/Subnets"),
                 App::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
                 // [Pool]
+                App::new("remove_transaction")
+                    .about("Removes a transaction and all transactions which depends on it from tx pool if it exists")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required(true)
+                            .about("Hash of a transaction"),
+                    ),
                 App::new("tx_pool_info").about("Get transaction pool information"),
+                App::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
                 App::new("get_raw_tx_pool")
                     .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
                     .arg(Arg::with_name("verbose").long("verbose").about("True for a json object, false for array of transaction ids")),
+                App::new("tx_pool_ready").about("Returns whether tx-pool service is started, ready for request"),
                 // [`Stats`]
                 App::new("get_blockchain_info").about("Get chain information"),
+                // [Alert]
+                App::new("send_alert")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("The alert message (json format)")
+                    )
+                    .about("Sends an alert"),
                 // [`IntegrationTest`]
-                App::new("broadcast_transaction")
+                App::new("notify_transaction")
                     .arg(
                         Arg::with_name("json-path")
                          .long("json-path")
                          .takes_value(true)
                          .required(true)
                          .validator(|input| FilePathParser::new(true).validate(input))
-                         .about("Transaction content (json format, see rpc send_transaction)")
+                         .about("[TEST ONLY] Transaction content (json format, see rpc send_transaction)")
                     )
-                    .arg(
-                        Arg::with_name("cycles")
-                            .long("cycles")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .about("The cycles of the transaction")
-                    )
-                    .about("[TEST ONLY] Broadcast transaction without verify"),
+                    .about("[TEST ONLY] Notify transaction"),
                 App::new("truncate")
                     .arg(
                         Arg::with_name("tip-hash")
@@ -539,6 +557,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
+            ("get_block_economic_state", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_block_economic_state(hash)
+                        .map(RawOptionBlockEconomicState)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_block_economic_state(hash)
+                        .map(OptionBlockEconomicState)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
             // [Net]
             ("get_banned_addresses", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -638,6 +675,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Output::new_success())
             }
             // [Pool]
+            ("remove_transaction", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let resp = self.rpc_client.remove_transaction(tx_hash)?;
+                Ok(Output::new_output(resp))
+            }
             ("tx_pool_info", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
@@ -650,6 +693,14 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self.rpc_client.tx_pool_info()?;
                     Ok(Output::new_output(resp))
                 }
+            }
+            ("clear_tx_pool", _) => {
+                self.rpc_client.clear_tx_pool()?;
+                Ok(Output::new_success())
+            }
+            ("tx_pool_ready", _) => {
+                let resp = self.rpc_client.tx_pool_ready()?;
+                Ok(Output::new_output(resp))
             }
             ("get_raw_tx_pool", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -679,15 +730,21 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
+            // [Alert]
+            ("send_alert", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let alert: Alert = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                self.rpc_client.send_alert(alert)?;
+                Ok(Output::new_success())
+            }
             // [IntegrationTest]
-            ("broadcast_transaction", Some(m)) => {
-                let cycles: u64 = FromStrParser::<u64>::default().from_matches(m, "cycles")?;
+            ("notify_transaction", Some(m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
-
-                let resp = self.rpc_client.broadcast_transaction(tx.into(), cycles)?;
+                let resp = self.rpc_client.notify_transaction(tx.into())?;
                 Ok(Output::new_output(resp))
             }
             ("truncate", Some(m)) => {
@@ -726,6 +783,9 @@ pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
 pub struct OptionTimestamp(pub Option<Timestamp>);
 
 #[derive(Serialize, Deserialize)]
+pub struct OptionBlockEconomicState(pub Option<BlockEconomicState>);
+
+#[derive(Serialize, Deserialize)]
 pub struct OptionBlockView(pub Option<BlockView>);
 
 #[derive(Serialize, Deserialize)]
@@ -754,6 +814,9 @@ pub struct RawOptionHeaderView(pub Option<rpc_types::HeaderView>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionTimestamp(pub Option<rpc_types::Timestamp>);
+
+#[derive(Serialize, Deserialize)]
+pub struct RawOptionBlockEconomicState(pub Option<rpc_types::BlockEconomicState>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionEpochView(pub Option<rpc_types::EpochView>);
