@@ -1,6 +1,6 @@
 [package]
 name = "cli-test"
-version = "0.101.0"
+version = "0.101.3"
 authors = ["Linfeng Qian <thewawar@gmail.com>"]
 edition = "2018"
 
@@ -13,12 +13,12 @@ log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-ckb-sdk = { path = "../ckb-sdk", version = "0.101.1" }
-ckb-types = "=0.101.0"
-ckb-app-config = "=0.101.0"
-ckb-chain-spec = "=0.101.0"
-ckb-crypto = { version = "=0.101.0", features = ["secp"] }
-ckb-hash = "=0.101.0"
+ckb-sdk = { path = "../ckb-sdk" }
+ckb-types = "=0.101.3"
+ckb-app-config = "=0.101.3"
+ckb-chain-spec = "=0.101.3"
+ckb-crypto = { version = "=0.101.3", features = ["secp"] }
+ckb-hash = "=0.101.3"
 regex = "1.1.6"
 tentacle-secio = "=0.5.0"
 tentacle-multiaddr = "=0.3.0"
