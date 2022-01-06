@@ -244,10 +244,13 @@ impl CellChange {
         };
         let type_id = if config.enable_type_id {
             old_type_id.or_else(|| {
-                Some(H256::from(calculate_type_id(
-                    first_cell_input,
-                    index as u64,
-                )))
+                let args = calculate_type_id(first_cell_input, index as u64);
+                let type_script = packed::Script::new_builder()
+                    .code_hash(TYPE_ID_CODE_HASH.pack())
+                    .hash_type(ScriptHashType::Type.into())
+                    .args(Bytes::from(args.to_vec()).pack())
+                    .build();
+                Some(type_script.calc_script_hash().unpack())
             })
         } else {
             None
