@@ -193,6 +193,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 // * Load needed cells
                 let cell_changes = load_cells(
                     self.rpc_client,
+                    &lock_script,
                     &deployment.cells,
                     last_recipe.as_ref().map(|recipe| &recipe.cell_recipes[..]),
                 )
@@ -237,6 +238,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                 // * Load needed dep groups
                 let dep_group_changes = load_dep_groups(
                     self.rpc_client,
+                    &lock_script,
                     &deployment.dep_groups,
                     last_recipe
                         .as_ref()
@@ -661,6 +663,7 @@ fn sign_info(
 
 fn load_cells(
     rpc_client: &mut HttpRpcClient,
+    lock_script: &packed::Script,
     cells: &[Cell],
     cell_recipes_opt: Option<&[CellRecipe]>,
 ) -> Result<Vec<CellChange>> {
@@ -686,17 +689,22 @@ fn load_cells(
                 (data_hash, data)
             }
             CellLocation::OutPoint { tx_hash, index } => {
-                load_cell_data(rpc_client, tx_hash, *index)?
+                let (data_hash, data, _) = load_cell_info(rpc_client, tx_hash, *index)?;
+                (data_hash, data)
             }
         };
         let config = cell.clone();
         let change = if let Some((old_recipe, removed)) = cell_recipes_map.get_mut(&cell.name) {
             let old_recipe = old_recipe.clone();
             *removed = false;
-            let data_unchanged = data_hash == old_recipe.data_hash;
+
+            let (old_data_hash, _, old_lock_script) =
+                load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
+            let data_unchanged = data_hash == old_data_hash;
+            let lock_script_unchanged = lock_script.as_slice() == old_lock_script.as_slice();
             let type_id_unchanged = old_recipe.type_id.is_some() == config.enable_type_id;
             // NOTE: we trust `old_recipe.data_hash` here
-            if data_unchanged && type_id_unchanged {
+            if data_unchanged && lock_script_unchanged && type_id_unchanged {
                 StateChange::Unchanged {
                     data,
                     data_hash,
@@ -736,11 +744,11 @@ fn load_cells(
     Ok(cell_changes)
 }
 
-fn load_cell_data(
+fn load_cell_info(
     rpc_client: &mut HttpRpcClient,
     tx_hash: &H256,
     index: u32,
-) -> Result<(H256, Bytes)> {
+) -> Result<(H256, Bytes, packed::Script)> {
     let out_point = packed::OutPoint::new_builder()
         .tx_hash(tx_hash.pack())
         .index(index.pack())
@@ -755,16 +763,15 @@ fn load_cell_data(
             index
         ));
     }
-    let data = cell_with_status
-        .cell
-        .expect("cell.info")
-        .data
-        .expect("info.data");
-    Ok((data.hash, data.content.into_bytes()))
+    let cell_info = cell_with_status.cell.expect("cell.info");
+    let lock_script = packed::Script::from(cell_info.output.lock);
+    let data = cell_info.data.expect("info.data");
+    Ok((data.hash, data.content.into_bytes(), lock_script))
 }
 
 fn load_dep_groups(
     rpc_client: &mut HttpRpcClient,
+    lock_script: &packed::Script,
     dep_groups: &[DepGroup],
     dep_group_recipes_opt: Option<&[DepGroupRecipe]>,
     new_cell_recipes: &[CellRecipe],
@@ -810,39 +817,37 @@ fn load_dep_groups(
         let data = out_points_vec.as_bytes();
         let data_hash = H256::from(blake2b_256(data.as_ref()));
         let config = (*dep_group).clone();
-        let change =
-            if let Some((old_recipe, removed)) = dep_group_recipes_map.get_mut(&dep_group.name) {
-                let old_recipe = old_recipe.clone();
-                *removed = false;
-                let old_data_hash = if old_recipe.data_hash == H256::default() {
-                    load_cell_data(rpc_client, &old_recipe.tx_hash, old_recipe.index)?.0
-                } else {
-                    old_recipe.data_hash.clone()
-                };
-                if data_hash == old_data_hash {
-                    StateChange::Unchanged {
-                        data,
-                        data_hash,
-                        config,
-                        old_recipe,
-                    }
-                } else {
-                    StateChange::Changed {
-                        data,
-                        data_hash,
-                        config,
-                        old_recipe,
-                        output_index,
-                    }
-                }
-            } else {
-                StateChange::NewAdded {
+        let change = if let Some((old_recipe, removed)) =
+            dep_group_recipes_map.get_mut(&dep_group.name)
+        {
+            let old_recipe = old_recipe.clone();
+            *removed = false;
+            let (old_data_hash, _, old_lock_script) =
+                load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
+            if data_hash == old_data_hash && lock_script.as_slice() == old_lock_script.as_slice() {
+                StateChange::Unchanged {
                     data,
                     data_hash,
                     config,
+                    old_recipe,
+                }
+            } else {
+                StateChange::Changed {
+                    data,
+                    data_hash,
+                    config,
+                    old_recipe,
                     output_index,
                 }
-            };
+            }
+        } else {
+            StateChange::NewAdded {
+                data,
+                data_hash,
+                config,
+                output_index,
+            }
+        };
         if change.has_new_output() {
             output_index += 1;
         }
