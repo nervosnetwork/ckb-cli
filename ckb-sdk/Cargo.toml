@@ -1,6 +1,6 @@
 [package]
 name = "ckb-sdk"
-version = "0.101.1"
+version = "0.101.3"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -14,7 +14,7 @@ bech32 = "0.8.1"
 log = "0.4.6"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 secp256k1 = { version = "0.19", features = ["recovery"] }
-faster-hex = "0.4"
+faster-hex = "0.6"
 fnv = "1.0.3"
 aes-ctr = "0.6.0"
 scrypt = "0.2.0"
@@ -31,12 +31,12 @@ bytes = "1"
 futures = "0.3"
 jsonrpc-core = "18"
 
-ckb-types = "=0.101.0"
-ckb-error = "=0.101.0"
-ckb-script = "=0.101.0"
-ckb-jsonrpc-types = "=0.101.0"
-ckb-chain-spec = "=0.101.0"
-ckb-hash = "=0.101.0"
-ckb-resource = "=0.101.0"
-ckb-crypto = { version = "=0.101.0", features = ["secp"] }
-ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.101.0" }
+ckb-types = "=0.101.3"
+ckb-error = "=0.101.3"
+ckb-script = "=0.101.3"
+ckb-jsonrpc-types = "=0.101.3"
+ckb-chain-spec = "=0.101.3"
+ckb-hash = "=0.101.3"
+ckb-resource = "=0.101.3"
+ckb-crypto = { version = "=0.101.3", features = ["secp"] }
+ckb-sdk-types = { path = "../ckb-sdk-types", version="=0.101.3" }

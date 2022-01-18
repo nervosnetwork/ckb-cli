@@ -91,8 +91,8 @@ pub(crate) fn calculate_dao_maximum_withdraw4(
     output: &CellOutput,
     occupied_capacity: u64,
 ) -> u64 {
-    let (deposit_ar, _, _, _) = extract_dao_data(deposit_header.dao()).unwrap();
-    let (prepare_ar, _, _, _) = extract_dao_data(prepare_header.dao()).unwrap();
+    let (deposit_ar, _, _, _) = extract_dao_data(deposit_header.dao());
+    let (prepare_ar, _, _, _) = extract_dao_data(prepare_header.dao());
     let output_capacity: Capacity = output.capacity().unpack();
     let counted_capacity = output_capacity.as_u64() - occupied_capacity;
     let withdraw_counted_capacity =

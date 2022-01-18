@@ -130,7 +130,7 @@ impl ScryptParams {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        let salt_hex = hex_string(&self.salt).unwrap();
+        let salt_hex = hex_string(&self.salt);
         serde_json::json!({
             "salt": salt_hex,
             "n": 1usize << self.log_n,
@@ -193,7 +193,7 @@ impl Pbkdf2Params {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        let salt_hex = hex_string(&self.salt).unwrap();
+        let salt_hex = hex_string(&self.salt);
         serde_json::json!({
             "prf": self.prf,
             "salt": salt_hex,
@@ -260,7 +260,7 @@ impl CipherParams {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        let iv_hex = hex_string(&self.iv).unwrap();
+        let iv_hex = hex_string(&self.iv);
         serde_json::json!({ "iv": iv_hex })
     }
 }
@@ -390,8 +390,8 @@ impl Crypto {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        let mac_hex = hex_string(&self.mac).unwrap();
-        let ciphertext_hex = hex_string(&self.ciphertext).unwrap();
+        let mac_hex = hex_string(&self.mac);
+        let ciphertext_hex = hex_string(&self.ciphertext);
         serde_json::json!({
             "cipher": self.cipher,
             "ciphertext": ciphertext_hex,

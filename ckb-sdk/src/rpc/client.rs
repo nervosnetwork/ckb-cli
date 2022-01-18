@@ -1,8 +1,9 @@
 use ckb_jsonrpc_types::{
-    BannedAddr, Block, BlockNumber, BlockTemplate, BlockView, CellWithStatus, ChainInfo, Consensus,
-    Cycle, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView, JsonBytes, LocalNode,
-    MainLoggerConfig, OutPoint, OutputsValidator, RawTxPool, RemoteNode, Script, Timestamp,
-    Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64, Version,
+    Alert, BannedAddr, Block, BlockEconomicState, BlockNumber, BlockTemplate, BlockView,
+    CellWithStatus, ChainInfo, Consensus, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView,
+    JsonBytes, LocalNode, MainLoggerConfig, OutPoint, OutputsValidator, RawTxPool, RemoteNode,
+    Script, Timestamp, Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64,
+    Version,
 };
 
 use super::primitive;
@@ -87,6 +88,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_fork_block(&mut self, block_hash: H256) -> Option<BlockView>;
     pub fn get_consensus(&mut self) -> Consensus;
     pub fn get_block_median_time(&mut self, block_hash: H256) -> Option<Timestamp>;
+    pub fn get_block_economic_state(&mut self, block_hash: H256) -> Option<BlockEconomicState>;
 
     // Net
     pub fn get_banned_addresses(&mut self) -> Vec<BannedAddr>;
@@ -109,8 +111,11 @@ jsonrpc!(pub struct RawHttpRpcClient {
 
     // Pool
     pub fn send_transaction(&mut self, tx: Transaction, outputs_validator: Option<OutputsValidator>) -> H256;
+    pub fn remove_transaction(&mut self, tx_hash: H256) -> bool;
     pub fn tx_pool_info(&mut self) -> TxPoolInfo;
+    pub fn clear_tx_pool(&mut self) -> ();
     pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> RawTxPool;
+    pub fn tx_pool_ready(&mut self) -> bool;
 
     // Stats
     pub fn get_blockchain_info(&mut self) -> ChainInfo;
@@ -119,11 +124,14 @@ jsonrpc!(pub struct RawHttpRpcClient {
     pub fn get_block_template(&mut self, bytes_limit: Option<Uint64>, proposals_limit: Option<Uint64>, max_version: Option<Version>) -> BlockTemplate;
     pub fn submit_block(&mut self, _work_id: String, _data: Block) -> H256;
 
+    // Alert
+    pub fn send_alert(&mut self, alert: Alert) -> ();
+
     // IntegrationTest
     pub fn process_block_without_verify(&mut self, data: Block, broadcast: bool) -> Option<H256>;
     pub fn truncate(&mut self, target_tip_hash: H256) -> ();
     pub fn generate_block(&mut self, block_assembler_script: Option<Script>, block_assembler_message: Option<JsonBytes>) -> H256;
-    pub fn broadcast_transaction(&mut self, tx: Transaction, cycles: Cycle) -> H256;
+    pub fn notify_transaction(&mut self, tx: Transaction) -> H256;
 
     // Debug
     pub fn jemalloc_profiling_dump(&mut self) -> String;
@@ -267,6 +275,15 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_block_economic_state(
+        &mut self,
+        block_hash: H256,
+    ) -> Result<Option<types::BlockEconomicState>, String> {
+        self.client
+            .get_block_economic_state(block_hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
 
     // Net
     pub fn get_banned_addresses(&mut self) -> Result<Vec<types::BannedAddr>, String> {
@@ -339,18 +356,28 @@ impl HttpRpcClient {
             .send_transaction(tx.into(), outputs_validator)
             .map_err(|err| err.to_string())
     }
+    pub fn remove_transaction(&mut self, tx_hash: H256) -> Result<bool, String> {
+        self.client
+            .remove_transaction(tx_hash)
+            .map_err(|err| err.to_string())
+    }
     pub fn tx_pool_info(&mut self) -> Result<types::TxPoolInfo, String> {
         self.client
             .tx_pool_info()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
-
+    pub fn clear_tx_pool(&mut self) -> Result<(), String> {
+        self.client.clear_tx_pool().map_err(|err| err.to_string())
+    }
     pub fn get_raw_tx_pool(&mut self, verbose: Option<bool>) -> Result<types::RawTxPool, String> {
         self.client
             .get_raw_tx_pool(verbose)
             .map(Into::into)
             .map_err(|err| err.to_string())
+    }
+    pub fn tx_pool_ready(&mut self) -> Result<bool, String> {
+        self.client.tx_pool_ready().map_err(|err| err.to_string())
     }
 
     // Stats
@@ -382,17 +409,12 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
-    // IntegrationTest
-    pub fn broadcast_transaction(
-        &mut self,
-        tx: packed::Transaction,
-        cycles: u64,
-    ) -> Result<H256, String> {
-        self.client
-            .broadcast_transaction(tx.into(), Cycle::from(cycles))
-            .map_err(|err| err.to_string())
+    // Alert
+    pub fn send_alert(&mut self, alert: Alert) -> Result<(), String> {
+        self.client.send_alert(alert).map_err(|err| err.to_string())
     }
 
+    // IntegrationTest
     pub fn process_block_without_verify(
         &mut self,
         data: Block,
@@ -414,6 +436,11 @@ impl HttpRpcClient {
     ) -> Result<H256, String> {
         self.client
             .generate_block(block_assembler_script, block_assembler_message)
+            .map_err(|err| err.to_string())
+    }
+    pub fn notify_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
+        self.client
+            .notify_transaction(tx.into())
             .map_err(|err| err.to_string())
     }
 

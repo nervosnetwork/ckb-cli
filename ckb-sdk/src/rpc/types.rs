@@ -568,6 +568,77 @@ impl From<rpc_types::EpochView> for EpochView {
     }
 }
 
+/// Block base rewards.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct BlockIssuance {
+    /// The primary base rewards.
+    pub primary: Capacity,
+    /// The secondary base rewards.
+    pub secondary: Capacity,
+}
+impl From<rpc_types::BlockIssuance> for BlockIssuance {
+    fn from(json: rpc_types::BlockIssuance) -> Self {
+        Self {
+            primary: json.primary.into(),
+            secondary: json.secondary.into(),
+        }
+    }
+}
+
+/// Block rewards for miners.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct MinerReward {
+    /// The primary base block reward allocated to miners.
+    pub primary: Capacity,
+    /// The secondary base block reward allocated to miners.
+    pub secondary: Capacity,
+    /// The transaction fees that are rewarded to miners because the transaction is committed in the block.
+    ///
+    /// Miners get 60% of the transaction fee for each transaction committed in the block.
+    pub committed: Capacity,
+    /// The transaction fees that are rewarded to miners because the transaction is proposed in the block or
+    /// its uncles.
+    ///
+    /// Miners get 40% of the transaction fee for each transaction proposed in the block and
+    /// committed later in its active commit window.
+    pub proposal: Capacity,
+}
+impl From<rpc_types::MinerReward> for MinerReward {
+    fn from(json: rpc_types::MinerReward) -> Self {
+        Self {
+            primary: json.primary.into(),
+            secondary: json.secondary.into(),
+            committed: json.committed.into(),
+            proposal: json.proposal.into(),
+        }
+    }
+}
+
+/// Block Economic State.
+///
+/// It includes the rewards details and when it is finalized.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct BlockEconomicState {
+    /// Block base rewards.
+    pub issuance: BlockIssuance,
+    /// Block rewards for miners.
+    pub miner_reward: MinerReward,
+    /// The total fees of all transactions committed in the block.
+    pub txs_fee: Capacity,
+    /// The block hash of the block which creates the rewards as cells in its cellbase transaction.
+    pub finalized_at: H256,
+}
+impl From<rpc_types::BlockEconomicState> for BlockEconomicState {
+    fn from(json: rpc_types::BlockEconomicState) -> Self {
+        Self {
+            issuance: json.issuance.into(),
+            miner_reward: json.miner_reward.into(),
+            txs_fee: json.txs_fee.into(),
+            finalized_at: json.finalized_at,
+        }
+    }
+}
+
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionProof {
     /// Block hash

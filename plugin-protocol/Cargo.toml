@@ -1,6 +1,6 @@
 [package]
 name = "ckb-cli-plugin-protocol"
-version = "0.101.1"
+version = "0.101.3"
 authors = ["Nervos Core Dev <dev@nervos.org>"]
 edition = "2018"
 license = "MIT"
@@ -9,10 +9,10 @@ description = "ckb-cli plugin protocol"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ckb-index = { path = "../ckb-index", version = "=0.101.1" }
-ckb-types = "=0.101.0"
-ckb-jsonrpc-types = "=0.101.0"
+ckb-index = { path = "../ckb-index", version = "=0.101.3" }
+ckb-types = "=0.101.3"
+ckb-jsonrpc-types = "=0.101.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
 serde_json = "1.0"
-faster-hex = "0.3"
+faster-hex = "0.6"
