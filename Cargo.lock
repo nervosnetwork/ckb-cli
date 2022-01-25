@@ -725,7 +725,7 @@ dependencies = [
  "futures 0.3.19",
  "jsonrpc-core",
  "log",
- "rand 0.7.3",
+ "rand 0.8.4",
  "reqwest",
  "scrypt",
  "secp256k1",
