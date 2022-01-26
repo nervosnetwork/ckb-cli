@@ -19,6 +19,7 @@ pub enum StateChange<C, R> {
         data_hash: H256,
         config: C,
         old_recipe: R,
+        old_type_id_args: Option<Bytes>,
         output_index: u64,
     },
     NewAdded {
@@ -32,6 +33,7 @@ pub enum StateChange<C, R> {
         data_hash: H256,
         config: C,
         old_recipe: R,
+        old_type_id_args: Option<Bytes>,
     },
     Removed {
         old_recipe: R,
@@ -141,7 +143,7 @@ impl ChangeInfo for CellChange {
         lock_script: &packed::Script,
         first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
-        let (data, config, output_index, old_type_id) = match self {
+        let (data, config, output_index, old_type_id_args) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
@@ -151,10 +153,10 @@ impl ChangeInfo for CellChange {
             StateChange::Changed {
                 data,
                 config,
-                old_recipe,
+                old_type_id_args,
                 output_index,
                 ..
-            } => (data, config, *output_index, old_recipe.type_id.clone()),
+            } => (data, config, *output_index, old_type_id_args.clone()),
             StateChange::NewAdded {
                 data,
                 config,
@@ -162,22 +164,21 @@ impl ChangeInfo for CellChange {
                 ..
             } => (data, config, *output_index, None),
         };
-        let type_id = if config.enable_type_id {
-            old_type_id.or_else(|| {
-                Some(H256::from(calculate_type_id(
-                    first_cell_input,
-                    output_index,
-                )))
+        let type_id_args = if config.enable_type_id {
+            old_type_id_args.or_else(|| {
+                Some(Bytes::from(
+                    calculate_type_id(first_cell_input, output_index).to_vec(),
+                ))
             })
         } else {
             None
         };
         let occupied_capacity = self.occupied_capacity(lock_script);
-        let type_script_opt = type_id.map(|type_id_args| {
+        let type_script_opt = type_id_args.map(|type_id_args| {
             packed::Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
                 .hash_type(ScriptHashType::Type.into())
-                .args(Bytes::from(type_id_args.as_bytes().to_vec()).pack())
+                .args(Bytes::from(type_id_args.to_vec()).pack())
                 .build()
         });
         let output = packed::CellOutput::new_builder()
@@ -200,14 +201,14 @@ impl CellChange {
         first_cell_input: &packed::CellInput,
         new_tx_hash: &H256,
     ) -> Option<CellRecipe> {
-        let (tx_hash, index, data_hash, config, old_type_id) = match self {
+        let (tx_hash, index, data_hash, config, old_type_id_args) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
             StateChange::Changed {
                 data_hash,
                 config,
-                old_recipe,
+                old_type_id_args,
                 output_index,
                 ..
             } => (
@@ -215,19 +216,20 @@ impl CellChange {
                 *output_index as u32,
                 data_hash.clone(),
                 config,
-                old_recipe.type_id.clone(),
+                old_type_id_args.clone(),
             ),
             StateChange::Unchanged {
                 data_hash,
                 config,
                 old_recipe,
+                old_type_id_args,
                 ..
             } => (
                 old_recipe.tx_hash.clone(),
                 old_recipe.index,
                 data_hash.clone(),
                 config,
-                old_recipe.type_id.clone(),
+                old_type_id_args.clone(),
             ),
             StateChange::NewAdded {
                 data_hash,
@@ -243,15 +245,15 @@ impl CellChange {
             ),
         };
         let type_id = if config.enable_type_id {
-            old_type_id.or_else(|| {
-                let args = calculate_type_id(first_cell_input, index as u64);
-                let type_script = packed::Script::new_builder()
-                    .code_hash(TYPE_ID_CODE_HASH.pack())
-                    .hash_type(ScriptHashType::Type.into())
-                    .args(Bytes::from(args.to_vec()).pack())
-                    .build();
-                Some(type_script.calc_script_hash().unpack())
-            })
+            let args = old_type_id_args.unwrap_or_else(|| {
+                Bytes::from(calculate_type_id(first_cell_input, index as u64).to_vec())
+            });
+            let type_script = packed::Script::new_builder()
+                .code_hash(TYPE_ID_CODE_HASH.pack())
+                .hash_type(ScriptHashType::Type.into())
+                .args(Bytes::from(args.to_vec()).pack())
+                .build();
+            Some(type_script.calc_script_hash().unpack())
         } else {
             None
         };

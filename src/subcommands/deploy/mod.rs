@@ -698,8 +698,10 @@ fn load_cells(
             let old_recipe = old_recipe.clone();
             *removed = false;
 
-            let (old_data_hash, _, old_lock_script) =
+            let (old_data_hash, _, old_output) =
                 load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
+            let old_lock_script = packed::Script::from(old_output.lock);
+            let old_type_id_args = old_output.type_.map(|script| script.args.into_bytes());
             let data_unchanged = data_hash == old_data_hash;
             let lock_script_unchanged = lock_script.as_slice() == old_lock_script.as_slice();
             let type_id_unchanged = old_recipe.type_id.is_some() == config.enable_type_id;
@@ -710,6 +712,7 @@ fn load_cells(
                     data_hash,
                     config,
                     old_recipe,
+                    old_type_id_args,
                 }
             } else {
                 StateChange::Changed {
@@ -717,6 +720,7 @@ fn load_cells(
                     data_hash,
                     config,
                     old_recipe,
+                    old_type_id_args,
                     output_index,
                 }
             }
@@ -748,7 +752,7 @@ fn load_cell_info(
     rpc_client: &mut HttpRpcClient,
     tx_hash: &H256,
     index: u32,
-) -> Result<(H256, Bytes, packed::Script)> {
+) -> Result<(H256, Bytes, json_types::CellOutput)> {
     let out_point = packed::OutPoint::new_builder()
         .tx_hash(tx_hash.pack())
         .index(index.pack())
@@ -764,9 +768,8 @@ fn load_cell_info(
         ));
     }
     let cell_info = cell_with_status.cell.expect("cell.info");
-    let lock_script = packed::Script::from(cell_info.output.lock);
     let data = cell_info.data.expect("info.data");
-    Ok((data.hash, data.content.into_bytes(), lock_script))
+    Ok((data.hash, data.content.into_bytes(), cell_info.output))
 }
 
 fn load_dep_groups(
@@ -822,14 +825,16 @@ fn load_dep_groups(
         {
             let old_recipe = old_recipe.clone();
             *removed = false;
-            let (old_data_hash, _, old_lock_script) =
+            let (old_data_hash, _, old_output) =
                 load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
+            let old_lock_script = packed::Script::from(old_output.lock);
             if data_hash == old_data_hash && lock_script.as_slice() == old_lock_script.as_slice() {
                 StateChange::Unchanged {
                     data,
                     data_hash,
                     config,
                     old_recipe,
+                    old_type_id_args: None,
                 }
             } else {
                 StateChange::Changed {
@@ -838,6 +843,7 @@ fn load_dep_groups(
                     config,
                     old_recipe,
                     output_index,
+                    old_type_id_args: None,
                 }
             }
         } else {
