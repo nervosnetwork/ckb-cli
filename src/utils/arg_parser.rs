@@ -9,9 +9,11 @@ use std::time::Duration;
 
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
-    wallet::{zeroize_privkey, MasterPrivKey},
-    Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity, NetworkType, OldAddress,
+    util::zeroize_privkey, Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity,
+    NetworkType, OldAddress,
 };
+use ckb_wallet::MasterPrivKey;
+
 use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;

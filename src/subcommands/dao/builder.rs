@@ -1,7 +1,7 @@
 use super::util::minimal_unlock_point;
 use crate::subcommands::dao::util::calculate_dao_maximum_withdraw4;
 use ckb_index::LiveCellInfo;
-use ckb_sdk::{constants::MIN_SECP_CELL_CAPACITY, GenesisInfo, HttpRpcClient, Since, SinceType};
+use ckb_sdk::{constants::MIN_SECP_CELL_CAPACITY, GenesisInfo, Since, SinceType};
 use ckb_types::core::Capacity;
 use ckb_types::{
     bytes::Bytes,
@@ -10,6 +10,8 @@ use ckb_types::{
     prelude::*,
 };
 use std::collections::HashSet;
+
+use crate::utils::rpc::HttpRpcClient;
 
 // NOTE: We assume all inputs are from same account
 #[derive(Debug)]

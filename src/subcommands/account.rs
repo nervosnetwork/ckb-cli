@@ -2,11 +2,9 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use ckb_sdk::{
-    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
-    Address, AddressPayload, NetworkType,
-};
+use ckb_sdk::{bip32::DerivationPath, Address, AddressPayload, NetworkType};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
+use ckb_wallet::{Key, KeyStore, MasterPrivKey};
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 

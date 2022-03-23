@@ -30,16 +30,18 @@ use crate::utils::{
         get_max_mature_number, get_network_type, get_privkey_signer, get_to_data, is_mature,
         read_password, sync_to_tip,
     },
+    rpc::HttpRpcClient,
+    tx_helper::{SignerFn, TxHelper},
 };
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_index::{with_index_db, IndexDatabase, LiveCellInfo};
 use ckb_sdk::{
+    bip32::DerivationPath,
     constants::{
         DAO_TYPE_HASH, MIN_SECP_CELL_CAPACITY, MULTISIG_TYPE_HASH, ONE_CKB, SIGHASH_TYPE_HASH,
     },
-    wallet::DerivationPath,
-    Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, MultisigConfig, SignerFn,
-    Since, SinceType, TxHelper, SECP256K1,
+    unlock::MultisigConfig,
+    Address, AddressPayload, GenesisInfo, HumanCapacity, Since, SinceType, SECP256K1,
 };
 pub use index::start_index_thread;
 
@@ -81,7 +83,8 @@ impl<'a> WalletSubCommand<'a> {
                 .get_block_by_number(0)?
                 .expect("Can not get genesis block?")
                 .into();
-            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+            self.genesis_info =
+                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
         }
         Ok(self.genesis_info.clone().unwrap())
     }
@@ -332,10 +335,11 @@ impl<'a> WalletSubCommand<'a> {
             );
             for lock_arg in std::iter::once(&from_lock_arg).chain(path_map.keys()) {
                 let mut sighash_addresses = Vec::default();
-                sighash_addresses.push(AddressPayload::from_pubkey_hash(lock_arg.clone()));
+                sighash_addresses.push(lock_arg.clone());
                 let require_first_n = 0;
                 let threshold = 1;
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
+                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
+                    .map_err(|err| err.to_string())?;
                 if cfg.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
                     helper.add_multisig_config(cfg);
                     break;

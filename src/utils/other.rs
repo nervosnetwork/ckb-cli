@@ -11,10 +11,7 @@ use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    rpc::AlertMessage,
-    wallet::{KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
-    SECP256K1,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, NetworkType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -24,6 +21,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
+use ckb_wallet::{KeyStore, ScryptType};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;
@@ -32,6 +30,8 @@ use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
+use super::rpc::{AlertMessage, HttpRpcClient};
+use super::tx_helper::SignerFn;
 use crate::plugin::{KeyStoreHandler, SignTarget};
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -152,7 +152,7 @@ pub fn get_genesis_info(
             .get_block_by_number(0)?
             .ok_or_else(|| String::from("Can not get genesis block"))?
             .into();
-        GenesisInfo::from_block(&genesis_block)
+        GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())
     }
 }
 

@@ -6,7 +6,7 @@ use ckb_types::core;
 use serde::de::{Error, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{HumanCapacity, SinceType};
+use ckb_sdk::{HumanCapacity, SinceType};
 
 macro_rules! impl_serde {
     ($struct:ident, $visitor:ident, $from_str_ty:ty, $gen_string:path) => {
@@ -100,7 +100,7 @@ fn timestamp_to_string(value: u64) -> String {
     format!("{} ({})", value, dt)
 }
 fn since_to_string(value: u64) -> String {
-    let since = crate::Since::from_raw_value(value);
+    let since = ckb_sdk::Since::from_raw_value(value);
     let (ty, inner_value) = since.extract_metric().unwrap();
     let prefix = if since.is_absolute() {
         "absolute"

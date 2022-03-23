@@ -3,10 +3,9 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self, JsonBytes};
 use ckb_sdk::{
+    bip32::{ChildNumber, DerivationPath},
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    rpc::ChainInfo,
-    wallet::{ChildNumber, DerivationPath},
-    Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
+    Address, AddressPayload, CodeHashIndex, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
@@ -34,6 +33,7 @@ use crate::utils::{
         FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     other::{get_address, get_network_type, read_password, serialize_signature},
+    rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};
 
@@ -265,7 +265,7 @@ impl<'a> UtilSubCommand<'a> {
                             .long("locktime")
                             .required(true)
                             .takes_value(true)
-                            .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
+                            .validator(|input| DateTime::parse_from_rfc3339(input).map(|_| ()).map_err(|err| err.to_string()))
                             .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
                     ),
                 App::new("cell-meta")

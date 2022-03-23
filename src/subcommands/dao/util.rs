@@ -2,10 +2,10 @@ use crate::subcommands::Output;
 use crate::utils::{
     other::check_lack_of_capacity,
     printer::{OutputFormat, Printable},
+    rpc::HttpRpcClient,
 };
 use ckb_dao_utils::extract_dao_data;
 use ckb_index::LiveCellInfo;
-use ckb_sdk::HttpRpcClient;
 use ckb_types::core::{Capacity, TransactionView};
 use ckb_types::packed::CellOutput;
 use ckb_types::{

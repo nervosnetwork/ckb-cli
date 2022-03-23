@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 
 use ckb_index::{with_index_db, Error, IndexDatabase, IndexError};
 use ckb_sdk::GenesisInfo;
-use ckb_sdk::HttpRpcClient;
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -18,6 +17,7 @@ use crossbeam_channel::Receiver;
 
 use crate::utils::index::{IndexController, IndexRequest, IndexResponse, IndexThreadState};
 use crate::utils::other::get_network_type;
+use crate::utils::rpc::HttpRpcClient;
 
 pub fn start_index_thread(
     url: &str,
@@ -106,7 +106,7 @@ fn process(
     state: &Arc<RwLock<IndexThreadState>>,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<(bool, bool), String> {
-    if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+    if let Some((exit, rebuild)) = try_recv(receiver, rpc_client) {
         return Ok((exit, rebuild));
     }
 
@@ -143,7 +143,7 @@ fn process(
                     if shutdown.load(Ordering::Relaxed) {
                         return Ok(Some((true, false)));
                     }
-                    if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+                    if let Some((exit, rebuild)) = try_recv(receiver, rpc_client) {
                         return Ok(Some((exit, rebuild)));
                     }
                     if let Some(next_block) =
@@ -191,7 +191,7 @@ Or you can use follow command to rebuild index database:
         if shutdown.load(Ordering::Relaxed) {
             return Ok((true, false));
         }
-        if let Some((exit, rebuild)) = try_recv(&receiver, rpc_client) {
+        if let Some((exit, rebuild)) = try_recv(receiver, rpc_client) {
             return Ok((exit, rebuild));
         }
         thread::sleep(Duration::from_millis(100));

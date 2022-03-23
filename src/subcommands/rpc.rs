@@ -1,13 +1,6 @@
 use ckb_jsonrpc_types::{
     self as rpc_types, Alert, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
 };
-use ckb_sdk::{
-    rpc::{
-        BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, RawHttpRpcClient,
-        RemoteNode, Timestamp, TransactionProof, TransactionWithStatus,
-    },
-    HttpRpcClient,
-};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use ipnetwork::IpNetwork;
@@ -20,6 +13,10 @@ use std::time::Duration;
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
+};
+use crate::utils::rpc::{
+    BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, HttpRpcClient,
+    RawHttpRpcClient, RemoteNode, Timestamp, TransactionProof, TransactionWithStatus,
 };
 
 pub struct RpcSubCommand<'a> {

@@ -7,7 +7,6 @@ use std::process;
 use std::sync::Arc;
 
 use ckb_build_info::Version;
-use ckb_sdk::{rpc::RawHttpRpcClient, HttpRpcClient};
 use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg};
@@ -28,6 +27,7 @@ use utils::{
     index::IndexThreadState,
     other::{check_alerts, get_key_store, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat},
+    rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
 mod interactive;
@@ -99,9 +99,8 @@ fn main() -> Result<(), io::Error> {
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
         config.set_no_sync(configs["no-sync"].as_bool().unwrap_or(false));
         config.set_color(ansi_support && configs["color"].as_bool().unwrap_or(true));
-        output_format =
-            OutputFormat::from_str(&configs["output_format"].as_str().unwrap_or("yaml"))
-                .unwrap_or(OutputFormat::Yaml);
+        output_format = OutputFormat::from_str(configs["output_format"].as_str().unwrap_or("yaml"))
+            .unwrap_or(OutputFormat::Yaml);
         config.set_output_format(output_format);
         config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
         config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
@@ -136,23 +135,24 @@ fn main() -> Result<(), io::Error> {
             .map(|s| Output::new_output(serde_json::json!(s))),
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
             ("subscribe", Some(sub_sub_matches)) => {
-                PubSubCommand::new(output_format, color).process(&sub_sub_matches, debug)
+                PubSubCommand::new(output_format, color).process(sub_sub_matches, debug)
             }
-            _ => RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client)
-                .process(&sub_matches, debug),
+            _ => {
+                RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(sub_matches, debug)
+            }
         },
         ("account", Some(sub_matches)) => {
-            AccountSubCommand::new(&mut plugin_mgr, &mut key_store).process(&sub_matches, debug)
+            AccountSubCommand::new(&mut plugin_mgr, &mut key_store).process(sub_matches, debug)
         }
         ("mock-tx", Some(sub_matches)) => {
             MockTxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None)
-                .process(&sub_matches, debug)
+                .process(sub_matches, debug)
         }
         ("tx", Some(sub_matches)) => {
-            TxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None).process(&sub_matches, debug)
+            TxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None).process(sub_matches, debug)
         }
         ("util", Some(sub_matches)) => {
-            UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(&sub_matches, debug)
+            UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(sub_matches, debug)
         }
         ("server", Some(sub_matches)) => ApiServerSubCommand::new(
             &mut rpc_client,
@@ -161,11 +161,11 @@ fn main() -> Result<(), io::Error> {
             index_dir,
             index_controller.clone(),
         )
-        .process(&sub_matches, debug),
+        .process(sub_matches, debug),
         ("plugin", Some(sub_matches)) => {
-            PluginSubCommand::new(&mut plugin_mgr).process(&sub_matches, debug)
+            PluginSubCommand::new(&mut plugin_mgr).process(sub_matches, debug)
         }
-        ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(&sub_matches, debug),
+        ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(sub_matches, debug),
         ("index", Some(sub_matches)) => IndexSubCommand::new(
             &mut rpc_client,
             None,
@@ -174,7 +174,7 @@ fn main() -> Result<(), io::Error> {
             index_state_clone,
             wait_for_sync,
         )
-        .process(&sub_matches, debug),
+        .process(sub_matches, debug),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             &mut plugin_mgr,
@@ -183,7 +183,7 @@ fn main() -> Result<(), io::Error> {
             index_controller.clone(),
             wait_for_sync,
         )
-        .process(&sub_matches, debug),
+        .process(sub_matches, debug),
         ("dao", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 DAOSubCommand::new(
@@ -194,7 +194,7 @@ fn main() -> Result<(), io::Error> {
                     index_controller.clone(),
                     wait_for_sync,
                 )
-                .process(&sub_matches, debug)
+                .process(sub_matches, debug)
             })
         }
         _ => {

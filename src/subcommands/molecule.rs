@@ -270,7 +270,7 @@ where
     T: Entity + Into<J>,
     J: serde::Serialize,
 {
-    let json: J = T::from_compatible_slice(&binary)
+    let json: J = T::from_compatible_slice(binary)
         .map(Into::into)
         .map_err(|err| err.to_string())?;
     Ok(Output::new_output(json))

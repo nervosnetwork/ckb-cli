@@ -1,4 +1,4 @@
-use ckb_hash::{blake2b_256, new_blake2b};
+use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_types::{
     bytes::{Bytes, BytesMut},
@@ -13,8 +13,8 @@ use ckb_types::{
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
-use crate::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
-use crate::{AddressPayload, AddressType, CodeHashIndex, GenesisInfo, Since};
+use ckb_sdk::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
+use ckb_sdk::{unlock::MultisigConfig, GenesisInfo, Since};
 
 // TODO: Add dao support
 
@@ -75,9 +75,6 @@ impl TxHelper {
     }
     pub fn clear_signatures(&mut self) {
         self.signatures.clear();
-    }
-    pub fn clear_multisig_configs(&mut self) {
-        self.multisig_configs.clear()
     }
 
     pub fn add_input<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
@@ -217,7 +214,16 @@ impl TxHelper {
         let all_sighash_lock_args = self
             .multisig_configs
             .iter()
-            .map(|(hash160, config)| (hash160.clone(), config.sighash_lock_args()))
+            .map(|(hash160, config)| {
+                (
+                    hash160.clone(),
+                    config
+                        .sighash_addresses()
+                        .iter()
+                        .cloned()
+                        .collect::<HashSet<H160>>(),
+                )
+            })
             .collect::<HashMap<_, _>>();
 
         let witnesses = self.init_witnesses();
@@ -368,116 +374,6 @@ impl TxHelper {
 pub type SignerFn = Box<
     dyn FnMut(&HashSet<H160>, &H256, &rpc_types::Transaction) -> Result<Option<[u8; 65]>, String>,
 >;
-
-#[derive(Eq, PartialEq, Clone)]
-pub struct MultisigConfig {
-    sighash_addresses: Vec<AddressPayload>,
-    require_first_n: u8,
-    threshold: u8,
-}
-
-impl MultisigConfig {
-    pub fn new_with(
-        sighash_addresses: Vec<AddressPayload>,
-        require_first_n: u8,
-        threshold: u8,
-    ) -> Result<MultisigConfig, String> {
-        let mut addr_set: HashSet<&AddressPayload> = HashSet::default();
-        for addr in &sighash_addresses {
-            if !addr_set.insert(addr) {
-                return Err(format!("Duplicated address: {:?}", addr));
-            }
-        }
-        if threshold as usize > sighash_addresses.len() {
-            return Err(format!(
-                "Invalid threshold {} > {}",
-                threshold,
-                sighash_addresses.len()
-            ));
-        }
-        if require_first_n > threshold {
-            return Err(format!(
-                "Invalid require-first-n {} > {}",
-                require_first_n, threshold
-            ));
-        }
-        for address_payload in &sighash_addresses {
-            if address_payload.ty(false) != AddressType::Short {
-                return Err(format!("Expected a short payload format address, got a full payload format address: {:?}", address_payload));
-            }
-            if address_payload.code_hash() != SIGHASH_TYPE_HASH.pack() {
-                return Err("Invalid code hash expected sighash, got multisig".to_string());
-            }
-        }
-        Ok(MultisigConfig {
-            sighash_addresses,
-            require_first_n,
-            threshold,
-        })
-    }
-
-    pub fn contains_address(&self, target: &AddressPayload) -> bool {
-        self.sighash_addresses
-            .iter()
-            .any(|payload| payload == target)
-    }
-    pub fn sighash_addresses(&self) -> &Vec<AddressPayload> {
-        &self.sighash_addresses
-    }
-    pub fn require_first_n(&self) -> u8 {
-        self.require_first_n
-    }
-    pub fn threshold(&self) -> u8 {
-        self.threshold
-    }
-    pub fn sighash_lock_args(&self) -> HashSet<H160> {
-        self.sighash_addresses
-            .iter()
-            .map(|address| match address {
-                AddressPayload::Short { hash, .. } => hash.clone(),
-                _ => panic!(
-                    "MultisigConfig sighash_addresses can not have full payload format address"
-                ),
-            })
-            .collect()
-    }
-
-    pub fn hash160(&self) -> H160 {
-        let witness_data = self.to_witness_data();
-        let params_hash = blake2b_256(&witness_data);
-        H160::from_slice(&params_hash[0..20]).unwrap()
-    }
-
-    pub fn to_address_payload(&self, since_absolute_epoch: Option<u64>) -> AddressPayload {
-        let hash160 = self.hash160();
-        if let Some(absolute_epoch_number) = since_absolute_epoch {
-            let since_value = Since::new_absolute_epoch(absolute_epoch_number).value();
-            let mut args = BytesMut::from(hash160.as_bytes());
-            args.extend_from_slice(&since_value.to_le_bytes()[..]);
-            AddressPayload::new_full(
-                ScriptHashType::Type,
-                MULTISIG_TYPE_HASH.pack(),
-                args.freeze(),
-            )
-        } else {
-            AddressPayload::new_short(CodeHashIndex::Multisig, hash160)
-        }
-    }
-
-    pub fn to_witness_data(&self) -> Bytes {
-        let reserved_byte = 0u8;
-        let mut witness_data = vec![
-            reserved_byte,
-            self.require_first_n,
-            self.threshold,
-            self.sighash_addresses.len() as u8,
-        ];
-        for sighash_address in &self.sighash_addresses {
-            witness_data.extend_from_slice(sighash_address.args().as_ref());
-        }
-        Bytes::from(witness_data)
-    }
-}
 
 pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> {
     #[derive(Eq, PartialEq)]

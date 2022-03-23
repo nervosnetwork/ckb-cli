@@ -1,30 +1,34 @@
 [package]
 name = "ckb-cli"
-version = "0.101.3"
+version = "0.101.4"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
-edition = "2018"
+edition = "2021"
 description = "ckb command line interface"
 
 [dependencies]
-ckb-jsonrpc-types = "=0.101.3"
-ckb-hash = "=0.101.3"
-ckb-crypto = { version = "=0.101.3", features = ["secp"] }
-ckb-build-info = "=0.101.3"
-ckb-types = "=0.101.3"
-ckb-util = "=0.101.3"
-ckb-resource = "=0.101.3"
-ckb-dao-utils = "=0.101.3"
-ckb-chain-spec = "=0.101.3"
-ckb-sdk = { path = "ckb-sdk", version = "=0.101.3" }
-ckb-index = { path = "ckb-index", version = "=0.101.3" }
-plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.101.3" }
+ckb-jsonrpc-types = "=0.101.4"
+ckb-hash = "=0.101.4"
+ckb-crypto = { version = "=0.101.4", features = ["secp"] }
+ckb-build-info = "=0.101.4"
+ckb-types = "=0.101.4"
+ckb-util = "=0.101.4"
+ckb-error = "=0.101.4"
+ckb-script = "=0.101.4"
+ckb-resource = "=0.101.4"
+ckb-dao-utils = "=0.101.4"
+ckb-chain-spec = "=0.101.4"
+ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
+ckb-wallet = { git = "https://github.com/TheWaWaR/ckb-wallet.git" }
+ckb-mock-tx-types = "0.2.0"
+ckb-index = { path = "ckb-index", version = "=0.101.4" }
+plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.101.4" }
 jsonrpc-core-client = "18"
 jsonrpc-core = "18"
 jsonrpc-derive = "18"
 jsonrpc-http-server = "18"
 jsonrpc-server-utils = "18"
-secp256k1 = { version = "0.19", features = ["recovery"] }
+secp256k1 = { version = "0.20", features = ["recovery"] }
 faster-hex = "0.6"
 env_logger = "0.6"
 crossbeam-channel = "0.5.1"
@@ -62,7 +66,7 @@ tui = "0.6.0"
 termion = "1.5"
 
 [build-dependencies]
-ckb-build-info = "=0.101.3"
+ckb-build-info = "=0.101.4"
 
 [workspace]
-members = ["ckb-sdk", "ckb-index", "ckb-sdk-types", "plugin-protocol"]
+members = ["ckb-index", "plugin-protocol"]

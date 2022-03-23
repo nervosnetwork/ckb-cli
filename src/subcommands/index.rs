@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ckb_index::IndexDatabase;
-use ckb_sdk::{GenesisInfo, HttpRpcClient};
+use ckb_sdk::GenesisInfo;
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -13,6 +13,7 @@ use clap::{App, ArgMatches};
 
 use super::{CliSubCommand, Output};
 use crate::utils::index::{with_db, IndexController, IndexRequest, IndexThreadState};
+use crate::utils::rpc::HttpRpcClient;
 
 pub struct IndexSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -60,7 +61,8 @@ impl<'a> IndexSubCommand<'a> {
                 .get_block_by_number(0)?
                 .expect("Can not get genesis block?")
                 .into();
-            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+            self.genesis_info =
+                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
         }
         Ok(self.genesis_info.clone().unwrap())
     }

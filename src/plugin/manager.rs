@@ -11,15 +11,14 @@ use std::thread::{self, JoinHandle};
 
 use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
-use ckb_sdk::{
-    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
-    HttpRpcClient,
-};
+use ckb_sdk::bip32::{ChildNumber, DerivationPath};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
+use ckb_wallet::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use crossbeam_channel::{bounded, select, Sender};
 
 use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;
+use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
     JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,

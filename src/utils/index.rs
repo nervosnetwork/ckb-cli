@@ -6,8 +6,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use super::other::{get_network_type, sync_to_tip};
+use super::rpc::HttpRpcClient;
 use ckb_index::{with_index_db, IndexDatabase};
-use ckb_sdk::{GenesisInfo, HttpRpcClient};
+use ckb_sdk::GenesisInfo;
 use ckb_types::{
     core::{service::Request, HeaderView},
     prelude::*,

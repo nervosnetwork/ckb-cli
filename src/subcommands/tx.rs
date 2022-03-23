@@ -9,8 +9,8 @@ use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, HumanCapacity,
-    MultisigConfig, NetworkType, SignerFn, TxHelper,
+    unlock::MultisigConfig,
+    Address, AddressPayload, CodeHashIndex, GenesisInfo, HumanCapacity, NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -36,6 +36,8 @@ use crate::utils::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
         get_network_type, get_privkey_signer, get_to_data, read_password,
     },
+    rpc::HttpRpcClient,
+    tx_helper::{SignerFn, TxHelper},
 };
 
 pub struct TxSubCommand<'a> {
@@ -179,7 +181,7 @@ impl<'a> TxSubCommand<'a> {
                             .long("lock-arg")
                             .takes_value(true)
                             .required(true)
-                            .validator(|input| match HexParser.parse(&input) {
+                            .validator(|input| match HexParser.parse(input) {
                                 Ok(ref data) if data.len() == 20 || data.len() == 28 => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
                                 Err(err) => Err(err),
@@ -191,7 +193,7 @@ impl<'a> TxSubCommand<'a> {
                             .long("signature")
                             .takes_value(true)
                             .required(true)
-                            .validator(|input| match HexParser.parse(&input) {
+                            .validator(|input| match HexParser.parse(input) {
                                 Ok(ref data) if data.len() == SECP_SIGNATURE_SIZE => Ok(()),
                                 Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
                                 Err(err) => Err(err),
@@ -363,9 +365,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
-                    .map(|address| address.payload().clone())
+                    .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
                     .collect::<Vec<_>>();
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
+                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
+                    .map_err(|err| err.to_string())?;
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_multisig_config(cfg);
                     Ok(())
@@ -453,11 +456,11 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .value_of("from-account")
                     .map(|input| {
                         FixedHashParser::<H160>::default()
-                            .parse(&input)
+                            .parse(input)
                             .or_else(|err| {
                                 let result: Result<Address, String> = AddressParser::new_sighash()
                                     .set_network(network)
-                                    .parse(&input);
+                                    .parse(input);
                                 result
                                     .map(|address| {
                                         H160::from_slice(&address.payload().args()).unwrap()
@@ -574,9 +577,10 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
-                    .map(|address| address.payload().clone())
+                    .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
                     .collect::<Vec<_>>();
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)?;
+                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
+                    .map_err(|err| err.to_string())?;
                 let address_payload = cfg.to_address_payload(since_absolute_epoch_opt);
                 let lock_script = Script::from(&address_payload);
                 let resp = serde_json::json!({
@@ -724,7 +728,7 @@ impl ReprTxHelper {
                 .map(|(lock_arg, cfg)| {
                     (
                         lock_arg.clone(),
-                        ReprMultisigConfig::new(cfg.clone(), network),
+                        ReprMultisigConfig::new((*cfg).clone(), network),
                     )
                 })
                 .collect(),
@@ -792,7 +796,10 @@ impl ReprMultisigConfig {
         let sighash_addresses = cfg
             .sighash_addresses()
             .iter()
-            .map(|payload| Address::new(network, payload.clone(), false).to_string())
+            .map(|hash160| {
+                let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                Address::new(network, payload, false).to_string()
+            })
             .collect();
         ReprMultisigConfig {
             sighash_addresses,
@@ -809,9 +816,20 @@ impl TryFrom<ReprMultisigConfig> for MultisigConfig {
             .sighash_addresses
             .into_iter()
             .map(|address_string| {
-                Address::from_str(&address_string).map(|addr| addr.payload().clone())
+                if let AddressPayload::Short { index, hash } =
+                    Address::from_str(&address_string).map(|addr| addr.payload().clone())?
+                {
+                    if index == CodeHashIndex::Sighash {
+                        Ok(hash)
+                    } else {
+                        Err(format!("invalid address: {}", address_string))
+                    }
+                } else {
+                    Err(format!("invalid address: {}", address_string))
+                }
             })
             .collect::<Result<Vec<_>, String>>()?;
         MultisigConfig::new_with(sighash_addresses, repr.require_first_n, repr.threshold)
+            .map_err(|err| err.to_string())
     }
 }

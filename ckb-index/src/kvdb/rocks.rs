@@ -142,7 +142,7 @@ impl<'a> TxnIter<'a> {
         let mode = IteratorMode::From(key_start, Direction::Forward);
         let iter = txn
             .db
-            .iterator_cf(&txn.cf, mode)
+            .iterator_cf(txn.cf, mode)
             .expect("RocksReader iterator_cf failed");
         let mut reader_iter = ReaderIter { iter };
         let next_mem_pair = txn

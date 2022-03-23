@@ -3,13 +3,15 @@ use self::command::TransactArgs;
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::index::{with_db, IndexController};
 use crate::utils::other::{get_max_mature_number, get_privkey_signer, is_mature, read_password};
+use crate::utils::rpc::HttpRpcClient;
+use crate::utils::tx_helper::SignerFn;
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_hash::new_blake2b;
 use ckb_index::{IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
-    GenesisInfo, HttpRpcClient, SignerFn,
+    GenesisInfo,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -251,7 +253,7 @@ impl<'a> DAOSubCommand<'a> {
             blake2b.update(&init_witness.as_bytes());
             for other_witness in witnesses.iter().skip(1) {
                 blake2b.update(&(other_witness.len() as u64).to_le_bytes());
-                blake2b.update(&other_witness);
+                blake2b.update(other_witness);
             }
             let mut message = [0u8; 32];
             blake2b.finalize(&mut message);

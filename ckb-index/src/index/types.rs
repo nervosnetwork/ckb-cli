@@ -401,7 +401,7 @@ impl BlockDeltaInfo {
 
         // Add recent header
         txn.put_pair(Key::pair_recent_header(&self.header_info));
-        txn.put_pair(Key::pair_block_delta(&self));
+        txn.put_pair(Key::pair_block_delta(self));
         // Clean old header infos
         for old_number in &self.old_headers {
             txn.remove(Key::RecentHeader(*old_number).to_bytes());

@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, NetworkType};
+use ckb_sdk::{Address, AddressPayload, GenesisInfo, HumanCapacity, NetworkType};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView},
@@ -28,6 +28,7 @@ use crate::utils::{
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
     index::{IndexController, IndexRequest},
     other::get_network_type,
+    rpc::HttpRpcClient,
 };
 
 pub struct ApiServerSubCommand<'a> {
@@ -227,7 +228,8 @@ impl ApiRpcImpl {
                 .get_block_by_number(0)?
                 .expect("Can not get genesis block?")
                 .into();
-            *genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
+            *genesis_info =
+                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
         }
         Ok(genesis_info.clone().unwrap())
     }
