@@ -93,11 +93,11 @@ impl<'a> WalletSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase) -> T,
     {
-        let genesis_info = self.genesis_info()?;
+        let genesis_header = self.genesis_info()?.header().clone();
         with_db(
             func,
             self.rpc_client,
-            genesis_info,
+            genesis_header,
             &self.index_dir,
             self.index_controller.clone(),
             self.wait_for_sync,
@@ -287,8 +287,8 @@ impl<'a> WalletSubCommand<'a> {
         // For check index database is ready
         self.with_db(|_| ())?;
         let index_dir = self.index_dir.clone();
-        let genesis_hash = genesis_info.header().hash();
-        let genesis_info_clone = genesis_info.clone();
+        let genesis_header = genesis_info.header().clone();
+        let genesis_hash = genesis_header.hash();
 
         // The lock hashes for search live cells
         let mut lock_hashes = vec![Script::from(&from_address_payload).calc_script_hash()];
@@ -382,7 +382,7 @@ impl<'a> WalletSubCommand<'a> {
             sync_to_tip(&self.index_controller)?;
         }
         if let Err(err) = with_index_db(&index_dir, genesis_hash.unpack(), |backend, cf| {
-            IndexDatabase::from_db(backend, cf, network_type, genesis_info_clone, false)
+            IndexDatabase::from_db(backend, cf, network_type, genesis_header, false)
                 .map(|db| {
                     for lock_hash in lock_hashes {
                         db.get_live_cells_by_lock(lock_hash, None, &mut terminator);

@@ -308,11 +308,11 @@ impl<'a> DAOSubCommand<'a> {
     where
         F: FnOnce(IndexDatabase) -> T,
     {
-        let genesis_info = self.genesis_info.clone();
+        let genesis_header = self.genesis_info.header().clone();
         with_db(
             func,
             self.rpc_client,
-            genesis_info,
+            genesis_header,
             &self.index_dir,
             self.index_controller.clone(),
             self.wait_for_sync,

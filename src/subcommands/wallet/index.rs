@@ -116,11 +116,11 @@ fn process(
         .expect("Can not get genesis block?")
         .into();
     let network_type = get_network_type(rpc_client)?;
-    let genesis_info = GenesisInfo::from_block(&genesis_block).unwrap();
-    let genesis_hash: H256 = genesis_info.header().hash().unpack();
+    let genesis_header = genesis_block.header();
+    let genesis_hash: H256 = genesis_header.hash().unpack();
 
     let mut next_get_tip = Instant::now();
-    let mut tip_header = genesis_info.header().clone();
+    let mut tip_header = genesis_block.header();
     let mut next_number = 0;
     loop {
         if next_get_tip <= Instant::now() {
@@ -131,9 +131,14 @@ fn process(
 
         if tip_header.number() >= next_number {
             match with_index_db(index_dir, genesis_hash.clone(), |backend, cf| {
-                let mut db =
-                    IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)
-                        .unwrap();
+                let mut db = IndexDatabase::from_db(
+                    backend,
+                    cf,
+                    network_type,
+                    genesis_header.clone(),
+                    false,
+                )
+                .unwrap();
                 if db.last_number().is_none() {
                     db.apply_next_block(genesis_block.clone())
                         .expect("Apply genesis block failed");

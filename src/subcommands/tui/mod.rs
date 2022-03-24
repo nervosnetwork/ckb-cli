@@ -504,8 +504,13 @@ fn render_top_capacity<B: Backend>(
     let lines = if index.state().read().is_processing() {
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
         let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
-            let db =
-                IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)?;
+            let db = IndexDatabase::from_db(
+                backend,
+                cf,
+                network_type,
+                genesis_info.header().clone(),
+                false,
+            )?;
             Ok(db.get_top_n(50))
         });
         match capacity_list_result {
