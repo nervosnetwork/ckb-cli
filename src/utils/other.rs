@@ -6,11 +6,12 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
-use ckb_index::{LiveCellInfo, VERSION};
+use ckb_index::{CellIndex, LiveCellInfo, VERSION};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
+    traits::LiveCell,
     Address, AddressPayload, CodeHashIndex, GenesisInfo, NetworkType, SECP256K1,
 };
 use ckb_types::{
@@ -351,4 +352,26 @@ pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String>
         .value_of(name)
         .map(|s| s.to_string())
         .ok_or_else(|| format!("<{}> is required", name))
+}
+
+pub fn to_live_cell_info(cell: &LiveCell) -> LiveCellInfo {
+    let output_index: u32 = cell.out_point.index().unpack();
+    LiveCellInfo {
+        tx_hash: cell.out_point.tx_hash().unpack(),
+        output_index,
+        data_bytes: cell.output_data.len() as u64,
+        lock_hash: cell.output.lock().calc_script_hash().unpack(),
+        type_hashes: cell.output.type_().to_opt().map(|type_script| {
+            (
+                type_script.code_hash().unpack(),
+                type_script.calc_script_hash().unpack(),
+            )
+        }),
+        capacity: cell.output.capacity().unpack(),
+        number: cell.block_number,
+        index: CellIndex {
+            tx_index: cell.tx_index,
+            output_index,
+        },
+    }
 }

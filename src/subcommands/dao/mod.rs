@@ -1,42 +1,54 @@
-use self::builder::DAOBuilder;
 use self::command::TransactArgs;
-use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
-use crate::utils::index::{with_db, IndexController};
-use crate::utils::other::{get_max_mature_number, get_privkey_signer, is_mature, read_password};
+use crate::plugin::PluginManager;
+use crate::utils::cell_collector::LocalCellCollector;
+use crate::utils::index::IndexController;
+use crate::utils::other::{read_password, to_live_cell_info};
 use crate::utils::rpc::HttpRpcClient;
-use crate::utils::tx_helper::SignerFn;
+use crate::utils::signer::KeyStoreHandlerSigner;
 use byteorder::{ByteOrder, LittleEndian};
-use ckb_hash::new_blake2b;
-use ckb_index::{IndexDatabase, LiveCellInfo};
-use ckb_jsonrpc_types::{self as json_types, JsonBytes};
+use ckb_index::LiveCellInfo;
 use ckb_sdk::{
-    constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH},
+    constants::{DAO_TYPE_HASH, SIGHASH_TYPE_HASH},
+    rpc::CkbRpcClient,
+    traits::{
+        default_impls::{
+            DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
+        },
+        CellCollector, CellQueryOptions, Signer, ValueRangeOption,
+    },
+    tx_builder::{
+        dao::{
+            DaoDepositBuilder, DaoDepositReceiver, DaoPrepareBuilder, DaoWithdrawBuilder,
+            DaoWithdrawItem, DaoWithdrawReceiver,
+        },
+        CapacityBalancer, CapacityProvider, TxBuilder,
+    },
+    types::ScriptId,
+    unlock::{ScriptUnlocker, SecpSighashScriptSigner, SecpSighashUnlocker},
     GenesisInfo,
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{ScriptHashType, TransactionView},
-    packed::{self, Byte32, CellOutput, OutPoint, Script, WitnessArgs},
+    core::{FeeRate, ScriptHashType, TransactionView},
+    packed::{CellInput, OutPoint, Script, WitnessArgs},
     prelude::*,
-    {h256, H160, H256},
+    H160,
 };
-use itertools::Itertools;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-mod builder;
 mod command;
 mod util;
 
 // Should CLI handle "immature header problem"?
 pub struct DAOSubCommand<'a> {
-    rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
-    genesis_info: GenesisInfo,
-    index_dir: PathBuf,
-    index_controller: IndexController,
-    transact_args: Option<TransactArgs>,
-    wait_for_sync: bool,
+    rpc_client: &'a mut HttpRpcClient,
+    cell_collector: LocalCellCollector,
+    cell_dep_resolver: DefaultCellDepResolver,
+    header_dep_resolver: DefaultHeaderDepResolver,
+    tx_dep_provider: DefaultTransactionDependencyProvider,
+    base_balancer: CapacityBalancer,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -48,393 +60,177 @@ impl<'a> DAOSubCommand<'a> {
         index_controller: IndexController,
         wait_for_sync: bool,
     ) -> Self {
-        Self {
-            rpc_client,
-            plugin_mgr,
-            genesis_info,
+        let base_balancer = CapacityBalancer {
+            // TODO: get it from clap args
+            fee_rate: FeeRate::from_u64(1000),
+            capacity_provider: CapacityProvider {
+                lock_script: Script::default(),
+                init_witness_lock_field_size: 65,
+            },
+            force_small_change_as_fee: None,
+            has_dao_withdraw: false,
+        };
+        let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_client.url(), 10);
+        let cell_collector = LocalCellCollector::new(
             index_dir,
             index_controller,
-            transact_args: None,
+            HttpRpcClient::new(rpc_client.url().to_string()),
+            Some(genesis_info.header().clone()),
             wait_for_sync,
+        );
+        let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
+        let header_dep_resolver =
+            DefaultHeaderDepResolver::new(CkbRpcClient::new(rpc_client.url()));
+        Self {
+            plugin_mgr,
+            rpc_client,
+            cell_collector,
+            cell_dep_resolver,
+            header_dep_resolver,
+            tx_dep_provider,
+            base_balancer,
         }
     }
 
-    pub fn deposit(&mut self, capacity: u64) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let target_capacity = capacity + self.transact_args().tx_fee;
-        let cells = self.collect_sighash_cells(target_capacity)?;
-        let raw_transaction = self.build(cells).deposit(capacity);
-        self.sign(raw_transaction)
-    }
-
-    pub fn prepare(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let tx_fee = self.transact_args().tx_fee;
-        let lock_hash = self.transact_args().lock_hash();
-        let cells = {
-            let mut to_pay_fee = self.collect_sighash_cells(tx_fee)?;
-            let mut to_prepare = {
-                let deposit_cells = self.query_deposit_cells(lock_hash)?;
-                take_by_out_points(deposit_cells, &out_points)?
-            };
-            to_prepare.append(&mut to_pay_fee);
-            to_prepare
-        };
-        let raw_transaction = self.build(cells).prepare(self.rpc_client())?;
-        self.sign(raw_transaction)
-    }
-
-    pub fn withdraw(&mut self, out_points: Vec<OutPoint>) -> Result<TransactionView, String> {
-        self.check_db_ready()?;
-        let lock_hash = self.transact_args().lock_hash();
-        let cells = {
-            let prepare_cells = self.query_prepare_cells(lock_hash)?;
-            take_by_out_points(prepare_cells, &out_points)?
-        };
-        let raw_transaction = self.build(cells).withdraw(self.rpc_client())?;
-        self.sign(raw_transaction)
-    }
-
-    pub fn query_deposit_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_cells = self.collect_dao_cells(lock_hash)?;
-        assert!(dao_cells.iter().all(|cell| cell.data_bytes == 8));
-        let mut ret = Vec::with_capacity(dao_cells.len());
-        for cell in dao_cells {
-            if is_deposit_cell(self.rpc_client(), &cell)? {
-                ret.push(cell);
-            }
-        }
-        Ok(ret)
-    }
-
-    pub fn query_prepare_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_cells = self.collect_dao_cells(lock_hash)?;
-        assert!(dao_cells.iter().all(|cell| cell.data_bytes == 8));
-        let mut ret = Vec::with_capacity(dao_cells.len());
-        for cell in dao_cells {
-            if is_prepare_cell(self.rpc_client(), &cell)? {
-                ret.push(cell);
-            }
-        }
-        Ok(ret)
-    }
-
-    fn collect_dao_cells(&mut self, lock_hash: Byte32) -> Result<Vec<LiveCellInfo>, String> {
-        let dao_type_hash = self.dao_type_hash().clone();
-        self.with_db(|db| {
-            let cells_by_lock = db
-                .get_live_cells_by_lock(lock_hash, Some(0), |_, _| (false, true))
-                .into_iter()
-                .collect::<HashSet<_>>();
-            let cells_by_code = db
-                .get_live_cells_by_code(dao_type_hash.clone(), Some(0), |_, _| (false, true))
-                .into_iter()
-                .collect::<HashSet<_>>();
-            cells_by_lock
-                .intersection(&cells_by_code)
-                .sorted_by_key(|live| (live.number, live.index.tx_index, live.index.output_index))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-    }
-
-    fn collect_sighash_cells(&mut self, target_capacity: u64) -> Result<Vec<LiveCellInfo>, String> {
-        let from_address = self.transact_args().address.clone();
-        let mut enough = false;
-        let mut take_capacity = 0;
-        let max_mature_number = get_max_mature_number(self.rpc_client())?;
-        let terminator = |_, cell: &LiveCellInfo| {
-            if !(cell.type_hashes.is_none() && cell.data_bytes == 0)
-                && is_mature(cell, max_mature_number)
-            {
-                return (false, false);
-            }
-
-            take_capacity += cell.capacity;
-            if take_capacity == target_capacity
-                || take_capacity >= target_capacity + MIN_SECP_CELL_CAPACITY
-            {
-                enough = true;
-            }
-            (enough, true)
-        };
-
-        let cells: Vec<LiveCellInfo> = {
-            self.with_db(|db| {
-                db.get_live_cells_by_lock(
-                    Script::from(from_address.payload()).calc_script_hash(),
-                    None,
-                    terminator,
-                )
-            })?
-        };
-
-        if !enough {
-            return Err(format!(
-                "Capacity not enough: {} => {}",
-                from_address, take_capacity,
-            ));
-        }
-        Ok(cells)
-    }
-
-    fn build(&self, cells: Vec<LiveCellInfo>) -> DAOBuilder {
-        let tx_fee = self.transact_args().tx_fee;
-        DAOBuilder::new(self.genesis_info.clone(), tx_fee, cells)
-    }
-
-    fn sign(&mut self, transaction: TransactionView) -> Result<TransactionView, String> {
-        // 1. Install sighash lock script
-        let transaction = self.install_sighash_lock(transaction);
-
-        // 2. Install signed sighash witnesses
-        let transaction = self.install_sighash_witness(transaction)?;
-
-        Ok(transaction)
-    }
-
-    fn install_sighash_lock(&self, transaction: TransactionView) -> TransactionView {
-        let sighash_args = self.transact_args().sighash_args();
-        let genesis_info = &self.genesis_info;
-        let sighash_dep = genesis_info.sighash_dep();
-        let sighash_type_hash = genesis_info.sighash_type_hash();
-        let lock_script = Script::new_builder()
-            .hash_type(ScriptHashType::Type.into())
-            .code_hash(sighash_type_hash.clone())
-            .args(Bytes::from(sighash_args.as_bytes().to_vec()).pack())
-            .build();
-        let outputs = transaction
-            .outputs()
-            .into_iter()
-            .map(|output: CellOutput| output.as_builder().lock(lock_script.clone()).build())
-            .collect::<Vec<_>>();
-        transaction
-            .as_advanced_builder()
-            .set_outputs(outputs)
-            .cell_dep(sighash_dep)
-            .build()
-    }
-
-    fn install_sighash_witness(
-        &self,
-        transaction: TransactionView,
+    fn build_tx(
+        &mut self,
+        builder: &dyn TxBuilder,
+        args: &TransactArgs,
     ) -> Result<TransactionView, String> {
-        for output in transaction.outputs() {
-            assert_eq!(output.lock().hash_type(), ScriptHashType::Type.into());
-            assert_eq!(output.lock().args().len(), 20);
-            assert_eq!(output.lock().code_hash(), SIGHASH_TYPE_HASH.pack());
-        }
-        for witness in transaction.witnesses() {
-            if let Ok(w) = WitnessArgs::from_slice(witness.as_slice()) {
-                assert!(w.lock().is_none());
-            }
-        }
+        let lock_script: Script = args.address.payload().into();
+        let mut balancer = self.base_balancer.clone();
+        balancer.fee_rate = FeeRate::from_u64(args.fee_rate);
+        balancer.capacity_provider.lock_script = lock_script.clone();
 
-        let mut witnesses = transaction
-            .witnesses()
+        let signer: Box<dyn Signer> = if let Some(privkey) = args.privkey.as_ref() {
+            Box::new(privkey.clone())
+        } else {
+            let account =
+                H160::from_slice(lock_script.args().raw_data().as_ref()).expect("lock args");
+            let handler = self.plugin_mgr.keystore_handler();
+            let change_path = handler.root_key_path(account.clone())?;
+            let mut signer = KeyStoreHandlerSigner::new(
+                handler,
+                Box::new(DefaultTransactionDependencyProvider::new(
+                    self.rpc_client.url(),
+                    0,
+                )),
+            );
+            if self.plugin_mgr.keystore_require_password() {
+                signer.set_password(account.clone(), read_password(false, None)?);
+            }
+            signer.set_change_path(account, change_path.to_string());
+            Box::new(signer)
+        };
+
+        let script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
+        let sighash_unlocker = SecpSighashUnlocker::new(SecpSighashScriptSigner::new(signer));
+        let mut unlockers: HashMap<_, Box<dyn ScriptUnlocker>> = HashMap::new();
+        unlockers.insert(script_id, Box::new(sighash_unlocker));
+
+        let (tx, unlocked_groups) = builder
+            .build_unlocked(
+                &mut self.cell_collector,
+                &self.cell_dep_resolver,
+                &self.header_dep_resolver,
+                &self.tx_dep_provider,
+                &balancer,
+                &unlockers,
+            )
+            .map_err(|err| err.to_string())?;
+        assert!(unlocked_groups.is_empty());
+        Ok(tx)
+    }
+
+    pub fn deposit(
+        &mut self,
+        args: &TransactArgs,
+        capacity: u64,
+    ) -> Result<TransactionView, String> {
+        let lock_script: Script = args.address.payload().into();
+        let deposit_receiver = DaoDepositReceiver::new(lock_script, capacity);
+        let tx_builder = DaoDepositBuilder::new(vec![deposit_receiver]);
+        self.build_tx(&tx_builder, args)
+    }
+
+    pub fn prepare(
+        &mut self,
+        args: &TransactArgs,
+        out_points: Vec<OutPoint>,
+    ) -> Result<TransactionView, String> {
+        let mut balancer = self.base_balancer.clone();
+        balancer.capacity_provider.lock_script = args.address.payload().into();
+        let inputs = out_points
             .into_iter()
-            .map(|w| w.unpack())
-            .collect::<Vec<Bytes>>();
-        let init_witness = {
-            let init_witness = if witnesses[0].is_empty() {
-                WitnessArgs::default()
-            } else {
-                WitnessArgs::from_slice(&witnesses[0]).map_err(|err| err.to_string())?
-            };
-            init_witness
-                .as_builder()
-                .lock(Some(Bytes::from(&[0u8; 65][..])).pack())
-                .build()
-        };
-        let digest = {
-            let mut blake2b = new_blake2b();
-            blake2b.update(&transaction.hash().raw_data());
-            blake2b.update(&(init_witness.as_bytes().len() as u64).to_le_bytes());
-            blake2b.update(&init_witness.as_bytes());
-            for other_witness in witnesses.iter().skip(1) {
-                blake2b.update(&(other_witness.len() as u64).to_le_bytes());
-                blake2b.update(other_witness);
-            }
-            let mut message = [0u8; 32];
-            blake2b.finalize(&mut message);
-            H256::from(message)
-        };
-        let signature = {
-            let account = self.transact_args().sighash_args();
-            let mut signer = {
-                if let Some(ref privkey) = self.transact_args().privkey {
-                    get_privkey_signer(privkey.clone())
-                } else {
-                    let password = if self.plugin_mgr.keystore_require_password() {
-                        Some(read_password(false, None)?)
-                    } else {
-                        None
-                    };
-                    let new_client = HttpRpcClient::new(self.rpc_client.url().to_owned());
-                    get_keystore_signer(
-                        self.plugin_mgr.keystore_handler(),
-                        new_client,
-                        account.clone(),
-                        password,
-                    )
-                }
-            };
-            let accounts = vec![account].into_iter().collect::<HashSet<H160>>();
-            witnesses[0] = init_witness.as_bytes();
-            let new_tx_view = transaction
-                .as_advanced_builder()
-                .set_witnesses(witnesses.iter().map(|w| w.pack()).collect::<Vec<_>>())
-                .build();
-            signer(&accounts, &digest, &new_tx_view.data().into())?.expect("signer missed")
+            .map(|out_point| CellInput::new(out_point, 0))
+            .collect::<Vec<_>>();
+        let tx_builder = DaoPrepareBuilder::new(inputs);
+        self.build_tx(&tx_builder, args)
+    }
+
+    pub fn withdraw(
+        &mut self,
+        args: &TransactArgs,
+        out_points: Vec<OutPoint>,
+    ) -> Result<TransactionView, String> {
+        if out_points.is_empty() {
+            return Err("missing out poinst".to_string());
+        }
+        let lock_script: Script = args.address.payload().into();
+        let mut balancer = self.base_balancer.clone();
+        balancer.capacity_provider.lock_script = lock_script.clone();
+
+        let mut items = out_points
+            .into_iter()
+            .map(|out_point| DaoWithdrawItem::new(out_point, None))
+            .collect::<Vec<_>>();
+        items[0].init_witness = Some(
+            WitnessArgs::new_builder()
+                .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                .build(),
+        );
+        let receiver = DaoWithdrawReceiver::LockScript {
+            script: lock_script,
+            fee_rate: Some(FeeRate::from_u64(args.fee_rate)),
         };
 
-        witnesses[0] = init_witness
-            .as_builder()
-            .lock(Some(Bytes::from(signature[..].to_vec())).pack())
-            .build()
-            .as_bytes();
-
-        Ok(transaction
-            .as_advanced_builder()
-            .set_witnesses(witnesses.into_iter().map(|w| w.pack()).collect::<Vec<_>>())
-            .build())
+        let tx_builder = DaoWithdrawBuilder::new(items, receiver);
+        self.build_tx(&tx_builder, args)
     }
 
-    fn check_db_ready(&mut self) -> Result<(), String> {
-        self.with_db(|_| ())
+    fn query_dao_cells(
+        &mut self,
+        lock: Script,
+        is_deposit: bool,
+    ) -> Result<Vec<LiveCellInfo>, String> {
+        let dao_type_script = Script::new_builder()
+            .code_hash(DAO_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type.into())
+            .build();
+        let mut query = CellQueryOptions::new_lock(lock);
+        query.secondary_script = Some(dao_type_script);
+        query.data_len_range = Some(ValueRangeOption::new_exact(8));
+        let (cells, _) = self
+            .cell_collector
+            .collect_live_cells(&query, false)
+            .map_err(|err| err.to_string())?;
+        let cell_filter = if is_deposit {
+            |block_number| block_number == 0
+        } else {
+            |block_number| block_number != 0
+        };
+        Ok(cells
+            .iter()
+            .filter(|cell| cell_filter(LittleEndian::read_u64(&cell.output_data.as_ref()[0..8])))
+            .map(to_live_cell_info)
+            .collect::<Vec<_>>())
     }
 
-    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
-    where
-        F: FnOnce(IndexDatabase) -> T,
-    {
-        let genesis_header = self.genesis_info.header().clone();
-        with_db(
-            func,
-            self.rpc_client,
-            genesis_header,
-            &self.index_dir,
-            self.index_controller.clone(),
-            self.wait_for_sync,
-        )
+    pub fn query_deposit_cells(&mut self, lock: Script) -> Result<Vec<LiveCellInfo>, String> {
+        self.query_dao_cells(lock, true)
     }
 
-    fn transact_args(&self) -> &TransactArgs {
-        self.transact_args.as_ref().expect("exist")
+    pub fn query_prepare_cells(&mut self, lock: Script) -> Result<Vec<LiveCellInfo>, String> {
+        self.query_dao_cells(lock, false)
     }
-
-    fn dao_type_hash(&self) -> &Byte32 {
-        self.genesis_info.dao_type_hash()
-    }
-
-    pub(crate) fn rpc_client(&mut self) -> &mut HttpRpcClient {
-        &mut self.rpc_client
-    }
-}
-
-// TODO remove the duplicated function later
-fn get_keystore_signer(
-    keystore: KeyStoreHandler,
-    mut client: HttpRpcClient,
-    account: H160,
-    password: Option<String>,
-) -> SignerFn {
-    Box::new(
-        move |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
-            if lock_args.contains(&account) {
-                if message == &h256!("0x0") {
-                    Ok(Some([0u8; 65]))
-                } else {
-                    let path = keystore.root_key_path(account.clone())?;
-                    let sign_target = if keystore.has_account_in_default(account.clone())? {
-                        SignTarget::AnyData(Default::default())
-                    } else {
-                        let inputs = tx
-                            .inputs
-                            .iter()
-                            .map(|input| {
-                                let tx_hash = &input.previous_output.tx_hash;
-                                client
-                                    .get_transaction(tx_hash.clone())?
-                                    .and_then(|tx_with_status| {
-                                        tx_with_status.transaction.map(|tx| tx.inner)
-                                    })
-                                    .map(packed::Transaction::from)
-                                    .map(json_types::Transaction::from)
-                                    .ok_or_else(|| format!("transaction not exists: {:x}", tx_hash))
-                            })
-                            .collect::<Result<Vec<_>, String>>()?;
-                        SignTarget::Transaction {
-                            tx: tx.clone(),
-                            inputs,
-                            change_path: path.to_string(),
-                        }
-                    };
-                    let data = keystore.sign(
-                        account.clone(),
-                        &path,
-                        message.clone(),
-                        sign_target,
-                        password.clone(),
-                        true,
-                    )?;
-                    if data.len() != 65 {
-                        Err(format!(
-                            "Invalid signature data lenght: {}, data: {:?}",
-                            data.len(),
-                            data
-                        ))
-                    } else {
-                        let mut data_bytes = [0u8; 65];
-                        data_bytes.copy_from_slice(&data[..]);
-                        Ok(Some(data_bytes))
-                    }
-                }
-            } else {
-                Ok(None)
-            }
-        },
-    )
-}
-
-fn take_by_out_points(
-    cells: Vec<LiveCellInfo>,
-    out_points: &[OutPoint],
-) -> Result<Vec<LiveCellInfo>, String> {
-    let mut set = out_points.iter().collect::<HashSet<_>>();
-    let takes = cells
-        .into_iter()
-        .filter(|cell| set.remove(&cell.out_point()))
-        .collect::<Vec<_>>();
-    if !set.is_empty() {
-        return Err(format!("cells are not found: {:?}", set));
-    }
-    Ok(takes)
-}
-
-fn is_deposit_cell(
-    rpc_client: &mut HttpRpcClient,
-    dao_cell: &LiveCellInfo,
-) -> Result<bool, String> {
-    get_cell_data(rpc_client, dao_cell)
-        .map(|content| LittleEndian::read_u64(&content.as_bytes()[0..8]) == 0)
-}
-
-fn is_prepare_cell(
-    rpc_client: &mut HttpRpcClient,
-    dao_cell: &LiveCellInfo,
-) -> Result<bool, String> {
-    get_cell_data(rpc_client, dao_cell)
-        .map(|content| LittleEndian::read_u64(&content.as_bytes()[0..8]) != 0)
-}
-
-fn get_cell_data(
-    rpc_client: &mut HttpRpcClient,
-    dao_cell: &LiveCellInfo,
-) -> Result<JsonBytes, String> {
-    let cell_info = rpc_client
-        .get_live_cell(dao_cell.out_point(), true)?
-        .cell
-        .ok_or_else(|| format!("cell is not found: {:?}", dao_cell.out_point()))?;
-    Ok(cell_info.data.unwrap().content)
 }
