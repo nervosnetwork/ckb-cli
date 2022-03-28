@@ -48,7 +48,6 @@ pub struct DAOSubCommand<'a> {
     cell_dep_resolver: DefaultCellDepResolver,
     header_dep_resolver: DefaultHeaderDepResolver,
     tx_dep_provider: DefaultTransactionDependencyProvider,
-    base_balancer: CapacityBalancer,
 }
 
 impl<'a> DAOSubCommand<'a> {
@@ -60,15 +59,6 @@ impl<'a> DAOSubCommand<'a> {
         index_controller: IndexController,
         wait_for_sync: bool,
     ) -> Self {
-        let base_balancer = CapacityBalancer {
-            // TODO: get it from clap args
-            fee_rate: FeeRate::from_u64(1000),
-            capacity_provider: CapacityProvider {
-                lock_script: Script::default(),
-                init_witness_lock_field_size: 65,
-            },
-            force_small_change_as_fee: None,
-        };
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_client.url(), 10);
         let cell_collector = LocalCellCollector::new(
             index_dir,
@@ -87,7 +77,6 @@ impl<'a> DAOSubCommand<'a> {
             cell_dep_resolver,
             header_dep_resolver,
             tx_dep_provider,
-            base_balancer,
         }
     }
 
@@ -97,9 +86,14 @@ impl<'a> DAOSubCommand<'a> {
         args: &TransactArgs,
     ) -> Result<TransactionView, String> {
         let lock_script: Script = args.address.payload().into();
-        let mut balancer = self.base_balancer.clone();
-        balancer.fee_rate = FeeRate::from_u64(args.fee_rate);
-        balancer.capacity_provider.lock_script = lock_script.clone();
+        let balancer = CapacityBalancer {
+            fee_rate: FeeRate::from_u64(args.fee_rate),
+            capacity_provider: CapacityProvider {
+                lock_script: lock_script.clone(),
+                init_witness_lock_field_size: 65,
+            },
+            force_small_change_as_fee: None,
+        };
 
         let signer: Box<dyn Signer> = if let Some(privkey) = args.privkey.as_ref() {
             Box::new(privkey.clone())
@@ -157,8 +151,6 @@ impl<'a> DAOSubCommand<'a> {
         args: &TransactArgs,
         out_points: Vec<OutPoint>,
     ) -> Result<TransactionView, String> {
-        let mut balancer = self.base_balancer.clone();
-        balancer.capacity_provider.lock_script = args.address.payload().into();
         let inputs = out_points
             .into_iter()
             .map(|out_point| CellInput::new(out_point, 0))
@@ -176,9 +168,6 @@ impl<'a> DAOSubCommand<'a> {
             return Err("missing out poinst".to_string());
         }
         let lock_script: Script = args.address.payload().into();
-        let mut balancer = self.base_balancer.clone();
-        balancer.capacity_provider.lock_script = lock_script.clone();
-
         let mut items = out_points
             .into_iter()
             .map(|out_point| DaoWithdrawItem::new(out_point, None))
