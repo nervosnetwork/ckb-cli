@@ -4,15 +4,10 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
     rpc::HttpRpcClient,
 };
-use ckb_dao_utils::extract_dao_data;
 use ckb_index::LiveCellInfo;
+use ckb_sdk::util::calculate_dao_maximum_withdraw4;
 use ckb_types::core::{Capacity, TransactionView};
-use ckb_types::packed::CellOutput;
-use ckb_types::{
-    core::{EpochNumber, EpochNumberWithFraction, HeaderView},
-    packed,
-    prelude::*,
-};
+use ckb_types::{core::HeaderView, packed, prelude::*};
 
 pub(crate) fn calculate_dao_maximum_withdraw(
     rpc_client: &mut HttpRpcClient,
@@ -85,21 +80,6 @@ pub(crate) fn calculate_dao_maximum_withdraw(
     ))
 }
 
-pub(crate) fn calculate_dao_maximum_withdraw4(
-    deposit_header: &HeaderView,
-    prepare_header: &HeaderView,
-    output: &CellOutput,
-    occupied_capacity: u64,
-) -> u64 {
-    let (deposit_ar, _, _, _) = extract_dao_data(deposit_header.dao());
-    let (prepare_ar, _, _, _) = extract_dao_data(prepare_header.dao());
-    let output_capacity: Capacity = output.capacity().unpack();
-    let counted_capacity = output_capacity.as_u64() - occupied_capacity;
-    let withdraw_counted_capacity =
-        u128::from(counted_capacity) * u128::from(prepare_ar) / u128::from(deposit_ar);
-    occupied_capacity + withdraw_counted_capacity as u64
-}
-
 pub(crate) fn send_transaction(
     rpc_client: &mut HttpRpcClient,
     transaction: TransactionView,
@@ -116,31 +96,6 @@ pub(crate) fn send_transaction(
 
     let resp = rpc_client.send_transaction(transaction.data(), None)?;
     Ok(Output::new_output(resp))
-}
-
-pub(crate) fn minimal_unlock_point(
-    deposit_header: &HeaderView,
-    prepare_header: &HeaderView,
-) -> EpochNumberWithFraction {
-    const LOCK_PERIOD_EPOCHES: EpochNumber = 180;
-
-    // https://github.com/nervosnetwork/ckb-system-scripts/blob/master/c/dao.c#L182-L223
-    let deposit_point = deposit_header.epoch();
-    let prepare_point = prepare_header.epoch();
-    let prepare_fraction = prepare_point.index() * deposit_point.length();
-    let deposit_fraction = deposit_point.index() * prepare_point.length();
-    let passed_epoch_cnt = if prepare_fraction > deposit_fraction {
-        prepare_point.number() - deposit_point.number() + 1
-    } else {
-        prepare_point.number() - deposit_point.number()
-    };
-    let rest_epoch_cnt =
-        (passed_epoch_cnt + (LOCK_PERIOD_EPOCHES - 1)) / LOCK_PERIOD_EPOCHES * LOCK_PERIOD_EPOCHES;
-    EpochNumberWithFraction::new(
-        deposit_point.number() + rest_epoch_cnt,
-        deposit_point.index(),
-        deposit_point.length(),
-    )
 }
 
 #[cfg(test)]
