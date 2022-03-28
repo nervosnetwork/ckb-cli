@@ -18,8 +18,10 @@ ckb-script = "=0.101.4"
 ckb-resource = "=0.101.4"
 ckb-dao-utils = "=0.101.4"
 ckb-chain-spec = "=0.101.4"
-ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
-ckb-wallet = { git = "https://github.com/TheWaWaR/ckb-wallet.git" }
+# ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
+# ckb-wallet = { git = "https://github.com/TheWaWaR/ckb-wallet.git" }
+ckb-sdk = { path = "/home/weet/projects/thewawar/ckb-sdk" }
+ckb-wallet = { path = "/home/weet/projects/thewawar/ckb-wallet" }
 ckb-mock-tx-types = "0.2.0"
 ckb-index = { path = "ckb-index", version = "=0.101.4" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.101.4" }

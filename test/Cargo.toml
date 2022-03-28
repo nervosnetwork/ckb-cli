@@ -13,15 +13,12 @@ log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-ckb-sdk = { path = "../ckb-sdk" }
+# ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
+ckb-sdk = { path = "/home/weet/projects/thewawar/ckb-sdk" }
 ckb-types = "=0.101.4"
 ckb-app-config = "=0.101.4"
 ckb-chain-spec = "=0.101.4"
-ckb-crypto = { version = "=0.101.4", features = ["secp"] }
-ckb-hash = "=0.101.4"
 regex = "1.1.6"
-tentacle-secio = "=0.5.0"
-tentacle-multiaddr = "=0.3.0"
 
 # Prevent this from interfering with workspaces
 [workspace]

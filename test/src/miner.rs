@@ -1,6 +1,6 @@
 use crate::util::temp_dir;
 use ckb_app_config::BlockAssemblerConfig;
-use ckb_sdk::{Address, AddressPayload, HttpRpcClient, NetworkType};
+use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
 use ckb_types::packed::Block;
 use ckb_types::{H160, H256};
 use std::fs;
@@ -17,7 +17,7 @@ message = "0x"
 "#;
 
 pub struct Miner {
-    rpc: Mutex<HttpRpcClient>,
+    rpc: Mutex<CkbRpcClient>,
     privkey_path: (TempDir, String),
 }
 
@@ -27,7 +27,7 @@ impl Miner {
         let privkey_path = tempdir.path().join("pk");
         fs::write(&privkey_path, MINER_PRIVATE_KEY).unwrap();
         Self {
-            rpc: Mutex::new(HttpRpcClient::new(uri)),
+            rpc: Mutex::new(CkbRpcClient::new(uri.as_str())),
             privkey_path: (tempdir, privkey_path.to_string_lossy().to_string()),
         }
     }
@@ -44,7 +44,7 @@ impl Miner {
         self.rpc
             .lock()
             .unwrap()
-            .submit_block(work_id.to_string(), block)
+            .submit_block(work_id.to_string(), block.into())
             .expect("RPC submit_block")
     }
 

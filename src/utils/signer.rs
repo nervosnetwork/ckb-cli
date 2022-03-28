@@ -108,7 +108,7 @@ impl KeyStoreHandlerSigner {
         Ok(())
     }
     fn get_id_info(&self, id: &[u8]) -> Option<(H160, DerivationPath, Option<KeyChain>, H160)> {
-        if id.len() != 16 {
+        if id.len() != 20 {
             return None;
         }
         let mut buf = [0u8; 20];
