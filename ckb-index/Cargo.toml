@@ -13,6 +13,5 @@ bincode = "1.1.4"
 log = "0.4.6"
 failure = "0.1.5"
 ckb-types = "=0.101.4"
-# ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
-ckb-sdk = { path = "/home/weet/projects/thewawar/ckb-sdk" }
+ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
 rocksdb = { package = "ckb-rocksdb", version = "=0.16.1", features = ["snappy"] }

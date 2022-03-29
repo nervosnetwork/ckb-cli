@@ -109,14 +109,20 @@ impl CellCollector for LocalCellCollector {
 
         if total_capacity < query.min_total_capacity {
             let locked_cells = self.locked_cells.clone();
+            // NOTE: order is ignored in current cell collector implementation
+            let mut limit = query.limit.unwrap_or(u32::max_value());
             let terminator = |_, info: &LiveCellInfo| {
-                if total_capacity >= query.min_total_capacity {
+                if total_capacity >= query.min_total_capacity || limit == 0 {
                     (true, false)
                 } else if locked_cells.contains(&(info.tx_hash.clone(), info.output_index)) {
                     (false, false)
                 } else if match_cell(info, query, max_mature_number) {
                     total_capacity += info.capacity;
-                    (total_capacity >= query.min_total_capacity, true)
+                    limit -= 1;
+                    (
+                        total_capacity >= query.min_total_capacity || limit == 0,
+                        true,
+                    )
                 } else {
                     (false, false)
                 }

@@ -136,14 +136,6 @@ pub fn capacity<'a>() -> Arg<'a> {
         .about("The capacity (unit: CKB, format: 123.335)")
 }
 
-pub fn tx_fee<'a>() -> Arg<'a> {
-    Arg::with_name("tx-fee")
-        .long("tx-fee")
-        .takes_value(true)
-        .validator(|input| CapacityParser.validate(input))
-        .about("The transaction fee capacity (unit: CKB, format: 0.0001)")
-}
-
 pub fn fee_rate<'a>() -> Arg<'a> {
     Arg::with_name("fee-rate")
         .long("fee-rate")

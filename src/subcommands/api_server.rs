@@ -422,7 +422,7 @@ fn internal_err(message: String) -> RpcError {
 #[serde(deny_unknown_fields)]
 pub struct HttpTransferArgs {
     pub capacity: u64,
-    pub tx_fee: u64,
+    pub fee_rate: u64,
     pub to_address: String,
     pub from_locked_address: Option<String>,
     pub to_data: Option<Bytes>,
@@ -431,7 +431,7 @@ pub struct HttpTransferArgs {
 impl HttpTransferArgs {
     pub fn into_full_args(self, privkey_path: String) -> TransferArgs {
         let capacity = HumanCapacity::from(self.capacity).to_string();
-        let tx_fee = HumanCapacity::from(self.tx_fee).to_string();
+        let fee_rate = self.fee_rate.to_string();
         TransferArgs {
             privkey_path: Some(privkey_path),
             from_account: None,
@@ -440,7 +440,7 @@ impl HttpTransferArgs {
             derive_receiving_address_length: None,
             derive_change_address: None,
             capacity,
-            tx_fee,
+            fee_rate,
             to_address: self.to_address,
             to_data: self.to_data,
             is_type_id: false,

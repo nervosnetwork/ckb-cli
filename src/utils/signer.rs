@@ -77,16 +77,49 @@ impl KeyStoreHandlerSigner {
     pub fn set_change_path(&mut self, account: H160, change_path: String) {
         self.change_paths.insert(account, change_path);
     }
+    // pub fn get_password(&self, account: &H160) -> Option<&String> {
+    //     self.passwords.get(account)
+    // }
+    // pub fn get_change_path(&self, account: &H160) -> Option<&String> {
+    //     self.change_paths.get(account)
+    // }
 
     pub fn cache_key_set(
+        &mut self,
+        account: H160,
+        external_max_len: u32,
+        change_last: H160,
+        change_max_len: u32,
+    ) -> Result<(), String> {
+        let password = self.passwords.get(&account).cloned();
+        let key_set = self.handler.derived_key_set(
+            account.clone(),
+            external_max_len,
+            change_last,
+            change_max_len,
+            password,
+        )?;
+        for (path, pubkey_hash) in key_set.external {
+            self.hd_ids.insert(
+                pubkey_hash,
+                (path, Some(KeyChain::External), account.clone()),
+            );
+        }
+        for (path, pubkey_hash) in key_set.change {
+            self.hd_ids
+                .insert(pubkey_hash, (path, Some(KeyChain::Change), account.clone()));
+        }
+        Ok(())
+    }
+    pub fn cache_key_set_by_index(
         &mut self,
         account: H160,
         external_start: u32,
         external_length: u32,
         change_start: u32,
         change_length: u32,
-        password: Option<String>,
     ) -> Result<(), String> {
+        let password = self.passwords.get(&account).cloned();
         let key_set = self.handler.derived_key_set_by_index(
             account.clone(),
             external_start,

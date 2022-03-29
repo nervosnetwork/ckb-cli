@@ -13,8 +13,7 @@ log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-# ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
-ckb-sdk = { path = "/home/weet/projects/thewawar/ckb-sdk" }
+ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
 ckb-types = "=0.101.4"
 ckb-app-config = "=0.101.4"
 ckb-chain-spec = "=0.101.4"

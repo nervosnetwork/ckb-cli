@@ -88,9 +88,15 @@ impl<'a> DAOSubCommand<'a> {
         let lock_script: Script = args.address.payload().into();
         let balancer = CapacityBalancer {
             fee_rate: FeeRate::from_u64(args.fee_rate),
+            change_lock_script: None,
             capacity_provider: CapacityProvider {
-                lock_script: lock_script.clone(),
-                init_witness_lock_field_size: 65,
+                lock_scripts: vec![(
+                    lock_script.clone(),
+                    WitnessArgs::new_builder()
+                        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                        .build()
+                        .as_bytes(),
+                )],
             },
             force_small_change_as_fee: None,
         };
@@ -121,7 +127,7 @@ impl<'a> DAOSubCommand<'a> {
         let mut unlockers: HashMap<_, Box<dyn ScriptUnlocker>> = HashMap::new();
         unlockers.insert(script_id, Box::new(sighash_unlocker));
 
-        let (tx, unlocked_groups) = builder
+        let (tx, still_locked_groups) = builder
             .build_unlocked(
                 &mut self.cell_collector,
                 &self.cell_dep_resolver,
@@ -131,7 +137,7 @@ impl<'a> DAOSubCommand<'a> {
                 &unlockers,
             )
             .map_err(|err| err.to_string())?;
-        assert!(unlocked_groups.is_empty());
+        assert!(still_locked_groups.is_empty());
         Ok(tx)
     }
 
