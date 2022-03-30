@@ -488,7 +488,10 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     println!("> [send cell transaction]: {:#x}", calculated_tx_hash);
                     let tx_hash = self
                         .rpc_client
-                        .send_transaction(tx.data(), None)
+                        .send_transaction(
+                            tx.data(),
+                            Some(json_types::OutputsValidator::Passthrough),
+                        )
                         .map_err(|err| format!("Send transaction error: {}", err))?;
                     Some(tx_hash)
                 } else {
@@ -500,7 +503,10 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     println!("> [send dep group transaction]: {:#x}", calculated_tx_hash);
                     let tx_hash = self
                         .rpc_client
-                        .send_transaction(tx.data(), None)
+                        .send_transaction(
+                            tx.data(),
+                            Some(json_types::OutputsValidator::Passthrough),
+                        )
                         .map_err(|err| format!("Send transaction error: {}", err))?;
                     Some(tx_hash)
                 } else {
