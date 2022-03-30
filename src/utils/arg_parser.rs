@@ -14,10 +14,12 @@ use url::Url;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     util::zeroize_privkey,
-    Address, AddressPayload, HumanCapacity, NetworkType, OldAddress,
+    Address, AddressPayload, HumanCapacity, NetworkType, OldAddress, ScriptId,
 };
 use ckb_signer::MasterPrivKey;
 use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
+
+use crate::utils::cell_dep::CellDeps;
 
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
@@ -333,6 +335,21 @@ impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
 }
 
 #[derive(Default, Debug)]
+pub struct CellDepsParser;
+
+impl ArgParser<CellDeps> for CellDepsParser {
+    fn parse(&self, input: &str) -> Result<CellDeps, String> {
+        let path: PathBuf = FilePathParser::new(true).parse(input)?;
+        let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        if input.ends_with(".json") {
+            serde_json::from_str(content.as_str()).map_err(|err| err.to_string())
+        } else {
+            serde_yaml::from_str(content.as_str()).map_err(|err| err.to_string())
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct AddressParser {
     network: Option<NetworkType>,
     code_hash: Option<H256>,
@@ -443,6 +460,51 @@ impl ArgParser<OutPoint> for OutPointParser {
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
         Ok(OutPoint::new(tx_hash.pack(), index))
+    }
+}
+
+pub struct UdtTargetParser {
+    address_parser: AddressParser,
+}
+
+impl UdtTargetParser {
+    pub fn new(address_parser: AddressParser) -> UdtTargetParser {
+        UdtTargetParser { address_parser }
+    }
+}
+impl ArgParser<(Address, u128)> for UdtTargetParser {
+    fn parse(&self, input: &str) -> Result<(Address, u128), String> {
+        let parts = input.split(':').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid udt target: {}, format: {{address}}:{{amount}}",
+                input
+            ));
+        }
+        let address: Address = self.address_parser.parse(parts[0])?;
+        let amount = FromStrParser::<u128>::default().parse(parts[1])?;
+        Ok((address, amount))
+    }
+}
+
+pub struct ScriptIdParser;
+
+impl ArgParser<ScriptId> for ScriptIdParser {
+    fn parse(&self, input: &str) -> Result<ScriptId, String> {
+        let parts = input.split('-').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid script id: {}, format: {{code_hash}}-{{hash_type}}, `hash_type` can be: [type, data, data1]",
+                input
+            ));
+        }
+        let code_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
+        match parts[1] {
+            "type" => Ok(ScriptId::new_type(code_hash)),
+            "data" => Ok(ScriptId::new_data(code_hash)),
+            "data1" => Ok(ScriptId::new_data1(code_hash)),
+            _ => Err(format!("invalid hash_type: {}", parts[1])),
+        }
     }
 }
 

@@ -10,6 +10,7 @@ pub mod rpc;
 #[cfg(unix)]
 pub mod tui;
 pub mod tx;
+pub mod udt;
 pub mod util;
 pub mod wallet;
 
@@ -26,6 +27,7 @@ pub use plugin::PluginSubCommand;
 pub use pubsub::PubSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
+pub use udt::SudtSubCommand;
 pub use util::UtilSubCommand;
 pub use wallet::{start_index_thread, LiveCells, TransferArgs, WalletSubCommand};
 

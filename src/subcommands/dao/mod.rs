@@ -1,13 +1,8 @@
-use self::command::TransactArgs;
-use crate::plugin::PluginManager;
-use crate::utils::cell_collector::LocalCellCollector;
-use crate::utils::genesis_info::GenesisInfo;
-use crate::utils::index::IndexController;
-use crate::utils::other::{read_password, to_live_cell_info};
-use crate::utils::rpc::HttpRpcClient;
-use crate::utils::signer::KeyStoreHandlerSigner;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
+
 use ckb_index::LiveCellInfo;
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, SIGHASH_TYPE_HASH},
@@ -34,8 +29,14 @@ use ckb_types::{
     prelude::*,
     H160,
 };
-use std::collections::HashMap;
-use std::path::PathBuf;
+
+use self::command::TransactArgs;
+use crate::plugin::PluginManager;
+use crate::utils::cell_collector::LocalCellCollector;
+use crate::utils::index::IndexController;
+use crate::utils::other::{read_password, to_live_cell_info};
+use crate::utils::rpc::HttpRpcClient;
+use crate::utils::signer::KeyStoreHandlerSigner;
 
 mod command;
 mod util;

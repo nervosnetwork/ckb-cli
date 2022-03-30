@@ -687,7 +687,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 let network_type = get_network_type(self.rpc_client)?;
                 let lock_hash_opt = if lock_hash_opt.is_none() {
                     let address_opt: Option<Address> = AddressParser::default()
-                        .set_network_opt(Some(network_type))
+                        .set_network(network_type)
                         .from_matches_opt(m, "address")?;
                     address_opt
                         .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
