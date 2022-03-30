@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Error, Result};
 use chrono::prelude::*;
+use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
@@ -16,7 +17,13 @@ use ckb_sdk::{
 use ckb_sdk_types::deployment::{
     Cell, CellLocation, CellRecipe, DepGroup, DepGroupRecipe, Deployment, DeploymentRecipe,
 };
-use ckb_types::{bytes::Bytes, core::BlockView, packed, prelude::*, H160, H256};
+use ckb_types::{
+    bytes::Bytes,
+    core::{BlockView, Capacity, ScriptHashType},
+    packed,
+    prelude::*,
+    H160, H256,
+};
 use clap::{App, Arg, ArgMatches};
 
 use super::{CliSubCommand, Output};
@@ -680,6 +687,7 @@ fn load_cells(
 
     let mut output_index = 0;
     for cell in cells {
+        let config = cell.clone();
         let (data_hash, data) = match &cell.location {
             CellLocation::File { file } => {
                 let mut buf = Vec::new();
@@ -689,11 +697,45 @@ fn load_cells(
                 (data_hash, data)
             }
             CellLocation::OutPoint { tx_hash, index } => {
-                let (data_hash, data, _) = load_cell_info(rpc_client, tx_hash, *index)?;
-                (data_hash, data)
+                let (data_hash, data, info) = load_cell_info(rpc_client, tx_hash, *index)?;
+                let output = packed::CellOutput::from(info);
+                let occupied_capacity = output
+                    .occupied_capacity(Capacity::bytes(data.len()).unwrap())
+                    .unwrap()
+                    .as_u64();
+                let (old_type_id, old_type_id_args) =
+                    if let Some(type_script) = output.type_().to_opt() {
+                        if type_script.code_hash() == TYPE_ID_CODE_HASH.pack()
+                            && type_script.hash_type() == ScriptHashType::Type.into()
+                        {
+                            (
+                                Some(type_script.calc_script_hash().unpack()),
+                                Some(type_script.args().raw_data()),
+                            )
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    };
+                let change = StateChange::Unchanged {
+                    data,
+                    data_hash: data_hash.clone(),
+                    config,
+                    old_recipe: CellRecipe {
+                        name: cell.name.clone(),
+                        tx_hash: tx_hash.clone(),
+                        index: *index,
+                        occupied_capacity,
+                        data_hash,
+                        type_id: old_type_id,
+                    },
+                    old_type_id_args,
+                };
+                cell_changes.push(change);
+                continue;
             }
         };
-        let config = cell.clone();
         let change = if let Some((old_recipe, removed)) = cell_recipes_map.get_mut(&cell.name) {
             let old_recipe = old_recipe.clone();
             *removed = false;
