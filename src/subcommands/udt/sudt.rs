@@ -15,7 +15,10 @@ use ckb_sdk::{
     },
     tx_builder::{
         transfer::CapacityTransferBuilder,
-        udt::{UdtIssueBuilder, UdtIssueReceiver, UdtIssueType, UdtTransferReceiver},
+        udt::{
+            UdtIssueBuilder, UdtIssueReceiver, UdtIssueType, UdtTransferBuilder,
+            UdtTransferReceiver,
+        },
         CapacityBalancer, CapacityProvider, TransferAction, TxBuilder, TxBuilderError,
     },
     types::ScriptId,
@@ -100,7 +103,6 @@ impl<'a> SudtSubCommand<'a> {
         let arg_cheque_script_id = Arg::with_name("cheque-script-id")
             .long("cheque-script-id")
             .takes_value(true)
-            .required(true)
             .validator(|input| ScriptIdParser.validate(input))
             .about("The script id of cheque lock, format: {code_hash}-{hash_type}");
         let arg_acp_script_id = Arg::with_name("acp-script-id")
@@ -131,6 +133,9 @@ impl<'a> SudtSubCommand<'a> {
             .required(true)
             .validator(|input| CellDepsParser.validate(input))
             .about("The cell deps information (for resolve cell_dep by script id)");
+        let arg_to_cheque_address = Arg::with_name("to-cheque-address")
+            .long("to-cheque-address")
+            .about("If this flag is presented, all addresses in <udt-to> will be used as cheque lock's receiver script hash (and the owner is the sender), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque-script-id> argument must be given");
         App::new(name)
             .about("SUDT issue/transfer/.. operations")
             .subcommands(vec![
@@ -141,25 +146,36 @@ impl<'a> SudtSubCommand<'a> {
                     .arg(arg_udt_to.clone())
                     .arg(arg_cheque_script_id.clone())
                     .arg(arg_cell_deps.clone())
-                    .arg(
-                        Arg::with_name("to-cheque-address")
-                            .long("to-cheque-address")
-                            .about("If this flag is presented the address in <udt-to> will be used as cheque lock's receiver script hash (and the owner is the sender), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque-script-id> argument must be given")
-                    )
+                    .arg(arg_to_cheque_address.clone())
                     .arg(arg::fee_rate()),
                 App::new("transfer")
-                    .about("Transfer SUDT to an address")
+                    .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
                     .arg(arg_owner.clone())
+                    .arg(arg_sender.clone().about("SUDT Sender's address, the address type can be: [acp, sighash], if <capacity-provider> is not given sender will also use as capacity provider."))
                     .arg(arg_udt_script_id.clone())
                     .arg(arg_udt_to)
-                    .arg(arg_sender.clone())
+                    .arg(arg_cheque_script_id.clone())
                     .arg(arg_cell_deps.clone())
+                    .arg(arg_to_cheque_address)
+                    .arg(arg_capacity_provider.clone())
                     .arg(
-                        Arg::with_name("to-is-acp")
-                            .long("to-is-acp")
-                            .about("If the to address is anyone-can-pay address"),
+                        Arg::with_name("to-acp-address")
+                            .long("to-acp-address")
+                            .about("If all <udt-to> addresses is anyone-can-pay address"),
                     )
                     .arg(arg::fee_rate()),
+                App::new("get-amount")
+                    .about("Get SUDT total amount of an address")
+                    .arg(arg_owner.clone())
+                    .arg(arg_udt_script_id.clone())
+                    .arg(
+                        Arg::with_name("address")
+                            .long("address")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| AddressParser::default().validate(input))
+                            .about("The target address of those SUDT cells"),
+                    ),
                 App::new("new-empty-acp")
                     .about("Create a SUDT cell with 0 amount and an acp lock script")
                     .arg(arg_owner.clone())
@@ -180,7 +196,7 @@ impl<'a> SudtSubCommand<'a> {
                     .about("Claim all cheque cells identify by given lock script and type script")
                     .arg(arg_owner.clone())
                     .arg(arg_udt_script_id.clone())
-                    .arg(arg_cheque_script_id.clone())
+                    .arg(arg_cheque_script_id.clone().required(true))
                     .arg(arg_sender.clone())
                     .arg(arg_cell_deps.clone())
                     .arg(
@@ -201,6 +217,7 @@ impl<'a> SudtSubCommand<'a> {
                     .about("Withdraw cheque cells")
                     .arg(arg_owner)
                     .arg(arg_udt_script_id.clone())
+                    .arg(arg_cheque_script_id.clone().required(true))
                     .arg(arg_sender)
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
@@ -339,6 +356,16 @@ impl<'a> SudtSubCommand<'a> {
                 }
             })
             .collect::<Vec<_>>();
+        let receiver_infos = receivers
+            .iter()
+            .map(|receiver| {
+                let payload = AddressPayload::from(receiver.lock_script.clone());
+                serde_json::json!({
+                    "address": Address::new(network, payload, true).to_string(),
+                    "amount": receiver.amount,
+                })
+            })
+            .collect::<Vec<_>>();
         let builder = UdtIssueBuilder {
             udt_type: UdtIssueType::Sudt,
             script_id: udt_script_id,
@@ -362,11 +389,129 @@ impl<'a> SudtSubCommand<'a> {
 
         if debug {
             let rpc_tx_view = json_types::TransactionView::from(tx);
-            Ok(Output::new_output(rpc_tx_view))
+            let resp = serde_json::json!({
+                "transaction": rpc_tx_view,
+                "receivers": receiver_infos,
+            });
+            Ok(Output::new_output(resp))
         } else {
             let tx_hash: H256 = tx.hash().unpack();
-            Ok(Output::new_output(tx_hash))
+            let resp = serde_json::json!({
+                "transaction_hash": tx_hash,
+                "receivers": receiver_infos,
+            });
+            Ok(Output::new_output(resp))
         }
+    }
+
+    fn transfer(
+        &mut self,
+        owner: Address,
+        sender: Address,
+        udt_script_id: ScriptId,
+        udt_to_vec: Vec<(Address, u128)>,
+        cheque_script_id: Option<ScriptId>,
+        to_acp_address: bool,
+        capacity_provider: Option<Address>,
+        cell_deps: CellDeps,
+        fee_rate: u64,
+        network: NetworkType,
+        debug: bool,
+    ) -> Result<Output, String> {
+        let owner_script_hash = Script::from(&owner).calc_script_hash();
+        let sender_script = Script::from(&sender);
+        let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
+        let type_script = Script::new_builder()
+            .code_hash(udt_script_id.code_hash.pack())
+            .hash_type(udt_script_id.hash_type.into())
+            .args(owner_script_hash.as_bytes().pack())
+            .build();
+        let receivers = udt_to_vec
+            .into_iter()
+            .map(|(addr, amount)| {
+                let receiver_script = Script::from(&addr);
+                let (action, lock_script) = if let Some(script_id) = cheque_script_id.as_ref() {
+                    let receiver_script_hash = receiver_script.calc_script_hash();
+                    let mut script_args = vec![0u8; 40];
+                    script_args[0..20].copy_from_slice(&receiver_script_hash.as_slice()[0..20]);
+                    script_args[20..40].copy_from_slice(&owner_script_hash.as_slice()[0..20]);
+                    let script = Script::new_builder()
+                        .code_hash(script_id.code_hash.pack())
+                        .hash_type(script_id.hash_type.into())
+                        .args(Bytes::from(script_args).pack())
+                        .build();
+                    (TransferAction::Create, script)
+                } else if to_acp_address {
+                    (TransferAction::Update, receiver_script)
+                } else {
+                    (TransferAction::Create, receiver_script)
+                };
+                UdtTransferReceiver {
+                    action,
+                    lock_script,
+                    capacity: None,
+                    amount,
+                    extra_data: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        let receiver_infos = receivers
+            .iter()
+            .map(|receiver| {
+                let payload = AddressPayload::from(receiver.lock_script.clone());
+                serde_json::json!({
+                    "address": Address::new(network, payload, true).to_string(),
+                    "amount": receiver.amount,
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut accounts = vec![("sender".to_string(), sender_account)];
+        if let Some(addr) = capacity_provider.as_ref() {
+            if *addr != sender {
+                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                accounts.push(("capacity provider".to_string(), account));
+            }
+        }
+        let capacity_provider = Script::from(capacity_provider.as_ref().unwrap_or(&sender));
+        let sender_script = Script::from(&sender);
+        let builder = UdtTransferBuilder {
+            type_script,
+            sender: sender_script,
+            receivers,
+        };
+        let tx = self.build_tx(&builder, accounts, &cell_deps, capacity_provider, fee_rate)?;
+
+        let outputs_validator = Some(json_types::OutputsValidator::Passthrough);
+        let tx_hash = self
+            .rpc_client
+            .send_transaction(tx.data(), outputs_validator)
+            .map_err(|err| format!("Send transaction error: {}", err))?;
+        assert_eq!(tx.hash(), tx_hash.pack());
+
+        if debug {
+            let rpc_tx_view = json_types::TransactionView::from(tx);
+            let resp = serde_json::json!({
+                "transaction": rpc_tx_view,
+                "receivers": receiver_infos,
+            });
+            Ok(Output::new_output(resp))
+        } else {
+            let tx_hash: H256 = tx.hash().unpack();
+            let resp = serde_json::json!({
+                "transaction_hash": tx_hash,
+                "receivers": receiver_infos,
+            });
+            Ok(Output::new_output(resp))
+        }
+    }
+
+    fn get_amount(
+        &mut self,
+        owner: Address,
+        udt_script_id: ScriptId,
+        address: Address,
+    ) -> Result<Output, String> {
+        Err("TODO".to_string())
     }
 
     fn new_empty_acp(
@@ -378,6 +523,7 @@ impl<'a> SudtSubCommand<'a> {
         capacity_provider: Address,
         cell_deps: CellDeps,
         fee_rate: u64,
+        network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
         let owner_lock_hash = Script::from(&owner).calc_script_hash();
@@ -388,6 +534,11 @@ impl<'a> SudtSubCommand<'a> {
             .hash_type(acp_script_id.hash_type.into())
             .args(to.payload().args().pack())
             .build();
+        let acp_address = {
+            let payload = AddressPayload::from(acp_lock.clone());
+            Address::new(network, payload, true)
+        };
+
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
             .hash_type(udt_script_id.hash_type.into())
@@ -424,10 +575,18 @@ impl<'a> SudtSubCommand<'a> {
 
         if debug {
             let rpc_tx_view = json_types::TransactionView::from(tx);
-            Ok(Output::new_output(rpc_tx_view))
+            let resp = serde_json::json!({
+                "transaction": rpc_tx_view,
+                "acp-address": acp_address.to_string(),
+            });
+            Ok(Output::new_output(resp))
         } else {
             let tx_hash: H256 = tx.hash().unpack();
-            Ok(Output::new_output(tx_hash))
+            let resp = serde_json::json!({
+                "transaction_hash": tx_hash,
+                "acp-address": acp_address.to_string(),
+            });
+            Ok(Output::new_output(resp))
         }
     }
 
@@ -472,6 +631,49 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     debug,
                 )
             }
+            ("transfer", Some(m)) => {
+                let owner: Address = AddressParser::default()
+                    .set_network(network)
+                    .from_matches(m, "owner")?;
+                let sender: Address = AddressParser::default()
+                    .set_network(network)
+                    .from_matches(m, "sender")?;
+                let udt_script_id: ScriptId = ScriptIdParser.from_matches(m, "udt-script-id")?;
+                let udt_to_vec: Vec<(Address, u128)> = {
+                    let mut address_parser = AddressParser::default();
+                    address_parser.set_network(network);
+                    UdtTargetParser::new(address_parser).from_matches_vec(m, "udt-to")?
+                };
+                let cheque_script_id: Option<ScriptId> = if m.is_present("to-cheque-address") {
+                    Some(ScriptIdParser.from_matches(m, "cheque-script-id")?)
+                } else {
+                    None
+                };
+                let to_acp_address: bool = m.is_present("to-acp-address");
+                let capacity_provider: Option<Address> = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches_opt(m, "capacity-provider")?;
+                let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
+                let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
+                if to_acp_address && cheque_script_id.is_some() {
+                    return Err(
+                        "to-acp-address and to-cheque-address can not both presented".to_string(),
+                    );
+                }
+                self.transfer(
+                    owner,
+                    sender,
+                    udt_script_id,
+                    udt_to_vec,
+                    cheque_script_id,
+                    to_acp_address,
+                    capacity_provider,
+                    cell_deps,
+                    fee_rate,
+                    network,
+                    debug,
+                )
+            }
             ("new-empty-acp", Some(m)) => {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
@@ -494,6 +696,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     capacity_provider,
                     cell_deps,
                     fee_rate,
+                    network,
                     debug,
                 )
             }
