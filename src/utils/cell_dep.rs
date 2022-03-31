@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use ckb_jsonrpc_types as rpc_types;
-use ckb_sdk::{
-    traits::{CellDepResolver, DefaultCellDepResolver},
-    GenesisInfo,
-};
+use ckb_sdk::{traits::DefaultCellDepResolver, GenesisInfo};
 use ckb_types::H256;
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug, Serialize, Deserialize)]

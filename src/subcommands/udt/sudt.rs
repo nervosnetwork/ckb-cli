@@ -11,7 +11,7 @@ use ckb_sdk::{
         default_impls::{
             DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
         },
-        CellCollector, CellQueryOptions, Signer, ValueRangeOption,
+        CellCollector, CellQueryOptions, Signer,
     },
     tx_builder::{
         transfer::CapacityTransferBuilder,
@@ -19,7 +19,7 @@ use ckb_sdk::{
             UdtIssueBuilder, UdtIssueReceiver, UdtIssueType, UdtTransferBuilder,
             UdtTransferReceiver,
         },
-        CapacityBalancer, CapacityProvider, TransferAction, TxBuilder, TxBuilderError,
+        CapacityBalancer, CapacityProvider, TransferAction, TxBuilder,
     },
     types::ScriptId,
     unlock::{ScriptUnlocker, SecpSighashScriptSigner, SecpSighashUnlocker},
@@ -27,8 +27,8 @@ use ckb_sdk::{
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{Capacity, FeeRate, ScriptHashType, TransactionView},
-    packed::{CellInput, CellOutput, OutPoint, Script, WitnessArgs},
+    core::{Capacity, FeeRate, TransactionView},
+    packed::{CellOutput, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
@@ -38,13 +38,12 @@ use crate::subcommands::{CliSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CellDepsParser, FromStrParser, OutPointParser, ScriptIdParser,
-        UdtTargetParser,
+        AddressParser, ArgParser, CellDepsParser, FromStrParser, ScriptIdParser, UdtTargetParser,
     },
     cell_collector::LocalCellCollector,
     cell_dep::CellDeps,
     index::IndexController,
-    other::{get_network_type, read_password, to_live_cell_info},
+    other::{get_network_type, read_password},
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
@@ -419,7 +418,6 @@ impl<'a> SudtSubCommand<'a> {
         debug: bool,
     ) -> Result<Output, String> {
         let owner_script_hash = Script::from(&owner).calc_script_hash();
-        let sender_script = Script::from(&sender);
         let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
@@ -511,7 +509,44 @@ impl<'a> SudtSubCommand<'a> {
         udt_script_id: ScriptId,
         address: Address,
     ) -> Result<Output, String> {
-        Err("TODO".to_string())
+        let owner_script_hash = Script::from(&owner).calc_script_hash();
+        let type_script = Script::new_builder()
+            .code_hash(udt_script_id.code_hash.pack())
+            .hash_type(udt_script_id.hash_type.into())
+            .args(owner_script_hash.as_bytes().pack())
+            .build();
+        let mut query = CellQueryOptions::new_lock(Script::from(&address));
+        query.secondary_script = Some(type_script);
+        let (cells, _) = self
+            .cell_collector
+            .collect_live_cells(&query, false)
+            .map_err(|err| err.to_string())?;
+        let mut total_amount: u128 = 0;
+        let mut infos = Vec::new();
+        for cell in cells {
+            if cell.output_data.len() < 16 {
+                return Err(format!(
+                    "invalid cell data length: {}, expected: >= 16",
+                    cell.output_data.len()
+                ));
+            }
+            let mut amount_bytes = [0u8; 16];
+            amount_bytes.copy_from_slice(&cell.output_data.as_ref()[0..16]);
+            let amount = u128::from_le_bytes(amount_bytes);
+            total_amount += amount;
+            infos.push(serde_json::json!({
+                "out_point": json_types::OutPoint::from(cell.out_point),
+                // u128 is too large for json
+                "amount": amount.to_string(),
+            }));
+        }
+        let resp = serde_json::json!({
+            "cell_count": infos.len(),
+            "cells": infos,
+            // u128 is too large for json
+            "total_amount": total_amount.to_string(),
+        });
+        Ok(Output::new_output(resp))
     }
 
     fn new_empty_acp(
@@ -673,6 +708,16 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     network,
                     debug,
                 )
+            }
+            ("get-amount", Some(m)) => {
+                let owner: Address = AddressParser::default()
+                    .set_network(network)
+                    .from_matches(m, "owner")?;
+                let udt_script_id: ScriptId = ScriptIdParser.from_matches(m, "udt-script-id")?;
+                let address: Address = AddressParser::default()
+                    .set_network(network)
+                    .from_matches(m, "address")?;
+                self.get_amount(owner, udt_script_id, address)
             }
             ("new-empty-acp", Some(m)) => {
                 let owner: Address = AddressParser::default()
