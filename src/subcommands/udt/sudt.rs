@@ -14,6 +14,7 @@ use ckb_sdk::{
         CellCollector, CellQueryOptions, Signer,
     },
     tx_builder::{
+        cheque::{ChequeClaimBuilder, ChequeWithdrawBuilder},
         transfer::CapacityTransferBuilder,
         udt::{
             UdtIssueBuilder, UdtIssueReceiver, UdtIssueType, UdtTransferBuilder,
@@ -27,8 +28,8 @@ use ckb_sdk::{
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{Capacity, FeeRate, TransactionView},
-    packed::{CellOutput, Script, WitnessArgs},
+    core::{Capacity, FeeRate, ScriptHashType, TransactionView},
+    packed::{CellInput, CellOutput, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
@@ -91,8 +92,8 @@ impl<'a> SudtSubCommand<'a> {
             .long("owner")
             .takes_value(true)
             .required(true)
-            .validator(|input| AddressParser::default().validate(input))
-            .about("The owner address of the SUDT cell (the admin's address)");
+            .validator(|input| AddressParser::new_sighash().validate(input))
+            .about("The owner address of the SUDT cell (the admin's address, only sighash address is supported)");
         let arg_udt_script_id = Arg::with_name("udt-script-id")
             .long("udt-script-id")
             .takes_value(true)
@@ -115,7 +116,7 @@ impl<'a> SudtSubCommand<'a> {
             .takes_value(true)
             .multiple(true)
             .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input))
-            .about("The issue target, format: {address}:{amount}, the address typically is an cheque address");
+            .about("The issue/transfer target, format: {address}:{amount}, the address typically is an cheque or acp address");
         let arg_capacity_provider = Arg::with_name("capacity-provider")
             .long("capacity-provider")
             .takes_value(true)
@@ -126,6 +127,9 @@ impl<'a> SudtSubCommand<'a> {
             .takes_value(true)
             .validator(|input| AddressParser::default().validate(input))
             .about("Sender's address");
+        let arg_receiver = Arg::with_name("receiver")
+            .takes_value(true)
+            .validator(|input| AddressParser::default().validate(input));
         let arg_cell_deps = Arg::with_name("cell-deps")
             .long("cell-deps")
             .takes_value(true)
@@ -197,20 +201,12 @@ impl<'a> SudtSubCommand<'a> {
                     .arg(arg_udt_script_id.clone())
                     .arg(arg_cheque_script_id.clone().required(true))
                     .arg(arg_sender.clone())
+                    .arg(
+                        arg_receiver
+                            .clone()
+                            .about("The cheque receiver's address, for searching an input to save the claimed amount (NOTE: this address must be an anyone-can-pay address)")
+                    )
                     .arg(arg_cell_deps.clone())
-                    .arg(
-                        Arg::with_name("cheque-address")
-                            .long("cheque-address")
-                            .takes_value(true)
-                            .validator(|input| AddressParser::default().validate(input))
-                            .about("The cheque cell's address")
-                    )
-                    .arg(
-                        Arg::with_name("receiver-address")
-                            .takes_value(true)
-                            .validator(|input| AddressParser::default().validate(input))
-                            .about("The claim receiver's address, for searching an input to save the claimed amount (hint: this address should be an anyone-can-pay address)")
-                    )
                     .arg(arg::fee_rate()),
                 App::new("cheque-withdraw")
                     .about("Withdraw cheque cells")
@@ -218,6 +214,7 @@ impl<'a> SudtSubCommand<'a> {
                     .arg(arg_udt_script_id.clone())
                     .arg(arg_cheque_script_id.clone().required(true))
                     .arg(arg_sender)
+                    .arg(arg_receiver.clone().about("The cheque receiver address"))
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
                 // TODO: move this subcommand to `util`
@@ -338,6 +335,7 @@ impl<'a> SudtSubCommand<'a> {
                     let receiver_script_hash = receiver_script.calc_script_hash();
                     let mut script_args = vec![0u8; 40];
                     script_args[0..20].copy_from_slice(&receiver_script_hash.as_slice()[0..20]);
+                    // owner is also the sender here
                     script_args[20..40].copy_from_slice(&owner_script_hash.as_slice()[0..20]);
                     Script::new_builder()
                         .code_hash(script_id.code_hash.pack())
@@ -396,7 +394,7 @@ impl<'a> SudtSubCommand<'a> {
         } else {
             let tx_hash: H256 = tx.hash().unpack();
             let resp = serde_json::json!({
-                "transaction_hash": tx_hash,
+                "transaction-hash": tx_hash,
                 "receivers": receiver_infos,
             });
             Ok(Output::new_output(resp))
@@ -496,7 +494,7 @@ impl<'a> SudtSubCommand<'a> {
         } else {
             let tx_hash: H256 = tx.hash().unpack();
             let resp = serde_json::json!({
-                "transaction_hash": tx_hash,
+                "transaction-hash": tx_hash,
                 "receivers": receiver_infos,
             });
             Ok(Output::new_output(resp))
@@ -517,6 +515,7 @@ impl<'a> SudtSubCommand<'a> {
             .build();
         let mut query = CellQueryOptions::new_lock(Script::from(&address));
         query.secondary_script = Some(type_script);
+        query.min_total_capacity = u64::max_value();
         let (cells, _) = self
             .cell_collector
             .collect_live_cells(&query, false)
@@ -618,15 +617,193 @@ impl<'a> SudtSubCommand<'a> {
         } else {
             let tx_hash: H256 = tx.hash().unpack();
             let resp = serde_json::json!({
-                "transaction_hash": tx_hash,
+                "transaction-hash": tx_hash,
                 "acp-address": acp_address.to_string(),
             });
             Ok(Output::new_output(resp))
         }
     }
 
-    fn cheque_claim(&mut self) -> Result<Output, String> {
-        Err("TODO".to_string())
+    fn cheque_claim(
+        &mut self,
+        owner: Address,
+        sender: Address,
+        receiver: Address,
+        udt_script_id: ScriptId,
+        cheque_script_id: ScriptId,
+        cell_deps: CellDeps,
+        fee_rate: u64,
+        network: NetworkType,
+        debug: bool,
+    ) -> Result<Output, String> {
+        let owner_script = Script::from(&owner);
+        let sender_script = Script::from(&sender);
+        let receiver_script = Script::from(&receiver);
+        let cheque_script = {
+            let mut script_args = vec![0u8; 40];
+            script_args[0..20]
+                .copy_from_slice(&receiver_script.calc_script_hash().as_slice()[0..20]);
+            script_args[20..40]
+                .copy_from_slice(&sender_script.calc_script_hash().as_slice()[0..20]);
+            Script::new_builder()
+                .code_hash(cheque_script_id.code_hash.pack())
+                .hash_type(cheque_script_id.hash_type.into())
+                .args(Bytes::from(script_args).pack())
+                .build()
+        };
+        let type_script = Script::new_builder()
+            .code_hash(udt_script_id.code_hash.pack())
+            .hash_type(udt_script_id.hash_type.into())
+            .args(owner_script.calc_script_hash().as_bytes().pack())
+            .build();
+
+        let mut cheque_query = CellQueryOptions::new_lock(cheque_script);
+        cheque_query.secondary_script = Some(type_script.clone());
+        cheque_query.min_total_capacity = u64::max_value();
+        let (cheque_cells, _) = self
+            .cell_collector
+            .collect_live_cells(&cheque_query, false)
+            .map_err(|err| err.to_string())?;
+        if cheque_cells.is_empty() {
+            return Err("no cheque cell found".to_string());
+        }
+
+        let mut udt_acp_query = CellQueryOptions::new_lock(receiver_script);
+        udt_acp_query.secondary_script = Some(type_script);
+        let (udt_acp_cells, _) = self
+            .cell_collector
+            .collect_live_cells(&udt_acp_query, false)
+            .map_err(|err| err.to_string())?;
+        if udt_acp_cells.is_empty() {
+            return Err("no SUDT cell found from receiver address".to_string());
+        }
+
+        let cheque_inputs = cheque_cells
+            .into_iter()
+            .map(|cell| CellInput::new(cell.out_point, 0))
+            .collect::<Vec<_>>();
+        let receiver_input = CellInput::new(udt_acp_cells[0].out_point.clone(), 0);
+        let builder = ChequeClaimBuilder {
+            inputs: cheque_inputs,
+            receiver_input,
+            sender_lock_script: sender_script,
+        };
+
+        let receiver_account =
+            H160::from_slice(&receiver.payload().args().as_ref()[0..20]).unwrap();
+        let capacity_provider = Script::new_builder()
+            .code_hash(SIGHASH_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type.into())
+            .args(Bytes::from(receiver.payload().args().as_ref()[0..20].to_vec()).pack())
+            .build();
+        let capacity_provider_payload = AddressPayload::from(capacity_provider.clone());
+        let capacity_provider_addr = Address::new(network, capacity_provider_payload, true);
+        let tx = self.build_tx(
+            &builder,
+            vec![(
+                format!("receiver({})", capacity_provider_addr),
+                receiver_account,
+            )],
+            &cell_deps,
+            capacity_provider,
+            fee_rate,
+        )?;
+
+        let outputs_validator = Some(json_types::OutputsValidator::Passthrough);
+        let tx_hash = self
+            .rpc_client
+            .send_transaction(tx.data(), outputs_validator)
+            .map_err(|err| format!("Send transaction error: {}", err))?;
+        assert_eq!(tx.hash(), tx_hash.pack());
+
+        if debug {
+            let rpc_tx_view = json_types::TransactionView::from(tx);
+            let resp = serde_json::json!({ "transaction": rpc_tx_view });
+            Ok(Output::new_output(resp))
+        } else {
+            let tx_hash: H256 = tx.hash().unpack();
+            let resp = serde_json::json!({ "transaction-hash": tx_hash });
+            Ok(Output::new_output(resp))
+        }
+    }
+
+    fn cheque_withdraw(
+        &mut self,
+        owner: Address,
+        sender: Address,
+        receiver: Address,
+        udt_script_id: ScriptId,
+        cheque_script_id: ScriptId,
+        cell_deps: CellDeps,
+        fee_rate: u64,
+        debug: bool,
+    ) -> Result<Output, String> {
+        let owner_script = Script::from(&owner);
+        let sender_script = Script::from(&sender);
+        let receiver_script = Script::from(&receiver);
+        let cheque_script = {
+            let mut script_args = vec![0u8; 40];
+            script_args[0..20]
+                .copy_from_slice(&receiver_script.calc_script_hash().as_slice()[0..20]);
+            script_args[20..40]
+                .copy_from_slice(&sender_script.calc_script_hash().as_slice()[0..20]);
+            Script::new_builder()
+                .code_hash(cheque_script_id.code_hash.pack())
+                .hash_type(cheque_script_id.hash_type.into())
+                .args(Bytes::from(script_args).pack())
+                .build()
+        };
+        let type_script = Script::new_builder()
+            .code_hash(udt_script_id.code_hash.pack())
+            .hash_type(udt_script_id.hash_type.into())
+            .args(owner_script.calc_script_hash().as_bytes().pack())
+            .build();
+
+        let mut cheque_query = CellQueryOptions::new_lock(cheque_script);
+        cheque_query.secondary_script = Some(type_script);
+        cheque_query.min_total_capacity = u64::max_value();
+        let (cheque_cells, _) = self
+            .cell_collector
+            .collect_live_cells(&cheque_query, false)
+            .map_err(|err| err.to_string())?;
+        if cheque_cells.is_empty() {
+            return Err("no cheque cell found".to_string());
+        }
+
+        let cheque_out_points = cheque_cells
+            .into_iter()
+            .map(|cell| cell.out_point)
+            .collect::<Vec<_>>();
+        let builder = ChequeWithdrawBuilder {
+            out_points: cheque_out_points,
+            sender_lock_script: sender_script.clone(),
+        };
+
+        let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
+        let tx = self.build_tx(
+            &builder,
+            vec![("sender".to_string(), sender_account)],
+            &cell_deps,
+            sender_script,
+            fee_rate,
+        )?;
+
+        let outputs_validator = Some(json_types::OutputsValidator::Passthrough);
+        let tx_hash = self
+            .rpc_client
+            .send_transaction(tx.data(), outputs_validator)
+            .map_err(|err| format!("Send transaction error: {}", err))?;
+        assert_eq!(tx.hash(), tx_hash.pack());
+
+        if debug {
+            let rpc_tx_view = json_types::TransactionView::from(tx);
+            let resp = serde_json::json!({ "transaction": rpc_tx_view });
+            Ok(Output::new_output(resp))
+        } else {
+            let tx_hash: H256 = tx.hash().unpack();
+            let resp = serde_json::json!({ "transaction-hash": tx_hash });
+            Ok(Output::new_output(resp))
+        }
     }
 }
 
@@ -749,11 +926,54 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let owner: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "owner")?;
+                let sender: Address = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches(m, "sender")?;
+                let receiver: Address = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches(m, "receiver")?;
                 let udt_script_id: ScriptId = ScriptIdParser.from_matches(m, "udt-script-id")?;
                 let cheque_script_id: ScriptId =
                     ScriptIdParser.from_matches(m, "cheque-script-id")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
-                self.cheque_claim()
+                let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
+                self.cheque_claim(
+                    owner,
+                    sender,
+                    receiver,
+                    udt_script_id,
+                    cheque_script_id,
+                    cell_deps,
+                    fee_rate,
+                    network,
+                    debug,
+                )
+            }
+            ("cheque-withdraw", Some(m)) => {
+                let owner: Address = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches(m, "owner")?;
+                let sender: Address = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches(m, "sender")?;
+                let receiver: Address = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches(m, "receiver")?;
+                let udt_script_id: ScriptId = ScriptIdParser.from_matches(m, "udt-script-id")?;
+                let cheque_script_id: ScriptId =
+                    ScriptIdParser.from_matches(m, "cheque-script-id")?;
+                let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
+                let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
+                self.cheque_withdraw(
+                    owner,
+                    sender,
+                    receiver,
+                    udt_script_id,
+                    cheque_script_id,
+                    cell_deps,
+                    fee_rate,
+                    debug,
+                )
             }
             ("build-acp-address", Some(m)) => {
                 let acp_script_id: ScriptId = ScriptIdParser.from_matches(m, "acp-script-id")?;

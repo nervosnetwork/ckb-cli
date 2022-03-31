@@ -78,12 +78,6 @@ impl KeyStoreHandlerSigner {
     pub fn set_change_path(&mut self, account: H160, change_path: String) {
         self.change_paths.insert(account, change_path);
     }
-    // pub fn get_password(&self, account: &H160) -> Option<&String> {
-    //     self.passwords.get(account)
-    // }
-    // pub fn get_change_path(&self, account: &H160) -> Option<&String> {
-    //     self.change_paths.get(account)
-    // }
 
     pub fn cache_key_set(
         &mut self,
