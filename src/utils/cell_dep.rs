@@ -1,3 +1,6 @@
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use ckb_jsonrpc_types as rpc_types;
@@ -16,26 +19,57 @@ impl From<ScriptId> for ckb_sdk::types::ScriptId {
     }
 }
 
+#[derive(Clone, Copy, Hash, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CellDepName {
+    /// Anyone can pay
+    Acp,
+    /// Cheque
+    Cheque,
+    /// Simple UDT
+    Sudt,
+    /// Xudt
+    Xudt,
+}
+impl fmt::Display for CellDepName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let output = match self {
+            CellDepName::Acp => "acp",
+            CellDepName::Cheque => "cheque",
+            CellDepName::Sudt => "sudt",
+            CellDepName::Xudt => "xudt",
+        };
+        write!(f, "{}", output)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CellDepItem {
     pub script_id: ScriptId,
     pub cell_dep: rpc_types::CellDep,
-    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CellDeps {
-    pub items: Vec<CellDepItem>,
+    pub items: HashMap<CellDepName, CellDepItem>,
 }
 
 impl CellDeps {
-    pub fn apply_to_resolver(&self, resolver: &mut DefaultCellDepResolver) {
-        for item in self.items.clone() {
+    pub fn get_item(&self, name: CellDepName) -> Option<&CellDepItem> {
+        self.items.get(&name)
+    }
+    pub fn apply_to_resolver(&self, resolver: &mut DefaultCellDepResolver) -> Result<(), String> {
+        let mut names = HashSet::new();
+        for (name, item) in self.items.clone() {
+            if !names.insert(name) {
+                return Err(format!("duplicated cell_dep item name: {}", name));
+            }
             resolver.insert(
                 item.script_id.into(),
                 item.cell_dep.into(),
-                item.name.unwrap_or_else(|| "none".to_string()),
+                name.to_string(),
             );
         }
+        Ok(())
     }
 }
