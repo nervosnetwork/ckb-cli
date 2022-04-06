@@ -91,23 +91,23 @@ impl<'a> SudtSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .validator(|input| AddressParser::new_sighash().validate(input))
-            .about("The owner address of the SUDT cell (the admin's address, only sighash address is supported)");
+            .about("The owner address of the SUDT cell (the admin address, only sighash address is supported)");
         let arg_udt_to = Arg::with_name("udt-to")
             .long("udt-to")
             .takes_value(true)
             .multiple(true)
-            .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input))
-            .about("The issue/transfer target, format: {address}:{amount}, the address can be cheque or acp address");
+            .required(true)
+            .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input));
         let arg_capacity_provider = Arg::with_name("capacity-provider")
             .long("capacity-provider")
             .takes_value(true)
             .validator(|input| AddressParser::new_sighash().validate(input))
-            .about("Capacity provider address");
+            .about("Capacity provider address (provide transaction fee or needed capacity)");
         let arg_sender = Arg::with_name("sender")
             .long("sender")
             .takes_value(true)
             .validator(|input| AddressParser::default().validate(input))
-            .about("Sender's address");
+            .about("Sender address");
         let arg_receiver = Arg::with_name("receiver")
             .long("receiver")
             .takes_value(true)
@@ -117,37 +117,43 @@ impl<'a> SudtSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .validator(|input| CellDepsParser.validate(input))
-            .about("The cell deps information (for resolve cell_dep by script id)");
+            .about("The cell deps information (for resolve cell_dep by script id or build lock/type script)");
         let arg_to_cheque_address = Arg::with_name("to-cheque-address").long("to-cheque-address");
         let arg_to_acp_address = Arg::with_name("to-acp-address")
             .long("to-acp-address")
-            .about("If all <udt-to> addresses are anyone-can-pay address");
+            .about("Treat all addresses in <udt-to> as anyone-can-pay address");
         App::new(name)
-            .about("SUDT issue/transfer/.. operations")
+            .about("SUDT issue/transfer and cheque claim/withdraw operations")
             .subcommands(vec![
                 App::new("issue")
-                    .about("Issue SUDT")
+                    .about("Issue SUDT to multiple addresses")
                     .arg(arg_owner.clone())
-                    .arg(arg_udt_to.clone())
+                    .arg(
+                        arg_udt_to.clone()
+                            .about("The issue target, format: {address}:{amount}, the address type can be: [acp, sighash]")
+                    )
                     .arg(arg_cell_deps.clone())
                     .arg(arg_to_acp_address.clone())
                     .arg(
                         arg_to_cheque_address
                             .clone()
-                            .about("If this flag is presented, all addresses in <udt-to> will be used as cheque lock's receiver script hash (and the owner is the sender), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
+                            .about("Treat all addresses in <udt-to> as cheque receiver (sighash address, and the cheque sender is the <owner>), otherwise the address will be used as the lock script of the SUDT cell")
                     )
                     .arg(arg::fee_rate()),
                 App::new("transfer")
                     .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
                     .arg(arg_owner.clone())
-                    .arg(arg_sender.clone().about("SUDT Sender's address, the address type can be: [acp, sighash], if <capacity-provider> is not given sender will also use as capacity provider."))
-                    .arg(arg_udt_to)
+                    .arg(arg_sender.clone().about("SUDT sender address, the address type can be: [acp, sighash], if <capacity-provider> is not given <sender> will also use as capacity provider."))
+                    .arg(
+                        arg_udt_to
+                         .about("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
+                    )
                     .arg(arg_cell_deps.clone())
                     .arg(arg_to_acp_address)
                     .arg(
                         arg_to_cheque_address
                             .clone()
-                            .about("If this flag is presented, all addresses in <udt-to> will be used as cheque lock's receiver script hash, otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
+                            .about("Treat all addresses in <udt-to> as cheque receiver (sighash address), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
                     )
                     .arg(arg_capacity_provider.clone())
                     .arg(arg::fee_rate()),
@@ -178,21 +184,21 @@ impl<'a> SudtSubCommand<'a> {
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
                 App::new("cheque-claim")
-                    .about("Claim all cheque cells identify by given lock script and type script")
+                    .about("Claim all cheque cells identified by given lock script and type script")
                     .arg(arg_owner.clone())
-                    .arg(arg_sender.clone().about("Sender's address (sighash), if <capacity-provider> not given <receiver> will use as capacity provider"))
+                    .arg(arg_sender.clone().about("The cheque sender address (sighash)"))
                     .arg(
                         arg_receiver
                             .clone()
-                            .about("The cheque receiver's address (sighash), for searching an input to save the claimed amount (NOTE: this address will be used to build anyone-can-pay address)")
+                            .about("The cheque receiver address (sighash), for searching an input to save the claimed amount, this address will be used to build anyone-can-pay address, if <capacity-provider> not given <receiver> will also be used as capacity provider")
                     )
                     .arg(arg_capacity_provider.clone())
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
                 App::new("cheque-withdraw")
-                    .about("Withdraw cheque cells")
+                    .about("Withdraw all cheque cells identified by given lock script and type script")
                     .arg(arg_owner)
-                    .arg(arg_sender.about("Sender's address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
+                    .arg(arg_sender.about("The cheque sender address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
                     .arg(arg_receiver.about("The cheque receiver address (sighash)"))
                     .arg(arg_capacity_provider)
                     .arg(arg_cell_deps.clone())
@@ -210,23 +216,23 @@ impl<'a> SudtSubCommand<'a> {
                             .about("The sighash address")
                     ),
                 App::new("build-cheque-address")
-                    .about("Build a cheque address by sender/receiver address and cheque script id.")
+                    .about("Build a cheque address by cheque script id and receiver+sender address")
                     .arg(arg_cell_deps.clone())
-                    .arg(
-                        Arg::with_name("sender")
-                            .long("sender")
-                            .takes_value(true)
-                            .required(true)
-                            .validator(|input| AddressParser::default().validate(input))
-                            .about("The sender's address")
-                    )
                     .arg(
                         Arg::with_name("receiver")
                             .long("receiver")
                             .takes_value(true)
                             .required(true)
                             .validator(|input| AddressParser::default().validate(input))
-                            .about("The receiver's address")
+                            .about("The receiver address")
+                    )
+                    .arg(
+                        Arg::with_name("sender")
+                            .long("sender")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| AddressParser::default().validate(input))
+                            .about("The sender address")
                     ),
             ])
     }
@@ -901,22 +907,20 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let to_cheque_address = m.is_present("to-cheque-address");
                 let to_acp_address = m.is_present("to-acp-address");
 
-                if udt_to_vec.is_empty() {
-                    return Err("missing <udt-to> argument".to_string());
-                }
                 if to_cheque_address {
                     for (addr, _) in &udt_to_vec {
                         let payload = addr.payload();
                         if payload.code_hash(Some(network)) != SIGHASH_TYPE_HASH.pack()
                             || payload.hash_type() != ScriptHashType::Type
                         {
-                            return Err(format!("when to-cheque-address is presented, address in <udt-to> must be all sighash addresses, invalid address: {}", addr));
+                            return Err(format!("when <to-cheque-address> is presented, all addresses in <udt-to> must be sighash address, invalid address: {}", addr));
                         }
                     }
                 }
                 if to_cheque_address && to_acp_address {
                     return Err(
-                        "to-acp-address and to-cheque-address can not both presented".to_string(),
+                        "<to-acp-address> and <to-cheque-address> can not both presented"
+                            .to_string(),
                     );
                 }
 
