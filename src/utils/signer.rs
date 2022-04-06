@@ -7,10 +7,11 @@ use ckb_jsonrpc_types as json_types;
 use ckb_sdk::traits::{
     Signer, SignerError, TransactionDependencyError, TransactionDependencyProvider,
 };
+use ckb_sdk::types::ScriptId;
 use ckb_sdk::util::serialize_signature;
 use ckb_sdk::SECP256K1;
 use ckb_signer::KeyChain;
-use ckb_types::{bytes::Bytes, core::TransactionView, H160, H256};
+use ckb_types::{bytes::Bytes, core::TransactionView, packed::Script, prelude::*, H160, H256};
 
 use super::arg_parser::PrivkeyWrapper;
 use crate::plugin::{KeyStoreHandler, SignTarget};
@@ -54,7 +55,7 @@ impl Signer for PrivkeyWrapper {
 pub struct KeyStoreHandlerSigner {
     handler: KeyStoreHandler,
     tx_dep_provider: Box<dyn TransactionDependencyProvider>,
-    hd_ids: HashMap<H160, (DerivationPath, Option<KeyChain>, H160)>,
+    ids: HashMap<H160, (DerivationPath, Option<KeyChain>, H160)>,
     passwords: HashMap<H160, String>,
     change_paths: HashMap<H160, String>,
 }
@@ -67,16 +68,29 @@ impl KeyStoreHandlerSigner {
         KeyStoreHandlerSigner {
             handler,
             tx_dep_provider,
-            hd_ids: HashMap::default(),
+            ids: HashMap::default(),
             passwords: HashMap::default(),
             change_paths: HashMap::default(),
         }
     }
+
     pub fn set_password(&mut self, account: H160, password: String) {
         self.passwords.insert(account, password);
     }
     pub fn set_change_path(&mut self, account: H160, change_path: String) {
         self.change_paths.insert(account, change_path);
+    }
+
+    pub fn cache_account_lock_hash160(&mut self, account: H160, script_id: &ScriptId) {
+        let script_hash = Script::new_builder()
+            .code_hash(script_id.code_hash.pack())
+            .hash_type(script_id.hash_type.into())
+            .args(Bytes::from(account.as_bytes().to_vec()).pack())
+            .build()
+            .calc_script_hash();
+        let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
+        self.ids
+            .insert(lock_hash160, (DerivationPath::empty(), None, account));
     }
 
     pub fn cache_key_set(
@@ -95,33 +109,34 @@ impl KeyStoreHandlerSigner {
             password,
         )?;
         for (path, pubkey_hash) in key_set.external {
-            self.hd_ids.insert(
+            self.ids.insert(
                 pubkey_hash,
                 (path, Some(KeyChain::External), account.clone()),
             );
         }
         for (path, pubkey_hash) in key_set.change {
-            self.hd_ids
+            self.ids
                 .insert(pubkey_hash, (path, Some(KeyChain::Change), account.clone()));
         }
         Ok(())
     }
-    fn get_id_info(&self, id: &[u8]) -> Option<(H160, DerivationPath, Option<KeyChain>, H160)> {
+
+    fn get_id_info(&self, id: &[u8]) -> Option<(DerivationPath, Option<KeyChain>, H160)> {
         if id.len() != 20 {
             return None;
         }
         let mut buf = [0u8; 20];
         buf.copy_from_slice(id);
         let hash160 = H160::from(buf);
-        if let Some((path, key_chain, account)) = self.hd_ids.get(&hash160) {
-            return Some((hash160, path.clone(), *key_chain, account.clone()));
+        if let Some((path, key_chain, account)) = self.ids.get(&hash160) {
+            return Some((path.clone(), *key_chain, account.clone()));
         }
         if self
             .handler
             .has_account(hash160.clone())
             .unwrap_or_default()
         {
-            return Some((hash160.clone(), DerivationPath::default(), None, hash160));
+            return Some((DerivationPath::default(), None, hash160));
         }
         None
     }
@@ -139,8 +154,7 @@ impl Signer for KeyStoreHandlerSigner {
         recoverable: bool,
         tx: &TransactionView,
     ) -> Result<Bytes, SignerError> {
-        let (hash160, path, _key_chain, account) =
-            self.get_id_info(id).ok_or(SignerError::IdNotFound)?;
+        let (path, _key_chain, account) = self.get_id_info(id).ok_or(SignerError::IdNotFound)?;
         if message.len() != 32 {
             return Err(SignerError::InvalidMessage(format!(
                 "expected length: 32, got: {}",
@@ -151,7 +165,7 @@ impl Signer for KeyStoreHandlerSigner {
 
         let (password, sign_target) = if self
             .handler
-            .has_account_in_default(hash160.clone())
+            .has_account_in_default(account.clone())
             .map_err(|err| SignerError::Other(err.into()))?
         {
             let password = self.passwords.get(&account).cloned().ok_or_else(|| {
@@ -185,7 +199,7 @@ impl Signer for KeyStoreHandlerSigner {
             (None, target)
         };
         self.handler
-            .sign(hash160, &path, msg, sign_target, password, recoverable)
+            .sign(account, &path, msg, sign_target, password, recoverable)
             .map_err(|err| SignerError::Other(err.into()))
     }
 }

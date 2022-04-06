@@ -109,8 +109,9 @@ impl<'a> SudtSubCommand<'a> {
             .validator(|input| AddressParser::default().validate(input))
             .about("Sender's address");
         let arg_receiver = Arg::with_name("receiver")
+            .long("receiver")
             .takes_value(true)
-            .validator(|input| AddressParser::default().validate(input));
+            .validator(|input| AddressParser::new_sighash().validate(input));
         let arg_cell_deps = Arg::with_name("cell-deps")
             .long("cell-deps")
             .takes_value(true)
@@ -165,7 +166,7 @@ impl<'a> SudtSubCommand<'a> {
                 App::new("new-empty-acp")
                     .about("Create a SUDT cell with 0 amount and an acp lock script")
                     .arg(arg_owner.clone())
-                    .arg(arg_capacity_provider.required(true))
+                    .arg(arg_capacity_provider.clone().required(true))
                     .arg(
                         Arg::with_name("to")
                             .long("to")
@@ -179,19 +180,21 @@ impl<'a> SudtSubCommand<'a> {
                 App::new("cheque-claim")
                     .about("Claim all cheque cells identify by given lock script and type script")
                     .arg(arg_owner.clone())
-                    .arg(arg_sender.clone())
+                    .arg(arg_sender.clone().about("Sender's address (sighash), if <capacity-provider> not given <receiver> will use as capacity provider"))
                     .arg(
                         arg_receiver
                             .clone()
-                            .about("The cheque receiver's address, for searching an input to save the claimed amount (NOTE: this address must be an anyone-can-pay address)")
+                            .about("The cheque receiver's address (sighash), for searching an input to save the claimed amount (NOTE: this address will be used to build anyone-can-pay address)")
                     )
+                    .arg(arg_capacity_provider.clone())
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
                 App::new("cheque-withdraw")
                     .about("Withdraw cheque cells")
                     .arg(arg_owner)
-                    .arg(arg_sender)
-                    .arg(arg_receiver.clone().about("The cheque receiver address"))
+                    .arg(arg_sender.about("Sender's address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
+                    .arg(arg_receiver.about("The cheque receiver address (sighash)"))
+                    .arg(arg_capacity_provider)
                     .arg(arg_cell_deps.clone())
                     .arg(arg::fee_rate()),
                 // TODO: move this subcommand to `util`
@@ -239,7 +242,8 @@ impl<'a> SudtSubCommand<'a> {
         fee_rate: u64,
     ) -> Result<TransactionView, String> {
         let mut passwords: HashMap<H160, String> = HashMap::with_capacity(accounts.len());
-        let mut get_signer = || -> Result<Box<dyn Signer>, String> {
+        let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
+        let mut get_signer = |acp_script_id: Option<&ScriptId>| -> Result<Box<dyn Signer>, String> {
             let handler = self.plugin_mgr.keystore_handler();
             let mut signer = KeyStoreHandlerSigner::new(
                 handler.clone(),
@@ -261,24 +265,34 @@ impl<'a> SudtSubCommand<'a> {
                     };
                     signer.set_password(account.clone(), password);
                 }
+                // for matching cheque lock script args
+                if cheque_script_id.is_some() {
+                    if let Some(script_id) = acp_script_id {
+                        signer.cache_account_lock_hash160(account.clone(), script_id);
+                    }
+                    signer.cache_account_lock_hash160(account.clone(), &sighash_script_id);
+                }
                 signer.set_change_path(account, change_path.to_string());
             }
             Ok(Box::new(signer))
         };
+
         let mut unlockers: HashMap<_, Box<dyn ScriptUnlocker>> = HashMap::new();
-        let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
         let sighash_unlocker =
-            SecpSighashUnlocker::new(SecpSighashScriptSigner::new(get_signer()?));
-        unlockers.insert(sighash_script_id, Box::new(sighash_unlocker));
-        if let Some(script_id) = acp_script_id {
-            let acp_unlocker = AcpUnlocker::new(AcpScriptSigner::new(get_signer()?));
+            SecpSighashUnlocker::new(SecpSighashScriptSigner::new(get_signer(None)?));
+        unlockers.insert(sighash_script_id.clone(), Box::new(sighash_unlocker));
+        if let Some(script_id) = acp_script_id.clone() {
+            let acp_unlocker = AcpUnlocker::new(AcpScriptSigner::new(get_signer(None)?));
             unlockers.insert(script_id, Box::new(acp_unlocker));
         }
-        if let Some((script_id, action)) = cheque_script_id {
-            let cheque_unlocker =
-                ChequeUnlocker::new(ChequeScriptSigner::new(get_signer()?, action));
+        if let Some((script_id, action)) = cheque_script_id.clone() {
+            let cheque_unlocker = ChequeUnlocker::new(ChequeScriptSigner::new(
+                get_signer(acp_script_id.as_ref())?,
+                action,
+            ));
             unlockers.insert(script_id, Box::new(cheque_unlocker));
         }
+
         let balancer = CapacityBalancer {
             fee_rate: FeeRate::from_u64(fee_rate),
             change_lock_script: None,
@@ -292,6 +306,7 @@ impl<'a> SudtSubCommand<'a> {
             },
             force_small_change_as_fee: None,
         };
+
         cell_deps.apply_to_resolver(&mut self.cell_dep_resolver)?;
 
         let (tx, still_locked_groups) = builder
@@ -369,7 +384,7 @@ impl<'a> SudtSubCommand<'a> {
                 let payload = AddressPayload::from(receiver.lock_script.clone());
                 serde_json::json!({
                     "address": Address::new(network, payload, true).to_string(),
-                    "amount": receiver.amount,
+                    "amount": receiver.amount.to_string(),
                 })
             })
             .collect::<Vec<_>>();
@@ -438,13 +453,18 @@ impl<'a> SudtSubCommand<'a> {
             None
         };
         let owner_script_hash = Script::from(&owner).calc_script_hash();
-        let sender_script_hash = Script::from(&sender).calc_script_hash();
         let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
             .hash_type(udt_script_id.hash_type.into())
             .args(owner_script_hash.as_bytes().pack())
             .build();
+        let cheque_sender_script_hash = Script::new_builder()
+            .code_hash(SIGHASH_TYPE_HASH.pack())
+            .hash_type(ScriptHashType::Type.into())
+            .args(Bytes::from(sender_account.as_bytes().to_vec()).pack())
+            .build()
+            .calc_script_hash();
         let receivers = udt_to_vec
             .into_iter()
             .map(|(addr, amount)| {
@@ -453,7 +473,8 @@ impl<'a> SudtSubCommand<'a> {
                     let receiver_script_hash = receiver_script.calc_script_hash();
                     let mut script_args = vec![0u8; 40];
                     script_args[0..20].copy_from_slice(&receiver_script_hash.as_slice()[0..20]);
-                    script_args[20..40].copy_from_slice(&sender_script_hash.as_slice()[0..20]);
+                    script_args[20..40]
+                        .copy_from_slice(&cheque_sender_script_hash.as_slice()[0..20]);
                     let script = Script::new_builder()
                         .code_hash(script_id.code_hash.pack())
                         .hash_type(script_id.hash_type.into())
@@ -663,13 +684,14 @@ impl<'a> SudtSubCommand<'a> {
         owner: Address,
         sender: Address,
         receiver: Address,
+        capacity_provider: Option<Address>,
         cell_deps: CellDeps,
         fee_rate: u64,
-        network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let cheque_script_id = get_script_id(&cell_deps, CellDepName::Cheque)?;
+        let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
         let owner_script = Script::from(&owner);
         let sender_script = Script::from(&sender);
         let receiver_script = Script::from(&receiver);
@@ -685,6 +707,11 @@ impl<'a> SudtSubCommand<'a> {
                 .args(Bytes::from(script_args).pack())
                 .build()
         };
+        let receiver_acp_script = Script::new_builder()
+            .code_hash(acp_script_id.code_hash.pack())
+            .hash_type(acp_script_id.hash_type.into())
+            .args(receiver_script.args())
+            .build();
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
             .hash_type(udt_script_id.hash_type.into())
@@ -702,14 +729,17 @@ impl<'a> SudtSubCommand<'a> {
             return Err("no cheque cell found".to_string());
         }
 
-        let mut udt_acp_query = CellQueryOptions::new_lock(receiver_script);
+        let mut udt_acp_query = CellQueryOptions::new_lock(receiver_acp_script);
         udt_acp_query.secondary_script = Some(type_script);
         let (udt_acp_cells, _) = self
             .cell_collector
             .collect_live_cells(&udt_acp_query, false)
             .map_err(|err| err.to_string())?;
         if udt_acp_cells.is_empty() {
-            return Err("no SUDT cell found from receiver address".to_string());
+            return Err(format!(
+                "no SUDT cell found from receiver address: {}",
+                receiver
+            ));
         }
 
         let cheque_inputs = cheque_cells
@@ -725,23 +755,21 @@ impl<'a> SudtSubCommand<'a> {
 
         let receiver_account =
             H160::from_slice(&receiver.payload().args().as_ref()[0..20]).unwrap();
-        let capacity_provider = Script::new_builder()
-            .code_hash(SIGHASH_TYPE_HASH.pack())
-            .hash_type(ScriptHashType::Type.into())
-            .args(Bytes::from(receiver.payload().args().as_ref()[0..20].to_vec()).pack())
-            .build();
-        let capacity_provider_payload = AddressPayload::from(capacity_provider.clone());
-        let capacity_provider_addr = Address::new(network, capacity_provider_payload, true);
+        let mut accounts = vec![("receiver".to_string(), receiver_account)];
+        if let Some(addr) = capacity_provider.as_ref() {
+            if *addr != receiver {
+                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                accounts.push(("capacity provider".to_string(), account));
+            }
+        }
+        let capacity_provider = Script::from(capacity_provider.as_ref().unwrap_or(&receiver));
         let tx = self.build_tx(
             &builder,
-            vec![(
-                format!("receiver({})", capacity_provider_addr),
-                receiver_account,
-            )],
+            accounts,
             &cell_deps,
             capacity_provider,
-            None,
-            Some((cheque_script_id, ChequeAction::Withdraw)),
+            Some(acp_script_id),
+            Some((cheque_script_id, ChequeAction::Claim)),
             fee_rate,
         )?;
 
@@ -768,12 +796,14 @@ impl<'a> SudtSubCommand<'a> {
         owner: Address,
         sender: Address,
         receiver: Address,
+        capacity_provider: Option<Address>,
         cell_deps: CellDeps,
         fee_rate: u64,
         debug: bool,
     ) -> Result<Output, String> {
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let cheque_script_id = get_script_id(&cell_deps, CellDepName::Cheque)?;
+        let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
         let owner_script = Script::from(&owner);
         let sender_script = Script::from(&sender);
         let receiver_script = Script::from(&receiver);
@@ -812,16 +842,24 @@ impl<'a> SudtSubCommand<'a> {
             .collect::<Vec<_>>();
         let builder = ChequeWithdrawBuilder {
             out_points: cheque_out_points,
-            sender_lock_script: sender_script.clone(),
+            sender_lock_script: sender_script,
         };
 
         let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
+        let mut accounts = vec![("sender".to_string(), sender_account)];
+        if let Some(addr) = capacity_provider.as_ref() {
+            if *addr != receiver {
+                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                accounts.push(("capacity provider".to_string(), account));
+            }
+        }
+        let capacity_provider = Script::from(capacity_provider.as_ref().unwrap_or(&sender));
         let tx = self.build_tx(
             &builder,
-            vec![("sender".to_string(), sender_account)],
+            accounts,
             &cell_deps,
-            sender_script,
-            None,
+            capacity_provider,
+            Some(acp_script_id),
             Some((cheque_script_id, ChequeAction::Withdraw)),
             fee_rate,
         )?;
@@ -866,6 +904,16 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 if udt_to_vec.is_empty() {
                     return Err("missing <udt-to> argument".to_string());
                 }
+                if to_cheque_address {
+                    for (addr, _) in &udt_to_vec {
+                        let payload = addr.payload();
+                        if payload.code_hash(Some(network)) != SIGHASH_TYPE_HASH.pack()
+                            || payload.hash_type() != ScriptHashType::Type
+                        {
+                            return Err(format!("when to-cheque-address is presented, address in <udt-to> must be all sighash addresses, invalid address: {}", addr));
+                        }
+                    }
+                }
                 if to_cheque_address && to_acp_address {
                     return Err(
                         "to-acp-address and to-cheque-address can not both presented".to_string(),
@@ -903,6 +951,16 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let to_acp_address = m.is_present("to-acp-address");
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
 
+                if to_cheque_address {
+                    for (addr, _) in &udt_to_vec {
+                        let payload = addr.payload();
+                        if payload.code_hash(Some(network)) != SIGHASH_TYPE_HASH.pack()
+                            || payload.hash_type() != ScriptHashType::Type
+                        {
+                            return Err(format!("when to-cheque-address is presented, address in <udt-to> must be all sighash addresses, invalid address: {}", addr));
+                        }
+                    }
+                }
                 if to_cheque_address && to_acp_address {
                     return Err(
                         "to-acp-address and to-cheque-address can not both presented".to_string(),
@@ -964,9 +1022,24 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let receiver: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "receiver")?;
+                let capacity_provider: Option<Address> = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches_opt(m, "capacity-provider")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
-                self.cheque_claim(owner, sender, receiver, cell_deps, fee_rate, network, debug)
+
+                if capacity_provider.as_ref() == Some(&sender) {
+                    return Err("<capacity-provider> can't be the same with <sender>".to_string());
+                }
+                self.cheque_claim(
+                    owner,
+                    sender,
+                    receiver,
+                    capacity_provider,
+                    cell_deps,
+                    fee_rate,
+                    debug,
+                )
             }
             ("cheque-withdraw", Some(m)) => {
                 let owner: Address = AddressParser::new_sighash()
@@ -978,9 +1051,20 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let receiver: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "receiver")?;
+                let capacity_provider: Option<Address> = AddressParser::new_sighash()
+                    .set_network(network)
+                    .from_matches_opt(m, "capacity-provider")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
-                self.cheque_withdraw(owner, sender, receiver, cell_deps, fee_rate, debug)
+                self.cheque_withdraw(
+                    owner,
+                    sender,
+                    receiver,
+                    capacity_provider,
+                    cell_deps,
+                    fee_rate,
+                    debug,
+                )
             }
             ("build-acp-address", Some(m)) => {
                 let sighash_addr: Address = AddressParser::new_sighash()
@@ -998,10 +1082,10 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 Ok(Output::new_output(acp_addr.to_string()))
             }
             ("build-cheque-address", Some(m)) => {
-                let sender: Address = AddressParser::default()
+                let sender: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "sender")?;
-                let receiver: Address = AddressParser::default()
+                let receiver: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "receiver")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
