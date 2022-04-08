@@ -3183,15 +3183,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-<<<<<<< HEAD
 version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f54c8ca710e81886d498c2fd3331b56c93aa248d49de2222ad2742247c60072f"
-=======
-version = "0.1.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90442985ee2f57c9e1b548ee72ae842f4a9a20e3f417cc38dbc5dc684d9bb4ee"
->>>>>>> refactor: new cell_deps format
 dependencies = [
  "lazy_static",
 ]
