@@ -52,6 +52,76 @@ impl Signer for PrivkeyWrapper {
     }
 }
 
+#[derive(Default)]
+pub struct PrivkeySigner {
+    privkeys: HashMap<H160, PrivkeyWrapper>,
+    ids: HashMap<H160, H160>,
+}
+
+impl PrivkeySigner {
+    pub fn new(keys: Vec<PrivkeyWrapper>) -> PrivkeySigner {
+        let privkeys = HashMap::with_capacity(keys.len());
+        let ids = HashMap::with_capacity(keys.len());
+        let mut signer = PrivkeySigner { privkeys, ids };
+        for key in keys {
+            signer.add_privkey(key);
+        }
+        signer
+    }
+
+    pub fn has_account(&self, account: &H160) -> bool {
+        self.privkeys.contains_key(account)
+    }
+
+    pub fn add_privkey(&mut self, privkey: PrivkeyWrapper) {
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
+        let id = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20]).unwrap();
+        self.privkeys.insert(id.clone(), privkey);
+        self.ids.insert(id.clone(), id);
+    }
+
+    pub fn cache_account_lock_hash160(&mut self, account: H160, script_id: &ScriptId) -> bool {
+        if self.privkeys.contains_key(&account) {
+            let script_hash = Script::new_builder()
+                .code_hash(script_id.code_hash.pack())
+                .hash_type(script_id.hash_type.into())
+                .args(Bytes::from(account.as_bytes().to_vec()).pack())
+                .build()
+                .calc_script_hash();
+            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
+            self.ids.insert(lock_hash160, account);
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Signer for PrivkeySigner {
+    fn match_id(&self, id: &[u8]) -> bool {
+        if id.len() != 20 {
+            return false;
+        }
+        self.ids.contains_key(&H160::from_slice(id).unwrap())
+    }
+
+    fn sign(
+        &self,
+        id: &[u8],
+        message: &[u8],
+        recoverable: bool,
+        tx: &TransactionView,
+    ) -> Result<Bytes, SignerError> {
+        if id.len() != 20 {
+            return Err(SignerError::IdNotFound);
+        }
+        let hash160 = H160::from_slice(id).unwrap();
+        let account = self.ids.get(&hash160).ok_or(SignerError::IdNotFound)?;
+        let privkey = self.privkeys.get(account).expect("no privkey found");
+        privkey.sign(id, message, recoverable, tx)
+    }
+}
+
 pub struct KeyStoreHandlerSigner {
     handler: KeyStoreHandler,
     tx_dep_provider: Box<dyn TransactionDependencyProvider>,
@@ -81,16 +151,25 @@ impl KeyStoreHandlerSigner {
         self.change_paths.insert(account, change_path);
     }
 
-    pub fn cache_account_lock_hash160(&mut self, account: H160, script_id: &ScriptId) {
-        let script_hash = Script::new_builder()
-            .code_hash(script_id.code_hash.pack())
-            .hash_type(script_id.hash_type.into())
-            .args(Bytes::from(account.as_bytes().to_vec()).pack())
-            .build()
-            .calc_script_hash();
-        let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
-        self.ids
-            .insert(lock_hash160, (DerivationPath::empty(), None, account));
+    pub fn cache_account_lock_hash160(&mut self, account: H160, script_id: &ScriptId) -> bool {
+        if self
+            .handler
+            .has_account(account.clone())
+            .unwrap_or_default()
+        {
+            let script_hash = Script::new_builder()
+                .code_hash(script_id.code_hash.pack())
+                .hash_type(script_id.hash_type.into())
+                .args(Bytes::from(account.as_bytes().to_vec()).pack())
+                .build()
+                .calc_script_hash();
+            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
+            self.ids
+                .insert(lock_hash160, (DerivationPath::empty(), None, account));
+            true
+        } else {
+            false
+        }
     }
 
     pub fn cache_key_set(
@@ -201,5 +280,41 @@ impl Signer for KeyStoreHandlerSigner {
         self.handler
             .sign(account, &path, msg, sign_target, password, recoverable)
             .map_err(|err| SignerError::Other(err.into()))
+    }
+}
+
+pub struct CommonSigner {
+    signers: Vec<Box<dyn Signer>>,
+}
+
+impl CommonSigner {
+    pub fn new(signers: Vec<Box<dyn Signer>>) -> CommonSigner {
+        CommonSigner { signers }
+    }
+
+    fn get_signer(&self, id: &[u8]) -> Option<&dyn Signer> {
+        for signer in &self.signers {
+            if signer.match_id(id) {
+                return Some(signer.as_ref());
+            }
+        }
+        None
+    }
+}
+
+impl Signer for CommonSigner {
+    fn match_id(&self, id: &[u8]) -> bool {
+        self.get_signer(id).is_some()
+    }
+
+    fn sign(
+        &self,
+        id: &[u8],
+        message: &[u8],
+        recoverable: bool,
+        tx: &TransactionView,
+    ) -> Result<Bytes, SignerError> {
+        let signer = self.get_signer(id).ok_or(SignerError::IdNotFound)?;
+        signer.sign(id, message, recoverable, tx)
     }
 }

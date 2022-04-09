@@ -1,12 +1,14 @@
 mod dao;
 mod plugin;
 mod rpc;
+mod sudt;
 mod util;
 mod wallet;
 
 pub use dao::*;
 pub use plugin::*;
 pub use rpc::*;
+pub use sudt::*;
 pub use util::*;
 pub use wallet::*;
 

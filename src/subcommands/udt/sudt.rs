@@ -38,13 +38,16 @@ use crate::plugin::PluginManager;
 use crate::subcommands::{CliSubCommand, Output};
 use crate::utils::{
     arg,
-    arg_parser::{AddressParser, ArgParser, CellDepsParser, FromStrParser, UdtTargetParser},
+    arg_parser::{
+        AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        UdtTargetParser,
+    },
     cell_collector::LocalCellCollector,
     cell_dep::{CellDepName, CellDeps},
     index::IndexController,
     other::{get_network_type, read_password},
     rpc::HttpRpcClient,
-    signer::KeyStoreHandlerSigner,
+    signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
 };
 
 pub struct SudtSubCommand<'a> {
@@ -141,6 +144,7 @@ impl<'a> SudtSubCommand<'a> {
                             .clone()
                             .about("Treat all addresses in <udt-to> as cheque receiver (sighash address, and the cheque sender is the <owner>), otherwise the address will be used as the lock script of the SUDT cell")
                     )
+                    .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
                 App::new("transfer")
                     .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
@@ -158,6 +162,7 @@ impl<'a> SudtSubCommand<'a> {
                             .about("Treat all addresses in <udt-to> as cheque receiver (sighash address), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
                     )
                     .arg(arg_capacity_provider.clone())
+                    .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
                 App::new("get-amount")
                     .about("Get SUDT total amount of an address")
@@ -184,6 +189,7 @@ impl<'a> SudtSubCommand<'a> {
                             .about("The target address (sighash), used to create anyone-can-pay address, if <capacity-provider> is not given <to> will also use as capacity provider"),
                     )
                     .arg(arg_cell_deps.clone())
+                    .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
                 App::new("cheque-claim")
                     .about("Claim all cheque cells identified by given lock script and type script")
@@ -196,6 +202,7 @@ impl<'a> SudtSubCommand<'a> {
                     )
                     .arg(arg_capacity_provider.clone())
                     .arg(arg_cell_deps.clone())
+                    .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
                 App::new("cheque-withdraw")
                     .about("Withdraw all cheque cells identified by given lock script and type script")
@@ -205,6 +212,7 @@ impl<'a> SudtSubCommand<'a> {
                     .arg(arg_capacity_provider)
                     .arg(arg_to_acp_address.about("Withdraw to anyone-can-pay address, will use <sender> to build the anyone-can-pay address, the cell must be already exists"))
                     .arg(arg_cell_deps.clone())
+                    .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
                 // TODO: move this subcommand to `util`
                 App::new("build-acp-address")
@@ -244,6 +252,7 @@ impl<'a> SudtSubCommand<'a> {
         &mut self,
         builder: &dyn TxBuilder,
         accounts: Vec<(String, H160)>,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: &CellDeps,
         capacity_provider: Script,
         acp_script_id: Option<ScriptId>,
@@ -254,33 +263,48 @@ impl<'a> SudtSubCommand<'a> {
         let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
         let mut get_signer = || -> Result<Box<dyn Signer>, String> {
             let handler = self.plugin_mgr.keystore_handler();
-            let mut signer = KeyStoreHandlerSigner::new(
+            let mut keystore_signer = KeyStoreHandlerSigner::new(
                 handler.clone(),
                 Box::new(DefaultTransactionDependencyProvider::new(
                     self.rpc_client.url(),
                     0,
                 )),
             );
+            let mut privkey_signer = PrivkeySigner::new(privkeys.clone());
             for (name, account) in accounts.clone() {
-                let change_path = handler.root_key_path(account.clone())?;
-                if self.plugin_mgr.keystore_require_password() {
-                    let password = if let Some(password) = passwords.get(&account) {
-                        password.clone()
-                    } else {
-                        let password =
-                            read_password(false, Some(format!("{} Password", name).as_str()))?;
-                        passwords.insert(account.clone(), password.clone());
-                        password
-                    };
-                    signer.set_password(account.clone(), password);
+                if privkey_signer.has_account(&account) {
+                    if cheque_script_id.is_some() {
+                        let _ = privkey_signer
+                            .cache_account_lock_hash160(account.clone(), &sighash_script_id);
+                    }
+                } else {
+                    if !handler.has_account(account.clone()).unwrap_or_default() {
+                        return Err(format!("no such account in keystore: {}", name));
+                    }
+                    let change_path = handler.root_key_path(account.clone())?;
+                    if self.plugin_mgr.keystore_require_password() {
+                        let password = if let Some(password) = passwords.get(&account) {
+                            password.clone()
+                        } else {
+                            let password =
+                                read_password(false, Some(format!("{} Password", name).as_str()))?;
+                            passwords.insert(account.clone(), password.clone());
+                            password
+                        };
+                        keystore_signer.set_password(account.clone(), password);
+                    }
+                    // for matching cheque lock script args
+                    if cheque_script_id.is_some() {
+                        let _ = keystore_signer
+                            .cache_account_lock_hash160(account.clone(), &sighash_script_id);
+                    }
+                    keystore_signer.set_change_path(account, change_path.to_string());
                 }
-                // for matching cheque lock script args
-                if cheque_script_id.is_some() {
-                    signer.cache_account_lock_hash160(account.clone(), &sighash_script_id);
-                }
-                signer.set_change_path(account, change_path.to_string());
             }
-            Ok(Box::new(signer))
+            Ok(Box::new(CommonSigner::new(vec![
+                Box::new(privkey_signer),
+                Box::new(keystore_signer),
+            ])))
         };
 
         let mut unlockers: HashMap<_, Box<dyn ScriptUnlocker>> = HashMap::new();
@@ -338,6 +362,7 @@ impl<'a> SudtSubCommand<'a> {
         udt_to_vec: Vec<(Address, u128)>,
         to_cheque_address: bool,
         to_acp_address: bool,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
@@ -406,6 +431,7 @@ impl<'a> SudtSubCommand<'a> {
         let tx = self.build_tx(
             &builder,
             vec![("owner".to_string(), owner_account)],
+            privkeys,
             &cell_deps,
             owner_script,
             acp_script_id,
@@ -445,6 +471,7 @@ impl<'a> SudtSubCommand<'a> {
         to_cheque_address: bool,
         to_acp_address: bool,
         capacity_provider: Option<Address>,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
@@ -533,6 +560,7 @@ impl<'a> SudtSubCommand<'a> {
         let tx = self.build_tx(
             &builder,
             accounts,
+            privkeys,
             &cell_deps,
             capacity_provider,
             Some(acp_script_id),
@@ -617,6 +645,7 @@ impl<'a> SudtSubCommand<'a> {
         owner: Address,
         to: Address,
         capacity_provider: Option<Address>,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
@@ -661,6 +690,7 @@ impl<'a> SudtSubCommand<'a> {
         let tx = self.build_tx(
             &builder,
             vec![("capacity provider".to_string(), capacity_provider_account)],
+            privkeys,
             &cell_deps,
             Script::from(&capacity_provider),
             None,
@@ -697,6 +727,7 @@ impl<'a> SudtSubCommand<'a> {
         sender: Address,
         receiver: Address,
         capacity_provider: Option<Address>,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         debug: bool,
@@ -778,6 +809,7 @@ impl<'a> SudtSubCommand<'a> {
         let tx = self.build_tx(
             &builder,
             accounts,
+            privkeys,
             &cell_deps,
             capacity_provider,
             Some(acp_script_id),
@@ -810,6 +842,7 @@ impl<'a> SudtSubCommand<'a> {
         receiver: Address,
         capacity_provider: Option<Address>,
         to_acp_address: bool,
+        privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         debug: bool,
@@ -875,6 +908,7 @@ impl<'a> SudtSubCommand<'a> {
         let tx = self.build_tx(
             &builder,
             accounts,
+            privkeys,
             &cell_deps,
             capacity_provider,
             acp_script_id,
@@ -914,6 +948,8 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     address_parser.set_network(network);
                     UdtTargetParser::new(address_parser).from_matches_vec(m, "udt-to")?
                 };
+                let privkeys: Vec<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_vec(m, "privkey-path")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let to_cheque_address = m.is_present("to-cheque-address");
@@ -932,6 +968,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     udt_to_vec,
                     to_cheque_address,
                     to_acp_address,
+                    privkeys,
                     cell_deps,
                     fee_rate,
                     network,
@@ -953,6 +990,8 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let capacity_provider: Option<Address> = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches_opt(m, "capacity-provider")?;
+                let privkeys: Vec<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_vec(m, "privkey-path")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let to_cheque_address = m.is_present("to-cheque-address");
                 let to_acp_address = m.is_present("to-acp-address");
@@ -973,6 +1012,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     to_cheque_address,
                     to_acp_address,
                     capacity_provider,
+                    privkeys,
                     cell_deps,
                     fee_rate,
                     network,
@@ -999,12 +1039,15 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let capacity_provider: Option<Address> = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches_opt(m, "capacity-provider")?;
+                let privkeys: Vec<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_vec(m, "privkey-path")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 self.new_empty_acp(
                     owner,
                     to,
                     capacity_provider,
+                    privkeys,
                     cell_deps,
                     fee_rate,
                     network,
@@ -1024,6 +1067,8 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let capacity_provider: Option<Address> = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches_opt(m, "capacity-provider")?;
+                let privkeys: Vec<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_vec(m, "privkey-path")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
 
@@ -1035,6 +1080,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     sender,
                     receiver,
                     capacity_provider,
+                    privkeys,
                     cell_deps,
                     fee_rate,
                     debug,
@@ -1054,6 +1100,8 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     .set_network(network)
                     .from_matches_opt(m, "capacity-provider")?;
                 let to_acp_address = m.is_present("to-acp-address");
+                let privkeys: Vec<PrivkeyWrapper> =
+                    PrivkeyPathParser.from_matches_vec(m, "privkey-path")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 self.cheque_withdraw(
@@ -1062,6 +1110,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     receiver,
                     capacity_provider,
                     to_acp_address,
+                    privkeys,
                     cell_deps,
                     fee_rate,
                     debug,
