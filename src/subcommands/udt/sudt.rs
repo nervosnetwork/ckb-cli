@@ -106,11 +106,13 @@ impl<'a> SudtSubCommand<'a> {
         let arg_sender = Arg::with_name("sender")
             .long("sender")
             .takes_value(true)
+            .required(true)
             .validator(|input| AddressParser::default().validate(input))
             .about("Sender address");
         let arg_receiver = Arg::with_name("receiver")
             .long("receiver")
             .takes_value(true)
+            .required(true)
             .validator(|input| AddressParser::new_sighash().validate(input));
         let arg_cell_deps = Arg::with_name("cell-deps")
             .long("cell-deps")
@@ -143,7 +145,7 @@ impl<'a> SudtSubCommand<'a> {
                 App::new("transfer")
                     .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
                     .arg(arg_owner.clone())
-                    .arg(arg_sender.clone().required(true).about("SUDT sender address, the address type can be: [acp, sighash], if <capacity-provider> is not given <sender> will also use as capacity provider."))
+                    .arg(arg_sender.clone().about("SUDT sender address, the address type can be: [acp, sighash], when address type is `acp` this address will be used to build a sighash lock script for build cheque address or provide capacity, if <capacity-provider> is not given <sender> will also use as capacity provider."))
                     .arg(
                         arg_udt_to
                          .about("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
@@ -186,11 +188,10 @@ impl<'a> SudtSubCommand<'a> {
                 App::new("cheque-claim")
                     .about("Claim all cheque cells identified by given lock script and type script")
                     .arg(arg_owner.clone())
-                    .arg(arg_sender.clone().required(true).about("The cheque sender address (sighash)"))
+                    .arg(arg_sender.clone().about("The cheque sender address (sighash)"))
                     .arg(
                         arg_receiver
                             .clone()
-                            .required(true)
                             .about("The cheque receiver address (sighash), for searching an input to save the claimed amount, this address will be used to build anyone-can-pay address, if <capacity-provider> not given <receiver> will also be used as capacity provider")
                     )
                     .arg(arg_capacity_provider.clone())
