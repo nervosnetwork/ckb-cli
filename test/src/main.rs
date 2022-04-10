@@ -9,7 +9,8 @@ use crate::setup::Setup;
 use crate::spec::{
     DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, Plugin, RpcGetTipBlockNumber, Spec,
     SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
-    SudtTransferToChequeForWithdraw, Util, WalletTimelockedAddress, WalletTransfer,
+    SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
+    WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -67,6 +68,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
         Box::new(SudtIssueToCheque),
         Box::new(SudtIssueToAcp),
+        Box::new(SudtTransferToMultiAcp),
         Box::new(SudtTransferToChequeForClaim),
         Box::new(SudtTransferToChequeForWithdraw),
         Box::new(WalletTransfer),
