@@ -27,7 +27,7 @@ pub use plugin::PluginSubCommand;
 pub use pubsub::PubSubCommand;
 pub use rpc::RpcSubCommand;
 pub use tx::TxSubCommand;
-pub use udt::SudtSubCommand;
+pub use udt::{SudtSubCommand, UdtSubCommand};
 pub use util::UtilSubCommand;
 pub use wallet::{start_index_thread, LiveCells, TransferArgs, WalletSubCommand};
 

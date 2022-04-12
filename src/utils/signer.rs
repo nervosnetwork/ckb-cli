@@ -52,7 +52,7 @@ impl Signer for PrivkeyWrapper {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PrivkeySigner {
     privkeys: HashMap<H160, PrivkeyWrapper>,
     ids: HashMap<H160, H160>,
