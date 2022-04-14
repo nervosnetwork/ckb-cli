@@ -41,7 +41,7 @@ impl Spec for XudtIssueToAcp {
             owner_key_path,
         ));
         log::info!(
-            "Issue 300 SUDT to account 1's anyone-can-pay address:\n{}",
+            "Issue 300 XUDT to account 1's anyone-can-pay address:\n{}",
             output
         );
         setup.miner().generate_blocks(3);
@@ -73,7 +73,7 @@ impl Spec for XudtIssueToAcp {
             owner_key_path,
         ));
         log::info!(
-            "Issue 200 SUDT to account 1 and 400 to account 2:\n{}",
+            "Issue 200 XUDT to account 1 and 400 to account 2:\n{}",
             output
         );
         setup.miner().generate_blocks(3);
@@ -141,7 +141,7 @@ impl Spec for XudtTransferToMultiAcp {
             cell_deps_path,
             owner_key_path,
         ));
-        log::info!("Issue 300 SUDT to account 1's acp address:\n{}", output);
+        log::info!("Issue 300 XUDT to account 1's acp address:\n{}", output);
         setup.miner().generate_blocks(3);
         let output = setup.cli(&format!(
             "udt transfer --owner {} --xudt-rce-args {} --sender {} --udt-to {}:150 --udt-to {}:100 --to-acp-address --cell-deps {} --privkey-path {}",
@@ -154,7 +154,7 @@ impl Spec for XudtTransferToMultiAcp {
             account1_key_path,
         ));
         log::info!(
-            "Transfer 150 SUDT to owner, 100 SUDT to account 2, from account 1:\n{}",
+            "Transfer 150 XUDT to owner, 100 XUDT to account 2, from account 1:\n{}",
             output
         );
         setup.miner().generate_blocks(3);
