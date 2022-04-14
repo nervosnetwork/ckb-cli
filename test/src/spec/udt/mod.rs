@@ -5,7 +5,7 @@ pub use sudt::{
     SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
     SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp,
 };
-pub use xudt::XudtIssueToAcp;
+pub use xudt::{XudtIssueToAcp, XudtTransferToMultiAcp};
 
 use std::fs;
 use std::str::FromStr;
