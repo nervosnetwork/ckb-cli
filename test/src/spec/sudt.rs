@@ -41,7 +41,7 @@ impl Spec for SudtIssueToCheque {
         prepare(setup, path);
 
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:2000 --to-cheque-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:2000 --to-cheque-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR, ACCOUNT1_ADDR, cell_deps_path, owner_key_path
         ));
         log::info!("Issue 2000 SUDT to a cheque address which the sender is the sudt owner and the receiver is account 1:\n{}", output);
@@ -99,7 +99,7 @@ impl Spec for SudtIssueToCheque {
         );
 
         let output = setup.cli(&format!(
-            "sudt transfer --owner {} --sender {} --udt-to {}:600 --to-acp-address --cell-deps {} --capacity-provider {} --privkey-path {} --privkey-path {}",
+            "udt transfer --owner {} --sender {} --udt-to {}:600 --to-acp-address --cell-deps {} --capacity-provider {} --privkey-path {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             account2_acp_addr,
@@ -158,7 +158,7 @@ impl Spec for SudtIssueToAcp {
             0,
         );
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:300 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:300 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             cell_deps_path,
@@ -186,7 +186,7 @@ impl Spec for SudtIssueToAcp {
             account2_key_path.as_str(),
         );
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:200 --udt-to {}:400 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:200 --udt-to {}:400 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             account2_acp_addr,
@@ -250,7 +250,7 @@ impl Spec for SudtTransferToMultiAcp {
             account2_key_path.as_str(),
         );
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:300 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:300 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             cell_deps_path,
@@ -259,7 +259,7 @@ impl Spec for SudtTransferToMultiAcp {
         log::info!("Issue 300 SUDT to account 1's acp address:\n{}", output);
         setup.miner().generate_blocks(3);
         let output = setup.cli(&format!(
-            "sudt transfer --owner {} --sender {} --udt-to {}:150 --udt-to {}:100 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt transfer --owner {} --sender {} --udt-to {}:150 --udt-to {}:100 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             owner_acp_addr,
@@ -324,7 +324,7 @@ impl Spec for SudtTransferToChequeForClaim {
         );
 
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:1100 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:1100 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             cell_deps_path,
@@ -345,7 +345,7 @@ impl Spec for SudtTransferToChequeForClaim {
         );
 
         let output = setup.cli(&format!(
-            "sudt transfer --owner {} --sender {} --udt-to {}:500 --to-cheque-address --cell-deps {} --privkey-path {}",
+            "udt transfer --owner {} --sender {} --udt-to {}:500 --to-cheque-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             ACCOUNT2_ADDR,
@@ -417,7 +417,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
             account1_key_path.as_str(),
         );
         let output = setup.cli(&format!(
-            "sudt issue --owner {} --udt-to {}:1100 --to-acp-address --cell-deps {} --privkey-path {}",
+            "udt issue --owner {} --udt-to {}:1100 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             cell_deps_path,
@@ -438,7 +438,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
         );
 
         let output = setup.cli(&format!(
-            "sudt transfer --owner {} --sender {} --udt-to {}:500 --to-cheque-address --cell-deps {} --privkey-path {}",
+            "udt transfer --owner {} --sender {} --udt-to {}:500 --to-cheque-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
             account1_acp_addr,
             ACCOUNT2_ADDR,
@@ -575,6 +575,7 @@ fn prepare(setup: &mut Setup, tmp_path: &str) {
 
     // Build cell_deps.json
     let cell_deps = serde_json::json!({
+        "rce_cells": {},
         "items": {
             "sudt": {
                 "script_id": {
@@ -643,7 +644,7 @@ fn check_amount(
     expected_amount: u128,
 ) {
     let output = setup.cli(&format!(
-        "sudt get-amount --owner {} --address {} --cell-deps {}",
+        "udt get-amount --owner {} --address {} --cell-deps {}",
         owner_addr, addr, cell_deps_path,
     ));
     log::debug!("get amount:\n{}", output);
@@ -664,7 +665,7 @@ fn create_acp_cell(
     privkey_path: &str,
 ) -> String {
     let output = setup.cli(&format!(
-        "sudt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
+        "udt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
         owner_addr, addr, cell_deps_path, privkey_path,
     ));
     log::info!("create empty acp cell for {}:\n{}", addr, output);

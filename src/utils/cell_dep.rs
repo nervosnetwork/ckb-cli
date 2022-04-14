@@ -52,6 +52,7 @@ pub struct CellDepItem {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CellDeps {
     pub items: HashMap<CellDepName, CellDepItem>,
+    pub rce_cells: HashMap<H256, rpc_types::CellDep>,
 }
 
 impl CellDeps {
