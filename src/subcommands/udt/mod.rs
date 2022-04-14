@@ -536,18 +536,6 @@ impl<'a> UdtSubCommand<'a> {
         udt_lock_hashes.insert(acp_lock.calc_script_hash());
 
         let type_script = udt_type.build_script(&udt_script_id, &owner_script_hash);
-        let base_output = CellOutput::new_builder()
-            .lock(acp_lock)
-            .type_(Some(type_script).pack())
-            .build();
-        let occupied_capacity: u64 = base_output
-            .occupied_capacity(Capacity::bytes(16).unwrap())
-            .unwrap()
-            .as_u64();
-        let output = base_output
-            .as_builder()
-            .capacity(occupied_capacity.pack())
-            .build();
         let output_data = {
             let mut buf = vec![
                 0u8;
@@ -562,6 +550,18 @@ impl<'a> UdtSubCommand<'a> {
             }
             Bytes::from(buf)
         };
+        let base_output = CellOutput::new_builder()
+            .lock(acp_lock)
+            .type_(Some(type_script).pack())
+            .build();
+        let occupied_capacity: u64 = base_output
+            .occupied_capacity(Capacity::bytes(output_data.len()).unwrap())
+            .unwrap()
+            .as_u64();
+        let output = base_output
+            .as_builder()
+            .capacity(occupied_capacity.pack())
+            .build();
         let builder = CapacityTransferBuilder::new(vec![(output, output_data)]);
         let rce_info = xudt_rce_args
             .map(|rce_cell_hash| (rce_cell_hash, build_rce_witness(udt_lock_hashes, true)));
@@ -756,7 +756,8 @@ fn udt_info(
     cell_deps: &CellDeps,
 ) -> Result<(ScriptId, UdtType, Option<Bytes>), String> {
     if let Some(rce_args) = xudt_rce_args {
-        let xudt_data = XudtData::new_builder()
+        // FIXME: require xudt update
+        let _xudt_data = XudtData::new_builder()
             .lock(Bytes::default().pack())
             .data(vec![Bytes::default().pack()].pack())
             .build()
@@ -777,7 +778,7 @@ fn udt_info(
         Ok((
             get_script_id(cell_deps, CellDepName::Xudt)?,
             UdtType::Xudt(xudt_args),
-            Some(xudt_data),
+            Some(Bytes::default()),
         ))
     } else {
         Ok((
@@ -1006,7 +1007,7 @@ impl<'a> UdtTxBuilder<'a> {
 
         cell_deps.apply_to_resolver(self.cell_dep_resolver)?;
 
-        let mut base_tx = self
+        let base_tx = self
             .builder
             .build_base(
                 self.cell_collector,
@@ -1015,9 +1016,14 @@ impl<'a> UdtTxBuilder<'a> {
                 self.tx_dep_provider,
             )
             .map_err(|err| err.to_string())?;
+
+        let (mut tx_filled_witnesses, _) =
+            fill_placeholder_witnesses(base_tx, self.tx_dep_provider, &unlockers)
+                .map_err(|err| err.to_string())?;
+
         if let Some((rce_cell_hash, rce_witness)) = self.rce_info.as_ref() {
-            let mut tx_cell_deps: Vec<_> = base_tx.cell_deps().into_iter().collect();
-            let mut witnesses: Vec<_> = base_tx.witnesses().into_iter().collect();
+            let mut tx_cell_deps: Vec<_> = tx_filled_witnesses.cell_deps().into_iter().collect();
+            let mut witnesses: Vec<_> = tx_filled_witnesses.witnesses().into_iter().collect();
             let rce_cell_dep = cell_deps.rce_cells.get(rce_cell_hash).ok_or_else(|| {
                 format!(
                     "no rce cell_dep found for {:#x}, please check `rce_cells` of cell_deps config",
@@ -1028,17 +1034,34 @@ impl<'a> UdtTxBuilder<'a> {
             if witnesses.is_empty() {
                 witnesses.push(rce_witness.as_bytes().pack());
             } else {
-                witnesses[0] = rce_witness.as_bytes().pack();
+                let witness_data = witnesses[0].raw_data();
+                let mut witness = if witness_data.is_empty() {
+                    WitnessArgs::default()
+                } else {
+                    WitnessArgs::from_slice(witness_data.as_ref()).map_err(|err| err.to_string())?
+                };
+                if let Some(data) = rce_witness.input_type().to_opt() {
+                    witness = witness
+                        .as_builder()
+                        .input_type(Some(data.raw_data()).pack())
+                        .build();
+                } else if let Some(data) = rce_witness.output_type().to_opt() {
+                    witness = witness
+                        .as_builder()
+                        .output_type(Some(data.raw_data()).pack())
+                        .build();
+                } else {
+                    panic!("invalid rce witness to build tx");
+                }
+                witnesses[0] = witness.as_bytes().pack();
             }
-            base_tx = base_tx
+            tx_filled_witnesses = tx_filled_witnesses
                 .as_advanced_builder()
                 .set_cell_deps(tx_cell_deps)
                 .set_witnesses(witnesses)
                 .build();
         }
-        let (tx_filled_witnesses, _) =
-            fill_placeholder_witnesses(base_tx, self.tx_dep_provider, &unlockers)
-                .map_err(|err| err.to_string())?;
+
         let balanced_tx = balance_tx_capacity(
             &tx_filled_witnesses,
             &balancer,

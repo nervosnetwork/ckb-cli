@@ -2,7 +2,7 @@ use tempfile::tempdir;
 
 use ckb_chain_spec::ChainSpec;
 
-use super::{prepare, ACCOUNT1_ADDR, ACCOUNT2_ADDR, OWNER_ADDR};
+use super::{check_amount, create_acp_cell, prepare, ACCOUNT1_ADDR, ACCOUNT2_ADDR, OWNER_ADDR};
 use crate::setup::Setup;
 use crate::spec::Spec;
 
@@ -19,7 +19,7 @@ impl Spec for SudtIssueToCheque {
         let account1_key_path = format!("{}/account1", path);
         let account2_key_path = format!("{}/account2", path);
         let cell_deps_path = format!("{}/cell_deps.json", path);
-        prepare(setup, path);
+        let _ = prepare(setup, path);
 
         let output = setup.cli(&format!(
             "udt issue --owner {} --udt-to {}:2000 --to-cheque-address --cell-deps {} --privkey-path {}",
@@ -36,6 +36,7 @@ impl Spec for SudtIssueToCheque {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             cheque_addr.as_str(),
             2000,
@@ -44,6 +45,7 @@ impl Spec for SudtIssueToCheque {
         let account1_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT1_ADDR,
             account1_key_path.as_str(),
@@ -66,6 +68,7 @@ impl Spec for SudtIssueToCheque {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             2000,
@@ -74,6 +77,7 @@ impl Spec for SudtIssueToCheque {
         let account2_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT2_ADDR,
             account2_key_path.as_str(),
@@ -98,6 +102,7 @@ impl Spec for SudtIssueToCheque {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             1400,
@@ -105,6 +110,7 @@ impl Spec for SudtIssueToCheque {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account2_acp_addr.as_str(),
             600,
@@ -122,11 +128,12 @@ impl Spec for SudtIssueToAcp {
         let account1_key_path = format!("{}/account1", path);
         let account2_key_path = format!("{}/account2", path);
         let cell_deps_path = format!("{}/cell_deps.json", path);
-        prepare(setup, path);
+        let _ = prepare(setup, path);
 
         let account1_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT1_ADDR,
             account1_key_path.as_str(),
@@ -134,6 +141,7 @@ impl Spec for SudtIssueToAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             0,
@@ -153,6 +161,7 @@ impl Spec for SudtIssueToAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             300,
@@ -162,6 +171,7 @@ impl Spec for SudtIssueToAcp {
         let account2_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT2_ADDR,
             account2_key_path.as_str(),
@@ -183,6 +193,7 @@ impl Spec for SudtIssueToAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             500,
@@ -190,6 +201,7 @@ impl Spec for SudtIssueToAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account2_acp_addr.as_str(),
             400,
@@ -207,11 +219,12 @@ impl Spec for SudtTransferToMultiAcp {
         let account1_key_path = format!("{}/account1", path);
         let account2_key_path = format!("{}/account2", path);
         let cell_deps_path = format!("{}/cell_deps.json", path);
-        prepare(setup, path);
+        let _ = prepare(setup, path);
 
         let owner_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             OWNER_ADDR,
             owner_key_path.as_str(),
@@ -219,6 +232,7 @@ impl Spec for SudtTransferToMultiAcp {
         let account1_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT1_ADDR,
             account1_key_path.as_str(),
@@ -226,6 +240,7 @@ impl Spec for SudtTransferToMultiAcp {
         let account2_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT2_ADDR,
             account2_key_path.as_str(),
@@ -256,6 +271,7 @@ impl Spec for SudtTransferToMultiAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             owner_acp_addr.as_str(),
             150,
@@ -263,6 +279,7 @@ impl Spec for SudtTransferToMultiAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             50,
@@ -270,6 +287,7 @@ impl Spec for SudtTransferToMultiAcp {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account2_acp_addr.as_str(),
             100,
@@ -287,11 +305,12 @@ impl Spec for SudtTransferToChequeForClaim {
         let account1_key_path = format!("{}/account1", path);
         let account2_key_path = format!("{}/account2", path);
         let cell_deps_path = format!("{}/cell_deps.json", path);
-        prepare(setup, path);
+        let _ = prepare(setup, path);
 
         let account1_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT1_ADDR,
             account1_key_path.as_str(),
@@ -299,6 +318,7 @@ impl Spec for SudtTransferToChequeForClaim {
         let account2_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT2_ADDR,
             account2_key_path.as_str(),
@@ -320,6 +340,7 @@ impl Spec for SudtTransferToChequeForClaim {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             1100,
@@ -339,6 +360,7 @@ impl Spec for SudtTransferToChequeForClaim {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             600,
@@ -346,6 +368,7 @@ impl Spec for SudtTransferToChequeForClaim {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account2_acp_addr.as_str(),
             0,
@@ -365,6 +388,7 @@ impl Spec for SudtTransferToChequeForClaim {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             600,
@@ -372,6 +396,7 @@ impl Spec for SudtTransferToChequeForClaim {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account2_acp_addr.as_str(),
             500,
@@ -388,11 +413,12 @@ impl Spec for SudtTransferToChequeForWithdraw {
         let owner_key_path = format!("{}/owner", path);
         let account1_key_path = format!("{}/account1", path);
         let cell_deps_path = format!("{}/cell_deps.json", path);
-        prepare(setup, path);
+        let _ = prepare(setup, path);
 
         let account1_acp_addr = create_acp_cell(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             ACCOUNT1_ADDR,
             account1_key_path.as_str(),
@@ -413,6 +439,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             1100,
@@ -432,6 +459,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             600,
@@ -464,6 +492,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
         check_amount(
             setup,
             OWNER_ADDR,
+            None,
             cell_deps_path.as_str(),
             account1_acp_addr.as_str(),
             1100,
@@ -473,42 +502,4 @@ impl Spec for SudtTransferToChequeForWithdraw {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
-}
-
-fn check_amount(
-    setup: &mut Setup,
-    owner_addr: &str,
-    cell_deps_path: &str,
-    addr: &str,
-    expected_amount: u128,
-) {
-    let output = setup.cli(&format!(
-        "udt get-amount --owner {} --address {} --cell-deps {}",
-        owner_addr, addr, cell_deps_path,
-    ));
-    log::debug!("get amount:\n{}", output);
-    setup.miner().generate_blocks(3);
-    let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
-    assert_eq!(
-        value["total_amount"].as_str().unwrap(),
-        expected_amount.to_string()
-    );
-    assert_eq!(value["cell_count"].as_u64().unwrap(), 1);
-}
-
-fn create_acp_cell(
-    setup: &mut Setup,
-    owner_addr: &str,
-    cell_deps_path: &str,
-    addr: &str,
-    privkey_path: &str,
-) -> String {
-    let output = setup.cli(&format!(
-        "udt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
-        owner_addr, addr, cell_deps_path, privkey_path,
-    ));
-    log::info!("create empty acp cell for {}:\n{}", addr, output);
-    setup.miner().generate_blocks(3);
-    let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
-    value["acp-address"].as_str().unwrap().to_string()
 }
