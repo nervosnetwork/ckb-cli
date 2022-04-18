@@ -1042,6 +1042,10 @@ fn explain_txs(info: &IntermediumInfo) -> Result<()> {
     }
     print_total_change(&info.cell_changes);
     if let Some(tx) = info.cell_tx.as_ref() {
+        let tx_hash: H256 = packed::Transaction::from(tx.clone())
+            .calc_tx_hash()
+            .unpack();
+        println!("[tx hash] {:#x}", tx_hash);
         print_tx_fee(tx, &info.used_input_txs)?;
     }
 
@@ -1057,6 +1061,10 @@ fn explain_txs(info: &IntermediumInfo) -> Result<()> {
     }
     print_total_change(&info.dep_group_changes);
     if let Some(tx) = info.dep_group_tx.as_ref() {
+        let tx_hash: H256 = packed::Transaction::from(tx.clone())
+            .calc_tx_hash()
+            .unpack();
+        println!("[tx hash] {:#x}", tx_hash);
         print_tx_fee(tx, &info.used_input_txs)?;
     }
     Ok(())
