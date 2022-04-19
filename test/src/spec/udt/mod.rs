@@ -1,26 +1,22 @@
 mod sudt;
-mod xudt;
 
 pub use sudt::{
     SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
     SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp,
 };
-pub use xudt::{XudtIssueToAcp, XudtTransferToMultiAcp};
 
 use std::fs;
 use std::str::FromStr;
 
 use crate::miner::Miner;
 use crate::setup::Setup;
-use ckb_sdk::tx_builder::udt::xudt_rce::{RCData, RCDataUnion, RCRule};
 use ckb_types::{
-    packed::{Byte32, OutPoint, OutPointVec},
+    packed::{OutPoint, OutPointVec},
     prelude::*,
     H256,
 };
 
 const SUDT_BIN: &[u8] = include_bytes!("../../script-bins/simple_udt");
-const XUDT_BIN: &[u8] = include_bytes!("../../script-bins/xudt_rce");
 const ACP_BIN: &[u8] = include_bytes!("../../script-bins/anyone_can_pay");
 const CHEQUE_BIN: &[u8] = include_bytes!("../../script-bins/ckb-cheque-script");
 
@@ -31,7 +27,7 @@ pub const ACCOUNT1_ADDR: &str = "ckt1qyqfjslcvyaay029vvfxtn80rxnwmlma43xscrqn85"
 const ACCOUNT2_KEY: &str = "5f9eceb1af9fe48b97e2df350450d7416887ccca62f537733f1377ee9efb8906";
 pub const ACCOUNT2_ADDR: &str = "ckt1qyq9qaekmruccau7u3eff4wsv8v74gxmlptqj2lcte";
 
-pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
+pub fn prepare(setup: &mut Setup, tmp_path: &str) {
     let owner_key = format!("{}/owner", tmp_path);
     let account1_key = format!("{}/account1", tmp_path);
     let account2_key = format!("{}/account2", tmp_path);
@@ -39,32 +35,12 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
     fs::write(&account1_key, ACCOUNT1_KEY).unwrap();
     fs::write(&account2_key, ACCOUNT2_KEY).unwrap();
 
-    let rce_cell_data = {
-        // An empty black list rule
-        let rcrule = RCRule::new_builder()
-            .flags(0u8.into())
-            .smt_root(Byte32::default())
-            .build();
-        RCData::new_builder()
-            .set(RCDataUnion::RCRule(rcrule))
-            .build()
-            .as_bytes()
-    };
-    log::info!(
-        "rce cell data: 0x{}",
-        faster_hex::hex_string(rce_cell_data.as_ref())
-    );
-
     let acp_bin = format!("{}/acp", tmp_path);
     let cheque_bin = format!("{}/cheque", tmp_path);
     let sudt_bin = format!("{}/sudt", tmp_path);
-    let xudt_bin = format!("{}/xudt", tmp_path);
-    let rce_bin = format!("{}/rce", tmp_path);
     fs::write(&acp_bin, ACP_BIN).unwrap();
     fs::write(&cheque_bin, CHEQUE_BIN).unwrap();
     fs::write(&sudt_bin, SUDT_BIN).unwrap();
-    fs::write(&xudt_bin, XUDT_BIN).unwrap();
-    fs::write(&rce_bin, rce_cell_data.as_ref()).unwrap();
 
     let miner_privkey = setup.miner().privkey_path().to_string();
     let miner_address = Miner::address();
@@ -77,8 +53,6 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
         (ACP_BIN.len(), acp_bin),
         (CHEQUE_BIN.len(), cheque_bin),
         (SUDT_BIN.len(), sudt_bin),
-        (XUDT_BIN.len(), xudt_bin),
-        (rce_cell_data.len(), rce_bin),
     ] {
         let capacity_ckb = size + 200;
         let tx_hash = setup.cli(&format!(
@@ -133,15 +107,6 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
     }
 
     // Build cell_deps.json
-    let rce_cell_hash = tx_hashes[4].1.clone();
-    let mut rce_cells = serde_json::json!({});
-    rce_cells[rce_cell_hash.clone()] = serde_json::json!({
-        "out_point": {
-            "tx_hash": tx_hashes[4].0,
-            "index": "0x0"
-        },
-        "dep_type": "code"
-    });
     let cell_deps = serde_json::json!({
         "items": {
             "acp": {
@@ -182,22 +147,8 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
                     },
                     "dep_type": "code"
                 }
-            },
-            "xudt": {
-                "script_id": {
-                    "hash_type": "type",
-                    "code_hash": tx_hashes[3].1,
-                },
-                "cell_dep": {
-                    "out_point": {
-                        "tx_hash": tx_hashes[3].0,
-                        "index": "0x0"
-                    },
-                    "dep_type": "code"
-                }
             }
-        },
-        "rce_cells": rce_cells
+        }
     });
     let cell_deps_path = format!("{}/cell_deps.json", tmp_path);
     fs::write(
@@ -215,29 +166,19 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) -> String {
         log::info!("transfer 2000 CKB from miner to {}", addr);
         setup.miner().generate_blocks(3);
     }
-
-    rce_cell_hash
 }
 
 pub fn check_amount(
     setup: &mut Setup,
     owner_addr: &str,
-    xudt_rce_args: Option<&str>,
     cell_deps_path: &str,
     addr: &str,
     expected_amount: u128,
 ) {
-    let output = if let Some(xudt_rce_args) = xudt_rce_args {
-        setup.cli(&format!(
-            "udt get-amount --owner {} --xudt-rce-args {} --address {} --cell-deps {}",
-            owner_addr, xudt_rce_args, addr, cell_deps_path,
-        ))
-    } else {
-        setup.cli(&format!(
-            "udt get-amount --owner {} --address {} --cell-deps {}",
-            owner_addr, addr, cell_deps_path,
-        ))
-    };
+    let output = setup.cli(&format!(
+        "udt get-amount --owner {} --address {} --cell-deps {}",
+        owner_addr, addr, cell_deps_path,
+    ));
     log::debug!("get amount:\n{}", output);
     setup.miner().generate_blocks(3);
     let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
@@ -251,24 +192,14 @@ pub fn check_amount(
 pub fn create_acp_cell(
     setup: &mut Setup,
     owner_addr: &str,
-    xudt_rce_args: Option<&str>,
     cell_deps_path: &str,
     addr: &str,
     privkey_path: &str,
 ) -> String {
-    let output = if let Some(xudt_rce_args) = xudt_rce_args {
-        setup.cli(&format!(
-            "udt new-empty-acp --owner {} --xudt-rce-args {} --to {} --cell-deps {} --privkey-path {}",
-            owner_addr,
-            xudt_rce_args,
-            addr, cell_deps_path, privkey_path,
-        ))
-    } else {
-        setup.cli(&format!(
-            "udt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
-            owner_addr, addr, cell_deps_path, privkey_path,
-        ))
-    };
+    let output = setup.cli(&format!(
+        "udt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
+        owner_addr, addr, cell_deps_path, privkey_path,
+    ));
     log::info!("create empty acp cell for {}:\n{}", addr, output);
     setup.miner().generate_blocks(3);
     let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();

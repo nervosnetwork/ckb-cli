@@ -1,16 +1,11 @@
 mod sudt;
-mod xudt;
 
 pub use sudt::SudtSubCommand;
-// pub use xudt::XudtSubCommand;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::{App, Arg, ArgMatches};
-use sparse_merkle_tree::{
-    blake2b::Blake2bHasher, default_store::DefaultStore, SparseMerkleTree, H256 as SmtH256,
-};
 
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
@@ -23,15 +18,9 @@ use ckb_sdk::{
         CellCollector, CellQueryOptions, Signer,
     },
     tx_builder::{
-        balance_tx_capacity, fill_placeholder_witnesses,
         transfer::CapacityTransferBuilder,
-        udt::{
-            xudt_rce::{
-                ScriptVec, SmtProof, SmtProofEntry, SmtProofEntryVec, XudtData, XudtWitnessInput,
-            },
-            UdtIssueBuilder, UdtTargetReceiver, UdtTransferBuilder, UdtType,
-        },
-        unlock_tx, CapacityBalancer, CapacityProvider, TransferAction, TxBuilder,
+        udt::{UdtIssueBuilder, UdtTargetReceiver, UdtTransferBuilder, UdtType},
+        CapacityBalancer, CapacityProvider, TransferAction, TxBuilder,
     },
     types::ScriptId,
     unlock::{
@@ -43,7 +32,7 @@ use ckb_sdk::{
 use ckb_types::{
     bytes::Bytes,
     core::{Capacity, FeeRate, ScriptHashType, TransactionView},
-    packed::{self, Byte32, CellOutput, Script, WitnessArgs},
+    packed::{CellOutput, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
@@ -53,8 +42,8 @@ use crate::subcommands::{CliSubCommand, Output};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, ArgParser, CellDepsParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper, UdtTargetParser,
+        AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+        UdtTargetParser,
     },
     cell_collector::LocalCellCollector,
     cell_dep::{CellDepName, CellDeps},
@@ -63,12 +52,6 @@ use crate::utils::{
     rpc::HttpRpcClient,
     signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
 };
-
-const RCE_HASH: [u8; 32] = [
-    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-];
-
-type Smt = SparseMerkleTree<Blake2bHasher, SmtH256, DefaultStore<SmtH256>>;
 
 pub struct UdtSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
@@ -110,11 +93,6 @@ impl<'a> UdtSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_xudt_rce_args = Arg::with_name("xudt-rce-args")
-            .long("xudt-rce-args")
-            .takes_value(true)
-            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-            .about("The xudt rce script args (rce cell's type script hash), if given will treat all udt cell as xudt cell otherwise will treat all udt cell as sudt cell. Currently, only RCE extension work with one empty blacklist is supported.");
         let arg_udt_to = Arg::with_name("udt-to")
             .long("udt-to")
             .takes_value(true)
@@ -123,7 +101,7 @@ impl<'a> UdtSubCommand<'a> {
             .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input));
         let arg_to_cheque_address = Arg::with_name("to-cheque-address").long("to-cheque-address");
         App::new(name)
-            .about("UDT (sudt/xudt) issue/transfer operations")
+            .about("UDT (sudt) issue/transfer operations")
             .subcommands(vec![
                 App::new("issue")
                     .about("Issue UDT to multiple addresses")
@@ -132,7 +110,6 @@ impl<'a> UdtSubCommand<'a> {
                         arg_udt_to.clone()
                             .about("The issue target, format: {address}:{amount}, the address type can be: [acp, sighash]")
                     )
-                    .arg(arg_xudt_rce_args.clone())
                     .arg(arg_cell_deps())
                     .arg(arg_to_acp_address())
                     .arg(
@@ -150,7 +127,6 @@ impl<'a> UdtSubCommand<'a> {
                         arg_udt_to
                          .about("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
                     )
-                    .arg(arg_xudt_rce_args.clone())
                     .arg(arg_cell_deps())
                     .arg(arg_to_acp_address())
                     .arg(
@@ -164,7 +140,6 @@ impl<'a> UdtSubCommand<'a> {
                 App::new("get-amount")
                     .about("Get UDT total amount of an address")
                     .arg(arg_owner())
-                    .arg(arg_xudt_rce_args.clone())
                     .arg(arg_cell_deps())
                     .arg(
                         Arg::with_name("address")
@@ -186,7 +161,6 @@ impl<'a> UdtSubCommand<'a> {
                             .validator(|input| AddressParser::new_sighash().validate(input))
                             .about("The target address (sighash), used to create anyone-can-pay address, if <capacity-provider> is not given <to> will also use as capacity provider"),
                     )
-                    .arg(arg_xudt_rce_args)
                     .arg(arg_cell_deps())
                     .arg(arg::privkey_path().multiple(true))
                     .arg(arg::fee_rate()),
@@ -196,7 +170,6 @@ impl<'a> UdtSubCommand<'a> {
     fn issue(
         &mut self,
         owner: Address,
-        xudt_rce_args: Option<H256>,
         udt_to_vec: Vec<(Address, u128)>,
         to_cheque_address: bool,
         to_acp_address: bool,
@@ -206,7 +179,8 @@ impl<'a> UdtSubCommand<'a> {
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
-        let (udt_script_id, udt_type, xudt_data) = udt_info(xudt_rce_args.as_ref(), &cell_deps)?;
+        let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
+        let udt_type = UdtType::Sudt;
         let acp_script_id = if to_acp_address {
             Some(get_script_id(&cell_deps, CellDepName::Acp)?)
         } else {
@@ -246,14 +220,10 @@ impl<'a> UdtSubCommand<'a> {
                     lock_script,
                     capacity: None,
                     amount,
-                    extra_data: xudt_data.clone(),
+                    extra_data: None,
                 }
             })
             .collect::<Vec<_>>();
-        let udt_lock_hashes = receivers
-            .iter()
-            .map(|receiver| receiver.lock_script.calc_script_hash())
-            .collect::<HashSet<_>>();
         let receiver_infos = receivers
             .iter()
             .map(|receiver| {
@@ -270,8 +240,6 @@ impl<'a> UdtSubCommand<'a> {
             owner: owner_script.clone(),
             receivers,
         };
-        let rce_info = xudt_rce_args
-            .map(|rce_cell_hash| (rce_cell_hash, build_rce_witness(udt_lock_hashes, true)));
         let mut udt_builder = UdtTxBuilder {
             plugin_mgr: self.plugin_mgr,
             rpc_client: self.rpc_client,
@@ -280,7 +248,6 @@ impl<'a> UdtSubCommand<'a> {
             header_dep_resolver: &self.header_dep_resolver,
             tx_dep_provider: &self.tx_dep_provider,
             builder: &builder,
-            rce_info,
         };
         let tx = udt_builder.build(
             vec![("owner".to_string(), owner_account)],
@@ -319,7 +286,6 @@ impl<'a> UdtSubCommand<'a> {
     fn transfer(
         &mut self,
         owner: Address,
-        xudt_rce_args: Option<H256>,
         sender: Address,
         udt_to_vec: Vec<(Address, u128)>,
         to_cheque_address: bool,
@@ -331,7 +297,8 @@ impl<'a> UdtSubCommand<'a> {
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
-        let (udt_script_id, udt_type, xudt_data) = udt_info(xudt_rce_args.as_ref(), &cell_deps)?;
+        let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
+        let udt_type = UdtType::Sudt;
         let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
         let cheque_script_id = if to_cheque_address {
             Some(get_script_id(&cell_deps, CellDepName::Cheque)?)
@@ -375,15 +342,10 @@ impl<'a> UdtSubCommand<'a> {
                     lock_script,
                     capacity: None,
                     amount,
-                    extra_data: xudt_data.clone(),
+                    extra_data: None,
                 }
             })
             .collect::<Vec<_>>();
-        let mut udt_lock_hashes = receivers
-            .iter()
-            .map(|receiver| receiver.lock_script.calc_script_hash())
-            .collect::<HashSet<_>>();
-        udt_lock_hashes.insert(sender_script.calc_script_hash());
 
         let receiver_infos = receivers
             .iter()
@@ -413,8 +375,6 @@ impl<'a> UdtSubCommand<'a> {
             sender: sender_script,
             receivers,
         };
-        let rce_info = xudt_rce_args
-            .map(|rce_cell_hash| (rce_cell_hash, build_rce_witness(udt_lock_hashes, false)));
         let mut udt_builder = UdtTxBuilder {
             plugin_mgr: self.plugin_mgr,
             rpc_client: self.rpc_client,
@@ -423,7 +383,6 @@ impl<'a> UdtSubCommand<'a> {
             header_dep_resolver: &self.header_dep_resolver,
             tx_dep_provider: &self.tx_dep_provider,
             builder: &builder,
-            rce_info,
         };
         let tx = udt_builder.build(
             accounts,
@@ -462,11 +421,11 @@ impl<'a> UdtSubCommand<'a> {
     fn get_amount(
         &mut self,
         owner: Address,
-        xudt_rce_args: Option<H256>,
         address: Address,
         cell_deps: CellDeps,
     ) -> Result<Output, String> {
-        let (udt_script_id, udt_type, _) = udt_info(xudt_rce_args.as_ref(), &cell_deps)?;
+        let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
+        let udt_type = UdtType::Sudt;
         let owner_script_hash = Script::from(&owner).calc_script_hash();
         let type_script = udt_type.build_script(&udt_script_id, &owner_script_hash);
 
@@ -508,7 +467,6 @@ impl<'a> UdtSubCommand<'a> {
     fn new_empty_acp(
         &mut self,
         owner: Address,
-        xudt_rce_args: Option<H256>,
         to: Address,
         capacity_provider: Option<Address>,
         privkeys: Vec<PrivkeyWrapper>,
@@ -517,7 +475,8 @@ impl<'a> UdtSubCommand<'a> {
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
-        let (udt_script_id, udt_type, xudt_data) = udt_info(xudt_rce_args.as_ref(), &cell_deps)?;
+        let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
+        let udt_type = UdtType::Sudt;
         let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
         let owner_script_hash = Script::from(&owner).calc_script_hash();
         let capacity_provider = capacity_provider.unwrap_or_else(|| to.clone());
@@ -532,22 +491,11 @@ impl<'a> UdtSubCommand<'a> {
             let payload = AddressPayload::from(acp_lock.clone());
             Address::new(network, payload, true)
         };
-        let mut udt_lock_hashes = HashSet::default();
-        udt_lock_hashes.insert(acp_lock.calc_script_hash());
 
         let type_script = udt_type.build_script(&udt_script_id, &owner_script_hash);
         let output_data = {
-            let mut buf = vec![
-                0u8;
-                16 + xudt_data
-                    .as_ref()
-                    .map(|data| data.len())
-                    .unwrap_or_default()
-            ];
+            let mut buf = vec![0u8; 16];
             buf[0..16].copy_from_slice(&0u128.to_le_bytes()[..]);
-            if let Some(data) = xudt_data.as_ref() {
-                buf[16..].copy_from_slice(data.as_ref());
-            }
             Bytes::from(buf)
         };
         let base_output = CellOutput::new_builder()
@@ -563,8 +511,6 @@ impl<'a> UdtSubCommand<'a> {
             .capacity(occupied_capacity.pack())
             .build();
         let builder = CapacityTransferBuilder::new(vec![(output, output_data)]);
-        let rce_info = xudt_rce_args
-            .map(|rce_cell_hash| (rce_cell_hash, build_rce_witness(udt_lock_hashes, true)));
         let mut udt_builder = UdtTxBuilder {
             plugin_mgr: self.plugin_mgr,
             rpc_client: self.rpc_client,
@@ -573,7 +519,6 @@ impl<'a> UdtSubCommand<'a> {
             header_dep_resolver: &self.header_dep_resolver,
             tx_dep_provider: &self.tx_dep_provider,
             builder: &builder,
-            rce_info,
         };
         let tx = udt_builder.build(
             vec![("capacity provider".to_string(), capacity_provider_account)],
@@ -617,8 +562,6 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 let owner: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "owner")?;
-                let xudt_rce_args: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "xudt-rce-args")?;
                 let udt_to_vec: Vec<(Address, u128)> = {
                     let mut address_parser = AddressParser::default();
                     address_parser.set_network(network);
@@ -641,7 +584,6 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
 
                 self.issue(
                     owner,
-                    xudt_rce_args,
                     udt_to_vec,
                     to_cheque_address,
                     to_acp_address,
@@ -656,8 +598,6 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
-                let xudt_rce_args: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "xudt-rce-args")?;
                 let sender: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "sender")?;
@@ -686,7 +626,6 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
 
                 self.transfer(
                     owner,
-                    xudt_rce_args,
                     sender,
                     udt_to_vec,
                     to_cheque_address,
@@ -703,20 +642,16 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
-                let xudt_rce_args: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "xudt-rce-args")?;
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let address: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "address")?;
-                self.get_amount(owner, xudt_rce_args, address, cell_deps)
+                self.get_amount(owner, address, cell_deps)
             }
             ("new-empty-acp", Some(m)) => {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
-                let xudt_rce_args: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "xudt-rce-args")?;
                 let to: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "to")?;
@@ -729,7 +664,6 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 self.new_empty_acp(
                     owner,
-                    xudt_rce_args,
                     to,
                     capacity_provider,
                     privkeys,
@@ -749,90 +683,6 @@ pub fn get_script_id(cell_deps: &CellDeps, name: CellDepName) -> Result<ScriptId
         .get_item(name)
         .map(|item| item.script_id.clone().into())
         .ok_or_else(|| format!("no {} cell_dep item in cell_deps", name))
-}
-
-fn udt_info(
-    xudt_rce_args: Option<&H256>,
-    cell_deps: &CellDeps,
-) -> Result<(ScriptId, UdtType, Option<Bytes>), String> {
-    if let Some(rce_args) = xudt_rce_args {
-        // FIXME: require xudt update
-        let _xudt_data = XudtData::new_builder()
-            .lock(Bytes::default().pack())
-            .data(vec![Bytes::default().pack()].pack())
-            .build()
-            .as_bytes();
-        let xudt_args = {
-            let flags = 1u32.to_le_bytes();
-            let rce_script = Script::new_builder()
-                .code_hash(RCE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
-                .args(Bytes::from(rce_args.as_bytes().to_vec()).pack())
-                .build();
-            let script_vec_bytes = ScriptVec::new_builder().push(rce_script).build().as_bytes();
-            let mut buf = vec![0u8; 4 + script_vec_bytes.len()];
-            buf[0..4].copy_from_slice(&flags[..]);
-            buf[4..].copy_from_slice(script_vec_bytes.as_ref());
-            Bytes::from(buf)
-        };
-        Ok((
-            get_script_id(cell_deps, CellDepName::Xudt)?,
-            UdtType::Xudt(xudt_args),
-            Some(Bytes::default()),
-        ))
-    } else {
-        Ok((
-            get_script_id(cell_deps, CellDepName::Sudt)?,
-            UdtType::Sudt,
-            None,
-        ))
-    }
-}
-
-// NOTE: here we assume rce cell is just one empty blaklist set.
-fn build_rce_witness(lock_hashes: HashSet<Byte32>, is_issue: bool) -> WitnessArgs {
-    let tree = Smt::default();
-    let lock_hashes = lock_hashes
-        .into_iter()
-        .map(|hash| {
-            let hash: H256 = hash.unpack();
-            SmtH256::from(hash.0)
-        })
-        .collect::<Vec<_>>();
-    let pairs = lock_hashes
-        .iter()
-        .map(|hash| (*hash, SmtH256::default()))
-        .collect::<Vec<_>>();
-    let compiled_proof = tree
-        .merkle_proof(lock_hashes)
-        .expect("smt proof")
-        .compile(pairs)
-        .expect("smt compile proof");
-    let mask: u8 = 0x3;
-    let smt_proof = SmtProof::new_builder()
-        .extend(compiled_proof.0.into_iter().map(packed::Byte::new))
-        .build();
-    let smt_proof_entry = SmtProofEntry::new_builder()
-        .mask(packed::Byte::new(mask))
-        .proof(smt_proof)
-        .build();
-    let smt_proof_entry_vec_bytes = SmtProofEntryVec::new_builder()
-        .push(smt_proof_entry)
-        .build()
-        .as_bytes();
-    let xudt_witness_input_bytes = XudtWitnessInput::new_builder()
-        .extension_data(vec![smt_proof_entry_vec_bytes].pack())
-        .build()
-        .as_bytes();
-    if is_issue {
-        WitnessArgs::new_builder()
-            .output_type(Some(xudt_witness_input_bytes).pack())
-            .build()
-    } else {
-        WitnessArgs::new_builder()
-            .input_type(Some(xudt_witness_input_bytes).pack())
-            .build()
-    }
 }
 
 fn check_udt_args(
@@ -914,7 +764,6 @@ pub struct UdtTxBuilder<'a> {
     pub header_dep_resolver: &'a DefaultHeaderDepResolver,
     pub tx_dep_provider: &'a DefaultTransactionDependencyProvider,
     pub builder: &'a dyn TxBuilder,
-    pub rce_info: Option<(H256, WitnessArgs)>,
 }
 
 impl<'a> UdtTxBuilder<'a> {
@@ -1007,73 +856,18 @@ impl<'a> UdtTxBuilder<'a> {
 
         cell_deps.apply_to_resolver(self.cell_dep_resolver)?;
 
-        let base_tx = self
+        let (tx, still_locked_groups) = self
             .builder
-            .build_base(
+            .build_unlocked(
                 self.cell_collector,
                 self.cell_dep_resolver,
                 self.header_dep_resolver,
                 self.tx_dep_provider,
+                &balancer,
+                &unlockers,
             )
             .map_err(|err| err.to_string())?;
 
-        let (mut tx_filled_witnesses, _) =
-            fill_placeholder_witnesses(base_tx, self.tx_dep_provider, &unlockers)
-                .map_err(|err| err.to_string())?;
-
-        if let Some((rce_cell_hash, rce_witness)) = self.rce_info.as_ref() {
-            let mut tx_cell_deps: Vec<_> = tx_filled_witnesses.cell_deps().into_iter().collect();
-            let mut witnesses: Vec<_> = tx_filled_witnesses.witnesses().into_iter().collect();
-            let rce_cell_dep = cell_deps.rce_cells.get(rce_cell_hash).ok_or_else(|| {
-                format!(
-                    "no rce cell_dep found for {:#x}, please check `rce_cells` of cell_deps config",
-                    rce_cell_hash
-                )
-            })?;
-            tx_cell_deps.push(rce_cell_dep.clone().into());
-            if witnesses.is_empty() {
-                witnesses.push(rce_witness.as_bytes().pack());
-            } else {
-                let witness_data = witnesses[0].raw_data();
-                let mut witness = if witness_data.is_empty() {
-                    WitnessArgs::default()
-                } else {
-                    WitnessArgs::from_slice(witness_data.as_ref()).map_err(|err| err.to_string())?
-                };
-                if let Some(data) = rce_witness.input_type().to_opt() {
-                    witness = witness
-                        .as_builder()
-                        .input_type(Some(data.raw_data()).pack())
-                        .build();
-                } else if let Some(data) = rce_witness.output_type().to_opt() {
-                    witness = witness
-                        .as_builder()
-                        .output_type(Some(data.raw_data()).pack())
-                        .build();
-                } else {
-                    panic!("invalid rce witness to build tx");
-                }
-                witnesses[0] = witness.as_bytes().pack();
-            }
-            tx_filled_witnesses = tx_filled_witnesses
-                .as_advanced_builder()
-                .set_cell_deps(tx_cell_deps)
-                .set_witnesses(witnesses)
-                .build();
-        }
-
-        let balanced_tx = balance_tx_capacity(
-            &tx_filled_witnesses,
-            &balancer,
-            self.cell_collector,
-            self.tx_dep_provider,
-            self.cell_dep_resolver,
-            self.header_dep_resolver,
-        )
-        .map_err(|err| err.to_string())?;
-
-        let (tx, still_locked_groups) = unlock_tx(balanced_tx, self.tx_dep_provider, &unlockers)
-            .map_err(|err| err.to_string())?;
         assert!(
             still_locked_groups.is_empty(),
             "script: {:?}, groups.len(): {}",

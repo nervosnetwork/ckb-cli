@@ -220,7 +220,6 @@ impl<'a> SudtSubCommand<'a> {
             header_dep_resolver: &self.header_dep_resolver,
             tx_dep_provider: &self.tx_dep_provider,
             builder: &builder,
-            rce_info: None,
         };
         let tx = udt_builder.build(
             accounts,
@@ -328,7 +327,6 @@ impl<'a> SudtSubCommand<'a> {
             header_dep_resolver: &self.header_dep_resolver,
             tx_dep_provider: &self.tx_dep_provider,
             builder: &builder,
-            rce_info: None,
         };
         let tx = udt_builder.build(
             accounts,
