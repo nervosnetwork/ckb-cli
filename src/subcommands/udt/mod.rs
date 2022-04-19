@@ -169,16 +169,19 @@ impl<'a> UdtSubCommand<'a> {
 
     fn issue(
         &mut self,
-        owner: Address,
-        udt_to_vec: Vec<(Address, u128)>,
-        to_cheque_address: bool,
-        to_acp_address: bool,
+        args: IssueArgs,
         privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
+        let IssueArgs {
+            owner,
+            udt_to_vec,
+            to_cheque_address,
+            to_acp_address,
+        } = args;
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let udt_type = UdtType::Sudt;
         let acp_script_id = if to_acp_address {
@@ -285,18 +288,21 @@ impl<'a> UdtSubCommand<'a> {
 
     fn transfer(
         &mut self,
-        owner: Address,
-        sender: Address,
-        udt_to_vec: Vec<(Address, u128)>,
-        to_cheque_address: bool,
-        to_acp_address: bool,
-        capacity_provider: Option<Address>,
+        args: TransferArgs,
         privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
+        let TransferArgs {
+            owner,
+            sender,
+            udt_to_vec,
+            to_cheque_address,
+            to_acp_address,
+            capacity_provider,
+        } = args;
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let udt_type = UdtType::Sudt;
         let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
@@ -466,15 +472,18 @@ impl<'a> UdtSubCommand<'a> {
 
     fn new_empty_acp(
         &mut self,
-        owner: Address,
-        to: Address,
-        capacity_provider: Option<Address>,
+        args: NewAcpArgs,
         privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         network: NetworkType,
         debug: bool,
     ) -> Result<Output, String> {
+        let NewAcpArgs {
+            owner,
+            to,
+            capacity_provider,
+        } = args;
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let udt_type = UdtType::Sudt;
         let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
@@ -583,10 +592,12 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 )?;
 
                 self.issue(
-                    owner,
-                    udt_to_vec,
-                    to_cheque_address,
-                    to_acp_address,
+                    IssueArgs {
+                        owner,
+                        udt_to_vec,
+                        to_cheque_address,
+                        to_acp_address,
+                    },
                     privkeys,
                     cell_deps,
                     fee_rate,
@@ -625,12 +636,14 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 )?;
 
                 self.transfer(
-                    owner,
-                    sender,
-                    udt_to_vec,
-                    to_cheque_address,
-                    to_acp_address,
-                    capacity_provider,
+                    TransferArgs {
+                        owner,
+                        sender,
+                        udt_to_vec,
+                        to_cheque_address,
+                        to_acp_address,
+                        capacity_provider,
+                    },
                     privkeys,
                     cell_deps,
                     fee_rate,
@@ -663,9 +676,11 @@ impl<'a> CliSubCommand for UdtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 self.new_empty_acp(
-                    owner,
-                    to,
-                    capacity_provider,
+                    NewAcpArgs {
+                        owner,
+                        to,
+                        capacity_provider,
+                    },
                     privkeys,
                     cell_deps,
                     fee_rate,
@@ -719,6 +734,26 @@ fn check_udt_args(
     Ok(())
 }
 
+struct IssueArgs {
+    owner: Address,
+    udt_to_vec: Vec<(Address, u128)>,
+    to_cheque_address: bool,
+    to_acp_address: bool,
+}
+struct TransferArgs {
+    owner: Address,
+    sender: Address,
+    udt_to_vec: Vec<(Address, u128)>,
+    to_cheque_address: bool,
+    to_acp_address: bool,
+    capacity_provider: Option<Address>,
+}
+struct NewAcpArgs {
+    owner: Address,
+    to: Address,
+    capacity_provider: Option<Address>,
+}
+
 pub fn arg_owner<'a>() -> Arg<'a> {
     Arg::with_name("owner")
         .long("owner")
@@ -767,6 +802,7 @@ pub struct UdtTxBuilder<'a> {
 }
 
 impl<'a> UdtTxBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         &mut self,
         accounts: Vec<(String, H160)>,

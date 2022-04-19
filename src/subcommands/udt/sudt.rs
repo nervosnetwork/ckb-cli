@@ -129,15 +129,18 @@ impl<'a> SudtSubCommand<'a> {
 
     fn cheque_claim(
         &mut self,
-        owner: Address,
-        sender: Address,
-        receiver: Address,
-        capacity_provider: Option<Address>,
+        args: ClaimArgs,
         privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         debug: bool,
     ) -> Result<Output, String> {
+        let ClaimArgs {
+            owner,
+            sender,
+            receiver,
+            capacity_provider,
+        } = args;
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let cheque_script_id = get_script_id(&cell_deps, CellDepName::Cheque)?;
         let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
@@ -251,16 +254,19 @@ impl<'a> SudtSubCommand<'a> {
 
     fn cheque_withdraw(
         &mut self,
-        owner: Address,
-        sender: Address,
-        receiver: Address,
-        capacity_provider: Option<Address>,
-        to_acp_address: bool,
+        args: WithdrawArgs,
         privkeys: Vec<PrivkeyWrapper>,
         cell_deps: CellDeps,
         fee_rate: u64,
         debug: bool,
     ) -> Result<Output, String> {
+        let WithdrawArgs {
+            owner,
+            sender,
+            receiver,
+            capacity_provider,
+            to_acp_address,
+        } = args;
         let udt_script_id = get_script_id(&cell_deps, CellDepName::Sudt)?;
         let cheque_script_id = get_script_id(&cell_deps, CellDepName::Cheque)?;
         let acp_script_id = if to_acp_address {
@@ -383,10 +389,12 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                     return Err("<capacity-provider> can't be the same with <sender>".to_string());
                 }
                 self.cheque_claim(
-                    owner,
-                    sender,
-                    receiver,
-                    capacity_provider,
+                    ClaimArgs {
+                        owner,
+                        sender,
+                        receiver,
+                        capacity_provider,
+                    },
                     privkeys,
                     cell_deps,
                     fee_rate,
@@ -412,11 +420,13 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 self.cheque_withdraw(
-                    owner,
-                    sender,
-                    receiver,
-                    capacity_provider,
-                    to_acp_address,
+                    WithdrawArgs {
+                        owner,
+                        sender,
+                        receiver,
+                        capacity_provider,
+                        to_acp_address,
+                    },
                     privkeys,
                     cell_deps,
                     fee_rate,
@@ -465,4 +475,18 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
             _ => Err(Self::subcommand("sudt").generate_usage()),
         }
     }
+}
+
+struct ClaimArgs {
+    owner: Address,
+    sender: Address,
+    receiver: Address,
+    capacity_provider: Option<Address>,
+}
+struct WithdrawArgs {
+    owner: Address,
+    sender: Address,
+    receiver: Address,
+    capacity_provider: Option<Address>,
+    to_acp_address: bool,
 }
