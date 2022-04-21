@@ -4,7 +4,6 @@ use clap::{App, Arg, ArgMatches};
 
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
-    rpc::CkbRpcClient,
     traits::{
         default_impls::{
             DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,

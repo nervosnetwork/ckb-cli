@@ -10,7 +10,6 @@ use clap::{App, Arg, ArgMatches};
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
     constants::SIGHASH_TYPE_HASH,
-    rpc::CkbRpcClient,
     traits::{
         default_impls::{
             DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
@@ -80,8 +79,7 @@ impl<'a> UdtSubCommand<'a> {
             wait_for_sync,
         );
         let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
-        let header_dep_resolver =
-            DefaultHeaderDepResolver::new(CkbRpcClient::new(rpc_client.url()));
+        let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {
             plugin_mgr,
             rpc_client,
@@ -883,8 +881,7 @@ impl<'a> UdtTxBuilder<'a> {
                     capacity_provider,
                     WitnessArgs::new_builder()
                         .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-                        .build()
-                        .as_bytes(),
+                        .build(),
                 )],
             },
             force_small_change_as_fee: None,
