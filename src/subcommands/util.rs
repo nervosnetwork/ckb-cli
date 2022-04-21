@@ -15,7 +15,7 @@ use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, NetworkType, OldAddress,
+    Address, AddressPayload, GenesisInfo, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,

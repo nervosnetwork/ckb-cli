@@ -349,7 +349,7 @@ impl ArgParser<CellDeps> for CellDepsParser {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct AddressParser {
     network: Option<NetworkType>,
     code_hash: Option<H256>,
