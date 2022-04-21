@@ -82,7 +82,7 @@ impl<'a> SudtSubCommand<'a> {
             .required(true)
             .validator(|input| AddressParser::new_sighash().validate(input));
         App::new(name)
-            .about("sudt operations (cheque claim/withdraw/build address)")
+            .about("Other sudt operations (cheque claim/withdraw/build address)")
             .subcommands(vec![
                 App::new("cheque-claim")
                     .about("Claim all cheque cells identified by given lock script and type script")

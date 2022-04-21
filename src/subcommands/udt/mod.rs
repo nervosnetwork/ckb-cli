@@ -101,7 +101,7 @@ impl<'a> UdtSubCommand<'a> {
             .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input));
         let arg_to_cheque_address = Arg::with_name("to-cheque-address").long("to-cheque-address");
         App::new(name)
-            .about("UDT (sudt) issue/transfer operations")
+            .about("UDT issue/transfer operations (currently only support sudt)")
             .subcommands(vec![
                 App::new("issue")
                     .about("Issue UDT to multiple addresses")
@@ -147,7 +147,7 @@ impl<'a> UdtSubCommand<'a> {
                             .takes_value(true)
                             .required(true)
                             .validator(|input| AddressParser::default().validate(input))
-                            .about("The target address of those SUDT cells"),
+                            .about("The target address of those UDT cells"),
                     ),
                 App::new("new-empty-acp")
                     .about("Create a UDT cell with 0 amount and an acp lock script")
@@ -760,7 +760,7 @@ pub fn arg_owner<'a>() -> Arg<'a> {
         .takes_value(true)
         .required(true)
         .validator(|input| AddressParser::new_sighash().validate(input))
-        .about("The owner address of the SUDT cell (the admin address, only sighash address is supported)")
+        .about("The owner address of the UDT cell (the admin address, only sighash address is supported)")
 }
 pub fn arg_sender<'a>() -> Arg<'a> {
     Arg::with_name("sender")
