@@ -34,7 +34,7 @@ use crate::utils::{
         AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::{get_address, get_network_type, read_password, serialize_signature},
+    other::{address_json, get_address, get_network_type, read_password, serialize_signature},
     rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};
@@ -343,10 +343,8 @@ message = "0x"
                     .unpack();
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, true).to_string(),
-                    },
+                    "address(deprecated)": address_json(address_payload.clone(), false),
+                    "address": address_json(address_payload, true),
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
                     "lock_arg": format!("{:#x}", lock_arg),
@@ -630,7 +628,12 @@ message = "0x"
             }
             ("address-info", Some(m)) => {
                 let address: Address = AddressParser::default().from_matches(m, "address")?;
-                let resp = serde_json::json!({
+                if matches!(address.network(), NetworkType::Staging | NetworkType::Dev)
+                    && address.payload().is_short_acp()
+                {
+                    return Err("only mainnet(line) and testnet(aggron) support short format anone-can-pay address".to_string());
+                }
+                let mut resp = serde_json::json!({
                     "extra": {
                         "data-encoding": if address.is_new() { "bech32m" } else { "bech32"},
                         "address-type": address.payload().ty(address.is_new()),
@@ -642,6 +645,12 @@ message = "0x"
                         "args": format!("0x{}", hex_string(address.payload().args().as_ref())),
                     },
                 });
+                if address.is_new() && matches!(address.payload(), AddressPayload::Short { .. }) {
+                    resp["extra"]["old-format"] =
+                        Address::new(address.network(), address.payload().clone(), false)
+                            .to_string()
+                            .into();
+                }
                 Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {

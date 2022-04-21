@@ -348,3 +348,10 @@ pub fn to_live_cell_info(cell: &LiveCell) -> LiveCellInfo {
         },
     }
 }
+
+pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value {
+    serde_json::json!({
+        "mainnet": Address::new(NetworkType::Mainnet, payload.clone(), is_new).to_string(),
+        "testnet": Address::new(NetworkType::Testnet, payload, is_new).to_string(),
+    })
+}

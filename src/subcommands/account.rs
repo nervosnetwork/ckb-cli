@@ -18,7 +18,7 @@ use crate::utils::{
         ArgParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::read_password,
+    other::{address_json, read_password},
 };
 
 pub struct AccountSubCommand<'a> {
@@ -234,10 +234,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                     "lock_arg": format!("{:#x}", lock_arg),
                                     "lock_hash": format!("{:#x}", lock_hash),
                                     "has_ckb_pubkey_derivation_root_path": has_ckb_root,
-                                    "address": {
-                                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                                    },
+                                    "address": address_json(address_payload.clone(), true),
+                                    "address(deprecated)": address_json(address_payload, false),
                                 })
                             }
                         } else {
@@ -263,10 +261,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -292,10 +288,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -313,10 +307,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -339,10 +331,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -430,7 +420,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(network, payload, false).to_string(),
+                                "address(deprecated)": Address::new(network, payload.clone(), false).to_string(),
+                                "address": Address::new(network, payload, true).to_string(),
                             })
                         })
                         .collect::<Vec<_>>()
@@ -461,10 +452,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey);
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address(deprecated)": address_json(address_payload.clone(), false),
+                    "address": address_json(address_payload, true),
                 });
                 Ok(Output::new_output(resp))
             }
