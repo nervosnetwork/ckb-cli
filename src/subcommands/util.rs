@@ -633,6 +633,7 @@ message = "0x"
                 {
                     return Err("only mainnet(line) and testnet(aggron) support short format anone-can-pay address".to_string());
                 }
+
                 let mut resp = serde_json::json!({
                     "extra": {
                         "data-encoding": if address.is_new() { "bech32m" } else { "bech32"},
@@ -645,12 +646,18 @@ message = "0x"
                         "args": format!("0x{}", hex_string(address.payload().args().as_ref())),
                     },
                 });
-                if address.is_new() && matches!(address.payload(), AddressPayload::Short { .. }) {
-                    resp["extra"]["old-format"] =
-                        Address::new(address.network(), address.payload().clone(), false)
-                            .to_string()
-                            .into();
-                }
+                let other_format = if address.is_new() {
+                    "old-format(deprecated)"
+                } else {
+                    "new-format"
+                };
+                resp["extra"][other_format] = serde_json::json!(Address::new(
+                    address.network(),
+                    AddressPayload::from(packed::Script::from(&address)),
+                    !address.is_new(),
+                )
+                .to_string());
+
                 Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {
