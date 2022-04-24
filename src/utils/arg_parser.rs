@@ -13,7 +13,6 @@ use url::Url;
 
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    types::ScriptId,
     util::zeroize_privkey,
     Address, AddressPayload, HumanCapacity, NetworkType, OldAddress,
 };
@@ -444,27 +443,6 @@ impl ArgParser<OutPoint> for OutPointParser {
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
         Ok(OutPoint::new(tx_hash.pack(), index))
-    }
-}
-
-pub struct ScriptIdParser;
-
-impl ArgParser<ScriptId> for ScriptIdParser {
-    fn parse(&self, input: &str) -> Result<ScriptId, String> {
-        let parts = input.split('-').collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(format!(
-                "Invalid script id: {}, format: {{code_hash}}-{{hash_type}}, `hash_type` can be: [type, data, data1]",
-                input
-            ));
-        }
-        let code_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
-        match parts[1] {
-            "type" => Ok(ScriptId::new_type(code_hash)),
-            "data" => Ok(ScriptId::new_data(code_hash)),
-            "data1" => Ok(ScriptId::new_data1(code_hash)),
-            _ => Err(format!("invalid hash_type: {}", parts[1])),
-        }
     }
 }
 

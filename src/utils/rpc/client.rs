@@ -257,42 +257,12 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
-    // Miner
-    // pub fn get_block_template(
-    //     &mut self,
-    //     bytes_limit: Option<u64>,
-    //     proposals_limit: Option<u64>,
-    //     max_version: Option<u32>,
-    // ) -> Result<BlockTemplate, String> {
-    //     self.client
-    //         .get_block_template(
-    //             bytes_limit.map(Into::into),
-    //             proposals_limit.map(Into::into),
-    //             max_version.map(Into::into),
-    //         )
-    //         .map_err(|err| err.to_string())
-    // }
-    // pub fn submit_block(&mut self, work_id: String, data: packed::Block) -> Result<H256, String> {
-    //     self.client
-    //         .submit_block(work_id, data.into())
-    //         .map_err(|err| err.to_string())
-    // }
-
     // Alert
     pub fn send_alert(&mut self, alert: Alert) -> Result<(), String> {
         self.client.send_alert(alert).map_err(|err| err.to_string())
     }
 
     // IntegrationTest
-    // pub fn process_block_without_verify(
-    //     &mut self,
-    //     data: Block,
-    //     broadcast: bool,
-    // ) -> Result<Option<H256>, String> {
-    //     self.client
-    //         .process_block_without_verify(data, broadcast)
-    //         .map_err(|err| err.to_string())
-    // }
     pub fn truncate(&mut self, target_tip_hash: H256) -> Result<(), String> {
         self.client
             .truncate(target_tip_hash)
@@ -312,25 +282,4 @@ impl HttpRpcClient {
             .notify_transaction(tx.into())
             .map_err(|err| err.to_string())
     }
-
-    // Debug
-    // pub fn jemalloc_profiling_dump(&mut self) -> Result<String, String> {
-    //     self.client
-    //         .jemalloc_profiling_dump()
-    //         .map_err(|err| err.to_string())
-    // }
-    // pub fn update_main_logger(&mut self, config: MainLoggerConfig) -> Result<(), String> {
-    //     self.client
-    //         .update_main_logger(config)
-    //         .map_err(|err| err.to_string())
-    // }
-    // pub fn set_extra_logger(
-    //     &mut self,
-    //     name: String,
-    //     config_opt: Option<ExtraLoggerConfig>,
-    // ) -> Result<(), String> {
-    //     self.client
-    //         .set_extra_logger(name, config_opt)
-    //         .map_err(|err| err.to_string())
-    // }
 }
