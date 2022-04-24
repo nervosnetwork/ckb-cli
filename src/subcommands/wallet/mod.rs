@@ -13,7 +13,6 @@ use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
     bip32::DerivationPath,
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    rpc::CkbRpcClient,
     traits::{
         DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
         Signer,
@@ -214,9 +213,8 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let from_locked_address: Option<Address> = from_locked_address
             .map(|input| {
-                AddressParser::default()
+                AddressParser::new_multisig()
                     .set_network(network_type)
-                    .set_full_type(MULTISIG_TYPE_HASH.clone())
                     .parse(&input)
             })
             .transpose()?;
@@ -278,7 +276,10 @@ impl<'a> WalletSubCommand<'a> {
         }
 
         let to_address_hash_type = to_address.payload().hash_type();
-        let to_address_code_hash: H256 = to_address.payload().code_hash().unpack();
+        let to_address_code_hash: H256 = to_address
+            .payload()
+            .code_hash(Some(to_address.network()))
+            .unpack();
         let to_address_args_len = to_address.payload().args().len();
         if !skip_check_to_address
             && !(to_address_hash_type == ScriptHashType::Type
@@ -297,8 +298,7 @@ impl<'a> WalletSubCommand<'a> {
         // The lock scripts for search live cells
         let sighash_placeholder_witness = WitnessArgs::new_builder()
             .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-            .build()
-            .as_bytes();
+            .build();
         let mut lock_scripts = vec![(
             Script::from(&from_address_payload),
             sighash_placeholder_witness.clone(),
@@ -394,8 +394,7 @@ impl<'a> WalletSubCommand<'a> {
                     let lock_script = Script::from(from_locked_address.payload());
                     let placehodler_witness = WitnessArgs::new_builder()
                         .lock(Some(Bytes::from(zero_lock)).pack())
-                        .build()
-                        .as_bytes();
+                        .build();
                     lock_scripts.insert(0, (lock_script, placehodler_witness));
                     let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
                     let multisig_unlocker = {
@@ -428,8 +427,7 @@ impl<'a> WalletSubCommand<'a> {
             self.wait_for_sync,
         );
         let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
-        let header_dep_resolver =
-            DefaultHeaderDepResolver::new(CkbRpcClient::new(self.rpc_client.url()));
+        let header_dep_resolver = DefaultHeaderDepResolver::new(self.rpc_client.url());
 
         // Add outputs
         let placeholder_type_script = if is_type_id {
@@ -625,7 +623,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             }
             ("get-capacity", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash")?;
                 let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
                     vec![lock_hash.pack()]
                 } else {
@@ -684,23 +682,23 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
             }
             ("get-live-cells", Some(m)) => {
                 let lock_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash")?;
                 let type_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "type-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "type-hash")?;
                 let code_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "code-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "code-hash")?;
                 let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
                 let from_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "from", false)?;
+                    FromStrParser::<u64>::default().from_matches_opt(m, "from")?;
                 let to_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "to", false)?;
+                    FromStrParser::<u64>::default().from_matches_opt(m, "to")?;
                 let fast_mode = m.is_present("fast-mode");
 
                 let network_type = get_network_type(self.rpc_client)?;
                 let lock_hash_opt = if lock_hash_opt.is_none() {
                     let address_opt: Option<Address> = AddressParser::default()
                         .set_network_opt(Some(network_type))
-                        .from_matches_opt(m, "address", false)?;
+                        .from_matches_opt(m, "address")?;
                     address_opt
                         .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
                 } else {

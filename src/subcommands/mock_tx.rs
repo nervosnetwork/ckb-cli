@@ -157,7 +157,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                          mock_tx: &MockTransaction|
          -> Result<Option<ReprMockTransaction>, String> {
             let output_opt: Option<PathBuf> =
-                FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
+                FilePathParser::new(false).from_matches_opt(m, "output-file")?;
             let repr_mock_tx = ReprMockTransaction::from(mock_tx.clone());
             if let Some(output) = output_opt {
                 let mut out_file = fs::File::create(output).map_err(|err| err.to_string())?;
@@ -177,7 +177,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         match matches.subcommand() {
             ("template", Some(m)) => {
                 let lock_arg_opt: Option<H160> =
-                    FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+                    FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
                 let lock_arg = lock_arg_opt.unwrap_or_default();
 
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
@@ -257,9 +257,9 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let output_path: PathBuf =
                     FilePathParser::new(false).from_matches(m, "output-file")?;
                 let tx_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash")?;
                 let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(true).from_matches_opt(m, "tx-file", false)?;
+                    FilePathParser::new(true).from_matches_opt(m, "tx-file")?;
 
                 let src_tx: json_types::Transaction = if let Some(path) = tx_file_opt {
                     let mut content = String::new();

@@ -471,7 +471,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let tx_hashes: Vec<H256> =
                     FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
                 let block_hash: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
 
                 if is_raw_data {
                     let resp = self
@@ -752,14 +752,14 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("generate_block", Some(m)) => {
                 let json_path_opt: Option<PathBuf> =
-                    FilePathParser::new(true).from_matches_opt(m, "json-path", false)?;
+                    FilePathParser::new(true).from_matches_opt(m, "json-path")?;
                 let script_opt: Option<Script> = if let Some(json_path) = json_path_opt {
                     let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                     Some(serde_json::from_str(&content).map_err(|err| err.to_string())?)
                 } else {
                     None
                 };
-                let message_opt: Option<Bytes> = HexParser.from_matches_opt(m, "message", false)?;
+                let message_opt: Option<Bytes> = HexParser.from_matches_opt(m, "message")?;
                 let resp = self
                     .rpc_client
                     .generate_block(script_opt, message_opt.map(JsonBytes::from_bytes))?;

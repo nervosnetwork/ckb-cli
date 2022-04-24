@@ -9,8 +9,8 @@ use crate::utils::{
     other::{get_address, get_network_type},
 };
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{constants::SIGHASH_TYPE_HASH, Address, AddressPayload, NetworkType};
-use ckb_types::{packed::Script, prelude::*, H160};
+use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_types::{packed::Script, H160};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
@@ -114,18 +114,18 @@ pub struct TransactArgs {
 impl TransactArgs {
     fn from_matches(m: &ArgMatches, network_type: NetworkType) -> Result<Self, String> {
         let privkey: Option<PrivkeyWrapper> =
-            PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+            PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
         let address = if let Some(privkey) = privkey.as_ref() {
             let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, privkey);
             let payload = AddressPayload::from_pubkey(&pubkey);
             Address::new(network_type, payload, false)
         } else {
             let account: H160 = FixedHashParser::<H160>::default()
-                .from_matches_opt(m, "from-account", false)
+                .from_matches_opt(m, "from-account")
                 .or_else(|err| {
                     let result: Result<Option<Address>, String> = AddressParser::new_sighash()
                         .set_network(network_type)
-                        .from_matches_opt(m, "from-account", false);
+                        .from_matches_opt(m, "from-account");
                     result
                         .map(|address_opt| {
                             address_opt
@@ -141,7 +141,6 @@ impl TransactArgs {
             let payload = AddressPayload::from_pubkey_hash(account);
             Address::new(network_type, payload, false)
         };
-        assert_eq!(address.payload().code_hash(), SIGHASH_TYPE_HASH.pack());
         let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
         Ok(Self {
             privkey,

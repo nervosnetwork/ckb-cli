@@ -358,6 +358,7 @@ mod test {
     use ckb_crypto::secp::SECP256K1;
     use ckb_hash::blake2b_256;
     use ckb_jsonrpc_types as json_types;
+    use ckb_mock_tx_types::{MockCellDep, MockInput};
     use ckb_types::{
         core::{capacity_bytes, BlockView, Capacity, HeaderView},
         h256,
@@ -408,7 +409,7 @@ mod test {
                 cell_dep: genesis_info.sighash_dep(),
                 output: dep_group_output,
                 data: dep_group_data,
-                block_hash: H256::default(),
+                header: None,
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -416,7 +417,7 @@ mod test {
                     .build(),
                 output: secp_output,
                 data: secp_data,
-                block_hash: H256::default(),
+                header: None,
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -424,7 +425,7 @@ mod test {
                     .build(),
                 output: secp_data_output,
                 data: secp_data_data,
-                block_hash: H256::default(),
+                header: None,
             },
         ]);
 
@@ -439,7 +440,7 @@ mod test {
                 input: input.clone(),
                 output,
                 data: Bytes::default(),
-                block_hash: H256::default(),
+                header: None,
             }
         });
         let output = CellOutput::new_builder()

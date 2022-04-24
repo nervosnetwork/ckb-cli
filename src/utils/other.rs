@@ -12,7 +12,7 @@ use ckb_sdk::{
     calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, NetworkType, SECP256K1,
+    Address, AddressPayload, GenesisInfo, NetworkType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -60,14 +60,12 @@ pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
 }
 
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
-    let address_opt: Option<Address> = AddressParser::default()
+    let address_opt: Option<Address> = AddressParser::new_sighash()
         .set_network_opt(network)
-        .set_short(CodeHashIndex::Sighash)
-        .from_matches_opt(m, "address", false)?;
-    let pubkey: Option<secp256k1::PublicKey> =
-        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+        .from_matches_opt(m, "address")?;
+    let pubkey: Option<secp256k1::PublicKey> = PubkeyHexParser.from_matches_opt(m, "pubkey")?;
     let lock_arg: Option<H160> =
-        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
     let address = address_opt
         .map(|address| address.payload().clone())
         .or_else(|| pubkey.map(|pubkey| AddressPayload::from_pubkey(&pubkey)))
@@ -292,7 +290,7 @@ pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), Strin
 }
 
 pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
-    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data")?;
     match to_data_opt {
         Some(data) => Ok(data),
         None => {

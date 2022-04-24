@@ -111,35 +111,6 @@ impl KeyStoreHandlerSigner {
         }
         Ok(())
     }
-    pub fn cache_key_set_by_index(
-        &mut self,
-        account: H160,
-        external_start: u32,
-        external_length: u32,
-        change_start: u32,
-        change_length: u32,
-    ) -> Result<(), String> {
-        let password = self.passwords.get(&account).cloned();
-        let key_set = self.handler.derived_key_set_by_index(
-            account.clone(),
-            external_start,
-            external_length,
-            change_start,
-            change_length,
-            password,
-        )?;
-        for (path, pubkey_hash) in key_set.external {
-            self.hd_ids.insert(
-                pubkey_hash,
-                (path, Some(KeyChain::External), account.clone()),
-            );
-        }
-        for (path, pubkey_hash) in key_set.change {
-            self.hd_ids
-                .insert(pubkey_hash, (path, Some(KeyChain::Change), account.clone()));
-        }
-        Ok(())
-    }
     fn get_id_info(&self, id: &[u8]) -> Option<(H160, DerivationPath, Option<KeyChain>, H160)> {
         if id.len() != 20 {
             return None;

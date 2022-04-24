@@ -22,7 +22,7 @@ impl Spec for Plugin {
         ));
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(value["name"].as_str().unwrap(), "demo_keystore_no_password");
-        assert_eq!(value["daemon"].as_bool().unwrap(), true);
+        assert!(value["daemon"].as_bool().unwrap());
 
         let output = setup.cli("plugin list");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();

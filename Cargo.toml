@@ -18,8 +18,8 @@ ckb-script = "=0.101.4"
 ckb-resource = "=0.101.4"
 ckb-dao-utils = "=0.101.4"
 ckb-chain-spec = "=0.101.4"
-ckb-sdk = { git = "https://github.com/TheWaWaR/ckb-sdk.git" }
-ckb-wallet = { git = "https://github.com/TheWaWaR/ckb-wallet.git" }
+ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
+ckb-wallet = { git = "https://github.com/cryptape/ckb-wallet.git" }
 ckb-mock-tx-types = "0.2.0"
 ckb-index = { path = "ckb-index", version = "=0.101.4" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.101.4" }
@@ -64,6 +64,9 @@ futures = "0.3"
 [target.'cfg(unix)'.dependencies]
 tui = "0.6.0"
 termion = "1.5"
+
+[dev-dependencies]
+rand = "0.7"
 
 [build-dependencies]
 ckb-build-info = "=0.101.4"

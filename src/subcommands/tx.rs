@@ -163,11 +163,7 @@ impl<'a> TxSubCommand<'a> {
                         Arg::with_name("to-long-multisig-address")
                             .long("to-long-multisig-address")
                             .takes_value(true)
-                            .validator(|input| {
-                                AddressParser::default()
-                                    .set_full_type(MULTISIG_TYPE_HASH)
-                                    .validate(input)
-                            })
+                            .validator(|input| AddressParser::new_multisig().validate(input))
                             .about("To long multisig address (special case, include since)"),
                     )
                     .arg(arg::capacity().required(true))
@@ -246,7 +242,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
         match matches.subcommand() {
             ("init", Some(m)) => {
                 let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "tx-file", false)?;
+                    FilePathParser::new(false).from_matches_opt(m, "tx-file")?;
                 let helper = TxHelper::default();
                 let repr = ReprTxHelper::new(helper, network);
 
@@ -280,8 +276,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
-                let since_absolute_epoch_opt: Option<u64> = FromStrParser::<u64>::default()
-                    .from_matches_opt(m, "since-absolute-epoch", false)?;
+                let since_absolute_epoch_opt: Option<u64> =
+                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
 
                 let skip_check: bool = m.is_present("skip-check");
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
@@ -307,13 +303,13 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("add-output", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
-                let to_sighash_address_opt: Option<Address> = AddressParser::new_sighash()
-                    .from_matches_opt(m, "to-sighash-address", false)?;
+                let to_sighash_address_opt: Option<Address> =
+                    AddressParser::new_sighash().from_matches_opt(m, "to-sighash-address")?;
                 let to_short_multisig_address_opt: Option<Address> = AddressParser::new_multisig()
-                    .from_matches_opt(m, "to-short-multisig-address", false)?;
-                let to_long_multisig_address_opt: Option<Address> = AddressParser::default()
-                    .set_full_type(MULTISIG_TYPE_HASH)
-                    .from_matches_opt(m, "to-long-multisig-address", false)?;
+                    .from_matches_opt(m, "to-short-multisig-address")?;
+                let to_long_multisig_address_opt: Option<Address> =
+                    AddressParser::new_multisig()
+                        .from_matches_opt(m, "to-long-multisig-address")?;
 
                 let to_data = get_to_data(m)?;
                 check_capacity(capacity, to_data.len())?;
@@ -355,9 +351,8 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             }
             ("add-multisig-config", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
-                let sighash_addresses: Vec<Address> = AddressParser::default()
+                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
                     .set_network(network)
-                    .set_short(CodeHashIndex::Sighash)
                     .from_matches_vec(m, "sighash-address")?;
                 let require_first_n: u8 =
                     FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
@@ -451,7 +446,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
             ("sign-inputs", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let account_opt: Option<H160> = m
                     .value_of("from-account")
                     .map(|input| {
@@ -565,15 +560,14 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 Ok(Output::new_output(resp))
             }
             ("build-multisig-address", Some(m)) => {
-                let sighash_addresses: Vec<Address> = AddressParser::default()
+                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
                     .set_network(network)
-                    .set_short(CodeHashIndex::Sighash)
                     .from_matches_vec(m, "sighash-address")?;
                 let require_first_n: u8 =
                     FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
                 let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
-                let since_absolute_epoch_opt: Option<u64> = FromStrParser::<u64>::default()
-                    .from_matches_opt(m, "since-absolute-epoch", false)?;
+                let since_absolute_epoch_opt: Option<u64> =
+                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
@@ -605,7 +599,7 @@ fn print_cell_info(
     type_script_empty: bool,
 ) {
     let address_payload = AddressPayload::from(lock);
-    let lock_kind = if address_payload.code_hash() == MULTISIG_TYPE_HASH.pack() {
+    let lock_kind = if address_payload.code_hash(Some(network)) == MULTISIG_TYPE_HASH.pack() {
         if address_payload.args().len() == 20 {
             "multisig without since"
         } else {

@@ -7,17 +7,18 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use ckb_jsonrpc_types as rpc_types;
-use ckb_sdk::{
-    util::zeroize_privkey, Address, AddressPayload, AddressType, CodeHashIndex, HumanCapacity,
-    NetworkType, OldAddress,
-};
-use ckb_wallet::MasterPrivKey;
-
-use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
+
+use ckb_sdk::{
+    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    types::ScriptId,
+    util::zeroize_privkey,
+    Address, AddressPayload, HumanCapacity, NetworkType, OldAddress,
+};
+use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
+use ckb_wallet::MasterPrivKey;
 
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
@@ -27,11 +28,19 @@ pub trait ArgParser<T> {
     }
 
     fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, String> {
-        self.from_matches_opt(matches, name, true)
+        self.from_matches_option(matches, name, true)
             .map(Option::unwrap)
     }
 
     fn from_matches_opt<R: From<T>>(
+        &self,
+        matches: &ArgMatches,
+        name: &str,
+    ) -> Result<Option<R>, String> {
+        self.from_matches_option(matches, name, false)
+    }
+
+    fn from_matches_option<R: From<T>>(
         &self,
         matches: &ArgMatches,
         name: &str,
@@ -324,46 +333,31 @@ impl ArgParser<secp256k1::PublicKey> for PubkeyHexParser {
     }
 }
 
-// TODO: put this into ckb-sdk
-pub enum AddressPayloadOption {
-    Short(Option<CodeHashIndex>),
-    #[allow(dead_code)]
-    Full(Option<H256>),
-    #[allow(dead_code)]
-    FullData(Option<H256>),
-    FullType(Option<H256>),
-}
-
-impl Default for AddressPayloadOption {
-    fn default() -> AddressPayloadOption {
-        AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))
-    }
-}
-
+#[derive(Default, Debug)]
 pub struct AddressParser {
     network: Option<NetworkType>,
-    payload: Option<AddressPayloadOption>,
+    code_hash: Option<H256>,
+    hash_type: Option<ScriptHashType>,
 }
 
 impl AddressParser {
     pub fn new(
         network: Option<NetworkType>,
-        payload: Option<AddressPayloadOption>,
+        code_hash: Option<H256>,
+        hash_type: Option<ScriptHashType>,
     ) -> AddressParser {
-        AddressParser { network, payload }
+        AddressParser {
+            network,
+            code_hash,
+            hash_type,
+        }
     }
 
     pub fn new_sighash() -> Self {
-        AddressParser {
-            network: None,
-            payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
-        }
+        AddressParser::new(None, Some(SIGHASH_TYPE_HASH), Some(ScriptHashType::Type))
     }
     pub fn new_multisig() -> Self {
-        AddressParser {
-            network: None,
-            payload: Some(AddressPayloadOption::Short(Some(CodeHashIndex::Multisig))),
-        }
+        AddressParser::new(None, Some(MULTISIG_TYPE_HASH), Some(ScriptHashType::Type))
     }
 
     pub fn set_network(&mut self, network: NetworkType) -> &mut Self {
@@ -375,56 +369,17 @@ impl AddressParser {
         self.network = network;
         self
     }
-
-    pub fn set_short(&mut self, code_hash_index: CodeHashIndex) -> &mut Self {
-        self.payload = Some(AddressPayloadOption::Short(Some(code_hash_index)));
-        self
-    }
-
-    #[allow(dead_code)]
-    pub fn set_full(&mut self, code_hash: H256) -> &mut Self {
-        self.payload = Some(AddressPayloadOption::Full(Some(code_hash)));
-        self
-    }
-    #[allow(dead_code)]
-    pub fn set_full_data(&mut self, code_hash: H256) -> &mut Self {
-        self.payload = Some(AddressPayloadOption::FullData(Some(code_hash)));
-        self
-    }
-    pub fn set_full_type(&mut self, code_hash: H256) -> &mut Self {
-        self.payload = Some(AddressPayloadOption::FullType(Some(code_hash)));
-        self
-    }
-}
-
-impl Default for AddressParser {
-    fn default() -> AddressParser {
-        AddressParser {
-            network: None,
-            payload: None,
-        }
-    }
 }
 
 impl ArgParser<Address> for AddressParser {
     fn parse(&self, input: &str) -> Result<Address, String> {
-        fn check_code_hash(
-            payload: &AddressPayload,
-            code_hash_opt: Option<&H256>,
-        ) -> Result<(), String> {
-            if let Some(code_hash) = code_hash_opt {
-                let payload_code_hash: H256 = payload.code_hash().unpack();
-                if code_hash != &payload_code_hash {
-                    return Err(format!(
-                        "Invalid code hash: {:#x}, expected: {:#x}",
-                        payload_code_hash, code_hash
-                    ));
-                }
-            }
-            Ok(())
-        }
-
         if let Ok(address) = Address::from_str(input) {
+            if matches!(address.network(), NetworkType::Staging | NetworkType::Dev)
+                && address.payload().is_short_acp()
+            {
+                return Err("only mainnet(line) and testnet(aggron) support short format anone-can-pay address".to_string());
+            }
+
             if let Some(network) = self.network {
                 if address.network().to_prefix() != network.to_prefix() {
                     return Err(format!(
@@ -434,69 +389,23 @@ impl ArgParser<Address> for AddressParser {
                     ));
                 }
             }
-            if let Some(payload_option) = self.payload.as_ref() {
-                let payload = address.payload();
-                let is_new = address.is_new();
-                match payload_option {
-                    AddressPayloadOption::Short(index_opt) => match payload {
-                        AddressPayload::Short { index, .. } => {
-                            if let Some(expected_index) = index_opt {
-                                if index != expected_index {
-                                    return Err(format!(
-                                        "Invalid address code hash index: {:?}, expected: {:?}",
-                                        index, expected_index,
-                                    ));
-                                }
-                            }
-                        }
-                        _ => {
-                            return Err(format!(
-                                "Invalid address type: {:?}, expected: {:?}",
-                                payload.ty(is_new),
-                                AddressType::Short,
-                            ));
-                        }
-                    },
-                    AddressPayloadOption::Full(code_hash_opt) => {
-                        if payload.ty(is_new) == AddressType::Short {
-                            return Err(format!(
-                                "Unexpected address type: {:?}",
-                                AddressType::Short
-                            ));
-                        }
-                        check_code_hash(payload, code_hash_opt.as_ref())?;
-                    }
-                    AddressPayloadOption::FullData(code_hash_opt) => {
-                        if payload.ty(is_new) != AddressType::FullData
-                            && !(payload.ty(is_new) == AddressType::Full
-                                && payload.hash_type() != ScriptHashType::Type)
-                        {
-                            return Err(format!(
-                                "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?}/{:?})",
-                                payload.ty(is_new),
-                                AddressType::FullData,
-                                AddressType::Full,
-                                rpc_types::ScriptHashType::Data,
-                                rpc_types::ScriptHashType::Data1,
-                            ));
-                        }
-                        check_code_hash(payload, code_hash_opt.as_ref())?;
-                    }
-                    AddressPayloadOption::FullType(code_hash_opt) => {
-                        if payload.ty(is_new) != AddressType::FullType
-                            && !(payload.ty(is_new) == AddressType::Full
-                                && payload.hash_type() == ScriptHashType::Type)
-                        {
-                            return Err(format!(
-                                "Unexpected address type: {:?}, expected: {:?} or ({:?} + {:?})",
-                                payload.ty(is_new),
-                                AddressType::FullType,
-                                AddressType::Full,
-                                rpc_types::ScriptHashType::Type,
-                            ));
-                        }
-                        check_code_hash(payload, code_hash_opt.as_ref())?;
-                    }
+            let payload = address.payload();
+            if let Some(expected_code_hash) = self.code_hash.as_ref() {
+                let code_hash: H256 = payload.code_hash(Some(address.network())).unpack();
+                if *expected_code_hash != code_hash {
+                    return Err(format!(
+                        "Invalid address code hash: {:#x}, expected code hash: {:#x}",
+                        code_hash, expected_code_hash
+                    ));
+                }
+            }
+            if let Some(expected_hash_type) = self.hash_type {
+                let hash_type = payload.hash_type();
+                if expected_hash_type != hash_type {
+                    return Err(format!(
+                        "Invalid address hash type: {:?}, expected hash type: {:?}",
+                        hash_type, expected_hash_type
+                    ));
                 }
             }
             return Ok(address);
@@ -535,6 +444,27 @@ impl ArgParser<OutPoint> for OutPointParser {
         let tx_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
         let index = FromStrParser::<u32>::default().parse(parts[1])?;
         Ok(OutPoint::new(tx_hash.pack(), index))
+    }
+}
+
+pub struct ScriptIdParser;
+
+impl ArgParser<ScriptId> for ScriptIdParser {
+    fn parse(&self, input: &str) -> Result<ScriptId, String> {
+        let parts = input.split('-').collect::<Vec<_>>();
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid script id: {}, format: {{code_hash}}-{{hash_type}}, `hash_type` can be: [type, data, data1]",
+                input
+            ));
+        }
+        let code_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
+        match parts[1] {
+            "type" => Ok(ScriptId::new_type(code_hash)),
+            "data" => Ok(ScriptId::new_data(code_hash)),
+            "data1" => Ok(ScriptId::new_data1(code_hash)),
+            _ => Err(format!("invalid hash_type: {}", parts[1])),
+        }
     }
 }
 
@@ -577,6 +507,7 @@ impl ArgParser<::std::net::SocketAddr> for SocketParser {
 
 #[cfg(test)]
 mod tests {
+    use ckb_sdk::CodeHashIndex;
     use ckb_types::{bytes::Bytes, core::ScriptHashType, h160, h256, prelude::*};
     use std::net::IpAddr;
 
@@ -663,7 +594,7 @@ mod tests {
             .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy")
             .is_err());
         // New address
-        assert!(AddressParser::default()
+        assert!(AddressParser::new_sighash()
             .parse("ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqfpqrn323p")
             .is_err());
         assert!(AddressParser::default()
