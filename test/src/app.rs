@@ -48,30 +48,30 @@ impl App {
     }
 
     fn matches() -> clap::ArgMatches {
-        clap::App::new("ckb-cli-test")
+        clap::Command::new("ckb-cli-test")
             .arg(
-                clap::Arg::with_name("ckb-bin")
+                clap::Arg::new("ckb-bin")
                     .long("ckb-bin")
                     .takes_value(true)
                     .required(true)
                     .value_name("PATH")
-                    .about("Path to ckb executable"),
+                    .help("Path to ckb executable"),
             )
             .arg(
-                clap::Arg::with_name("cli-bin")
+                clap::Arg::new("cli-bin")
                     .long("cli-bin")
                     .takes_value(true)
                     .required(true)
                     .value_name("PATH")
-                    .about("Path to ckb-cli executable"),
+                    .help("Path to ckb-cli executable"),
             )
             .arg(
-                clap::Arg::with_name("keystore-plugin")
+                clap::Arg::new("keystore-plugin")
                     .long("keystore-plugin")
                     .takes_value(true)
                     .required(true)
                     .value_name("PATH")
-                    .about("Path to keystore plugin executable"),
+                    .help("Path to keystore plugin executable"),
             )
             .get_matches()
     }

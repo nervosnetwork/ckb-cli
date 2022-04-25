@@ -1,6 +1,6 @@
 [package]
 name = "ckb-index"
-version = "0.101.4"
+version = "0.103.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2021"
 license = "MIT"
@@ -12,6 +12,6 @@ serde_derive = "1.0"
 bincode = "1.1.4"
 log = "0.4.6"
 failure = "0.1.5"
-ckb-types = "=0.101.4"
+ckb-types = "=0.103.0"
 ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
 rocksdb = { package = "ckb-rocksdb", version = "=0.16.1", features = ["snappy"] }
