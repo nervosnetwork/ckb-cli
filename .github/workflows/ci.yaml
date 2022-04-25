@@ -18,10 +18,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        os: [ ubuntu-latest, macos-latest, windows-2019 ]
     steps:
     - uses: actions/checkout@v2
-    - if: matrix.os == 'windows-latest'
+    - if: matrix.os == 'windows-2019'
       name: Windows Dependencies
       run: |
         iwr -useb get.scoop.sh -outfile 'install-scoop.ps1'
