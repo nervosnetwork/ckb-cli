@@ -2,10 +2,11 @@ use std::path::Path;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 
-use ckb_sdk::bip32::DerivationPath;
+use bitcoin::util::bip32::DerivationPath;
+use crossbeam_channel::bounded;
+
 use ckb_types::core::service::Request;
 use ckb_wallet::{DerivedKeySet, Key, KeyStore, MasterPrivKey};
-use crossbeam_channel::bounded;
 use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginResponse};
 
 use super::manager::PluginHandler;
@@ -177,7 +178,7 @@ impl DefaultKeyStore {
                         keystore
                             .sign_recoverable_with_password(
                                 &hash160,
-                                path.as_ref(),
+                                &path,
                                 &message,
                                 password.as_bytes(),
                             )
@@ -185,12 +186,7 @@ impl DefaultKeyStore {
                             .map_err(|err| err.to_string())?
                     } else {
                         keystore
-                            .sign_with_password(
-                                &hash160,
-                                path.as_ref(),
-                                &message,
-                                password.as_bytes(),
-                            )
+                            .sign_with_password(&hash160, &path, &message, password.as_bytes())
                             .map_err(|err| err.to_string())?
                             .serialize_compact()
                             .to_vec()
@@ -206,9 +202,10 @@ impl DefaultKeyStore {
                         password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let data = keystore
-                        .extended_pubkey_with_password(&hash160, path.as_ref(), password.as_bytes())
+                        .extended_pubkey_with_password(&hash160, &path, password.as_bytes())
                         .map_err(|err| err.to_string())?
                         .public_key
+                        .key
                         .serialize()
                         .to_vec();
                     Ok(PluginResponse::Bytes(JsonBytes::from_vec(data)))

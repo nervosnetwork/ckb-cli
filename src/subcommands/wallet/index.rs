@@ -6,7 +6,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ckb_index::{with_index_db, Error, IndexDatabase, IndexError};
-use ckb_sdk::GenesisInfo;
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -15,6 +14,7 @@ use ckb_types::{
 use ckb_util::RwLock;
 use crossbeam_channel::Receiver;
 
+use crate::utils::genesis_info::GenesisInfo;
 use crate::utils::index::{IndexController, IndexRequest, IndexResponse, IndexThreadState};
 use crate::utils::other::get_network_type;
 use crate::utils::rpc::HttpRpcClient;

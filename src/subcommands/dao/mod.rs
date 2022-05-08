@@ -1,10 +1,12 @@
 use self::command::TransactArgs;
 use crate::plugin::PluginManager;
 use crate::utils::cell_collector::LocalCellCollector;
+use crate::utils::genesis_info::GenesisInfo;
 use crate::utils::index::IndexController;
 use crate::utils::other::{read_password, to_live_cell_info};
 use crate::utils::rpc::HttpRpcClient;
 use crate::utils::signer::KeyStoreHandlerSigner;
+
 use byteorder::{ByteOrder, LittleEndian};
 use ckb_index::LiveCellInfo;
 use ckb_sdk::{
@@ -17,14 +19,13 @@ use ckb_sdk::{
     },
     tx_builder::{
         dao::{
-            DaoDepositBuilder, DaoDepositReceiver, DaoPrepareBuilder, DaoWithdrawBuilder,
-            DaoWithdrawItem, DaoWithdrawReceiver,
+            DaoDepositBuilder, DaoDepositReceiver, DaoPrepareBuilder, DaoPrepareItem,
+            DaoWithdrawBuilder, DaoWithdrawItem, DaoWithdrawReceiver,
         },
         CapacityBalancer, CapacityProvider, TxBuilder,
     },
     types::ScriptId,
     unlock::{ScriptUnlocker, SecpSighashScriptSigner, SecpSighashUnlocker},
-    GenesisInfo,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -66,7 +67,7 @@ impl<'a> DAOSubCommand<'a> {
             Some(genesis_info.header().clone()),
             wait_for_sync,
         );
-        let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
+        let cell_dep_resolver = genesis_info.cell_dep_resolver;
         let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {
             plugin_mgr,
@@ -154,11 +155,11 @@ impl<'a> DAOSubCommand<'a> {
         args: &TransactArgs,
         out_points: Vec<OutPoint>,
     ) -> Result<TransactionView, String> {
-        let inputs = out_points
+        let items = out_points
             .into_iter()
-            .map(|out_point| CellInput::new(out_point, 0))
+            .map(|out_point| DaoPrepareItem::from(CellInput::new(out_point, 0)))
             .collect::<Vec<_>>();
-        let tx_builder = DaoPrepareBuilder::new(inputs);
+        let tx_builder = DaoPrepareBuilder::new(items);
         self.build_tx(&tx_builder, args)
     }
 

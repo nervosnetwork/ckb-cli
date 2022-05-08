@@ -20,7 +20,7 @@ use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_index::{with_index_db, IndexDatabase};
-use ckb_sdk::{constants::ONE_CKB, Address, GenesisInfo, NetworkType};
+use ckb_sdk::{constants::ONE_CKB, Address, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -28,6 +28,7 @@ use ckb_types::{
 };
 
 use crate::utils::{
+    genesis_info::GenesisInfo,
     index::{IndexController, IndexRequest},
     other::get_network_type,
     rpc::HttpRpcClient,
@@ -70,8 +71,7 @@ impl TuiSubCommand {
                 })?
                 .expect("Can not get genesis block?")
                 .into();
-            let genesis_info =
-                GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?;
+            let genesis_info = GenesisInfo::from_block(&genesis_block)?;
             (network_type, genesis_info)
         };
 

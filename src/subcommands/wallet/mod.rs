@@ -3,6 +3,7 @@ mod index;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use bitcoin::util::bip32::DerivationPath;
 use clap::{App, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 
@@ -11,12 +12,8 @@ use ckb_hash::new_blake2b;
 use ckb_index::{IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
-    bip32::DerivationPath,
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    traits::{
-        DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
-        Signer,
-    },
+    traits::{DefaultHeaderDepResolver, DefaultTransactionDependencyProvider, Signer},
     tx_builder::{
         transfer::CapacityTransferBuilder, unlock_tx, CapacityBalancer, CapacityProvider, TxBuilder,
     },
@@ -25,11 +22,11 @@ use ckb_sdk::{
         MultisigConfig, ScriptUnlocker, SecpMultisigScriptSigner, SecpMultisigUnlocker,
         SecpSighashScriptSigner, SecpSighashUnlocker,
     },
-    Address, AddressPayload, GenesisInfo, HumanCapacity, Since, SinceType, SECP256K1,
+    Address, AddressPayload, HumanCapacity, Since, SinceType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{BlockView, Capacity, FeeRate, ScriptHashType, TransactionView},
+    core::{Capacity, FeeRate, ScriptHashType, TransactionView},
     packed::{Byte32, CellOutput, Script, WitnessArgs},
     prelude::*,
     H160, H256,
@@ -44,10 +41,11 @@ use crate::utils::{
         PrivkeyPathParser, PrivkeyWrapper,
     },
     cell_collector::LocalCellCollector,
+    genesis_info::GenesisInfo,
     index::{with_db, IndexController},
     other::{
-        check_capacity, get_address, get_arg_value, get_max_mature_number, get_network_type,
-        get_to_data, is_mature, read_password,
+        check_capacity, get_address, get_arg_value, get_genesis_info, get_max_mature_number,
+        get_network_type, get_to_data, is_mature, read_password,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
@@ -86,15 +84,7 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
-        if self.genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            self.genesis_info =
-                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
-        }
+        self.genesis_info = Some(get_genesis_info(&self.genesis_info, self.rpc_client)?);
         Ok(self.genesis_info.clone().unwrap())
     }
 
@@ -426,7 +416,6 @@ impl<'a> WalletSubCommand<'a> {
             Some(genesis_info.header().clone()),
             self.wait_for_sync,
         );
-        let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
         let header_dep_resolver = DefaultHeaderDepResolver::new(self.rpc_client.url());
 
         // Add outputs
@@ -450,7 +439,7 @@ impl<'a> WalletSubCommand<'a> {
         let mut tx = builder
             .build_balanced(
                 &mut cell_collector,
-                &cell_dep_resolver,
+                &genesis_info.cell_dep_resolver,
                 &header_dep_resolver,
                 &tx_dep_provider,
                 &balancer,

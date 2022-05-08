@@ -2,17 +2,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ckb_index::IndexDatabase;
-use ckb_sdk::GenesisInfo;
-use ckb_types::{
-    core::{service::Request, BlockView},
-    prelude::*,
-    H256,
-};
+use ckb_types::{core::service::Request, prelude::*, H256};
 use ckb_util::RwLock;
 use clap::{App, ArgMatches};
 
 use super::{CliSubCommand, Output};
+use crate::utils::genesis_info::GenesisInfo;
 use crate::utils::index::{with_db, IndexController, IndexRequest, IndexThreadState};
+use crate::utils::other::get_genesis_info;
 use crate::utils::rpc::HttpRpcClient;
 
 pub struct IndexSubCommand<'a> {
@@ -55,15 +52,7 @@ impl<'a> IndexSubCommand<'a> {
     }
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
-        if self.genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            self.genesis_info =
-                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
-        }
+        self.genesis_info = Some(get_genesis_info(&self.genesis_info, self.rpc_client)?);
         Ok(self.genesis_info.clone().unwrap())
     }
 

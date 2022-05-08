@@ -5,14 +5,8 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, GenesisInfo, HumanCapacity, NetworkType};
-use ckb_types::{
-    bytes::Bytes,
-    core::{service::Request, BlockView},
-    packed::Script,
-    prelude::*,
-    H256,
-};
+use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
+use ckb_types::{bytes::Bytes, core::service::Request, packed::Script, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
@@ -26,8 +20,9 @@ use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
+    genesis_info::GenesisInfo,
     index::{IndexController, IndexRequest},
-    other::get_network_type,
+    other::{get_genesis_info, get_network_type},
     rpc::HttpRpcClient,
 };
 
@@ -220,17 +215,10 @@ struct ApiRpcImpl {
 impl ApiRpcImpl {
     fn genesis_info(&self) -> Result<GenesisInfo, String> {
         let mut genesis_info = self.genesis_info.lock().unwrap();
-        if genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .lock()
-                .unwrap()
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            *genesis_info =
-                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
-        }
+        *genesis_info = Some(get_genesis_info(
+            &genesis_info,
+            &mut self.rpc_client.lock().unwrap(),
+        )?);
         Ok(genesis_info.clone().unwrap())
     }
 

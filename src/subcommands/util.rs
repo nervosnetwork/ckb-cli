@@ -1,9 +1,19 @@
+use std::fs;
+use std::io::Read;
+use std::path::PathBuf;
+
+use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use chrono::prelude::*;
+use clap::{App, Arg, ArgMatches};
+use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
+use eaglesong::EagleSongBuilder;
+use faster_hex::hex_string;
+use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self, JsonBytes};
 use ckb_sdk::{
-    bip32::{ChildNumber, DerivationPath},
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     Address, AddressPayload, NetworkType, OldAddress,
 };
@@ -15,14 +25,6 @@ use ckb_types::{
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
 };
-use clap::{App, Arg, ArgMatches};
-use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
-use eaglesong::EagleSongBuilder;
-use faster_hex::hex_string;
-use secp256k1::recovery::{RecoverableSignature, RecoveryId};
-use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::{PluginManager, SignTarget};
@@ -382,7 +384,7 @@ message = "0x"
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
@@ -457,7 +459,7 @@ message = "0x"
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
@@ -517,7 +519,7 @@ message = "0x"
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))

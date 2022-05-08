@@ -14,7 +14,9 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 use ckb_sdk::constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH};
-use ckb_sdk::{unlock::MultisigConfig, GenesisInfo, Since};
+use ckb_sdk::{unlock::MultisigConfig, Since};
+
+use crate::utils::genesis_info::GenesisInfo;
 
 // TODO: Add dao support
 

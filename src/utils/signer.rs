@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use bitcoin::util::bip32::DerivationPath;
+
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
-use ckb_sdk::bip32::DerivationPath;
 use ckb_sdk::traits::{
     Signer, SignerError, TransactionDependencyError, TransactionDependencyProvider,
 };
@@ -126,7 +127,7 @@ impl KeyStoreHandlerSigner {
             .has_account(hash160.clone())
             .unwrap_or_default()
         {
-            return Some((hash160.clone(), DerivationPath::empty(), None, hash160));
+            return Some((hash160.clone(), DerivationPath::default(), None, hash160));
         }
         None
     }

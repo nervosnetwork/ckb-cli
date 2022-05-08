@@ -9,10 +9,10 @@ use ckb_hash::blake2b_256;
 use ckb_index::{CellIndex, LiveCellInfo, VERSION};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
-    calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
-    Address, AddressPayload, GenesisInfo, NetworkType, SECP256K1,
+    util::calc_max_mature_number,
+    Address, AddressPayload, NetworkType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -34,6 +34,7 @@ use super::index::{IndexController, IndexRequest, IndexThreadState};
 use super::rpc::{AlertMessage, HttpRpcClient};
 use super::tx_helper::SignerFn;
 use crate::plugin::{KeyStoreHandler, SignTarget};
+use crate::utils::genesis_info::GenesisInfo;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -151,7 +152,7 @@ pub fn get_genesis_info(
             .get_block_by_number(0)?
             .ok_or_else(|| String::from("Can not get genesis block"))?
             .into();
-        GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())
+        GenesisInfo::from_block(&genesis_block)
     }
 }
 

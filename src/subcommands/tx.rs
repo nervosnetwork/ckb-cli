@@ -10,7 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     unlock::MultisigConfig,
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HumanCapacity, NetworkType,
+    Address, AddressPayload, CodeHashIndex, HumanCapacity, NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -32,6 +32,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
+    genesis_info::GenesisInfo,
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
         get_network_type, get_privkey_signer, get_to_data, read_password,

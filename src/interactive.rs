@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
-use ckb_types::{core::service::Request, core::BlockView};
+use ckb_types::core::service::Request;
 use ckb_util::RwLock;
 use regex::Regex;
 use rustyline::config::Configurer;
@@ -13,7 +13,6 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
-use ckb_sdk::GenesisInfo;
 use ckb_wallet::KeyStore;
 
 use crate::plugin::PluginManager;
@@ -25,8 +24,9 @@ use crate::subcommands::{
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
+    genesis_info::GenesisInfo,
     index::{IndexController, IndexRequest, IndexThreadState},
-    other::{check_alerts, get_network_type, index_dirname},
+    other::{check_alerts, get_genesis_info, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
@@ -232,15 +232,7 @@ impl InteractiveEnv {
     }
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
-        if self.genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            self.genesis_info =
-                Some(GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?);
-        }
+        self.genesis_info = Some(get_genesis_info(&self.genesis_info, &mut self.rpc_client)?);
         Ok(self.genesis_info.clone().unwrap())
     }
 

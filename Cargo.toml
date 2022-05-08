@@ -15,8 +15,6 @@ ckb-types = "=0.103.0"
 ckb-util = "=0.103.0"
 ckb-error = "=0.103.0"
 ckb-script = "=0.103.0"
-ckb-resource = "=0.103.0"
-ckb-dao-utils = "=0.103.0"
 ckb-chain-spec = "=0.103.0"
 ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
 ckb-wallet = { git = "https://github.com/cryptape/ckb-wallet.git" }
@@ -29,11 +27,11 @@ jsonrpc-derive = "18"
 jsonrpc-http-server = "18"
 jsonrpc-server-utils = "18"
 secp256k1 = { version = "0.20", features = ["recovery"] }
+bitcoin = "0.27"
 faster-hex = "0.6"
 env_logger = "0.6"
 crossbeam-channel = "0.5.1"
 clap = "=3.0.0-beta.1"
-clap_derive = "=3.0.0-beta.1"
 clap_generate = "=3.0.0-beta.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
@@ -56,7 +54,6 @@ rpassword = "3.0.2"
 ipnetwork = "0.14"
 multiaddr = { package = "parity-multiaddr", version = "0.4.0" }
 byteorder = "1.3.2"
-itertools = "0.8.0"
 
 tokio = { version = "1", features = ["net", "io-util", "rt"] }
 futures = "0.3"

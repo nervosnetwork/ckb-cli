@@ -7,7 +7,7 @@ use ckb_mock_tx_types::{
     MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, ReprMockCellDep,
     ReprMockInfo, ReprMockInput, ReprMockTransaction,
 };
-use ckb_sdk::GenesisInfo;
+use ckb_sdk::constants::SIGHASH_TYPE_HASH;
 use ckb_types::{
     bytes::Bytes,
     core::{
@@ -25,6 +25,7 @@ use crate::plugin::PluginManager;
 use crate::utils::{
     arg::lock_arg,
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
+    genesis_info::GenesisInfo,
     mock_tx_helper::MockTransactionHelper,
     other::{get_genesis_info, get_signer},
     rpc::HttpRpcClient,
@@ -181,10 +182,9 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let lock_arg = lock_arg_opt.unwrap_or_default();
 
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
-                let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
-                        .code_hash(sighash_type_hash.clone())
+                        .code_hash(SIGHASH_TYPE_HASH.pack())
                         .hash_type(ScriptHashType::Type.into())
                         .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
                         .build()

@@ -7,8 +7,7 @@ use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
-use ckb_sdk::constants::MIN_SECP_CELL_CAPACITY;
-use ckb_sdk::GenesisInfo;
+use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
 use ckb_types::{
     bytes::Bytes,
     core::{
@@ -19,6 +18,8 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
+
+use crate::utils::genesis_info::GenesisInfo;
 
 pub struct MockTransactionHelper<'a> {
     pub mock_tx: &'a mut MockTransaction,
@@ -153,7 +154,6 @@ impl<'a> MockTransactionHelper<'a> {
                     .map(|script| (script.calc_script_hash(), mock.cell_dep.clone()))
             })
             .collect::<HashMap<_, _>>();
-        let sighash_type_hash = genesis_info.sighash_type_hash();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
                 (ScriptHashType::Data, data_hash) | (ScriptHashType::Data1, data_hash) => {
@@ -162,7 +162,9 @@ impl<'a> MockTransactionHelper<'a> {
                     })?;
                     cell_deps.insert(dep);
                 }
-                (ScriptHashType::Type, code_hash) if code_hash == sighash_type_hash => {
+                (ScriptHashType::Type, code_hash)
+                    if code_hash.as_slice() == SIGHASH_TYPE_HASH.as_bytes() =>
+                {
                     cell_deps.insert(genesis_info.sighash_dep());
                 }
                 (ScriptHashType::Type, type_hash) => {
@@ -211,12 +213,7 @@ impl<'a> MockTransactionHelper<'a> {
     }
 
     /// Compute transaction hash and set witnesses for inputs (search by lock scripts)
-    pub fn fill_witnesses<S, C>(
-        &mut self,
-        genesis_info: &GenesisInfo,
-        signer: S,
-        mut live_cell_getter: C,
-    ) -> Result<(), String>
+    pub fn fill_witnesses<S, C>(&mut self, signer: S, mut live_cell_getter: C) -> Result<(), String>
     where
         S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
         C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
@@ -229,7 +226,7 @@ impl<'a> MockTransactionHelper<'a> {
         let mut input_group: HashMap<H160, Vec<usize>> = HashMap::default();
         for (idx, input) in tx.inputs().into_iter().enumerate() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
-            if &lock.code_hash() == genesis_info.sighash_type_hash()
+            if lock.code_hash().as_slice() == SIGHASH_TYPE_HASH.as_bytes()
                 && lock.hash_type() == ScriptHashType::Type.into()
                 && lock.args().raw_data().len() == 20
             {
@@ -307,7 +304,7 @@ impl<'a> MockTransactionHelper<'a> {
     {
         self.add_change_output(target_lock, &mut live_cell_getter)?;
         self.fill_deps(genesis_info, &mut live_cell_getter)?;
-        self.fill_witnesses(genesis_info, signer, &mut live_cell_getter)
+        self.fill_witnesses(signer, &mut live_cell_getter)
     }
 
     /// Verify the transaction by local ScriptVerifier
@@ -391,7 +388,7 @@ mod test {
         let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed");
         let lock_script = Script::new_builder()
-            .code_hash(genesis_info.sighash_type_hash().clone())
+            .code_hash(SIGHASH_TYPE_HASH.pack())
             .hash_type(ScriptHashType::Type.into())
             .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
             .build();
