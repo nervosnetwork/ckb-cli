@@ -1,6 +1,7 @@
 # v0.103.0
 * Update ckb from `v0.101.3` to `v0.103.0`
 * Remove `ckb-sdk` from `ckb-cli` and created as an [standalone repository](https://github.com/nervosnetwork/ckb-sdk-rust)
+* Add `ckb-signer` sub-crate for keystore implementation
 * Use new `ckb-sdk` to refactor:
   - `wallet transfer`
   - `dao deposit`
