@@ -13,6 +13,7 @@ use ckb_sdk::{
     traits::LiveCell,
     Address, AddressPayload, NetworkType, SECP256K1,
 };
+use ckb_signer::{KeyStore, ScryptType};
 use ckb_types::{
     bytes::Bytes,
     core::{service::Request, BlockView, Capacity, TransactionView},
@@ -21,7 +22,6 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use ckb_wallet::{KeyStore, ScryptType};
 use clap::ArgMatches;
 use colored::Colorize;
 use rpassword::prompt_password_stdout;

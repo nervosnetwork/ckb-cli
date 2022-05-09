@@ -442,9 +442,9 @@ dependencies = [
  "ckb-mock-tx-types",
  "ckb-script",
  "ckb-sdk",
+ "ckb-signer",
  "ckb-types",
  "ckb-util",
- "ckb-wallet",
  "clap",
  "clap_generate",
  "colored",
@@ -770,6 +770,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckb-signer"
+version = "0.1.0"
+dependencies = [
+ "aes-ctr",
+ "bitcoin",
+ "chrono",
+ "ckb-crypto",
+ "ckb-hash",
+ "ckb-sdk",
+ "ckb-types",
+ "faster-hex",
+ "parking_lot 0.11.2",
+ "rand 0.7.3",
+ "scrypt",
+ "secp256k1",
+ "serde_json",
+ "thiserror",
+ "tiny-keccak",
+ "uuid",
+]
+
+[[package]]
 name = "ckb-system-scripts"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -850,30 +872,6 @@ name = "ckb-vm-definitions"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b14b5c24760e4fe8e1df2e068a5c857fd6ca0a9ca739eadcad7f7d3c3fcbd10"
-
-[[package]]
-name = "ckb-wallet"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edd6fa45ce0370a43ecc385a4c3a8c06007647dd17d00016c73ad4f6c17e6951"
-dependencies = [
- "aes-ctr",
- "bitcoin",
- "chrono",
- "ckb-crypto",
- "ckb-hash",
- "ckb-sdk",
- "ckb-types",
- "faster-hex",
- "parking_lot 0.11.2",
- "rand 0.7.3",
- "scrypt",
- "secp256k1",
- "serde_json",
- "thiserror",
- "tiny-keccak",
- "uuid",
-]
 
 [[package]]
 name = "clang-sys"

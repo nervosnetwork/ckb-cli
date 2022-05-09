@@ -13,7 +13,7 @@ use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
 
-use ckb_wallet::KeyStore;
+use ckb_signer::KeyStore;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{

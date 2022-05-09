@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use bitcoin::util::bip32::DerivationPath;
 
 use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
-use ckb_wallet::{Key, KeyStore, MasterPrivKey};
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 

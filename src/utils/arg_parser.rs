@@ -16,8 +16,8 @@ use ckb_sdk::{
     util::zeroize_privkey,
     Address, AddressPayload, HumanCapacity, NetworkType, OldAddress,
 };
+use ckb_signer::MasterPrivKey;
 use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
-use ckb_wallet::MasterPrivKey;
 
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;

@@ -14,8 +14,8 @@ use crossbeam_channel::{bounded, select, Sender};
 
 use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
+use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
-use ckb_wallet::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 
 use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;

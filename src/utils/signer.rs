@@ -9,8 +9,8 @@ use ckb_sdk::traits::{
 };
 use ckb_sdk::util::serialize_signature;
 use ckb_sdk::SECP256K1;
+use ckb_signer::KeyChain;
 use ckb_types::{bytes::Bytes, core::TransactionView, H160, H256};
-use ckb_wallet::KeyChain;
 
 use super::arg_parser::PrivkeyWrapper;
 use crate::plugin::{KeyStoreHandler, SignTarget};
