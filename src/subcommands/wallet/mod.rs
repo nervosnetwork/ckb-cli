@@ -378,14 +378,8 @@ impl<'a> WalletSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                 if config.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
                     found_lock_arg = true;
-                    let config_data = config.to_witness_data();
-                    let mut zero_lock =
-                        vec![0u8; config_data.len() + 65 * (config.threshold() as usize)];
-                    zero_lock[0..config_data.len()].copy_from_slice(&config_data);
                     let lock_script = Script::from(from_locked_address.payload());
-                    let placehodler_witness = WitnessArgs::new_builder()
-                        .lock(Some(Bytes::from(zero_lock)).pack())
-                        .build();
+                    let placehodler_witness = config.placeholder_witness();
                     lock_scripts.insert(0, (lock_script, placehodler_witness));
                     let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
                     let multisig_unlocker = {

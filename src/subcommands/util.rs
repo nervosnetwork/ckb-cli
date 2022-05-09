@@ -15,7 +15,7 @@ use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
-    Address, AddressPayload, GenesisInfo, NetworkType, OldAddress,
+    Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
@@ -34,6 +34,7 @@ use crate::utils::{
         AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
+    genesis_info::GenesisInfo,
     other::{address_json, get_address, get_network_type, read_password, serialize_signature},
     rpc::{ChainInfo, HttpRpcClient},
 };
@@ -770,8 +771,7 @@ message = "0x"
                     .get_block_by_number(0)?
                     .expect("Can not get genesis block?")
                     .into();
-                let genesis_info =
-                    GenesisInfo::from_block(&genesis_block).map_err(|err| err.to_string())?;
+                let genesis_info = GenesisInfo::from_block(&genesis_block)?;
                 let genesis_cellbase_tx_hash: H256 =
                     genesis_block.transaction(0).unwrap().hash().unpack();
                 let resp = serde_json::json!({

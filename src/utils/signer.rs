@@ -165,7 +165,7 @@ impl KeyStoreHandlerSigner {
                 .calc_script_hash();
             let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
             self.ids
-                .insert(lock_hash160, (DerivationPath::empty(), None, account));
+                .insert(lock_hash160, (DerivationPath::default(), None, account));
             true
         } else {
             false

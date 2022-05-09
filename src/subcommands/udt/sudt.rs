@@ -12,7 +12,7 @@ use ckb_sdk::{
     },
     tx_builder::cheque::{ChequeClaimBuilder, ChequeWithdrawBuilder},
     unlock::ChequeAction,
-    Address, AddressPayload, GenesisInfo,
+    Address, AddressPayload,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -31,6 +31,7 @@ use crate::utils::{
     },
     cell_collector::LocalCellCollector,
     cell_dep::{CellDepName, CellDeps},
+    genesis_info::GenesisInfo,
     index::IndexController,
     other::get_network_type,
     rpc::HttpRpcClient,
@@ -62,7 +63,7 @@ impl<'a> SudtSubCommand<'a> {
             Some(genesis_info.header().clone()),
             wait_for_sync,
         );
-        let cell_dep_resolver = DefaultCellDepResolver::new(&genesis_info);
+        let cell_dep_resolver = genesis_info.cell_dep_resolver;
         let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {
             plugin_mgr,

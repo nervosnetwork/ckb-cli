@@ -33,6 +33,7 @@ use ckb_types::{
 use self::command::TransactArgs;
 use crate::plugin::PluginManager;
 use crate::utils::cell_collector::LocalCellCollector;
+use crate::utils::genesis_info::GenesisInfo;
 use crate::utils::index::IndexController;
 use crate::utils::other::{read_password, to_live_cell_info};
 use crate::utils::rpc::HttpRpcClient;
