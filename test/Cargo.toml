@@ -14,7 +14,7 @@ log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
+ckb-sdk = "1.0.0"
 ckb-types = "=0.103.0"
 ckb-app-config = "=0.103.0"
 ckb-chain-spec = "=0.103.0"

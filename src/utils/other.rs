@@ -11,12 +11,11 @@ use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
-    util::calc_max_mature_number,
     Address, AddressPayload, NetworkType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
+    core::{service::Request, BlockView, Capacity, TransactionView},
     h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
@@ -199,31 +198,6 @@ pub fn get_live_cell(
                 cell_status, out_point
             )
         })
-}
-
-// Get max mature block number
-pub fn get_max_mature_number(rpc_client: &mut HttpRpcClient) -> Result<u64, String> {
-    let cellbase_maturity =
-        EpochNumberWithFraction::from_full_value(rpc_client.get_consensus()?.cellbase_maturity.0);
-    let tip_epoch = rpc_client
-        .get_tip_header()
-        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
-    let tip_epoch_number = tip_epoch.number();
-    if tip_epoch_number < cellbase_maturity.number() {
-        // No cellbase live cell is mature
-        Ok(0)
-    } else {
-        let max_mature_epoch = rpc_client
-            .get_epoch_by_number(tip_epoch_number - cellbase_maturity.number())?
-            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-        let start_number = max_mature_epoch.start_number;
-        let length = max_mature_epoch.length;
-        Ok(calc_max_mature_number(
-            tip_epoch,
-            Some((start_number, length)),
-            cellbase_maturity,
-        ))
-    }
 }
 
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {

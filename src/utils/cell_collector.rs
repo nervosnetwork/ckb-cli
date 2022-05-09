@@ -94,7 +94,7 @@ impl CellCollector for LocalCellCollector {
             .into_iter()
             .partition(|cell| {
                 if total_capacity < query.min_total_capacity
-                    && query.match_cell(cell, Some(max_mature_number))
+                    && query.match_cell(cell, max_mature_number)
                 {
                     let capacity: u64 = cell.output.capacity().unpack();
                     total_capacity += capacity;

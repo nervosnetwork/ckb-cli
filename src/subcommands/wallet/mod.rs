@@ -22,6 +22,7 @@ use ckb_sdk::{
         MultisigConfig, ScriptUnlocker, SecpMultisigScriptSigner, SecpMultisigUnlocker,
         SecpSighashScriptSigner, SecpSighashUnlocker,
     },
+    util::get_max_mature_number,
     Address, AddressPayload, HumanCapacity, Since, SinceType, SECP256K1,
 };
 use ckb_types::{
@@ -44,8 +45,8 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     index::{with_db, IndexController},
     other::{
-        check_capacity, get_address, get_arg_value, get_genesis_info, get_max_mature_number,
-        get_network_type, get_to_data, is_mature, read_password,
+        check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
+        get_to_data, is_mature, read_password,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
@@ -486,7 +487,7 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     pub fn get_capacity(&mut self, lock_hashes: Vec<Byte32>) -> Result<(u64, u64, u64), String> {
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
+        let max_mature_number = get_max_mature_number(self.rpc_client.client())?;
         self.with_db(|db| {
             let mut total_capacity = 0;
             let mut dao_capacity = 0;
@@ -553,7 +554,7 @@ impl<'a> WalletSubCommand<'a> {
                 )
             })?;
 
-        let max_mature_number = get_max_mature_number(self.rpc_client)?;
+        let max_mature_number = get_max_mature_number(self.rpc_client.client())?;
         let live_cells = infos
             .into_iter()
             .map(|info| {

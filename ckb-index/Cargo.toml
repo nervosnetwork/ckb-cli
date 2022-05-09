@@ -13,5 +13,5 @@ bincode = "1.1.4"
 log = "0.4.6"
 failure = "0.1.5"
 ckb-types = "=0.103.0"
-ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
+ckb-sdk = "1.0.0"
 rocksdb = { package = "ckb-rocksdb", version = "=0.16.1", features = ["snappy"] }

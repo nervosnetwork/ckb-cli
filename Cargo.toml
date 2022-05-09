@@ -16,8 +16,8 @@ ckb-util = "=0.103.0"
 ckb-error = "=0.103.0"
 ckb-script = "=0.103.0"
 ckb-chain-spec = "=0.103.0"
-ckb-sdk = { git = "https://github.com/cryptape/ckb-sdk-rust.git" }
-ckb-wallet = { git = "https://github.com/cryptape/ckb-wallet.git" }
+ckb-sdk = "1.0.0"
+ckb-wallet = "0.1.0"
 ckb-mock-tx-types = "0.3.0"
 ckb-index = { path = "ckb-index", version = "=0.103.0" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=0.103.0" }
