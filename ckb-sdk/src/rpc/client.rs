@@ -2,8 +2,8 @@ use ckb_jsonrpc_types::{
     Alert, BannedAddr, Block, BlockEconomicState, BlockNumber, BlockTemplate, BlockView,
     CellWithStatus, ChainInfo, Consensus, EpochNumber, EpochView, ExtraLoggerConfig, HeaderView,
     JsonBytes, LocalNode, MainLoggerConfig, OutPoint, OutputsValidator, RawTxPool, RemoteNode,
-    Script, Timestamp, Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo, Uint64,
-    Version,
+    Script, SyncState, Timestamp, Transaction, TransactionProof, TransactionWithStatus, TxPoolInfo,
+    Uint64, Version,
 };
 
 use super::primitive;
@@ -102,7 +102,7 @@ jsonrpc!(pub struct RawHttpRpcClient {
         absolute: Option<bool>,
         reason: Option<String>
     ) -> ();
-    pub fn sync_state(&mut self) -> types::PeerSyncState;
+    pub fn sync_state(&mut self) -> SyncState;
     pub fn set_network_active(&mut self, state: bool) -> ();
     pub fn add_node(&mut self, peer_id: String, address: String) -> ();
     pub fn remove_node(&mut self, peer_id: String) -> ();
@@ -316,7 +316,7 @@ impl HttpRpcClient {
             .set_ban(address, command, ban_time.map(Into::into), absolute, reason)
             .map_err(|err| err.to_string())
     }
-    pub fn sync_state(&mut self) -> Result<types::PeerSyncState, String> {
+    pub fn sync_state(&mut self) -> Result<types::SyncState, String> {
         self.client
             .sync_state()
             .map(Into::into)
