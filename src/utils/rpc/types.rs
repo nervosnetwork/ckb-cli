@@ -9,7 +9,7 @@ pub use ckb_jsonrpc_types::{
 use ckb_types::{core, packed, prelude::*, H256, U256};
 
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
-use crate::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
+use ckb_sdk::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
 
 type Version = u32;
 type BlockNumber = u64;

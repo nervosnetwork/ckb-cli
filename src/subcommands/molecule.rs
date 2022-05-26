@@ -81,8 +81,7 @@ impl CliSubCommand for MoleculeSubCommand {
         match matches.subcommand() {
             ("decode", Some(m)) => {
                 let type_name = m.value_of("type").unwrap();
-                let binary_opt: Option<Vec<u8>> =
-                    HexParser.from_matches_opt(m, "binary-hex", false)?;
+                let binary_opt: Option<Vec<u8>> = HexParser.from_matches_opt(m, "binary-hex")?;
                 let binary = if let Some(binary) = binary_opt {
                     binary
                 } else {
@@ -210,7 +209,7 @@ impl CliSubCommand for MoleculeSubCommand {
             ("default", Some(m)) => {
                 let type_name = m.value_of("type").unwrap();
                 let json_path: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "json-path", false)?;
+                    FilePathParser::new(false).from_matches_opt(m, "json-path")?;
                 if let Some(path) = json_path.as_ref() {
                     if path.exists() {
                         return Err(format!("File exists: {:?}", path));
@@ -270,7 +269,7 @@ where
     T: Entity + Into<J>,
     J: serde::Serialize,
 {
-    let json: J = T::from_compatible_slice(&binary)
+    let json: J = T::from_compatible_slice(binary)
         .map(Into::into)
         .map_err(|err| err.to_string())?;
     Ok(Output::new_output(json))

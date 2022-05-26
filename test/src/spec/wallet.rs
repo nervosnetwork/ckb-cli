@@ -42,7 +42,7 @@ impl Spec for WalletTransfer {
 
         // Simple transfer
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 20000 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 20000 --fee-rate 1000",
             miner_privkey, ACCOUNT1_ADDRESS,
         ));
         log::info!(
@@ -61,20 +61,9 @@ impl Spec for WalletTransfer {
         ));
         assert!(output.contains(&tx_hash));
 
-        // Transaction fee can not be more than 1.0 CKB
-        let output = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 2000 --tx-fee 1.001",
-            miner_privkey, ACCOUNT1_ADDRESS,
-        ));
-        log::info!(
-            "transfer from miner to account 1 with 1.001 CKB tx fee: {}",
-            output
-        );
-        assert!(output.contains("Transaction fee can not be more than 1.0 CKB"));
-
         // Transfer from account 1 to account 2
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 2000 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 2000 --fee-rate 2000",
             account1_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!("transfer 2000.0 CKB from account1 to account2: {}", tx_hash);
@@ -83,7 +72,7 @@ impl Spec for WalletTransfer {
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
         ));
-        assert_eq!(output, "total: 17999.99999 (CKB)");
+        assert_eq!(output, "total: 17999.99999072 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             ACCOUNT2_ADDRESS
@@ -97,18 +86,22 @@ impl Spec for WalletTransfer {
 
         // Transaction fee more than 1.0 CKB because change cell not reach 61.0 CKB
         let output = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 17997.99998 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 17997.99998",
             account1_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!(
-            "transfer from account1 to account2 with more than 1.0 CKB tx fee: {}",
+            "transfer from account1 to account2 can not create change cell: {}",
             output
         );
-        assert!(output.contains("Transaction fee (2.00001) can not be more than 1.0 CKB, please change to-capacity value to adjust (not enough live cells to adjust)"), "{}", output);
+        assert!(
+            output.contains("can not create change cell, left capacity=2.00000717"),
+            "{}",
+            output
+        );
 
         // Transfer from miner to account2 (include input maturity filter)
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.0001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 30000",
             miner_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!(
@@ -129,7 +122,7 @@ impl Spec for WalletTransfer {
 
         // create type id cell with transfer
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 20000 --tx-fee 0.00001 --type-id",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 20000 --type-id",
             miner_privkey, ACCOUNT1_ADDRESS,
         ));
         log::info!(
@@ -141,7 +134,7 @@ impl Spec for WalletTransfer {
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
         ));
-        assert_eq!(output, "total: 37999.99999 (CKB)");
+        assert_eq!(output, "total: 37999.99999072 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-live-cells --address {}",
             ACCOUNT1_ADDRESS
@@ -164,7 +157,7 @@ impl Spec for WalletTransfer {
         let target_capacity_str = HumanCapacity(capacity.0 - 5 * ONE_CKB).to_string();
 
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity {} --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity {}",
             account2_privkey, ACCOUNT1_ADDRESS, target_capacity_str,
         ));
         // Transaction can be sent
@@ -173,13 +166,13 @@ impl Spec for WalletTransfer {
         // test skip check to-address
         let anyone_can_pay_address = "ckt1qg8mxsu48mncexvxkzgaa7mz2g25uza4zpz062relhjmyuc52ps3rjpj324umxu73ej0h3txcsu9cw77kgvawjvpsjg";
         let output = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 180",
             miner_privkey, anyone_can_pay_address,
         ));
         assert!(output.contains(format!("Invalid to-address: {}", anyone_can_pay_address).as_str()));
 
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 180 --tx-fee 0.0001 --skip-check-to-address",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 180 --skip-check-to-address",
             miner_privkey, anyone_can_pay_address,
         ));
         log::info!(
@@ -211,9 +204,8 @@ impl Spec for WalletTimelockedAddress {
 
         for _ in 0..4 {
             let tx_hash = setup.cli(&format!(
-                "wallet transfer --privkey-path {} --to-address {} --capacity 50000 --tx-fee 0.0001",
-                miner_privkey,
-                ACCOUNT1_ADDRESS,
+                "wallet transfer --privkey-path {} --to-address {} --capacity 50000",
+                miner_privkey, ACCOUNT1_ADDRESS,
             ));
             log::info!(
                 "transfer from miner to account1 with 50000 CKB: {}",
@@ -248,7 +240,7 @@ impl Spec for WalletTimelockedAddress {
 
         // Transfer some capacity to timelocked address
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 30000 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 30000",
             account1_privkey, account2_locked_address,
         ));
         log::info!(
@@ -261,7 +253,7 @@ impl Spec for WalletTimelockedAddress {
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
         ));
-        assert_eq!(output, "total: 169999.99999 (CKB)");
+        assert_eq!(output, "total: 169999.99999528 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             account2_locked_address
@@ -270,7 +262,7 @@ impl Spec for WalletTimelockedAddress {
 
         // Transfer from this time locked address to normal address
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --from-locked-address {} --to-address {} --capacity 29999.99999 --tx-fee 0.00001",
+            "wallet transfer --privkey-path {} --from-locked-address {} --to-address {} --capacity 29999.99999621",
             account2_privkey,
             account2_locked_address,
             ACCOUNT2_ADDRESS
@@ -285,7 +277,7 @@ impl Spec for WalletTimelockedAddress {
             "wallet get-capacity --address {}",
             ACCOUNT2_ADDRESS
         ));
-        assert_eq!(output, "total: 29999.99999 (CKB)");
+        assert_eq!(output, "total: 29999.99999621 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             account2_locked_address

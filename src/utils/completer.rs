@@ -47,7 +47,7 @@ impl<'a> CkbCompleter<'a> {
                     long.map(|s| format!("--{}", s)),
                 ]
                 .into_iter()
-                .filter_map(|s| s)
+                .flatten()
                 .map(|s| {
                     let display = if required {
                         format!("{}(*)", s)

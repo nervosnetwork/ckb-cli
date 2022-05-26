@@ -2,10 +2,10 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use ckb_sdk::{
-    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
-    Address, AddressPayload, NetworkType,
-};
+use bitcoin::util::bip32::DerivationPath;
+
+use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
@@ -272,7 +272,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
             }
             ("import", Some(m)) => {
                 let secp_key: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let password = Some(read_password(false, None)?);
                 let master_privkey = if let Some(secp_key) = secp_key {
                     // Default chain code is [255u8; 32]
@@ -446,7 +446,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let root_key_path = self.plugin_mgr.root_key_path(lock_arg.clone())?;
                 let path: DerivationPath = FromStrParser::<DerivationPath>::new()
-                    .from_matches_opt(m, "path", false)?
+                    .from_matches_opt(m, "path")?
                     .unwrap_or(root_key_path);
 
                 let password = if self.plugin_mgr.keystore_require_password() {

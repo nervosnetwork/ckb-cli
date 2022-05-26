@@ -6,19 +6,17 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
-use ckb_index::{LiveCellInfo, VERSION};
+use ckb_index::{CellIndex, LiveCellInfo, VERSION};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
-    calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    rpc::AlertMessage,
-    wallet::{KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
-    SECP256K1,
+    traits::LiveCell,
+    Address, AddressPayload, NetworkType, SECP256K1,
 };
+use ckb_signer::{KeyStore, ScryptType};
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
+    core::{service::Request, BlockView, Capacity, TransactionView},
     h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
@@ -32,7 +30,10 @@ use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
 use super::index::{IndexController, IndexRequest, IndexThreadState};
+use super::rpc::{AlertMessage, HttpRpcClient};
+use super::tx_helper::SignerFn;
 use crate::plugin::{KeyStoreHandler, SignTarget};
+use crate::utils::genesis_info::GenesisInfo;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -59,14 +60,12 @@ pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
 }
 
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
-    let address_opt: Option<Address> = AddressParser::default()
+    let address_opt: Option<Address> = AddressParser::new_sighash()
         .set_network_opt(network)
-        .set_short(CodeHashIndex::Sighash)
-        .from_matches_opt(m, "address", false)?;
-    let pubkey: Option<secp256k1::PublicKey> =
-        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+        .from_matches_opt(m, "address")?;
+    let pubkey: Option<secp256k1::PublicKey> = PubkeyHexParser.from_matches_opt(m, "pubkey")?;
     let lock_arg: Option<H160> =
-        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
     let address = address_opt
         .map(|address| address.payload().clone())
         .or_else(|| pubkey.map(|pubkey| AddressPayload::from_pubkey(&pubkey)))
@@ -201,31 +200,6 @@ pub fn get_live_cell(
         })
 }
 
-// Get max mature block number
-pub fn get_max_mature_number(rpc_client: &mut HttpRpcClient) -> Result<u64, String> {
-    let cellbase_maturity =
-        EpochNumberWithFraction::from_full_value(rpc_client.get_consensus()?.cellbase_maturity.0);
-    let tip_epoch = rpc_client
-        .get_tip_header()
-        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
-    let tip_epoch_number = tip_epoch.number();
-    if tip_epoch_number < cellbase_maturity.number() {
-        // No cellbase live cell is mature
-        Ok(0)
-    } else {
-        let max_mature_epoch = rpc_client
-            .get_epoch_by_number(tip_epoch_number - cellbase_maturity.number())?
-            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-        let start_number = max_mature_epoch.start_number;
-        let length = max_mature_epoch.length;
-        Ok(calc_max_mature_number(
-            tip_epoch,
-            Some((start_number, length)),
-            cellbase_maturity,
-        ))
-    }
-}
-
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
     let chain_info = rpc_client.get_blockchain_info()?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
@@ -291,7 +265,7 @@ pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), Strin
 }
 
 pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
-    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data")?;
     match to_data_opt {
         Some(data) => Ok(data),
         None => {
@@ -351,4 +325,26 @@ pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String>
         .value_of(name)
         .map(|s| s.to_string())
         .ok_or_else(|| format!("<{}> is required", name))
+}
+
+pub fn to_live_cell_info(cell: &LiveCell) -> LiveCellInfo {
+    let output_index: u32 = cell.out_point.index().unpack();
+    LiveCellInfo {
+        tx_hash: cell.out_point.tx_hash().unpack(),
+        output_index,
+        data_bytes: cell.output_data.len() as u64,
+        lock_hash: cell.output.lock().calc_script_hash().unpack(),
+        type_hashes: cell.output.type_().to_opt().map(|type_script| {
+            (
+                type_script.code_hash().unpack(),
+                type_script.calc_script_hash().unpack(),
+            )
+        }),
+        capacity: cell.output.capacity().unpack(),
+        number: cell.block_number,
+        index: CellIndex {
+            tx_index: cell.tx_index,
+            output_index,
+        },
+    }
 }

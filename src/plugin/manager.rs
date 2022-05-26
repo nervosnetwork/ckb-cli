@@ -9,17 +9,17 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
+use bitcoin::util::bip32::{ChildNumber, DerivationPath};
+use crossbeam_channel::{bounded, select, Sender};
+
 use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
-use ckb_sdk::{
-    wallet::{ChildNumber, DerivationPath, DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH},
-    HttpRpcClient,
-};
+use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
-use crossbeam_channel::{bounded, select, Sender};
 
 use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;
+use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
     JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,
@@ -1256,7 +1256,7 @@ impl KeyStoreHandler {
 
     pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
         if self.has_account_in_default(h160)? {
-            Ok(DerivationPath::empty())
+            Ok(DerivationPath::default())
         } else {
             Ok(DerivationPath::from_str(CKB_ROOT_PATH).expect("parse ckb root path"))
         }

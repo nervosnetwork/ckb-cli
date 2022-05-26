@@ -5,14 +5,8 @@ use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, GenesisInfo, HttpRpcClient, HumanCapacity, NetworkType};
-use ckb_types::{
-    bytes::Bytes,
-    core::{service::Request, BlockView},
-    packed::Script,
-    prelude::*,
-    H256,
-};
+use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
+use ckb_types::{bytes::Bytes, core::service::Request, packed::Script, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
@@ -26,8 +20,10 @@ use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
+    genesis_info::GenesisInfo,
     index::{IndexController, IndexRequest},
-    other::get_network_type,
+    other::{get_genesis_info, get_network_type},
+    rpc::HttpRpcClient,
 };
 
 pub struct ApiServerSubCommand<'a> {
@@ -219,16 +215,10 @@ struct ApiRpcImpl {
 impl ApiRpcImpl {
     fn genesis_info(&self) -> Result<GenesisInfo, String> {
         let mut genesis_info = self.genesis_info.lock().unwrap();
-        if genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .lock()
-                .unwrap()
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            *genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
-        }
+        *genesis_info = Some(get_genesis_info(
+            &genesis_info,
+            &mut self.rpc_client.lock().unwrap(),
+        )?);
         Ok(genesis_info.clone().unwrap())
     }
 
@@ -420,7 +410,7 @@ fn internal_err(message: String) -> RpcError {
 #[serde(deny_unknown_fields)]
 pub struct HttpTransferArgs {
     pub capacity: u64,
-    pub tx_fee: u64,
+    pub fee_rate: u64,
     pub to_address: String,
     pub from_locked_address: Option<String>,
     pub to_data: Option<Bytes>,
@@ -429,7 +419,7 @@ pub struct HttpTransferArgs {
 impl HttpTransferArgs {
     pub fn into_full_args(self, privkey_path: String) -> TransferArgs {
         let capacity = HumanCapacity::from(self.capacity).to_string();
-        let tx_fee = HumanCapacity::from(self.tx_fee).to_string();
+        let fee_rate = self.fee_rate.to_string();
         TransferArgs {
             privkey_path: Some(privkey_path),
             from_account: None,
@@ -438,7 +428,7 @@ impl HttpTransferArgs {
             derive_receiving_address_length: None,
             derive_change_address: None,
             capacity,
-            tx_fee,
+            fee_rate,
             to_address: self.to_address,
             to_data: self.to_data,
             is_type_id: false,

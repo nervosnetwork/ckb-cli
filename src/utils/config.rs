@@ -117,7 +117,7 @@ impl GlobalConfig {
         }
     }
     pub fn get_url(&self) -> &str {
-        &self.url.as_deref().unwrap_or(DEFAULT_JSONRPC_URL)
+        self.url.as_deref().unwrap_or(DEFAULT_JSONRPC_URL)
     }
 
     pub fn set_network(&mut self, network: Option<NetworkType>) {

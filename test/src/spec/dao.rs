@@ -29,7 +29,7 @@ impl Spec for DaoPrepareOne {
 
         // Withdraw failed because of since immature
         let output = setup.cli(&format!(
-            "dao withdraw --tx-fee 0.00002 --out-point {}-{} --privkey-path {}",
+            "dao withdraw --fee-rate 1000 --out-point {}-{} --privkey-path {}",
             prepare_tx_hash, 0, privkey_path,
         ));
         assert!(!output.starts_with("0x")); // withdraw failed because of since immature
@@ -74,7 +74,7 @@ impl Spec for DaoPrepareMultiple {
 
         // Withdraw failed because of since immature
         let output = setup.cli(&format!(
-            "dao withdraw --tx-fee 0.00002 --out-point {}-{} --privkey-path {}",
+            "dao withdraw --fee-rate 1000 --out-point {}-{} --privkey-path {}",
             prepare_tx_hash, 0, privkey_path,
         ));
         assert!(!output.starts_with("0x")); // withdraw failed because of since immature
@@ -191,7 +191,7 @@ fn deposit(setup: &mut Setup, shannons: &[u64]) -> Vec<String> {
     let mut deposit_tx_hashes = Vec::with_capacity(shannons.len());
     for shannon in shannons {
         let deposit_tx_hash = setup.cli(&format!(
-            "dao deposit --tx-fee 0.00002 --capacity {} --privkey-path {}",
+            "dao deposit --fee-rate 1000 --capacity {} --privkey-path {}",
             shannon2ckb(*shannon),
             privkey_path,
         ));
@@ -206,7 +206,7 @@ fn deposit(setup: &mut Setup, shannons: &[u64]) -> Vec<String> {
 fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
     let privkey_path = setup.miner().privkey_path().to_string();
     let mut command = format!(
-        "dao prepare --tx-fee 0.00002 --privkey-path {}",
+        "dao prepare --fee-rate 1000 --privkey-path {}",
         privkey_path,
     );
     for out_point in out_points {
@@ -223,7 +223,7 @@ fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
 fn withdraw(setup: &mut Setup, out_points: &[String]) -> String {
     let privkey_path = setup.miner().privkey_path().to_string();
     let mut command = format!(
-        "dao withdraw --tx-fee 0.00002 --privkey-path {}",
+        "dao withdraw --fee-rate 1000 --privkey-path {}",
         privkey_path,
     );
     for out_point in out_points {

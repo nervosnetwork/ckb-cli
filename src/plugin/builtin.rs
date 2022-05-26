@@ -2,16 +2,16 @@ use std::path::Path;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 
-use ckb_sdk::{
-    rpc::JsonBytes,
-    wallet::{DerivationPath, DerivedKeySet, Key, KeyStore, MasterPrivKey},
-};
-use ckb_types::core::service::Request;
+use bitcoin::util::bip32::DerivationPath;
 use crossbeam_channel::bounded;
+
+use ckb_signer::{DerivedKeySet, Key, KeyStore, MasterPrivKey};
+use ckb_types::core::service::Request;
 use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginResponse};
 
 use super::manager::PluginHandler;
 use crate::utils::other::{get_key_store, serialize_signature};
+use crate::utils::rpc::JsonBytes;
 
 pub const ERROR_KEYSTORE_REQUIRE_PASSWORD: &str = "keystore require password";
 
@@ -156,7 +156,7 @@ impl DefaultKeyStore {
                     .map(serilize_key_set),
                 KeyStoreRequest::ListAccount => {
                     let mut accounts = keystore.get_accounts().iter().collect::<Vec<_>>();
-                    accounts.sort_by(|a, b| a.1.cmp(&b.1));
+                    accounts.sort_by(|a, b| a.1.cmp(b.1));
                     let accounts = accounts
                         .into_iter()
                         .map(|(lock_arg, _)| lock_arg.clone())
@@ -178,7 +178,7 @@ impl DefaultKeyStore {
                         keystore
                             .sign_recoverable_with_password(
                                 &hash160,
-                                path.as_ref(),
+                                &path,
                                 &message,
                                 password.as_bytes(),
                             )
@@ -186,12 +186,7 @@ impl DefaultKeyStore {
                             .map_err(|err| err.to_string())?
                     } else {
                         keystore
-                            .sign_with_password(
-                                &hash160,
-                                path.as_ref(),
-                                &message,
-                                password.as_bytes(),
-                            )
+                            .sign_with_password(&hash160, &path, &message, password.as_bytes())
                             .map_err(|err| err.to_string())?
                             .serialize_compact()
                             .to_vec()
@@ -207,9 +202,10 @@ impl DefaultKeyStore {
                         password.ok_or_else(|| String::from(ERROR_KEYSTORE_REQUIRE_PASSWORD))?;
                     let path = DerivationPath::from_str(&path).map_err(|err| err.to_string())?;
                     let data = keystore
-                        .extended_pubkey_with_password(&hash160, path.as_ref(), password.as_bytes())
+                        .extended_pubkey_with_password(&hash160, &path, password.as_bytes())
                         .map_err(|err| err.to_string())?
                         .public_key
+                        .key
                         .serialize()
                         .to_vec();
                     Ok(PluginResponse::Bytes(JsonBytes::from_vec(data)))

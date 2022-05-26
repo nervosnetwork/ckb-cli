@@ -1,5 +1,6 @@
 mod error;
 mod passphrase;
+pub(crate) mod signer;
 mod util;
 
 use std::collections::hash_map::Entry;
@@ -11,21 +12,25 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use super::bip32::{ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use chrono::{Datelike, Timelike, Utc};
-use ckb_crypto::secp::SECP256K1;
-use ckb_hash::blake2b_256;
-use ckb_types::{H160, H256};
 use faster_hex::{hex_decode, hex_string};
 use rand::Rng;
 use secp256k1::recovery::RecoverableSignature;
 use uuid::Uuid;
 
+use bitcoin::util::bip32::{
+    ChainCode, ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey,
+};
+use ckb_crypto::secp::SECP256K1;
+use ckb_hash::blake2b_256;
+use ckb_sdk::util::{zeroize_privkey, zeroize_slice};
+use ckb_types::{H160, H256};
+
 pub use error::Error;
 pub use passphrase::{CipherParams, Crypto, KdfParams, ScryptParams, ScryptType};
-pub use util::{zeroize_privkey, zeroize_slice};
 
 const KEYSTORE_VERSION: u32 = 3;
+// FIXME: remove this
 const KEYSTORE_ORIGIN: &str = "ckb-cli";
 pub const CKB_ROOT_PATH: &str = "m/44'/309'/0'";
 
@@ -213,7 +218,7 @@ impl KeyStore {
         message: &H256,
     ) -> Result<secp256k1::Signature, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         Ok(self
             .get_timed_key(hash160)?
@@ -227,7 +232,7 @@ impl KeyStore {
         message: &H256,
     ) -> Result<RecoverableSignature, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         Ok(self
             .get_timed_key(hash160)?
@@ -242,7 +247,7 @@ impl KeyStore {
         password: &[u8],
     ) -> Result<secp256k1::Signature, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
@@ -256,7 +261,7 @@ impl KeyStore {
         password: &[u8],
     ) -> Result<RecoverableSignature, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
@@ -264,7 +269,7 @@ impl KeyStore {
     }
     pub fn extended_pubkey<P>(&mut self, hash160: &H160, path: &P) -> Result<ExtendedPubKey, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         Ok(self
             .get_timed_key(hash160)?
@@ -278,7 +283,7 @@ impl KeyStore {
         password: &[u8],
     ) -> Result<ExtendedPubKey, Error>
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
         let key = self.storage.get_key(hash160, &filepath, password)?;
@@ -548,7 +553,7 @@ impl CkbRoot {
             ChildNumber::from_hardened_idx(0).expect("child number"),
             "child_number is wrong",
         );
-        let pubkey_hex = hex_string(&self.extended_pubkey.public_key.serialize()[..]);
+        let pubkey_hex = hex_string(&self.extended_pubkey.public_key.key.serialize()[..]);
         let chain_code_hex = hex_string(&self.extended_pubkey.chain_code[..]);
         serde_json::json!({
             "path": self.path,
@@ -582,11 +587,15 @@ impl CkbRoot {
         let mut chain_code = [0u8; 32];
         chain_code.copy_from_slice(&chain_code_bin[..]);
         let extended_pubkey = ExtendedPubKey {
+            network: bitcoin::Network::Bitcoin,
             depth,
             parent_fingerprint,
             child_number,
-            public_key,
-            chain_code: ChainCode(chain_code),
+            public_key: bitcoin::PublicKey {
+                compressed: true,
+                key: public_key,
+            },
+            chain_code: ChainCode::from(&chain_code[..]),
         };
 
         // let pubkey
@@ -634,7 +643,7 @@ impl CkbRoot {
                 .into_iter()
                 .map(|(path, extended_pubkey)| {
                     let pubkey = extended_pubkey.public_key;
-                    let hash = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+                    let hash = H160::from_slice(&blake2b_256(&pubkey.key.serialize()[..])[0..20])
                         .expect("Generate hash(H160) from pubkey failed");
                     (path, hash)
                 })
@@ -649,7 +658,7 @@ impl CkbRoot {
     pub fn derived_hash160(&self, chain: KeyChain, index: u32) -> (DerivationPath, H160) {
         let (path, extended_pubkey) = self.derived_pubkey(chain, index);
         let pubkey = extended_pubkey.public_key;
-        let hash160 = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+        let hash160 = H160::from_slice(&blake2b_256(&pubkey.key.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed");
         (path, hash160)
     }
@@ -835,14 +844,19 @@ impl MasterPrivKey {
 
     fn sub_privkey<P>(&self, path: &P) -> ExtendedPrivKey
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let sk = ExtendedPrivKey {
+            network: bitcoin::Network::Bitcoin,
             depth: 0,
             parent_fingerprint: Default::default(),
             child_number: ChildNumber::Normal { index: 0 },
-            private_key: self.secp_secret_key,
-            chain_code: ChainCode(self.chain_code),
+            private_key: bitcoin::PrivateKey {
+                compressed: true,
+                network: bitcoin::Network::Bitcoin,
+                key: self.secp_secret_key,
+            },
+            chain_code: ChainCode::from(&self.chain_code[..]),
         };
         sk.derive_priv(&SECP256K1, path)
             .expect("Derive sub-privkey error")
@@ -850,27 +864,27 @@ impl MasterPrivKey {
 
     pub fn sign<P>(&self, message: &H256, path: &P) -> secp256k1::Signature
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let message =
             secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign(&message, &sub_sk.private_key)
+        SECP256K1.sign(&message, &sub_sk.private_key.key)
     }
 
     pub fn sign_recoverable<P>(&self, message: &H256, path: &P) -> RecoverableSignature
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let message =
             secp256k1::Message::from_slice(message.as_bytes()).expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign_recoverable(&message, &sub_sk.private_key)
+        SECP256K1.sign_recoverable(&message, &sub_sk.private_key.key)
     }
 
     pub fn extended_pubkey<P>(&self, path: &P) -> ExtendedPubKey
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let sub_sk = self.sub_privkey(path);
         ExtendedPubKey::from_private(&SECP256K1, &sub_sk)
@@ -887,10 +901,10 @@ impl MasterPrivKey {
 
     pub fn hash160<P>(&self, path: &P) -> H160
     where
-        P: ?Sized + AsRef<[ChildNumber]>,
+        P: AsRef<[ChildNumber]>,
     {
         let sub_sk = self.sub_privkey(path);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key.key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
     }
@@ -906,7 +920,7 @@ impl Drop for MasterPrivKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Address;
+    use ckb_sdk::Address;
     use ckb_types::{h160, h256};
 
     #[test]

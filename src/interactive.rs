@@ -5,13 +5,15 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
-use ckb_types::{core::service::Request, core::BlockView};
+use ckb_types::core::service::Request;
 use ckb_util::RwLock;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
 use serde_json::json;
+
+use ckb_signer::KeyStore;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{
@@ -22,11 +24,12 @@ use crate::subcommands::{
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
+    genesis_info::GenesisInfo,
     index::{IndexController, IndexRequest, IndexThreadState},
-    other::{check_alerts, get_network_type, index_dirname},
+    other::{check_alerts, get_genesis_info, get_network_type, index_dirname},
     printer::{ColorWhen, OutputFormat, Printable},
+    rpc::{HttpRpcClient, RawHttpRpcClient},
 };
-use ckb_sdk::{rpc::RawHttpRpcClient, wallet::KeyStore, GenesisInfo, HttpRpcClient};
 
 const ENV_PATTERN: &str = r"\$\{\s*(?P<key>\S+)\s*\}";
 
@@ -229,14 +232,7 @@ impl InteractiveEnv {
     }
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
-        if self.genesis_info.is_none() {
-            let genesis_block: BlockView = self
-                .rpc_client
-                .get_block_by_number(0)?
-                .expect("Can not get genesis block?")
-                .into();
-            self.genesis_info = Some(GenesisInfo::from_block(&genesis_block)?);
-        }
+        self.genesis_info = Some(get_genesis_info(&self.genesis_info, &mut self.rpc_client)?);
         Ok(self.genesis_info.clone().unwrap())
     }
 
@@ -246,7 +242,7 @@ impl InteractiveEnv {
         line: &str,
         env_regex: &Regex,
     ) -> Result<bool, String> {
-        let args = match shell_words::split(self.config.replace_cmd(&env_regex, line).as_str()) {
+        let args = match shell_words::split(self.config.replace_cmd(env_regex, line).as_str()) {
             Ok(args) => args,
             Err(e) => return Err(e.to_string()),
         };
@@ -347,13 +343,13 @@ impl InteractiveEnv {
                 ("rpc", Some(sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
-                        .process(&sub_matches, debug)?;
+                        .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
                 ("account", Some(sub_matches)) => {
                     let output = AccountSubCommand::new(&mut self.plugin_mgr, &mut self.key_store)
-                        .process(&sub_matches, debug)?;
+                        .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -364,7 +360,7 @@ impl InteractiveEnv {
                         &mut self.plugin_mgr,
                         genesis_info,
                     )
-                    .process(&sub_matches, debug)?;
+                    .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -372,24 +368,24 @@ impl InteractiveEnv {
                     let genesis_info = self.genesis_info().ok();
                     let output =
                         TxSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr, genesis_info)
-                            .process(&sub_matches, debug)?;
+                            .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
                 ("util", Some(sub_matches)) => {
                     let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr)
-                        .process(&sub_matches, debug)?;
+                        .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
                 ("plugin", Some(sub_matches)) => {
                     let output =
-                        PluginSubCommand::new(&mut self.plugin_mgr).process(&sub_matches, debug)?;
+                        PluginSubCommand::new(&mut self.plugin_mgr).process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
                 ("molecule", Some(sub_matches)) => {
-                    let output = MoleculeSubCommand::new().process(&sub_matches, debug)?;
+                    let output = MoleculeSubCommand::new().process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -403,7 +399,7 @@ impl InteractiveEnv {
                         Arc::clone(&self.index_state),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, debug)?;
+                    .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -417,7 +413,7 @@ impl InteractiveEnv {
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, debug)?;
+                    .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
@@ -431,7 +427,7 @@ impl InteractiveEnv {
                         self.index_controller.clone(),
                         wait_for_sync,
                     )
-                    .process(&sub_matches, debug)?;
+                    .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }

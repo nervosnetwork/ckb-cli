@@ -98,14 +98,12 @@ impl Events {
             let tx = tx.clone();
             thread::spawn(move || {
                 let stdin = io::stdin();
-                for evt in stdin.keys() {
-                    if let Ok(key) = evt {
-                        if tx.send(Event::Input(key)).is_err() {
-                            return;
-                        }
-                        if key == config.exit_key {
-                            return;
-                        }
+                for key in stdin.keys().flatten() {
+                    if tx.send(Event::Input(key)).is_err() {
+                        return;
+                    }
+                    if key == config.exit_key {
+                        return;
                     }
                 }
             })

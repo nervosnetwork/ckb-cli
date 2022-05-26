@@ -1,8 +1,13 @@
+use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
+
 use ckb_chain_spec::consensus::ConsensusBuilder;
 use ckb_error::OtherError;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
+use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
+use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
 use ckb_types::{
     bytes::Bytes,
     core::{
@@ -14,21 +19,11 @@ use ckb_types::{
     H160, H256,
 };
 
-use fnv::FnvHashSet;
-use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
-
-use crate::constants::MIN_SECP_CELL_CAPACITY;
-use crate::GenesisInfo;
-
-pub use ckb_sdk_types::transaction::{
-    MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, ReprMockCellDep,
-    ReprMockInfo, ReprMockInput, ReprMockTransaction, Resource,
-};
+use crate::utils::genesis_info::GenesisInfo;
 
 pub struct MockTransactionHelper<'a> {
     pub mock_tx: &'a mut MockTransaction,
-    live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes, H256)>,
+    live_cell_cache: HashMap<OutPoint, (CellOutput, Bytes, Option<Byte32>)>,
 }
 
 impl<'a> MockTransactionHelper<'a> {
@@ -43,9 +38,9 @@ impl<'a> MockTransactionHelper<'a> {
         &mut self,
         input: &CellInput,
         live_cell_getter: C,
-    ) -> Result<(CellOutput, Bytes, H256), String>
+    ) -> Result<(CellOutput, Bytes, Option<Byte32>), String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
     {
         let cell = match self.live_cell_cache.get(&input.previous_output()) {
             Some(cell) => cell.clone(),
@@ -69,7 +64,7 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<u64, String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
     {
         let mut input_total: u64 = 0;
         let mut first_input_cell = None;
@@ -128,7 +123,7 @@ impl<'a> MockTransactionHelper<'a> {
         mut live_cell_getter: C,
     ) -> Result<(), String>
     where
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
     {
         let tx = self.mock_tx.core_transaction();
         let mut cell_deps = tx.cell_deps().into_iter().collect::<HashSet<_>>();
@@ -159,7 +154,6 @@ impl<'a> MockTransactionHelper<'a> {
                     .map(|script| (script.calc_script_hash(), mock.cell_dep.clone()))
             })
             .collect::<HashMap<_, _>>();
-        let sighash_type_hash = genesis_info.sighash_type_hash();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
                 (ScriptHashType::Data, data_hash) | (ScriptHashType::Data1, data_hash) => {
@@ -168,7 +162,9 @@ impl<'a> MockTransactionHelper<'a> {
                     })?;
                     cell_deps.insert(dep);
                 }
-                (ScriptHashType::Type, code_hash) if code_hash == sighash_type_hash => {
+                (ScriptHashType::Type, code_hash)
+                    if code_hash.as_slice() == SIGHASH_TYPE_HASH.as_bytes() =>
+                {
                     cell_deps.insert(genesis_info.sighash_dep());
                 }
                 (ScriptHashType::Type, type_hash) => {
@@ -217,15 +213,10 @@ impl<'a> MockTransactionHelper<'a> {
     }
 
     /// Compute transaction hash and set witnesses for inputs (search by lock scripts)
-    pub fn fill_witnesses<S, C>(
-        &mut self,
-        genesis_info: &GenesisInfo,
-        signer: S,
-        mut live_cell_getter: C,
-    ) -> Result<(), String>
+    pub fn fill_witnesses<S, C>(&mut self, signer: S, mut live_cell_getter: C) -> Result<(), String>
     where
         S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
     {
         let tx = self.mock_tx.core_transaction();
         let mut witnesses: Vec<_> = tx.witnesses().into_iter().collect();
@@ -235,7 +226,7 @@ impl<'a> MockTransactionHelper<'a> {
         let mut input_group: HashMap<H160, Vec<usize>> = HashMap::default();
         for (idx, input) in tx.inputs().into_iter().enumerate() {
             let lock = self.get_input_cell(&input, &mut live_cell_getter)?.0.lock();
-            if &lock.code_hash() == genesis_info.sighash_type_hash()
+            if lock.code_hash().as_slice() == SIGHASH_TYPE_HASH.as_bytes()
                 && lock.hash_type() == ScriptHashType::Type.into()
                 && lock.args().raw_data().len() == 20
             {
@@ -309,11 +300,11 @@ impl<'a> MockTransactionHelper<'a> {
     ) -> Result<(), String>
     where
         S: Fn(&H160, &H256, &rpc_types::Transaction) -> Result<[u8; 65], String>,
-        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, H256)>, String>,
+        C: FnMut(OutPoint) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String>,
     {
         self.add_change_output(target_lock, &mut live_cell_getter)?;
         self.fill_deps(genesis_info, &mut live_cell_getter)?;
-        self.fill_witnesses(genesis_info, signer, &mut live_cell_getter)
+        self.fill_witnesses(signer, &mut live_cell_getter)
     }
 
     /// Verify the transaction by local ScriptVerifier
@@ -344,8 +335,7 @@ impl<'a> MockTransactionHelper<'a> {
         let resource = Resource::from_both(self.mock_tx, loader)?;
         let tx = self.mock_tx.core_transaction();
         let rtx = {
-            let mut seen_inputs = FnvHashSet::default();
-            resolve_transaction(tx, &mut seen_inputs, &resource, &resource)
+            resolve_transaction(tx, &mut HashSet::new(), &resource, &resource)
                 .map_err(|err| format!("Resolve transaction error: {:?}", err))?
         };
 
@@ -365,6 +355,7 @@ mod test {
     use ckb_crypto::secp::SECP256K1;
     use ckb_hash::blake2b_256;
     use ckb_jsonrpc_types as json_types;
+    use ckb_mock_tx_types::{MockCellDep, MockInput};
     use ckb_types::{
         core::{capacity_bytes, BlockView, Capacity, HeaderView},
         h256,
@@ -397,7 +388,7 @@ mod test {
         let lock_arg = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed");
         let lock_script = Script::new_builder()
-            .code_hash(genesis_info.sighash_type_hash().clone())
+            .code_hash(SIGHASH_TYPE_HASH.pack())
             .hash_type(ScriptHashType::Type.into())
             .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
             .build();
@@ -415,7 +406,7 @@ mod test {
                 cell_dep: genesis_info.sighash_dep(),
                 output: dep_group_output,
                 data: dep_group_data,
-                block_hash: H256::default(),
+                header: None,
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -423,7 +414,7 @@ mod test {
                     .build(),
                 output: secp_output,
                 data: secp_data,
-                block_hash: H256::default(),
+                header: None,
             },
             MockCellDep {
                 cell_dep: CellDep::new_builder()
@@ -431,7 +422,7 @@ mod test {
                     .build(),
                 output: secp_data_output,
                 data: secp_data_data,
-                block_hash: H256::default(),
+                header: None,
             },
         ]);
 
@@ -446,7 +437,7 @@ mod test {
                 input: input.clone(),
                 output,
                 data: Bytes::default(),
-                block_hash: H256::default(),
+                header: None,
             }
         });
         let output = CellOutput::new_builder()
@@ -484,7 +475,7 @@ mod test {
             fn get_live_cell(
                 &mut self,
                 out_point: OutPoint,
-            ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
+            ) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String> {
                 Err(format!(
                     "Can not call live cell getter, out_point={:?}",
                     out_point

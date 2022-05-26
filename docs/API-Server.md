@@ -33,7 +33,7 @@ OPTIONS:
 
 Transfer capacity to an address. Enabled when start server with `--privkey-path** argument.
 
-**Attention**: `capacity` and `tx_fee` unit are Shannon.
+**Attention**: `capacity` unit are Shannon.
 
 See: `ckb-cli wallet transfer --help`
 
@@ -45,7 +45,7 @@ The parameters of `transfer` method is different from other methods, this method
 TransferArgs fields:
 
     capacity            - The capacity (unit: Shannon)
-    tx_fee              - The transaction fee capacity (unit: Shannon)
+    fee_rate            - The transaction fee rate (unit: shannons/KB)
     to_address          - Target address
     from_locked_address - (optional) The time locked multisig address to search live cells
     to_data             - (optional) Hex data store in target cell
@@ -59,7 +59,7 @@ echo '{
     "method": "transfer",
     "params": [{
         "capacity": 200000000000,
-        "tx_fee": 1000,
+        "fee_rate": 1000,
         "to_address": "ckt1qyqdfjzl8ju2vfwjtl4mttx6me09hayzfldq8m3a0y",
         "from_locked_address": null,
         "to_data": null

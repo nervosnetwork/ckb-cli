@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
 
-use ckb_sdk::{AddressPayload, GenesisInfo, NetworkType};
+use ckb_sdk::{AddressPayload, NetworkType};
 use ckb_types::{
     core::{BlockView, HeaderView},
     packed::{Byte32, Header, OutPoint, Script},
@@ -25,7 +25,7 @@ pub struct IndexDatabase<'a> {
     db: &'a DB,
     cf: &'a ColumnFamily,
     // network: NetworkType,
-    genesis_info: GenesisInfo,
+    genesis_header: HeaderView,
     last_header: Option<HeaderView>,
     tip_header: HeaderView,
     init_block_buf: Vec<BlockView>,
@@ -38,11 +38,12 @@ impl<'a> IndexDatabase<'a> {
         db: &'a DB,
         cf: &'a ColumnFamily,
         network: NetworkType,
-        genesis_info: GenesisInfo,
+        genesis_header: HeaderView,
         enable_explorer: bool,
     ) -> Result<IndexDatabase<'a>, IndexError> {
-        let genesis_header = genesis_info.header().clone();
-        assert_eq!(genesis_header.number(), 0);
+        if genesis_header.number() != 0 {
+            return Err(IndexError::InvalidBlockNumber(genesis_header.number()));
+        }
 
         let (genesis_hash_opt, network_opt): (Option<Byte32>, Option<NetworkType>) = {
             let reader = RocksReader::new(db, cf);
@@ -90,7 +91,7 @@ impl<'a> IndexDatabase<'a> {
             cf,
             // network,
             last_header,
-            genesis_info,
+            genesis_header: genesis_header.clone(),
             tip_header: genesis_header,
             init_block_buf: Vec::new(),
             enable_explorer,
@@ -135,7 +136,7 @@ impl<'a> IndexDatabase<'a> {
             self.apply_block_unchecked(block);
             Ok(())
         } else if number == 0 {
-            let genesis_hash = self.genesis_info.header().hash();
+            let genesis_hash = self.genesis_header.hash();
             if block_hash != genesis_hash {
                 Err(IndexError::InvalidGenesis(format!(
                     "{:#x}, expected: {:#x}",

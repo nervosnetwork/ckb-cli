@@ -337,7 +337,7 @@ impl Crypto {
     }
 
     fn check_password_inner(&self, kdf_key: &[u8; 32]) -> bool {
-        self.mac == calculate_mac(&self.ciphertext, &kdf_key)
+        self.mac == calculate_mac(&self.ciphertext, kdf_key)
     }
 
     pub fn check_password(&self, password: &[u8]) -> Result<bool, Error> {
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn check_password() {
         let data = test_data();
-        assert_eq!(data.crypto.check_password(&data.password).unwrap(), true);
-        assert_eq!(data.crypto.check_password(b"xyz.1234").unwrap(), false);
+        assert!(data.crypto.check_password(&data.password).unwrap());
+        assert!(!data.crypto.check_password(b"xyz.1234").unwrap());
     }
 }

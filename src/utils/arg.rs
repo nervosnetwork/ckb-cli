@@ -136,12 +136,13 @@ pub fn capacity<'a>() -> Arg<'a> {
         .about("The capacity (unit: CKB, format: 123.335)")
 }
 
-pub fn tx_fee<'a>() -> Arg<'a> {
-    Arg::with_name("tx-fee")
-        .long("tx-fee")
+pub fn fee_rate<'a>() -> Arg<'a> {
+    Arg::with_name("fee-rate")
+        .long("fee-rate")
         .takes_value(true)
-        .validator(|input| CapacityParser.validate(input))
-        .about("The transaction fee capacity (unit: CKB, format: 0.0001)")
+        .validator(|input| FromStrParser::<u64>::default().validate(input))
+        .default_value("1000")
+        .about("The transaction fee rate (unit: shannons/KB)")
 }
 
 pub fn type_hash<'a>() -> Arg<'a> {
