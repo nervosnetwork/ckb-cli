@@ -78,12 +78,16 @@ impl Spec for Plugin {
             .cli("account bip44-addresses --lock-arg 0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(
-            value["receiving"][0]["address"],
+            value["receiving"][0]["address(deprecated)"],
             "ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"
+        );
+        assert_eq!(
+            value["receiving"][0]["address"],
+            "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqgnuswkly5j24v3dutmfzp223muqynszss2yfteq"
         );
         assert_eq!(value["receiving"][0]["path"], "m/44'/309'/0'/0/19");
         assert_eq!(
-            value["change"][1]["address"],
+            value["change"][1]["address(deprecated)"],
             "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
         );
         assert_eq!(value["change"][1]["path"], "m/44'/309'/0'/1/20");
