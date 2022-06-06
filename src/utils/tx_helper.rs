@@ -396,10 +396,10 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
     } else {
         CodeHashCategory::Other
     };
-    let hash_type_str = if hash_type == ScriptHashType::Type {
-        "type"
-    } else {
-        "data"
+    let hash_type_str = match hash_type {
+        ScriptHashType::Type => "type",
+        ScriptHashType::Data => "data",
+        ScriptHashType::Data1 => "data1",
     };
 
     match (code_hash_category, hash_type, lock_args.len()) {
