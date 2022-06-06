@@ -45,6 +45,11 @@ impl<'a> AccountSubCommand<'a> {
             .long("extended-privkey-path")
             .takes_value(true)
             .about("Extended private key path (include master private key and chain code)");
+        let arg_derive_path = Arg::with_name("path")
+            .long("path")
+            .takes_value(true)
+            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
+            .about("The derivation key path");
         App::new(name)
             .about("Manage accounts")
             .subcommands(vec![
@@ -65,7 +70,7 @@ impl<'a> AccountSubCommand<'a> {
   When `source` is \"Local File System\" means the account is stored in json keystore file, the output fields are:
     * lock_arg: The blake2b160 hash of the public key.
     * lock_hash: The lock script hash of secp256k1_blake160_sighash_all lock (See [1]).
-    * has_ckb_pubkey_derivation_root_path: The ckb publick key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
+    * has_ckb_pubkey_derivation_root_path: The CKB public key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
     * address: The Mainnet/Testnet addresses of secp256k1_blake160_sighash_all lock (See [1]).
 
   When `source` is \"[plugin]: xxx_keysotre_plugin\" means the account is stored in keystore plugin (Ledger plugin like [2]). If the account metadata is imported by `ckb-cli account import-from-plugin` the output fields are just like \"Local File System\". If the account is not imported, the output fields are:
@@ -130,6 +135,10 @@ impl<'a> AccountSubCommand<'a> {
                             .required(true)
                             .about("Output extended private key path (PrivKey + ChainCode)")
                     ),
+                App::new("bitcoin-xpub")
+                    .about("Show BIP-32 Extended Public Key in Base58Check format (with xpub prefix)")
+                    .arg(lock_arg().required(true))
+                    .arg(arg_derive_path.clone().required(true)),
                 App::new("bip44-addresses")
                     .about("Extended receiving/change Addresses (see: BIP-44)")
                     .arg(
@@ -176,13 +185,7 @@ impl<'a> AccountSubCommand<'a> {
                 App::new("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(lock_arg().required(true))
-                    .arg(
-                        Arg::with_name("path")
-                            .long("path")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-                            .about("The address path")
-                    ),
+                    .arg(arg_derive_path),
                 App::new("remove")
                     .about("Print information about how to remove an account")
                     .arg(lock_arg().required(true)),
@@ -385,6 +388,21 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     )
                 });
                 Ok(Output::new_error(resp))
+            }
+            ("bitcoin-xpub", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let password = read_password(false, None)?;
+                let path: DerivationPath =
+                    FromStrParser::<DerivationPath>::new().from_matches(m, "path")?;
+                let extended_pubkey = self
+                    .key_store
+                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                let resp = serde_json::json!({
+                    "bitcoin-xpub": extended_pubkey.to_string(),
+                });
+                Ok(Output::new_output(resp))
             }
             ("bip44-addresses", Some(m)) => {
                 let lock_arg: H160 =
