@@ -12,6 +12,7 @@ use ckb_types::{
     prelude::*,
 };
 use rocksdb::{ColumnFamily, DB};
+use thiserror::Error;
 
 use crate::{KVReader, KVTxn, RocksReader, RocksTxn};
 pub use key::{Key, KeyMetrics, KeyType};
@@ -372,7 +373,7 @@ impl<'a> IndexDatabase<'a> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Error)]
 pub enum IndexError {
     BlockImmature(u64),
     IllegalBlock(Byte32),
