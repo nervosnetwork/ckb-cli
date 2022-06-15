@@ -1,18 +1,18 @@
 use std::io;
 
-use failure::Fail;
+use thiserror::Error;
 
 use crate::index::IndexError;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[fail(display = "Rocksdb error: {}", _0)]
+    #[error("Rocksdb error: {0}")]
     Rocksdb(rocksdb::Error),
-    #[fail(display = "IO error: {}", _0)]
+    #[error("IO error: {0}")]
     Io(io::Error),
-    #[fail(display = "Index DB error: {}", _0)]
+    #[error("Index DB error: {0}")]
     Index(IndexError),
-    #[fail(display = "Other error: {}", _0)]
+    #[error("Other error: {0}")]
     Other(String),
 }
 

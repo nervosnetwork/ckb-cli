@@ -10,7 +10,7 @@ use ckb_util::RwLock;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
-use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyPress};
+use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyEvent};
 use serde_json::json;
 
 use ckb_signer::KeyStore;
@@ -152,8 +152,8 @@ impl InteractiveEnv {
         let mut rl = Editor::with_config(rl_config);
         let helper = CkbCompleter::new(parser.clone());
         rl.set_helper(Some(helper));
-        rl.bind_sequence(KeyPress::Meta('N'), Cmd::HistorySearchForward);
-        rl.bind_sequence(KeyPress::Meta('P'), Cmd::HistorySearchBackward);
+        rl.bind_sequence(KeyEvent::alt('n'), Cmd::HistorySearchForward);
+        rl.bind_sequence(KeyEvent::alt('p'), Cmd::HistorySearchBackward);
         if rl.load_history(&self.history_file).is_err() {
             eprintln!("No previous history.");
         }

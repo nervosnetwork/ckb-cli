@@ -185,7 +185,7 @@ impl HttpRpcClient {
             .set_ban(address, command, ban_time.map(Into::into), absolute, reason)
             .map_err(|err| err.to_string())
     }
-    pub fn sync_state(&mut self) -> Result<types::PeerSyncState, String> {
+    pub fn sync_state(&mut self) -> Result<types::SyncState, String> {
         self.client
             .sync_state()
             .map(Into::into)

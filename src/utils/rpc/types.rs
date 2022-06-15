@@ -1035,6 +1035,32 @@ impl From<rpc_types::PeerSyncState> for PeerSyncState {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct SyncState {
+    pub ibd: bool,
+    pub best_known_block_number: BlockNumber,
+    pub best_known_block_timestamp: Timestamp,
+    pub orphan_blocks_count: Uint64,
+    pub inflight_blocks_count: Uint64,
+    pub fast_time: Uint64,
+    pub normal_time: Uint64,
+    pub low_time: Uint64,
+}
+impl From<rpc_types::SyncState> for SyncState {
+    fn from(json: rpc_types::SyncState) -> SyncState {
+        SyncState {
+            ibd: json.ibd,
+            best_known_block_number: json.best_known_block_number.into(),
+            best_known_block_timestamp: json.best_known_block_timestamp.into(),
+            orphan_blocks_count: json.orphan_blocks_count.value(),
+            inflight_blocks_count: json.inflight_blocks_count.value(),
+            fast_time: json.fast_time.value(),
+            normal_time: json.normal_time.value(),
+            low_time: json.low_time.value(),
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct NodeAddress {
     pub address: String,
     pub score: Uint64,
