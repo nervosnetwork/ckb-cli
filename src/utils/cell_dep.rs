@@ -28,8 +28,6 @@ pub enum CellDepName {
     Cheque,
     /// Simple UDT
     Sudt,
-    /// Xudt
-    Xudt,
 }
 impl fmt::Display for CellDepName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -37,7 +35,6 @@ impl fmt::Display for CellDepName {
             CellDepName::Acp => "acp",
             CellDepName::Cheque => "cheque",
             CellDepName::Sudt => "sudt",
-            CellDepName::Xudt => "xudt",
         };
         write!(f, "{}", output)
     }
