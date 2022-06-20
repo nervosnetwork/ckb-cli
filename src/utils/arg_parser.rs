@@ -474,16 +474,18 @@ impl UdtTargetParser {
 }
 impl ArgParser<(Address, u128)> for UdtTargetParser {
     fn parse(&self, input: &str) -> Result<(Address, u128), String> {
-        let parts = input.split(':').collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(format!(
+        if let Some((addr_str, amount_str)) = input.split_once(':') {
+            let address: Address = self.address_parser.parse(addr_str)?;
+            let amount = FromStrParser::<u128>::default()
+                .parse(amount_str)
+                .map_err(|err| format!("invalid amount: {}, error: {}", amount_str, err))?;
+            Ok((address, amount))
+        } else {
+            Err(format!(
                 "Invalid udt target: {}, format: {{address}}:{{amount}}",
                 input
-            ));
+            ))
         }
-        let address: Address = self.address_parser.parse(parts[0])?;
-        let amount = FromStrParser::<u128>::default().parse(parts[1])?;
-        Ok((address, amount))
     }
 }
 
@@ -491,19 +493,19 @@ pub struct ScriptIdParser;
 
 impl ArgParser<ScriptId> for ScriptIdParser {
     fn parse(&self, input: &str) -> Result<ScriptId, String> {
-        let parts = input.split('-').collect::<Vec<_>>();
-        if parts.len() != 2 {
-            return Err(format!(
+        if let Some((code_hash_str, hash_type_str)) = input.split_once('-') {
+            let code_hash: H256 = FixedHashParser::<H256>::default().parse(code_hash_str)?;
+            match hash_type_str {
+                "type" => Ok(ScriptId::new_type(code_hash)),
+                "data" => Ok(ScriptId::new_data(code_hash)),
+                "data1" => Ok(ScriptId::new_data1(code_hash)),
+                _ => Err(format!("invalid hash_type: {}", hash_type_str)),
+            }
+        } else {
+            Err(format!(
                 "Invalid script id: {}, format: {{code_hash}}-{{hash_type}}, `hash_type` can be: [type, data, data1]",
                 input
-            ));
-        }
-        let code_hash: H256 = FixedHashParser::<H256>::default().parse(parts[0])?;
-        match parts[1] {
-            "type" => Ok(ScriptId::new_type(code_hash)),
-            "data" => Ok(ScriptId::new_data(code_hash)),
-            "data1" => Ok(ScriptId::new_data1(code_hash)),
-            _ => Err(format!("invalid hash_type: {}", parts[1])),
+            ))
         }
     }
 }
