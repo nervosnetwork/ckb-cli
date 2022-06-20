@@ -18,7 +18,7 @@ use plugin::PluginManager;
 use subcommands::{
     start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
     IndexSubCommand, MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, PubSubCommand,
-    RpcSubCommand, SudtSubCommand, TxSubCommand, UdtSubCommand, UtilSubCommand, WalletSubCommand,
+    RpcSubCommand, SudtSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
@@ -197,19 +197,6 @@ fn main() -> Result<(), io::Error> {
                 .process(sub_matches, debug)
             })
         }
-        ("udt", Some(sub_matches)) => {
-            get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
-                UdtSubCommand::new(
-                    &mut rpc_client,
-                    &mut plugin_mgr,
-                    genesis_info,
-                    index_dir.clone(),
-                    index_controller.clone(),
-                    wait_for_sync,
-                )
-                .process(sub_matches, debug)
-            })
-        }
         ("sudt", Some(sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 SudtSubCommand::new(
@@ -308,7 +295,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
-        .subcommand(UdtSubCommand::subcommand("udt"))
         .subcommand(SudtSubCommand::subcommand("sudt"))
         .arg(
             Arg::with_name("url")
@@ -428,6 +414,5 @@ pub fn build_interactive() -> App<'static> {
         .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
-        .subcommand(UdtSubCommand::subcommand("udt"))
         .subcommand(SudtSubCommand::subcommand("sudt"))
 }

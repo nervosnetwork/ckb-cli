@@ -19,7 +19,7 @@ use crate::plugin::PluginManager;
 use crate::subcommands::{
     AccountSubCommand, CliSubCommand, DAOSubCommand, IndexSubCommand, MockTxSubCommand,
     MoleculeSubCommand, PluginSubCommand, RpcSubCommand, SudtSubCommand, TxSubCommand,
-    UdtSubCommand, UtilSubCommand, WalletSubCommand,
+    UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -420,20 +420,6 @@ impl InteractiveEnv {
                 ("dao", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = DAOSubCommand::new(
-                        &mut self.rpc_client,
-                        &mut self.plugin_mgr,
-                        genesis_info,
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
-                    )
-                    .process(sub_matches, debug)?;
-                    output.print(format, color);
-                    Ok(())
-                }
-                ("udt", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info()?;
-                    let output = UdtSubCommand::new(
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,

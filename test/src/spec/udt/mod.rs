@@ -176,7 +176,7 @@ pub fn check_amount(
     expected_amount: u128,
 ) {
     let output = setup.cli(&format!(
-        "udt get-amount --owner {} --address {} --cell-deps {}",
+        "sudt get-amount --owner {} --address {} --cell-deps {}",
         owner_addr, addr, cell_deps_path,
     ));
     log::debug!("get amount:\n{}", output);
@@ -197,7 +197,7 @@ pub fn create_acp_cell(
     privkey_path: &str,
 ) -> String {
     let output = setup.cli(&format!(
-        "udt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
+        "sudt new-empty-acp --owner {} --to {} --cell-deps {} --privkey-path {}",
         owner_addr, addr, cell_deps_path, privkey_path,
     ));
     log::info!("create empty acp cell for {}:\n{}", addr, output);
