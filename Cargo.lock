@@ -758,7 +758,7 @@ dependencies = [
  "ckb-sdk",
  "ckb-types",
  "faster-hex",
- "parking_lot 0.11.2",
+ "parking_lot 0.12.1",
  "rand 0.7.3",
  "scrypt",
  "secp256k1",
