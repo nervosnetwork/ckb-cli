@@ -1,6 +1,7 @@
 pub mod arg;
 pub mod arg_parser;
 pub mod cell_collector;
+pub mod cell_dep;
 pub mod completer;
 pub mod config;
 pub mod genesis_info;

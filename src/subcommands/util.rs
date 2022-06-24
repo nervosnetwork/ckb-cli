@@ -12,14 +12,14 @@ use secp256k1::recovery::{RecoverableSignature, RecoveryId};
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{self, JsonBytes};
+use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
     Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
-    core::{EpochNumberWithFraction, ScriptHashType},
+    core::{BlockView, EpochNumberWithFraction, ScriptHashType},
     packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
@@ -34,6 +34,7 @@ use crate::utils::{
         AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
+    genesis_info::GenesisInfo,
     other::{address_json, get_address, get_network_type, read_password, serialize_signature},
     rpc::{ChainInfo, HttpRpcClient},
 };
@@ -292,6 +293,8 @@ impl<'a> UtilSubCommand<'a> {
                             .long("with-data")
                             .about("Get live cell with data")
                     ),
+                App::new("genesis-scripts")
+                    .about("Show genesis scripts code hash and cell_deps information, include: [sighash, multisig, dao, secp256k1_data, type_id], see RFC24 for more details."),
                 App::new("completions")
                     .about("Generates completion scripts for your shell")
                     .arg(
@@ -633,7 +636,6 @@ message = "0x"
                 {
                     return Err("only mainnet(line) and testnet(aggron) support short format anone-can-pay address".to_string());
                 }
-
                 let mut resp = serde_json::json!({
                     "extra": {
                         "data-encoding": if address.is_new() { "bech32m" } else { "bech32"},
@@ -642,7 +644,7 @@ message = "0x"
                     "network": address.network().to_str(),
                     "lock_script": {
                         "code_hash": format!("{:#x}", address.payload().code_hash(Some(address.network()))),
-                        "hash_type": ckb_jsonrpc_types::ScriptHashType::from(address.payload().hash_type()),
+                        "hash_type": json_types::ScriptHashType::from(address.payload().hash_type()),
                         "args": format!("0x{}", hex_string(address.payload().args().as_ref())),
                     },
                 });
@@ -657,7 +659,6 @@ message = "0x"
                     !address.is_new(),
                 )
                 .to_string());
-
                 Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {
@@ -763,6 +764,52 @@ message = "0x"
                     }
                     Ok(Output::new_output(resp))
                 }
+            }
+            ("genesis-scripts", _) => {
+                let genesis_block: BlockView = self
+                    .rpc_client
+                    .get_block_by_number(0)?
+                    .expect("Can not get genesis block?")
+                    .into();
+                let genesis_info = GenesisInfo::from_block(&genesis_block)?;
+                let genesis_cellbase_tx_hash: H256 =
+                    genesis_block.transaction(0).unwrap().hash().unpack();
+                let resp = serde_json::json!({
+                    "secp256k1_blake160_sighash_all": {
+                        "script_id": {
+                            "code_hash": SIGHASH_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.sighash_dep()),
+                    },
+                    "secp256k1_blake160_multisig_all": {
+                        "script_id": {
+                            "code_hash": MULTISIG_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.multisig_dep()),
+                    },
+                    "dao": {
+                        "script_id": {
+                            "code_hash": DAO_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.dao_dep()),
+                    },
+                    "secp256k1_data": {
+                        "out_point": {
+                            "tx_hash": genesis_cellbase_tx_hash,
+                            "index": 3,
+                        }
+                    },
+                    "type_id": {
+                        "script_id": {
+                            "code_hash": TYPE_ID_CODE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        }
+                    },
+                });
+                Ok(Output::new_output(resp))
             }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();

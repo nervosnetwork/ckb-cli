@@ -27,6 +27,9 @@ impl GenesisInfo {
     pub fn multisig_dep(&self) -> CellDep {
         self.cell_dep_resolver.multisig_dep().unwrap().0.clone()
     }
+    pub fn dao_dep(&self) -> CellDep {
+        self.cell_dep_resolver.dao_dep().unwrap().0.clone()
+    }
     pub fn header(&self) -> &HeaderView {
         &self.genesis_header
     }

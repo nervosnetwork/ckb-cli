@@ -7,6 +7,7 @@ pub mod molecule;
 pub mod plugin;
 pub mod pubsub;
 pub mod rpc;
+pub mod sudt;
 #[cfg(unix)]
 pub mod tui;
 pub mod tx;
@@ -25,6 +26,7 @@ pub use molecule::MoleculeSubCommand;
 pub use plugin::PluginSubCommand;
 pub use pubsub::PubSubCommand;
 pub use rpc::RpcSubCommand;
+pub use sudt::SudtSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
 pub use wallet::{start_index_thread, LiveCells, TransferArgs, WalletSubCommand};
