@@ -1,6 +1,6 @@
 [package]
 name = "ckb-index"
-version = "0.103.0"
+version = "1.0.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2021"
 license = "MIT"

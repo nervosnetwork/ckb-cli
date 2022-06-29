@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli"
-version = "0.103.0"
+version = "1.0.0"
 dependencies = [
  "ansi_term",
  "atty",
@@ -459,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli-plugin-protocol"
-version = "0.103.0"
+version = "1.0.0"
 dependencies = [
  "ckb-index",
  "ckb-jsonrpc-types",
@@ -558,7 +558,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-index"
-version = "0.103.0"
+version = "1.0.0"
 dependencies = [
  "bincode",
  "ckb-rocksdb",
