@@ -30,7 +30,7 @@ fn main() {
 }
 
 fn run_spec(spec: Box<dyn Spec>, app: &App) {
-    let (_tempdir, ckb_dir) = temp_dir();
+    let (tempdir, ckb_dir) = temp_dir();
     let rpc_port = find_available_port(8000, 8999);
     let p2p_port = find_available_port(9000, 9999);
     let _stdout = run_cmd(
@@ -59,13 +59,18 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
         ckb_dir,
         ckb_cli_dir.to_str().unwrap().to_owned(),
         rpc_port,
+        tempdir,
     );
     let _guard = setup.ready(&*spec);
     spec.run(&mut setup);
+    setup.success();
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
+        Box::new(DaoPrepareOne),
+        Box::new(DaoPrepareMultiple),
+        Box::new(DaoWithdrawMultiple),
         Box::new(SudtIssueToCheque),
         Box::new(SudtIssueToAcp),
         Box::new(SudtTransferToMultiAcp),
@@ -73,9 +78,6 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(SudtTransferToChequeForWithdraw),
         Box::new(WalletTransfer),
         Box::new(WalletTimelockedAddress),
-        Box::new(DaoPrepareOne),
-        Box::new(DaoPrepareMultiple),
-        Box::new(DaoWithdrawMultiple),
         Box::new(Util),
         Box::new(Plugin),
         Box::new(RpcGetTipBlockNumber),

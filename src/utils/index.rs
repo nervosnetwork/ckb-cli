@@ -184,7 +184,7 @@ impl IndexController {
             } else {
                 eprintln!(
                     "Stop index thread timeout(state: {}), give up",
-                    self.state().read().to_string()
+                    self.state().read()
                 );
                 return;
             }
@@ -215,7 +215,7 @@ where
     .map_err(|_err| {
         format!(
             "Index database may not ready, sync process: {}",
-            index_controller.state().read().to_string()
+            index_controller.state().read()
         )
     })
 }

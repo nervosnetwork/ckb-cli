@@ -147,7 +147,7 @@ impl TuiSubCommand {
                             let title = format!(
                                 "{} ({})",
                                 app.tabs.titles[app.tabs.index].trim(),
-                                self.index_controller.state().read().to_string(),
+                                self.index_controller.state().read(),
                             );
                             content_context.block =
                                 Block::default().title(&title).borders(Borders::ALL);
@@ -539,7 +539,7 @@ fn render_top_capacity<B: Backend>(
                     ]
                 })
                 .collect::<Vec<_>>(),
-            Err(err) => vec![Text::raw(format!("Open db error: {}", err.to_string()))],
+            Err(err) => vec![Text::raw(format!("Open db error: {}", err))],
         }
     } else {
         vec![Text::raw(index.state().read().to_string())]

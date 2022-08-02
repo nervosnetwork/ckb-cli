@@ -1,12 +1,20 @@
 use crate::util::temp_dir;
 use ckb_app_config::BlockAssemblerConfig;
+use ckb_jsonrpc_types::{BlockTemplate, ProposalShortId};
 use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
-use ckb_types::packed::Block;
-use ckb_types::{H160, H256};
+use ckb_types::{
+    core::BlockNumber,
+    packed::{self, Block},
+    prelude::*,
+    H160, H256,
+};
 use std::fs;
 use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 use tempfile::TempDir;
 
+pub const DEFAULT_TX_PROPOSAL_WINDOW: (BlockNumber, BlockNumber) = (2, 10);
 pub const MINER_PRIVATE_KEY: &str =
     "d00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc";
 pub const MINER_BLOCK_ASSEMBLER: &str = r#"
@@ -51,7 +59,71 @@ impl Miner {
     pub fn generate_blocks(&self, count: u64) {
         (0..count).for_each(|_| {
             self.generate_block();
+            thread::sleep(Duration::from_millis(10));
         })
+    }
+
+    pub fn mine_with_blocking<B>(&self, blocking: B) -> u64
+    where
+        B: Fn(&mut BlockTemplate) -> bool,
+    {
+        let mut count = 0;
+        let mut template = self
+            .rpc
+            .lock()
+            .unwrap()
+            .get_block_template(None, None, None)
+            .unwrap();
+        while blocking(&mut template) {
+            thread::sleep(Duration::from_millis(20));
+            template = self
+                .rpc
+                .lock()
+                .unwrap()
+                .get_block_template(None, None, None)
+                .unwrap();
+            count += 1;
+
+            if count > 900 {
+                panic!("mine_with_blocking timeout");
+            }
+        }
+        // uncles are not included by default,
+        // because uncles' proposals can have an impact on the assertions of some tests
+        let block = packed::Block::from(template)
+            .as_advanced_builder()
+            .set_uncles(vec![])
+            .build();
+        let number = block.number();
+        self.rpc
+            .lock()
+            .unwrap()
+            .submit_block("".to_owned(), block.data().into())
+            .unwrap();
+        number
+    }
+    pub fn mine_until_transaction_confirm_with_windows(
+        &self,
+        tx_hash: &packed::Byte32,
+        closest: u64,
+    ) {
+        let target: ProposalShortId = packed::ProposalShortId::from_tx_hash(tx_hash).into();
+        let last =
+            self.mine_with_blocking(|template| !template.proposals.iter().any(|id| id == &target));
+        self.mine_with_blocking(|template| template.number.value() != (last + closest - 1));
+        self.mine_with_blocking(|template| {
+            !template
+                .transactions
+                .iter()
+                .any(|tx| tx.hash == tx_hash.unpack())
+        });
+    }
+    pub fn mine_until_transaction_confirm(&self, tx_hash: &str) {
+        let tx_hash: H256 = serde_json::from_str(&format!("\"{}\"", tx_hash)).unwrap();
+        self.mine_until_transaction_confirm_with_windows(
+            &tx_hash.pack(),
+            DEFAULT_TX_PROPOSAL_WINDOW.0,
+        )
     }
 
     pub fn privkey_path(&self) -> &str {

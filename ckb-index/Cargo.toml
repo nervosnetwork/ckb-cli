@@ -12,6 +12,6 @@ serde_derive = "1.0"
 bincode = "1.1.4"
 log = "0.4.6"
 thiserror = "1.0.31"
-ckb-types = "=0.103.0"
-ckb-sdk = "1.0.0"
+ckb-types = "=0.104.0"
+ckb-sdk = "~1.1.0"
 rocksdb = { package = "ckb-rocksdb", version = "=0.16.1", features = ["snappy"] }

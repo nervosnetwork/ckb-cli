@@ -309,8 +309,8 @@ impl KeyStore {
             if path.is_file() {
                 let filename = path.file_name().and_then(OsStr::to_str).expect("file_name");
                 if let Some((hash160, ckb_root_opt)) = filename
-                    .rsplitn(2, "--")
-                    .next()
+                    .rsplit_once("--")
+                    .map(|x| x.1)
                     .and_then(|hash160_hex| {
                         let mut hash160_bin = [0u8; 20];
                         hex_decode(hash160_hex.as_bytes(), &mut hash160_bin)
@@ -754,7 +754,7 @@ impl Key {
             )));
         }
 
-        let crypto = util::get_value(data, "crypto").and_then(|value| Crypto::from_json(value))?;
+        let crypto = util::get_value(data, "crypto").and_then(Crypto::from_json)?;
         if crypto.ciphertext().len() != 64 {
             return Err(Error::ParseJsonFailed(format!(
                 "Invalid ciphertext length: {}, expected: 64",

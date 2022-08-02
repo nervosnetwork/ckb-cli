@@ -6,7 +6,7 @@ use ckb_chain_spec::consensus::Consensus;
 use ckb_chain_spec::ChainSpec;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -19,6 +19,8 @@ pub struct Setup {
     _ckb_cli_dir: String,
     rpc_port: u16,
     miner: Option<Miner>,
+    success: bool,
+    tempdir: PathBuf,
 }
 
 // TODO Make CLI base_dir configurable
@@ -30,6 +32,7 @@ impl Setup {
         ckb_dir: String,
         ckb_cli_dir: String,
         rpc_port: u16,
+        tempdir: tempfile::TempDir,
     ) -> Self {
         Self {
             ckb_bin,
@@ -39,6 +42,8 @@ impl Setup {
             _ckb_cli_dir: ckb_cli_dir,
             rpc_port,
             miner: None,
+            success: false,
+            tempdir: tempdir.into_path(),
         }
     }
 
@@ -63,6 +68,10 @@ impl Setup {
             self.miner = Some(Miner::init(self.rpc_url()));
         }
         self.miner.as_ref().unwrap()
+    }
+
+    pub fn success(&mut self) {
+        self.success = true;
     }
 
     pub fn rpc_url(&self) -> String {
@@ -127,6 +136,15 @@ impl Setup {
 
         spec.modify_spec_toml(&mut spec_toml);
         fs::write(&path, toml::to_string(&spec_toml).unwrap()).expect("Dump dev.toml");
+    }
+}
+
+impl Drop for Setup {
+    fn drop(&mut self) {
+        if self.success {
+            log::info!("remove directory: {:?}", self.tempdir);
+            fs::remove_dir_all(&self.tempdir).unwrap();
+        }
     }
 }
 

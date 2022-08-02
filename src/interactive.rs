@@ -211,9 +211,7 @@ impl InteractiveEnv {
 
     fn print_logo(&mut self) {
         println!(
-            "{}",
-            format!(
-                r#"
+            r#"
   _   _   ______   _____   __      __ {}   _____
  | \ | | |  ____| |  __ \  \ \    / / {}  / ____|
  |  \| | | |__    | |__) |  \ \  / /  {} | (___
@@ -221,13 +219,12 @@ impl InteractiveEnv {
  | |\  | | |____  | | \ \     \  /    {}  ____) |
  |_| \_| |______| |_|  \_\     \/     {} |_____/
 "#,
-                Green.bold().paint(r#"  ____  "#),
-                Green.bold().paint(r#" / __ \ "#),
-                Green.bold().paint(r#"| |  | |"#),
-                Green.bold().paint(r#"| |  | |"#),
-                Green.bold().paint(r#"| |__| |"#),
-                Green.bold().paint(r#" \____/ "#),
-            )
+            Green.bold().paint(r#"  ____  "#),
+            Green.bold().paint(r#" / __ \ "#),
+            Green.bold().paint(r#"| |  | |"#),
+            Green.bold().paint(r#"| |  | |"#),
+            Green.bold().paint(r#"| |__| |"#),
+            Green.bold().paint(r#" \____/ "#),
         );
     }
 

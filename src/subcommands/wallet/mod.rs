@@ -272,13 +272,13 @@ impl<'a> WalletSubCommand<'a> {
             .code_hash(Some(to_address.network()))
             .unpack();
         let to_address_args_len = to_address.payload().args().len();
-        if !skip_check_to_address
-            && !(to_address_hash_type == ScriptHashType::Type
+        if !(skip_check_to_address
+            || (to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == SIGHASH_TYPE_HASH
                 && to_address_args_len == 20)
-            && !(to_address_hash_type == ScriptHashType::Type
+            || (to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == MULTISIG_TYPE_HASH
-                && (to_address_args_len == 20 || to_address_args_len == 28))
+                && (to_address_args_len == 20 || to_address_args_len == 28)))
         {
             return Err(format!("Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address", to_address));
         }
@@ -369,8 +369,7 @@ impl<'a> WalletSubCommand<'a> {
         if let Some(from_locked_address) = from_locked_address.as_ref() {
             let mut found_lock_arg = false;
             for lock_arg in std::iter::once(&from_lock_arg).chain(path_map.keys()) {
-                let mut sighash_addresses = Vec::default();
-                sighash_addresses.push(lock_arg.clone());
+                let sighash_addresses = vec![lock_arg.clone()];
                 let require_first_n = 0;
                 let threshold = 1;
                 let config =

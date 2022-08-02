@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 impl<'a> CliSubCommand for DAOSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
-        let network_type = get_network_type(&mut self.rpc_client)?;
+        let network_type = get_network_type(self.rpc_client)?;
         match matches.subcommand() {
             ("deposit", Some(m)) => {
                 let args = TransactArgs::from_matches(m, network_type)?;

@@ -925,11 +925,8 @@ fn gen_multisig_addr(
 
 fn to_timestamp(input: &str) -> Result<u64, String> {
     let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|err| format!("{:?}", err))?;
-    let date = NaiveDateTime::parse_from_str(
-        &format!("{} 00:00:00", date.to_string()),
-        "%Y-%m-%d  %H:%M:%S",
-    )
-    .map_err(|err| format!("{:?}", err))?;
+    let date = NaiveDateTime::parse_from_str(&format!("{} 00:00:00", date), "%Y-%m-%d  %H:%M:%S")
+        .map_err(|err| format!("{:?}", err))?;
     Ok(date.timestamp_millis() as u64)
 }
 

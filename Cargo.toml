@@ -7,17 +7,17 @@ edition = "2021"
 description = "ckb command line interface"
 
 [dependencies]
-ckb-jsonrpc-types = "=0.103.0"
-ckb-hash = "=0.103.0"
-ckb-crypto = { version = "=0.103.0", features = ["secp"] }
-ckb-build-info = "=0.103.0"
-ckb-types = "=0.103.0"
-ckb-util = "=0.103.0"
-ckb-error = "=0.103.0"
-ckb-script = "=0.103.0"
-ckb-chain-spec = "=0.103.0"
-ckb-mock-tx-types = "0.3.0"
-ckb-sdk = "1.0.1"
+ckb-jsonrpc-types = "=0.104.0"
+ckb-hash = "=0.104.0"
+ckb-crypto = { version = "=0.104.0", features = ["secp"] }
+ckb-build-info = "=0.104.0"
+ckb-types = "=0.104.0"
+ckb-util = "=0.104.0"
+ckb-error = "=0.104.0"
+ckb-script = "=0.104.0"
+ckb-chain-spec = "=0.104.0"
+ckb-mock-tx-types = "0.4.0"
+ckb-sdk = "~1.1.0"
 ckb-signer = { path = "ckb-signer", version = "0.1.0" }
 ckb-index = { path = "ckb-index", version = "=1.0.0" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=1.0.0" }
@@ -67,7 +67,7 @@ termion = "1.5"
 rand = "0.7"
 
 [build-dependencies]
-ckb-build-info = "=0.103.0"
+ckb-build-info = "=0.104.0"
 
 [workspace]
 members = ["ckb-index", "ckb-signer", "plugin-protocol"]

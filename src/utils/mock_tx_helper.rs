@@ -1,19 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
-use ckb_chain_spec::consensus::ConsensusBuilder;
 use ckb_error::OtherError;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
-use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
+use ckb_script::TransactionScriptsVerifier;
 use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
 use ckb_types::{
     bytes::Bytes,
-    core::{
-        cell::resolve_transaction, hardfork::HardForkSwitch, Capacity, Cycle,
-        EpochNumberWithFraction, HeaderView, ScriptHashType,
-    },
+    core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
     packed::{Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
     H160, H256,
@@ -313,25 +309,6 @@ impl<'a> MockTransactionHelper<'a> {
         max_cycle: Cycle,
         loader: L,
     ) -> Result<Cycle, String> {
-        let (consensus, tx_env) = {
-            let enable_epoch_number = 200;
-            let commit_epoch_number = 200 + 100;
-            let epoch = EpochNumberWithFraction::new(commit_epoch_number, 0, 1);
-            let header = HeaderView::new_advanced_builder()
-                .epoch(epoch.pack())
-                .build();
-            let tx_env = TxVerifyEnv::new_commit(&header);
-            let hardfork_switch = HardForkSwitch::new_without_any_enabled()
-                .as_builder()
-                .rfc_0032(enable_epoch_number)
-                .build()
-                .unwrap();
-            let consensus = ConsensusBuilder::default()
-                .hardfork_switch(hardfork_switch)
-                .build();
-            (consensus, tx_env)
-        };
-
         let resource = Resource::from_both(self.mock_tx, loader)?;
         let tx = self.mock_tx.core_transaction();
         let rtx = {
@@ -339,7 +316,7 @@ impl<'a> MockTransactionHelper<'a> {
                 .map_err(|err| format!("Resolve transaction error: {:?}", err))?
         };
 
-        let mut verifier = TransactionScriptsVerifier::new(&rtx, &consensus, &resource, &tx_env);
+        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource);
         verifier.set_debug_printer(|script_hash, message| {
             println!("script: {:x}, debug: {}", script_hash, message);
         });
