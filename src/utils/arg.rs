@@ -145,22 +145,6 @@ pub fn fee_rate<'a>() -> Arg<'a> {
         .about("The transaction fee rate (unit: shannons/KB)")
 }
 
-pub fn type_hash<'a>() -> Arg<'a> {
-    Arg::with_name("type-hash")
-        .long("type-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("The type script hash")
-}
-
-pub fn code_hash<'a>() -> Arg<'a> {
-    Arg::with_name("code-hash")
-        .long("code-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("The type script's code hash")
-}
-
 pub fn live_cells_limit<'a>() -> Arg<'a> {
     Arg::with_name("limit")
         .long("limit")
@@ -183,17 +167,7 @@ pub fn to_block_number<'a>() -> Arg<'a> {
         .long("to")
         .takes_value(true)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .about("To block number (inclusive)")
-}
-
-pub fn top_n<'a>() -> Arg<'a> {
-    Arg::with_name("number")
-        .short('n')
-        .long("number")
-        .takes_value(true)
-        .validator(|input| FromStrParser::<u32>::default().validate(input))
-        .default_value("10")
-        .about("Get top n capacity addresses")
+        .about("To block number (exclusive)")
 }
 
 pub fn out_point<'a>() -> Arg<'a> {

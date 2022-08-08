@@ -2,11 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ckb_hash::blake2b_256;
-use ckb_index::{CellIndex, LiveCellInfo, VERSION};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
@@ -16,7 +14,7 @@ use ckb_sdk::{
 use ckb_signer::{KeyStore, ScryptType};
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, Capacity, TransactionView},
+    core::{BlockView, Capacity, TransactionView},
     h256,
     packed::{CellOutput, OutPoint},
     prelude::*,
@@ -24,12 +22,12 @@ use ckb_types::{
 };
 use clap::ArgMatches;
 use colored::Colorize;
+use plugin_protocol::{CellIndex, LiveCellInfo};
 use rpassword::prompt_password_stdout;
 
 use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
-use super::index::{IndexController, IndexRequest, IndexThreadState};
 use super::rpc::{AlertMessage, HttpRpcClient};
 use super::tx_helper::SignerFn;
 use crate::plugin::{KeyStoreHandler, SignTarget};
@@ -206,26 +204,6 @@ pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, S
         .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))
 }
 
-pub fn index_dirname() -> String {
-    format!("index-v{}", VERSION)
-}
-
-pub fn sync_to_tip(index_controller: &IndexController) -> Result<(), String> {
-    // Kick index thread to start
-    Request::call(index_controller.sender(), IndexRequest::Kick);
-    loop {
-        let state = IndexThreadState::clone(&index_controller.state().read());
-        if state.is_synced() {
-            break;
-        } else if state.is_error() {
-            return Err(state.get_error().unwrap());
-        } else {
-            thread::sleep(Duration::from_millis(200));
-        }
-    }
-    Ok(())
-}
-
 pub fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
     if capacity < MIN_SECP_CELL_CAPACITY {
         return Err(format!(
@@ -310,14 +288,6 @@ pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature
     signature_bytes[0..64].copy_from_slice(&data[0..64]);
     signature_bytes[64] = recov_id.to_i32() as u8;
     signature_bytes
-}
-
-pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
-    // Not cellbase cell
-    info.index.tx_index > 0
-    // Live cells in genesis are all mature
-        || info.number == 0
-        || info.number <= max_mature_number
 }
 
 pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {

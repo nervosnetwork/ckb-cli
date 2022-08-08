@@ -5,12 +5,13 @@ pub mod method;
 use std::fmt;
 use std::str::FromStr;
 
-use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockView, HeaderView, JsonBytes, Script, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
-pub use jsonrpc::{JsonrpcError, JsonrpcRequest, JsonrpcResponse, JSONRPC_VERSION};
+pub use jsonrpc::{
+    CellIndex, JsonrpcError, JsonrpcRequest, JsonrpcResponse, LiveCellInfo, JSONRPC_VERSION,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginConfig {

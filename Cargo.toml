@@ -19,7 +19,6 @@ ckb-chain-spec = "=0.104.0"
 ckb-mock-tx-types = "0.4.0"
 ckb-sdk = "~1.1.0"
 ckb-signer = { path = "ckb-signer", version = "0.1.0" }
-ckb-index = { path = "ckb-index", version = "=1.0.0" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=1.0.0" }
 jsonrpc-core-client = "18"
 jsonrpc-core = "18"
@@ -59,6 +58,9 @@ byteorder = "1.3.2"
 tokio = { version = "1", features = ["net", "io-util", "rt"] }
 futures = "0.3"
 
+# remove this line when ckb-vm stick the version of ckb-vm-definitions
+ckb-vm-definitions = "=0.21.3"
+
 [target.'cfg(unix)'.dependencies]
 tui = "0.6.0"
 termion = "1.5"
@@ -70,4 +72,4 @@ rand = "0.7"
 ckb-build-info = "=0.104.0"
 
 [workspace]
-members = ["ckb-index", "ckb-signer", "plugin-protocol"]
+members = ["ckb-signer", "plugin-protocol"]

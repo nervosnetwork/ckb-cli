@@ -12,7 +12,6 @@ use std::thread::{self, JoinHandle};
 use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
-use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
 use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
@@ -22,7 +21,7 @@ use crate::utils::other::read_password;
 use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
-    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,
+    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, LiveCellInfo, PluginConfig, PluginRequest,
     PluginResponse, PluginRole, RpcRequest, SignTarget,
 };
 

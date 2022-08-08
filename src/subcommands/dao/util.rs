@@ -4,10 +4,10 @@ use crate::utils::{
     printer::{OutputFormat, Printable},
     rpc::HttpRpcClient,
 };
-use ckb_index::LiveCellInfo;
 use ckb_sdk::util::calculate_dao_maximum_withdraw4;
 use ckb_types::core::{Capacity, TransactionView};
 use ckb_types::{core::HeaderView, packed, prelude::*};
+use plugin_protocol::LiveCellInfo;
 
 pub(crate) fn calculate_dao_maximum_withdraw(
     rpc_client: &mut HttpRpcClient,

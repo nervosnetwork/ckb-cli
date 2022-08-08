@@ -4,28 +4,23 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process;
-use std::sync::Arc;
 
 use ckb_build_info::Version;
-use ckb_util::RwLock;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg};
-#[cfg(unix)]
-use subcommands::{Output, TuiSubCommand};
 
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
 use subcommands::{
-    start_index_thread, AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand,
-    IndexSubCommand, MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, PubSubCommand,
-    RpcSubCommand, SudtSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
+    MoleculeSubCommand, PluginSubCommand, PubSubCommand, RpcSubCommand, SudtSubCommand,
+    TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    index::IndexThreadState,
-    other::{check_alerts, get_key_store, get_network_type, index_dirname},
+    other::{check_alerts, get_key_store, get_network_type},
     printer::{ColorWhen, OutputFormat},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
@@ -54,10 +49,14 @@ fn main() -> Result<(), io::Error> {
     let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
 
     let mut env_map: HashMap<String, String> = env::vars().collect();
-    let api_uri_opt = matches
+    let ckb_url_opt = matches
         .value_of("url")
         .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("API_URL"));
+    let ckb_indexer_url_opt = matches
+        .value_of("ckb-indexer-url")
+        .map(ToOwned::to_owned)
+        .or_else(|| env_map.remove("CKB_INDEXER_URL"));
 
     let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
         let dir = PathBuf::from(dir_string.as_str());
@@ -77,11 +76,7 @@ fn main() -> Result<(), io::Error> {
         dir
     };
 
-    let mut index_dir = ckb_cli_dir.clone();
-    index_dir.push(index_dirname());
-    let index_state = Arc::new(RwLock::new(IndexThreadState::default()));
-
-    let mut config = GlobalConfig::new(api_uri_opt.clone(), Arc::clone(&index_state));
+    let mut config = GlobalConfig::new(ckb_url_opt.clone(), ckb_indexer_url_opt.clone());
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
 
@@ -91,9 +86,14 @@ fn main() -> Result<(), io::Error> {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
         let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
-        if api_uri_opt.is_none() {
+        if ckb_url_opt.is_none() {
             if let Some(value) = configs["url"].as_str() {
                 config.set_url(value.to_string());
+            }
+        }
+        if ckb_indexer_url_opt.is_none() {
+            if let Some(value) = configs["ckb-indexer-url"].as_str() {
+                config.set_ckb_indexer_url(value.to_string());
             }
         }
         config.set_debug(configs["debug"].as_bool().unwrap_or(false));
@@ -106,17 +106,15 @@ fn main() -> Result<(), io::Error> {
         config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
     }
 
-    let api_uri = config.get_url().to_string();
-    let index_state_clone = Arc::clone(&index_state);
-    let index_controller = start_index_thread(api_uri.as_str(), index_dir.clone(), index_state);
-    let mut rpc_client = HttpRpcClient::new(api_uri.clone());
-    let mut raw_rpc_client = RawHttpRpcClient::new(api_uri.as_str());
+    let ckb_url = config.get_url().to_string();
+    let ckb_indexer_url = config.get_ckb_indexer_url().to_string();
+    let mut rpc_client = HttpRpcClient::new(ckb_url.clone());
+    let mut raw_rpc_client = RawHttpRpcClient::new(ckb_url.as_str());
     check_alerts(&mut rpc_client);
     config.set_network(get_network_type(&mut rpc_client).ok());
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
-    let wait_for_sync = !matches.is_present("no-sync");
 
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
@@ -127,12 +125,8 @@ fn main() -> Result<(), io::Error> {
             format!("Open file based key store error: {}", err),
         )
     })?;
-    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, api_uri.clone()).unwrap();
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url).unwrap();
     let result = match matches.subcommand() {
-        #[cfg(unix)]
-        ("tui", _) => TuiSubCommand::new(api_uri, index_dir, index_controller.clone())
-            .start()
-            .map(|s| Output::new_output(serde_json::json!(s))),
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
             ("subscribe", Some(sub_sub_matches)) => {
                 PubSubCommand::new(output_format, color).process(sub_sub_matches, debug)
@@ -154,34 +148,19 @@ fn main() -> Result<(), io::Error> {
         ("util", Some(sub_matches)) => {
             UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(sub_matches, debug)
         }
-        ("server", Some(sub_matches)) => ApiServerSubCommand::new(
-            &mut rpc_client,
-            plugin_mgr,
-            None,
-            index_dir,
-            index_controller.clone(),
-        )
-        .process(sub_matches, debug),
+        ("server", Some(sub_matches)) => {
+            ApiServerSubCommand::new(&mut rpc_client, plugin_mgr, None, ckb_indexer_url.as_str())
+                .process(sub_matches, debug)
+        }
         ("plugin", Some(sub_matches)) => {
             PluginSubCommand::new(&mut plugin_mgr).process(sub_matches, debug)
         }
         ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(sub_matches, debug),
-        ("index", Some(sub_matches)) => IndexSubCommand::new(
-            &mut rpc_client,
-            None,
-            index_dir,
-            index_controller.clone(),
-            index_state_clone,
-            wait_for_sync,
-        )
-        .process(sub_matches, debug),
         ("wallet", Some(sub_matches)) => WalletSubCommand::new(
             &mut rpc_client,
             &mut plugin_mgr,
             None,
-            index_dir,
-            index_controller.clone(),
-            wait_for_sync,
+            ckb_indexer_url.as_str(),
         )
         .process(sub_matches, debug),
         ("dao", Some(sub_matches)) => {
@@ -190,9 +169,7 @@ fn main() -> Result<(), io::Error> {
                     &mut rpc_client,
                     &mut plugin_mgr,
                     genesis_info,
-                    index_dir.clone(),
-                    index_controller.clone(),
-                    wait_for_sync,
+                    ckb_indexer_url.as_str(),
                 )
                 .process(sub_matches, debug)
             })
@@ -203,9 +180,7 @@ fn main() -> Result<(), io::Error> {
                     &mut rpc_client,
                     &mut plugin_mgr,
                     genesis_info,
-                    index_dir.clone(),
-                    index_controller.clone(),
-                    wait_for_sync,
+                    ckb_indexer_url.as_str(),
                 )
                 .process(sub_matches, debug)
             })
@@ -216,16 +191,13 @@ fn main() -> Result<(), io::Error> {
                 config,
                 plugin_mgr,
                 key_store,
-                index_controller.clone(),
-                index_state_clone,
+                ckb_indexer_url,
             )
             .and_then(|mut env| env.start())
             {
                 eprintln!("Process error: {}", err);
-                index_controller.shutdown();
                 process::exit(1);
             }
-            index_controller.shutdown();
             process::exit(0)
         }
     };
@@ -233,11 +205,9 @@ fn main() -> Result<(), io::Error> {
     match result {
         Ok(output) => {
             output.print(output_format, color);
-            index_controller.shutdown();
         }
         Err(err) => {
             eprintln!("{}", err);
-            index_controller.shutdown();
             process::exit(1);
         }
     }
@@ -279,7 +249,7 @@ pub fn get_version() -> Version {
 }
 
 pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
-    let app = App::new("ckb-cli")
+    App::new("ckb-cli")
         .version(version_short)
         .long_version(version_long)
         .global_setting(AppSettings::ColoredHelp)
@@ -292,7 +262,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
-        .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
@@ -301,7 +270,14 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .long("url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .about("RPC API server url"),
+                .about("CKB RPC server url, the default value is http://127.0.0.1:8114"),
+        )
+        .arg(
+            Arg::with_name("ckb-indexer-url")
+                .long("ckb-indexer-url")
+                .takes_value(true)
+                .validator(|input| UrlParser.validate(input))
+                .about("CKB indexer server RPC url, the default value is http://127.0.0.1:8116"),
         )
         .arg(
             Arg::with_name("output-format")
@@ -324,27 +300,6 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .global(true)
                 .about("Display request parameters"),
         )
-        .arg(
-            Arg::with_name("wait-for-sync")
-                .long("wait-for-sync")
-                .conflicts_with("no-sync")
-                .global(true)
-                .about(
-                    "Ensure the index-store synchronizes completely before command being executed",
-                ),
-        )
-        .arg(
-            Arg::with_name("no-sync")
-                .long("no-sync")
-                .conflicts_with("wait-for-sync")
-                .global(true)
-                .about("Don't wait index database sync to tip"),
-        );
-
-    #[cfg(unix)]
-    let app = app.subcommand(App::new("tui").about("Enter TUI mode"));
-
-    app
 }
 
 pub fn build_interactive() -> App<'static> {
@@ -362,7 +317,14 @@ pub fn build_interactive() -> App<'static> {
                         .long("url")
                         .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
-                        .about("Config RPC API url"),
+                        .about("Config CKB RPC server url"),
+                )
+                .arg(
+                    Arg::with_name("ckb-indexer-url")
+                        .long("ckb-indexer-url")
+                        .takes_value(true)
+                        .validator(|input| UrlParser.validate(input))
+                        .about("CKB indexer server RPC url, the default value is http://127.0.0.1:8116"),
                 )
                 .arg(
                     Arg::with_name("color")
@@ -373,11 +335,6 @@ pub fn build_interactive() -> App<'static> {
                     Arg::with_name("debug")
                         .long("debug")
                         .about("Switch debug mode"),
-                )
-                .arg(
-                    Arg::with_name("no-sync")
-                        .long("no-sync")
-                        .about("Switch whether wait index database sync to tip"),
                 )
                 .arg(
                     Arg::with_name("output-format")
@@ -411,7 +368,6 @@ pub fn build_interactive() -> App<'static> {
         .subcommand(UtilSubCommand::subcommand("util"))
         .subcommand(PluginSubCommand::subcommand("plugin"))
         .subcommand(MoleculeSubCommand::subcommand("molecule"))
-        .subcommand(IndexSubCommand::subcommand("index"))
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))

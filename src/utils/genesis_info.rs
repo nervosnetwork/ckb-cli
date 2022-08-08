@@ -30,7 +30,4 @@ impl GenesisInfo {
     pub fn dao_dep(&self) -> CellDep {
         self.cell_dep_resolver.dao_dep().unwrap().0.clone()
     }
-    pub fn header(&self) -> &HeaderView {
-        &self.genesis_header
-    }
 }

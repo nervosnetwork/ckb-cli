@@ -19,7 +19,6 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
-use ckb_index::{with_index_db, IndexDatabase};
 use ckb_sdk::{constants::ONE_CKB, Address, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView},
@@ -29,7 +28,6 @@ use ckb_types::{
 
 use crate::utils::{
     genesis_info::GenesisInfo,
-    index::{IndexController, IndexRequest},
     other::get_network_type,
     rpc::HttpRpcClient,
 };

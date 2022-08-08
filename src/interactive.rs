@@ -1,12 +1,9 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ansi_term::Colour::Green;
-use ckb_types::core::service::Request;
-use ckb_util::RwLock;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -17,16 +14,15 @@ use ckb_signer::KeyStore;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, DAOSubCommand, IndexSubCommand, MockTxSubCommand,
-    MoleculeSubCommand, PluginSubCommand, RpcSubCommand, SudtSubCommand, TxSubCommand,
-    UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
+    PluginSubCommand, RpcSubCommand, SudtSubCommand, TxSubCommand, UtilSubCommand,
+    WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
     genesis_info::GenesisInfo,
-    index::{IndexController, IndexRequest, IndexThreadState},
-    other::{check_alerts, get_genesis_info, get_network_type, index_dirname},
+    other::{check_alerts, get_genesis_info, get_network_type},
     printer::{ColorWhen, OutputFormat, Printable},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
@@ -38,14 +34,12 @@ pub struct InteractiveEnv {
     config: GlobalConfig,
     config_file: PathBuf,
     history_file: PathBuf,
-    index_dir: PathBuf,
     parser: clap::App<'static>,
     plugin_mgr: PluginManager,
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
-    index_controller: IndexController,
-    index_state: Arc<RwLock<IndexThreadState>>,
+    ckb_indexer_url: String,
     genesis_info: Option<GenesisInfo>,
 }
 
@@ -55,8 +49,7 @@ impl InteractiveEnv {
         mut config: GlobalConfig,
         plugin_mgr: PluginManager,
         key_store: KeyStore,
-        index_controller: IndexController,
-        index_state: Arc<RwLock<IndexThreadState>>,
+        ckb_indexer_url: String,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
             fs::create_dir(&ckb_cli_dir).map_err(|err| err.to_string())?;
@@ -65,8 +58,6 @@ impl InteractiveEnv {
         history_file.push("history");
         let mut config_file = ckb_cli_dir.clone();
         config_file.push("config");
-        let mut index_dir = ckb_cli_dir.clone();
-        index_dir.push(index_dirname());
 
         let mut env_file = ckb_cli_dir;
         env_file.push("env_vars");
@@ -85,15 +76,13 @@ impl InteractiveEnv {
         Ok(InteractiveEnv {
             config,
             config_file,
-            index_dir,
             history_file,
             parser,
             plugin_mgr,
             key_store,
             rpc_client,
             raw_rpc_client,
-            index_controller,
-            index_state,
+            ckb_indexer_url,
             genesis_info: None,
         })
     }
@@ -158,10 +147,6 @@ impl InteractiveEnv {
             eprintln!("No previous history.");
         }
 
-        Request::call(
-            self.index_controller.sender(),
-            IndexRequest::UpdateUrl(self.config.get_url().to_string()),
-        );
         let mut last_save_history = Instant::now();
         loop {
             rl_mode(
@@ -250,7 +235,6 @@ impl InteractiveEnv {
         let format = self.config.output_format();
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
-        let wait_for_sync = !self.config.no_sync();
 
         let current_cmd_name = &args[0];
         if self
@@ -271,8 +255,6 @@ impl InteractiveEnv {
             Ok(matches) => match matches.subcommand() {
                 ("config", Some(m)) => {
                     if let Some(url) = m.value_of("url") {
-                        let index_sender = self.index_controller.sender();
-                        Request::call(index_sender, IndexRequest::UpdateUrl(url.to_string()));
                         self.config.set_url(url.to_string());
                         self.rpc_client = HttpRpcClient::new(self.config.get_url().to_string());
                         self.raw_rpc_client = RawHttpRpcClient::new(self.config.get_url());
@@ -280,6 +262,10 @@ impl InteractiveEnv {
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
                     };
+                    if let Some(url) = m.value_of("ckb-indexer-url") {
+                        self.config.set_ckb_indexer_url(url.to_string());
+                        self.ckb_indexer_url = url.to_string();
+                    }
                     if m.is_present("color") {
                         self.config.switch_color();
                     }
@@ -292,9 +278,6 @@ impl InteractiveEnv {
 
                     if m.is_present("debug") {
                         self.config.switch_debug();
-                    }
-                    if m.is_present("no-sync") {
-                        self.config.switch_no_sync();
                     }
 
                     if m.is_present("edit_style") {
@@ -310,6 +293,7 @@ impl InteractiveEnv {
                         .map_err(|err| format!("open config error: {:?}", err))?;
                     let content = serde_json::to_string_pretty(&json!({
                         "url": self.config.get_url().to_string(),
+                        "ckb-indexer-url": self.config.get_ckb_indexer_url().to_string(),
                         "color": self.config.color(),
                         "debug": self.config.debug(),
                         "no-sync": self.config.no_sync(),
@@ -386,29 +370,13 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("index", Some(sub_matches)) => {
-                    let genesis_info = self.genesis_info()?;
-                    let output = IndexSubCommand::new(
-                        &mut self.rpc_client,
-                        Some(genesis_info),
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        Arc::clone(&self.index_state),
-                        wait_for_sync,
-                    )
-                    .process(sub_matches, debug)?;
-                    output.print(format, color);
-                    Ok(())
-                }
                 ("wallet", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         Some(genesis_info),
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
+                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);
@@ -420,9 +388,7 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
+                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);
@@ -434,9 +400,7 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
-                        self.index_dir.clone(),
-                        self.index_controller.clone(),
-                        wait_for_sync,
+                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);

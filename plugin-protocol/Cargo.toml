@@ -9,7 +9,6 @@ description = "ckb-cli plugin protocol"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ckb-index = { path = "../ckb-index", version = "=1.0.0" }
 ckb-types = "=0.104.0"
 ckb-jsonrpc-types = "=0.104.0"
 serde = { version = "1.0", features = ["derive"] }

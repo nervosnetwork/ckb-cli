@@ -1,7 +1,4 @@
-mod index;
-
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use bitcoin::util::bip32::DerivationPath;
 use clap::{App, Arg, ArgMatches};
@@ -9,11 +6,14 @@ use serde::{Deserialize, Serialize};
 
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::new_blake2b;
-use ckb_index::{IndexDatabase, LiveCellInfo};
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    traits::{DefaultHeaderDepResolver, DefaultTransactionDependencyProvider, Signer},
+    traits::{
+        CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
+        DefaultTransactionDependencyProvider, MaturityOption, PrimaryScriptType, Signer,
+        ValueRangeOption,
+    },
     tx_builder::{
         transfer::CapacityTransferBuilder, unlock_tx, CapacityBalancer, CapacityProvider, TxBuilder,
     },
@@ -22,16 +22,17 @@ use ckb_sdk::{
         MultisigConfig, ScriptUnlocker, SecpMultisigScriptSigner, SecpMultisigUnlocker,
         SecpSighashScriptSigner, SecpSighashUnlocker,
     },
-    util::get_max_mature_number,
+    util::{get_max_mature_number, is_mature},
     Address, AddressPayload, HumanCapacity, Since, SinceType, SECP256K1,
 };
 use ckb_types::{
     bytes::Bytes,
     core::{Capacity, FeeRate, ScriptHashType, TransactionView},
-    packed::{Byte32, CellOutput, Script, WitnessArgs},
+    packed::{CellOutput, Script, WitnessArgs},
     prelude::*,
     H160, H256,
 };
+use plugin_protocol::LiveCellInfo;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
@@ -41,17 +42,14 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    cell_collector::LocalCellCollector,
     genesis_info::GenesisInfo,
-    index::{with_db, IndexController},
     other::{
         check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, is_mature, read_password,
+        get_to_data, read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
-pub use index::start_index_thread;
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
@@ -60,9 +58,7 @@ pub struct WalletSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
     rpc_client: &'a mut HttpRpcClient,
     genesis_info: Option<GenesisInfo>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
-    wait_for_sync: bool,
+    ckb_indexer_url: &'a str,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -70,38 +66,19 @@ impl<'a> WalletSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
-        index_dir: PathBuf,
-        index_controller: IndexController,
-        wait_for_sync: bool,
+        ckb_indexer_url: &'a str,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
             plugin_mgr,
             genesis_info,
-            index_dir,
-            index_controller,
-            wait_for_sync,
+            ckb_indexer_url,
         }
     }
 
     fn genesis_info(&mut self) -> Result<GenesisInfo, String> {
         self.genesis_info = Some(get_genesis_info(&self.genesis_info, self.rpc_client)?);
         Ok(self.genesis_info.clone().unwrap())
-    }
-
-    fn with_db<F, T>(&mut self, func: F) -> Result<T, String>
-    where
-        F: FnOnce(IndexDatabase) -> T,
-    {
-        let genesis_header = self.genesis_info()?.header().clone();
-        with_db(
-            func,
-            self.rpc_client,
-            genesis_header,
-            &self.index_dir,
-            self.index_controller.clone(),
-            self.wait_for_sync,
-        )
     }
 
     pub fn subcommand() -> App<'static> {
@@ -136,8 +113,7 @@ impl<'a> WalletSubCommand<'a> {
                             .about("Add type id type script to target output cell"),
                     ),
                 App::new("get-capacity")
-                    .about("Get capacity by lock script hash or address or lock arg or pubkey")
-                    .arg(arg::lock_hash())
+                    .about("Get capacity address or lock arg or pubkey")
                     .arg(arg::address())
                     .arg(arg::pubkey())
                     .arg(arg::lock_arg())
@@ -145,22 +121,11 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::derive_change_address_length())
                     .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
                 App::new("get-live-cells")
-                    .about("Get live cells by lock/type/code  hash")
-                    .arg(arg::lock_hash())
-                    .arg(arg::type_hash())
-                    .arg(arg::code_hash())
+                    .about("Get live cells by address")
                     .arg(arg::address())
                     .arg(arg::live_cells_limit())
                     .arg(arg::from_block_number())
                     .arg(arg::to_block_number())
-                    .arg(
-                        Arg::with_name("fast-mode")
-                            .long("fast-mode")
-                            .about("Only visit current range (by --from and --to) of live cells"),
-                    ),
-                App::new("top-capacity")
-                    .about("Show top n capacity owned by lock script hash")
-                    .arg(arg::top_n()),
             ])
     }
 
@@ -403,13 +368,8 @@ impl<'a> WalletSubCommand<'a> {
             force_small_change_as_fee: None,
         };
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(self.rpc_client.url(), 10);
-        let mut cell_collector = LocalCellCollector::new(
-            self.index_dir.clone(),
-            self.index_controller.clone(),
-            HttpRpcClient::new(self.rpc_client.url().to_string()),
-            Some(genesis_info.header().clone()),
-            self.wait_for_sync,
-        );
+        let mut cell_collector =
+            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
         let header_dep_resolver = DefaultHeaderDepResolver::new(self.rpc_client.url());
 
         // Add outputs
@@ -479,95 +439,72 @@ impl<'a> WalletSubCommand<'a> {
         Ok(tx)
     }
 
-    pub fn get_capacity(&mut self, lock_hashes: Vec<Byte32>) -> Result<(u64, u64, u64), String> {
+    pub fn get_capacity(&mut self, lock_scripts: Vec<Script>) -> Result<(u64, u64, u64), String> {
+        let mut cell_collector =
+            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
         let max_mature_number = get_max_mature_number(self.rpc_client.client())?;
-        self.with_db(|db| {
-            let mut total_capacity = 0;
-            let mut dao_capacity = 0;
-            let mut immature_capacity = 0;
-            let mut terminator = |_idx: usize, info: &LiveCellInfo| {
-                if !is_mature(info, max_mature_number) {
-                    immature_capacity += info.capacity;
+        let mut total_all = 0;
+        let mut total_immature = 0;
+        let mut total_dao = 0;
+        for script in lock_scripts {
+            let mut query = CellQueryOptions::new_lock(script);
+            query.maturity = MaturityOption::Both;
+            query.min_total_capacity = u64::max_value();
+            let (cells, total_capacity) = cell_collector
+                .collect_live_cells(&query, false)
+                .map_err(|err| err.to_string())?;
+            total_all += total_capacity;
+            for cell in &cells {
+                let capacity: u64 = cell.output.capacity().unpack();
+                if !is_mature(cell, max_mature_number) {
+                    total_immature += capacity;
                 }
-                if info
-                    .type_hashes
-                    .as_ref()
-                    .filter(|(code_hash, _)| code_hash == &DAO_TYPE_HASH)
-                    .is_some()
+                if cell
+                    .output
+                    .type_()
+                    .to_opt()
+                    .map(|script| script.code_hash().as_slice() == DAO_TYPE_HASH.as_bytes())
+                    .unwrap_or(false)
                 {
-                    dao_capacity += info.capacity;
+                    total_dao += capacity;
                 }
-                total_capacity += info.capacity;
-                (false, false)
-            };
-            for lock_hash in lock_hashes {
-                let _ = db.get_live_cells_by_lock(lock_hash, None, &mut terminator);
             }
-            (total_capacity, immature_capacity, dao_capacity)
-        })
+        }
+        Ok((total_all, total_immature, total_dao))
     }
 
-    pub fn get_live_cells<F>(
+    pub fn get_live_cells(
         &mut self,
+        script: Script,
+        script_type: PrimaryScriptType,
+        from_number: u64,
         to_number: u64,
-        limit: usize,
-        mut func: F,
-        fast_mode: bool,
-    ) -> Result<(LiveCells, Option<(u32, u64)>), String>
-    where
-        F: FnMut(
-            &IndexDatabase,
-            &mut dyn FnMut(usize, &LiveCellInfo) -> (bool, bool),
-        ) -> Vec<LiveCellInfo>,
-    {
-        let (infos, total_count, total_capacity, current_count, current_capacity) =
-            self.with_db(|db| {
-                let mut total_count: u32 = 0;
-                let mut total_capacity: u64 = 0;
-                let mut current_count: u32 = 0;
-                let mut current_capacity: u64 = 0;
-                let mut terminator = |idx, info: &LiveCellInfo| {
-                    let stop = idx >= limit || info.number > to_number;
-                    let push_info = !stop;
-                    total_count += 1;
-                    total_capacity += info.capacity;
-                    if push_info {
-                        current_count += 1;
-                        current_capacity += info.capacity;
-                    }
-                    (fast_mode && stop, push_info)
-                };
-                let infos = func(&db, &mut terminator);
-                (
-                    infos,
-                    total_count,
-                    total_capacity,
-                    current_count,
-                    current_capacity,
-                )
-            })?;
+        limit: u32,
+    ) -> Result<Vec<LiveCell>, String> {
+        let mut cell_collector =
+            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
+
+        let mut query = CellQueryOptions::new(script, script_type);
+        query.maturity = MaturityOption::Both;
+        query.min_total_capacity = u64::max_value();
+        query.limit = Some(limit);
+        query.block_range = Some(ValueRangeOption::new(from_number, to_number));
+        let (cells, _total_capacity) = cell_collector
+            .collect_live_cells(&query, false)
+            .map_err(|err| err.to_string())?;
 
         let max_mature_number = get_max_mature_number(self.rpc_client.client())?;
-        let live_cells = infos
+        let live_cells = cells
             .into_iter()
-            .map(|info| {
-                let mature = is_mature(&info, max_mature_number);
-                LiveCell { info, mature }
+            .map(|cell| {
+                let mature = is_mature(&cell, max_mature_number);
+                LiveCell {
+                    info: to_live_cell_info(&cell),
+                    mature,
+                }
             })
             .collect::<Vec<_>>();
-        let total = if fast_mode {
-            None
-        } else {
-            Some((total_count, total_capacity))
-        };
-        Ok((
-            LiveCells {
-                live_cells,
-                current_count,
-                current_capacity,
-            },
-            total,
-        ))
+        Ok(live_cells)
     }
 }
 
@@ -605,50 +542,43 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 }
             }
             ("get-capacity", Some(m)) => {
-                let lock_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash")?;
-                let lock_hashes = if let Some(lock_hash) = lock_hash_opt {
-                    vec![lock_hash.pack()]
+                let network_type = get_network_type(self.rpc_client)?;
+
+                let receiving_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-receiving-address-length")?;
+                let change_address_length: u32 = FromStrParser::<u32>::default()
+                    .from_matches(m, "derive-change-address-length")?;
+                let address_payload = if let Some(address_str) = m.value_of("address") {
+                    AddressParser::default()
+                        .set_network(network_type)
+                        .parse(address_str)?
+                        .payload()
+                        .clone()
                 } else {
-                    let network_type = get_network_type(self.rpc_client)?;
-
-                    let receiving_address_length: u32 = FromStrParser::<u32>::default()
-                        .from_matches(m, "derive-receiving-address-length")?;
-                    let change_address_length: u32 = FromStrParser::<u32>::default()
-                        .from_matches(m, "derive-change-address-length")?;
-                    let address_payload = if let Some(address_str) = m.value_of("address") {
-                        AddressParser::default()
-                            .set_network(network_type)
-                            .parse(address_str)?
-                            .payload()
-                            .clone()
-                    } else {
-                        get_address(Some(network_type), m)?
-                    };
-                    let mut lock_hashes = vec![Script::from(&address_payload).calc_script_hash()];
-                    if m.is_present("derived") {
-                        let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
-
-                        let key_set = self
-                            .plugin_mgr
-                            .keystore_handler()
-                            .derived_key_set_by_index(
-                                lock_arg,
-                                0,
-                                receiving_address_length,
-                                0,
-                                change_address_length,
-                                None,
-                            )?;
-                        for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                            let payload = AddressPayload::from_pubkey_hash(hash160.clone());
-                            lock_hashes.push(Script::from(&payload).calc_script_hash());
-                        }
-                    }
-                    lock_hashes
+                    get_address(Some(network_type), m)?
                 };
+                let mut lock_scripts = vec![Script::from(&address_payload)];
+                if m.is_present("derived") {
+                    let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
 
-                let (total, immature, dao) = self.get_capacity(lock_hashes)?;
+                    let key_set = self
+                        .plugin_mgr
+                        .keystore_handler()
+                        .derived_key_set_by_index(
+                            lock_arg,
+                            0,
+                            receiving_address_length,
+                            0,
+                            change_address_length,
+                            None,
+                        )?;
+                    for (_, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
+                        let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                        lock_scripts.push(Script::from(&payload));
+                    }
+                }
+
+                let (total, immature, dao) = self.get_capacity(lock_scripts)?;
 
                 let mut resp =
                     serde_json::json!({ "total": format!("{:#}", HumanCapacity::from(total)) });
@@ -664,71 +594,26 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                 Ok(Output::new_output(resp))
             }
             ("get-live-cells", Some(m)) => {
-                let lock_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "lock-hash")?;
-                let type_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "type-hash")?;
-                let code_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "code-hash")?;
-                let limit: usize = FromStrParser::<usize>::default().from_matches(m, "limit")?;
+                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
                 let from_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "from")?;
                 let to_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "to")?;
-                let fast_mode = m.is_present("fast-mode");
 
                 let network_type = get_network_type(self.rpc_client)?;
-                let lock_hash_opt = if lock_hash_opt.is_none() {
-                    let address_opt: Option<Address> = AddressParser::default()
-                        .set_network(network_type)
-                        .from_matches_opt(m, "address")?;
-                    address_opt
-                        .map(|address| Script::from(address.payload()).calc_script_hash().unpack())
-                } else {
-                    lock_hash_opt
-                };
-
-                if lock_hash_opt.is_none() && type_hash_opt.is_none() && code_hash_opt.is_none() {
-                    return Err(
-                        "lock-hash or type-hash or code-hash or address is required".to_owned()
-                    );
-                }
-
-                let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-                let (
-                    LiveCells {
-                        live_cells,
-                        current_count,
-                        current_capacity,
-                    },
-                    total,
-                ) = self.get_live_cells(
-                    to_number,
+                let address: Address = AddressParser::default()
+                    .set_network(network_type)
+                    .from_matches(m, "address")?;
+                let lock_script = Script::from(address.payload());
+                let live_cells = self.get_live_cells(
+                    lock_script,
+                    PrimaryScriptType::Lock,
+                    from_number_opt.unwrap_or(0),
+                    to_number_opt.unwrap_or(u64::max_value()),
                     limit,
-                    |db, terminator| {
-                        if let Some(lock_hash) = &lock_hash_opt {
-                            db.get_live_cells_by_lock(
-                                lock_hash.clone().pack(),
-                                from_number_opt,
-                                terminator,
-                            )
-                        } else if let Some(type_hash) = &type_hash_opt {
-                            db.get_live_cells_by_type(
-                                type_hash.clone().pack(),
-                                from_number_opt,
-                                terminator,
-                            )
-                        } else {
-                            db.get_live_cells_by_code(
-                                code_hash_opt.clone().unwrap().pack(),
-                                from_number_opt,
-                                terminator,
-                            )
-                        }
-                    },
-                    fast_mode,
                 )?;
-                let mut resp = serde_json::json!({
+
+                let resp = serde_json::json!({
                     "live_cells": live_cells.into_iter().map(|live_cell| {
                         let LiveCell{ info, mature } = live_cell;
                         let mut value = serde_json::to_value(&info).unwrap();
@@ -739,35 +624,8 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                         map.insert("mature".to_string(), mature);
                         value
                     }).collect::<Vec<_>>(),
-                    "current_count": current_count,
-                    "current_capacity": format!("{:#}", HumanCapacity::from(current_capacity)),
                 });
-                if let Some((total_count, total_capacity)) = total {
-                    resp["total_count"] = serde_json::json!(total_count);
-                    resp["total_capacity"] =
-                        serde_json::json!(format!("{:#}", HumanCapacity::from(total_capacity)));
-                }
 
-                Ok(Output::new_output(resp))
-            }
-            ("top-capacity", Some(m)) => {
-                let n: usize = m
-                    .value_of("number")
-                    .map(|n_str| n_str.parse().unwrap())
-                    .unwrap();
-                let network_type = get_network_type(self.rpc_client)?;
-                let resp = self.with_db(|db| {
-                    db.get_top_n(n)
-                        .into_iter()
-                        .map(|(lock_hash, payload_opt, capacity)| {
-                            serde_json::json!({
-                                "lock_hash": format!("{:#x}", lock_hash),
-                                "address": payload_opt.map(|payload| Address::new(network_type, payload, true).to_string()),
-                                "capacity": format!("{:#}", HumanCapacity::from(capacity)),
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                })?;
                 Ok(Output::new_output(resp))
             }
             _ => Err(Self::subcommand().generate_usage()),
@@ -789,13 +647,6 @@ pub struct TransferArgs {
     pub to_data: Option<Bytes>,
     pub is_type_id: bool,
     pub skip_check_to_address: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LiveCells {
-    pub live_cells: Vec<LiveCell>,
-    pub current_count: u32,
-    pub current_capacity: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
