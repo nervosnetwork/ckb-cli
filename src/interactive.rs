@@ -89,7 +89,7 @@ impl InteractiveEnv {
 
     pub fn start(&mut self) -> Result<(), String> {
         self.print_logo();
-        self.config.print();
+        self.config.print(true);
 
         let env_regex = Regex::new(ENV_PATTERN).unwrap();
         let prompt = {
@@ -288,7 +288,7 @@ impl InteractiveEnv {
                         self.config.switch_completion_style();
                     }
 
-                    self.config.print();
+                    self.config.print(false);
                     let mut file = fs::File::create(self.config_file.as_path())
                         .map_err(|err| format!("open config error: {:?}", err))?;
                     let content = serde_json::to_string_pretty(&json!({
@@ -318,7 +318,7 @@ impl InteractiveEnv {
                     Ok(())
                 }
                 ("info", _) => {
-                    self.config.print();
+                    self.config.print(false);
                     Ok(())
                 }
                 ("rpc", Some(sub_matches)) => {

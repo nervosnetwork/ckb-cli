@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 
 use ansi_term::Colour::Yellow;
-use ckb_sdk::NetworkType;
+use ckb_sdk::{CkbRpcClient, IndexerRpcClient, NetworkType};
 use regex::{Captures, Regex};
 
 use crate::utils::printer::{OutputFormat, Printable};
@@ -200,7 +200,7 @@ impl GlobalConfig {
         self.edit_style
     }
 
-    pub fn print(&self) {
+    pub fn print(&self, fast_mode: bool) {
         let path = self.path.to_string_lossy();
         let color = self.color.to_string();
         let debug = self.debug.to_string();
@@ -218,12 +218,42 @@ impl GlobalConfig {
             .network()
             .map(|value| format!("{:?}", value))
             .unwrap_or_else(|| "unknown".to_string());
-        let url_string = format!("{} (network: {})", self.get_url(), network_string);
-        let ckb_indexer_url_string = self.get_ckb_indexer_url();
+        let ckb_tip = if fast_mode {
+            "loading...".to_string()
+        } else {
+            match CkbRpcClient::new(self.get_url()).get_tip_block_number() {
+                Ok(number) => format!("#{}", number.value()),
+                Err(_err) => "#unknown".to_string(),
+            }
+        };
+        let url_string = format!(
+            "{} (network: {}, {})",
+            self.get_url(),
+            network_string,
+            ckb_tip
+        );
+        let ckb_indexer_url = self.get_ckb_indexer_url();
+        let ckb_indexer_tip = if fast_mode {
+            "loading...".to_string()
+        } else {
+            match IndexerRpcClient::new(ckb_indexer_url).get_tip() {
+                Ok(Some(tip)) => {
+                    format!(
+                        "0x{}#{}",
+                        faster_hex::hex_string(&tip.block_hash.as_bytes()[0..3]),
+                        tip.block_number.value()
+                    )
+                }
+                Ok(None) => "waiting...".to_string(),
+                Err(err) => err.to_string(),
+            }
+        };
+        let ckb_indexer_status = format!("{} ({})", ckb_indexer_url, ckb_indexer_tip);
+
         let values = [
             ("ckb-cli version", version_long.as_str()),
             ("url", url_string.as_str()),
-            ("ckb-indexer", ckb_indexer_url_string),
+            ("ckb-indexer", ckb_indexer_status.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),

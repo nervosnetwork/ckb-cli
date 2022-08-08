@@ -270,14 +270,14 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .long("url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .about("CKB RPC server url, the default value is http://127.0.0.1:8114"),
+                .about("CKB RPC server url.\nThe default value is http://127.0.0.1:8114 \nmainnet public: https://mainnet.ckbapp.dev/rpc \ntestnet public: https://testnet.ckbapp.dev/rpc"),
         )
         .arg(
             Arg::with_name("ckb-indexer-url")
                 .long("ckb-indexer-url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .about("CKB indexer server RPC url, the default value is http://127.0.0.1:8116"),
+                .about("CKB indexer server RPC url.\nThe default value is http://127.0.0.1:8116 \nmainnet public: https://mainnet.ckbapp.dev/indexer \ntestnet public: https://testnet.ckbapp.dev/indexer"),
         )
         .arg(
             Arg::with_name("output-format")
