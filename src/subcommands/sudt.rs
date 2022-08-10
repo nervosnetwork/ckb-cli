@@ -1264,14 +1264,12 @@ impl<'a> UdtTxBuilder<'a> {
         let balancer = CapacityBalancer {
             fee_rate: FeeRate::from_u64(fee_rate),
             change_lock_script: None,
-            capacity_provider: CapacityProvider {
-                lock_scripts: vec![(
-                    capacity_provider,
-                    WitnessArgs::new_builder()
-                        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-                        .build(),
-                )],
-            },
+            capacity_provider: CapacityProvider::new_simple(vec![(
+                capacity_provider,
+                WitnessArgs::new_builder()
+                    .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                    .build(),
+            )]),
             force_small_change_as_fee: None,
         };
 

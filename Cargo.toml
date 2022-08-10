@@ -17,7 +17,7 @@ ckb-error = "=0.104.0"
 ckb-script = "=0.104.0"
 ckb-chain-spec = "=0.104.0"
 ckb-mock-tx-types = "0.4.0"
-ckb-sdk = "~1.1.0"
+ckb-sdk = "~2.0.0"
 ckb-signer = { path = "ckb-signer", version = "0.1.0" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=1.0.0" }
 jsonrpc-core-client = "18"

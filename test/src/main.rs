@@ -31,8 +31,9 @@ fn main() {
 
 fn run_spec(spec: Box<dyn Spec>, app: &App) {
     let (tempdir, ckb_dir) = temp_dir();
-    let rpc_port = find_available_port(8000, 8999);
-    let p2p_port = find_available_port(9000, 9999);
+    let rpc_port = find_available_port(8000, 8099);
+    let p2p_port = find_available_port(8100, 8199);
+    let indexer_port = find_available_port(8200, 8299);
     let _stdout = run_cmd(
         app.ckb_bin(),
         vec![
@@ -48,29 +49,30 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
         ],
     );
 
+    let mut ckb_indexer_dir = PathBuf::from(ckb_dir.as_str());
+    ckb_indexer_dir.push("ckb-indexer");
     let mut ckb_cli_dir = PathBuf::from(ckb_dir.as_str());
     ckb_cli_dir.push("ckb-cli");
     env::set_var("CKB_CLI_HOME", ckb_cli_dir.as_os_str());
 
     let mut setup = Setup::new(
         app.ckb_bin().to_string(),
+        app.ckb_indexer_bin().to_string(),
         app.cli_bin().to_string(),
         app.keystore_plugin_bin().to_string(),
         ckb_dir,
-        ckb_cli_dir.to_str().unwrap().to_owned(),
+        ckb_indexer_dir.to_string_lossy().to_string(),
         rpc_port,
+        indexer_port,
         tempdir,
     );
-    let _guard = setup.ready(&*spec);
+    let (_ckb_guard, _indexer_guard) = setup.ready(&*spec);
     spec.run(&mut setup);
     setup.success();
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
-        Box::new(DaoPrepareOne),
-        Box::new(DaoPrepareMultiple),
-        Box::new(DaoWithdrawMultiple),
         Box::new(SudtIssueToCheque),
         Box::new(SudtIssueToAcp),
         Box::new(SudtTransferToMultiAcp),
@@ -81,5 +83,8 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(Util),
         Box::new(Plugin),
         Box::new(RpcGetTipBlockNumber),
+        Box::new(DaoPrepareOne),
+        Box::new(DaoPrepareMultiple),
+        Box::new(DaoWithdrawMultiple),
     ]
 }

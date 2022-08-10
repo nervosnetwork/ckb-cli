@@ -57,6 +57,7 @@ impl Miner {
     }
 
     pub fn generate_blocks(&self, count: u64) {
+        log::info!("generating {} blocks...", count);
         (0..count).for_each(|_| {
             self.generate_block();
             thread::sleep(Duration::from_millis(10));
@@ -119,6 +120,7 @@ impl Miner {
         });
     }
     pub fn mine_until_transaction_confirm(&self, tx_hash: &str) {
+        log::info!("mine until tx: {}", tx_hash);
         let tx_hash: H256 = serde_json::from_str(&format!("\"{}\"", tx_hash)).unwrap();
         self.mine_until_transaction_confirm_with_windows(
             &tx_hash.pack(),

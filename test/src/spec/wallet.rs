@@ -35,8 +35,8 @@ impl Spec for WalletTransfer {
             "wallet get-live-cells --address {}",
             miner_address
         ));
-        assert!(output.contains("current_count: 1\n"));
-        assert!(output.contains("total_count: 1"));
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        assert_eq!(value["live_cells"].as_sequence().unwrap().len(), 1);
 
         setup.miner().generate_blocks(30);
 
