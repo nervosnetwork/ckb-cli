@@ -44,7 +44,9 @@ else
     fi
 
     rm -rf target && ln -snf ${CKB_CLI_DIR}/target target
-    make prod
+    # make prod_portable
+    echo "building portable ckb"
+    RUSTFLAGS="--cfg disable_faketime" cargo build --profile prod --features "with_sentry,with_dns_seeding,portable"
     CKB_BIN="$(pwd)/target/prod/ckb"
 fi
 
