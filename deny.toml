@@ -6,8 +6,8 @@ notice = "deny"
 ignore = [
     # TODO Potential segfault in the time crate; waiting for the fix from upstream (chrono)
     "RUSTSEC-2020-0071",
-    # TODO Potential segfault in the chrono crate; waiting for the new release of chrono
-    "RUSTSEC-2020-0159"
+    # TODO remove this when rustyline updated
+    "RUSTSEC-2021-0119"
 ]
 
 [licenses]
