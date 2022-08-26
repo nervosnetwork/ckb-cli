@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -289,21 +288,9 @@ impl InteractiveEnv {
                     }
 
                     self.config.print(false);
-                    let mut file = fs::File::create(self.config_file.as_path())
-                        .map_err(|err| format!("open config error: {:?}", err))?;
-                    let content = serde_json::to_string_pretty(&json!({
-                        "url": self.config.get_url().to_string(),
-                        "ckb-indexer-url": self.config.get_ckb_indexer_url().to_string(),
-                        "color": self.config.color(),
-                        "debug": self.config.debug(),
-                        "no-sync": self.config.no_sync(),
-                        "output_format": self.config.output_format().to_string(),
-                        "completion_style": self.config.completion_style(),
-                        "edit_style": self.config.edit_style(),
-                    }))
-                    .unwrap();
-                    file.write_all(content.as_bytes())
-                        .map_err(|err| format!("save config error: {:?}", err))?;
+                    self.config
+                        .save(self.config_file.as_path())
+                        .map_err(|err| format!("save config file failed: {:?}", err))?;
                     Ok(())
                 }
                 ("set", Some(m)) => {

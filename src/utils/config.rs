@@ -1,16 +1,19 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::io::{self, Write};
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ansi_term::Colour::Yellow;
 use ckb_sdk::{CkbRpcClient, IndexerRpcClient, NetworkType};
 use regex::{Captures, Regex};
+use serde_json::json;
 
 use crate::utils::printer::{OutputFormat, Printable};
 
-const DEFAULT_CKB_URL: &str = "http://127.0.0.1:8114";
-const DEFAULT_CKB_INDEXER_URL: &str = "http://127.0.0.1:8116";
+pub const DEFAULT_CKB_URL: &str = "http://127.0.0.1:8114";
+pub const DEFAULT_CKB_INDEXER_URL: &str = "http://127.0.0.1:8116";
 
 pub struct GlobalConfig {
     url: Option<String>,
@@ -281,6 +284,23 @@ impl GlobalConfig {
             .collect::<Vec<String>>()
             .join("\n");
         println!("{}", output);
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), io::Error> {
+        let mut file = fs::File::create(path)?;
+        let content = serde_json::to_string_pretty(&json!({
+            "url": self.get_url().to_string(),
+            "ckb-indexer-url": self.get_ckb_indexer_url().to_string(),
+            "color": self.color(),
+            "debug": self.debug(),
+            "no-sync": self.no_sync(),
+            "output_format": self.output_format().to_string(),
+            "completion_style": self.completion_style(),
+            "edit_style": self.edit_style(),
+        }))
+        .unwrap();
+        file.write_all(content.as_bytes())?;
+        Ok(())
     }
 }
 

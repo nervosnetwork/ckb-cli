@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{self, Read};
-use std::path::PathBuf;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use ckb_build_info::Version;
 use clap::crate_version;
 use clap::{App, AppSettings, Arg};
+use dialoguer::{theme::ColorfulTheme, Select};
 
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
@@ -19,9 +20,9 @@ use subcommands::{
 use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
-    config::GlobalConfig,
+    config::{GlobalConfig, DEFAULT_CKB_INDEXER_URL, DEFAULT_CKB_URL},
     other::{check_alerts, get_key_store, get_network_type},
-    printer::{ColorWhen, OutputFormat},
+    printer::{is_a_tty, is_term_dumb, ColorWhen, OutputFormat},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
@@ -81,10 +82,8 @@ fn main() -> Result<(), io::Error> {
     config_file.push("config");
 
     let mut output_format = OutputFormat::Yaml;
-    if config_file.as_path().exists() {
-        let mut file = fs::File::open(&config_file)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
+    let configs_opt = if config_file.as_path().exists() {
+        let content = fs::read_to_string(&config_file)?;
         let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
         if ckb_url_opt.is_none() {
             if let Some(value) = configs["url"].as_str() {
@@ -104,7 +103,18 @@ fn main() -> Result<(), io::Error> {
         config.set_output_format(output_format);
         config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
         config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
-    }
+        Some(configs)
+    } else {
+        None
+    };
+    // Prompt select a ckb/ckb-indexer url from public servers (testnet/mainnet)
+    prompt_select_urls(
+        &mut config,
+        &config_file,
+        configs_opt.as_ref(),
+        ckb_url_opt.as_ref(),
+        ckb_indexer_url_opt.as_ref(),
+    )?;
 
     let ckb_url = config.get_url().to_string();
     let ckb_indexer_url = config.get_ckb_indexer_url().to_string();
@@ -210,6 +220,72 @@ fn main() -> Result<(), io::Error> {
             eprintln!("{}", err);
             process::exit(1);
         }
+    }
+    Ok(())
+}
+
+fn prompt_select_urls(
+    config: &mut GlobalConfig,
+    config_file: &Path,
+    configs_opt: Option<&serde_json::Value>,
+    ckb_url_opt: Option<&String>,
+    ckb_indexer_url_opt: Option<&String>,
+) -> Result<(), io::Error> {
+    if is_a_tty(false)
+        && !is_term_dumb()
+    // Check if this is the first time set ckb-indexer-url config
+        && configs_opt
+        .map(|configs| configs.get("ckb-indexer-url").is_none())
+        .unwrap_or(true)
+    // And not given ckb-indexer-url value by command line args
+        && ckb_indexer_url_opt.is_none()
+    {
+        // select ckb url
+        {
+            let ckb_url_default = ckb_url_opt
+                .map(|s| s.as_str())
+                .or_else(|| {
+                    configs_opt
+                        .and_then(|configs| configs.get("url").and_then(|value| value.as_str()))
+                })
+                .unwrap_or(DEFAULT_CKB_URL);
+            let selections = &[
+                ckb_url_default,
+                "https://testnet.ckbapp.dev/rpc",
+                "https://mainnet.ckbapp.dev/rpc",
+            ];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Please select the ckb rpc url")
+                .default(0)
+                .items(&selections[..])
+                .interact()
+                .unwrap();
+            config.set_url(selections[selection].to_string());
+        }
+
+        // select ckb-indexer url
+        {
+            let ckb_indexer_url_default = configs_opt
+                .and_then(|configs| {
+                    configs
+                        .get("ckb-indexer-url")
+                        .and_then(|value| value.as_str())
+                })
+                .unwrap_or(DEFAULT_CKB_INDEXER_URL);
+            let selections = &[
+                ckb_indexer_url_default,
+                "https://testnet.ckbapp.dev/indexer",
+                "https://mainnet.ckbapp.dev/indexer",
+            ];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Please select the ckb-indexer rpc server url")
+                .default(0)
+                .items(&selections[..])
+                .interact()
+                .unwrap();
+            config.set_ckb_indexer_url(selections[selection].to_string());
+        }
+        config.save(config_file)?;
     }
     Ok(())
 }
