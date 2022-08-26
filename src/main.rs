@@ -424,14 +424,14 @@ pub fn build_interactive() -> App<'static> {
                         .long("url")
                         .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
-                        .about("Config CKB RPC server url"),
+                        .about("CKB RPC server url.\nThe default value is http://127.0.0.1:8114 \nmainnet public: https://mainnet.ckbapp.dev/rpc \ntestnet public: https://testnet.ckbapp.dev/rpc"),
                 )
                 .arg(
                     Arg::with_name("ckb-indexer-url")
                         .long("ckb-indexer-url")
                         .takes_value(true)
                         .validator(|input| UrlParser.validate(input))
-                        .about("CKB indexer server RPC url, the default value is http://127.0.0.1:8116"),
+                        .about("CKB indexer server RPC url.\nThe default value is http://127.0.0.1:8116 \nmainnet public: https://mainnet.ckbapp.dev/indexer \ntestnet public: https://testnet.ckbapp.dev/indexer"),
                 )
                 .arg(
                     Arg::with_name("color")
