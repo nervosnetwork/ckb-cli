@@ -58,6 +58,7 @@ fn main() -> Result<(), io::Error> {
         .value_of("ckb-indexer-url")
         .map(ToOwned::to_owned)
         .or_else(|| env_map.remove("CKB_INDEXER_URL"));
+    let local_only = matches.is_present("local-only");
 
     let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
         let dir = PathBuf::from(dir_string.as_str());
@@ -108,20 +109,22 @@ fn main() -> Result<(), io::Error> {
         None
     };
     // Prompt select a ckb/ckb-indexer url from public servers (testnet/mainnet)
-    prompt_select_urls(
-        &mut config,
-        &config_file,
-        configs_opt.as_ref(),
-        ckb_url_opt.as_ref(),
-        ckb_indexer_url_opt.as_ref(),
-    )?;
+    if !local_only {
+        prompt_select_urls(
+            &mut config,
+            &config_file,
+            configs_opt.as_ref(),
+            ckb_url_opt.as_ref(),
+            ckb_indexer_url_opt.as_ref(),
+        )?;
+    }
 
     let ckb_url = config.get_url().to_string();
     let ckb_indexer_url = config.get_ckb_indexer_url().to_string();
     let mut rpc_client = HttpRpcClient::new(ckb_url.clone());
     let mut raw_rpc_client = RawHttpRpcClient::new(ckb_url.as_str());
 
-    if !matches.is_present("local-only") {
+    if !local_only {
         check_alerts(&mut rpc_client);
         config.set_network(get_network_type(&mut rpc_client).ok());
     }
@@ -243,6 +246,19 @@ fn prompt_select_urls(
     // And not given ckb-indexer-url value by command line args
         && ckb_indexer_url_opt.is_none()
     {
+        // For fix hidden cursor problem, see follow issue for more details:
+        //   https://github.com/mitsuhiko/dialoguer/issues/77
+        ctrlc::set_handler(move || {
+            let term = console::Term::stdout();
+            let _ = term.show_cursor();
+        })
+        .map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Set ctrlc handler error: {}", err),
+            )
+        })?;
+
         // select ckb url
         {
             let ckb_url_default = ckb_url_opt
@@ -252,17 +268,20 @@ fn prompt_select_urls(
                         .and_then(|configs| configs.get("url").and_then(|value| value.as_str()))
                 })
                 .unwrap_or(DEFAULT_CKB_URL);
-            let selections = &[
-                ckb_url_default,
+            let mut selections = vec![
                 "https://testnet.ckbapp.dev/rpc",
                 "https://mainnet.ckbapp.dev/rpc",
             ];
+            for url in [ckb_url_default, DEFAULT_CKB_URL] {
+                if !selections.contains(&url) {
+                    selections.push(url);
+                }
+            }
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Please select the ckb rpc url")
                 .default(0)
                 .items(&selections[..])
-                .interact()
-                .unwrap();
+                .interact()?;
             config.set_url(selections[selection].to_string());
         }
 
@@ -275,17 +294,20 @@ fn prompt_select_urls(
                         .and_then(|value| value.as_str())
                 })
                 .unwrap_or(DEFAULT_CKB_INDEXER_URL);
-            let selections = &[
-                ckb_indexer_url_default,
+            let mut selections = vec![
                 "https://testnet.ckbapp.dev/indexer",
                 "https://mainnet.ckbapp.dev/indexer",
             ];
+            for url in [ckb_indexer_url_default, DEFAULT_CKB_INDEXER_URL] {
+                if !selections.contains(&url) {
+                    selections.push(url);
+                }
+            }
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Please select the ckb-indexer rpc server url")
                 .default(0)
                 .items(&selections[..])
-                .interact()
-                .unwrap();
+                .interact()?;
             config.set_ckb_indexer_url(selections[selection].to_string());
         }
         config.save(config_file)?;
