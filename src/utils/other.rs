@@ -107,6 +107,7 @@ pub fn get_signer(
 }
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
+    log::debug!("checking alerts...");
     if let Some(alerts) = rpc_client
         .get_blockchain_info()
         .ok()
@@ -199,6 +200,7 @@ pub fn get_live_cell(
 }
 
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
+    log::debug!("getting network type...");
     let chain_info = rpc_client.get_blockchain_info()?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
         .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))

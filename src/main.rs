@@ -120,8 +120,11 @@ fn main() -> Result<(), io::Error> {
     let ckb_indexer_url = config.get_ckb_indexer_url().to_string();
     let mut rpc_client = HttpRpcClient::new(ckb_url.clone());
     let mut raw_rpc_client = RawHttpRpcClient::new(ckb_url.as_str());
-    check_alerts(&mut rpc_client);
-    config.set_network(get_network_type(&mut rpc_client).ok());
+
+    if !matches.is_present("local-only") {
+        check_alerts(&mut rpc_client);
+        config.set_network(get_network_type(&mut rpc_client).ok());
+    }
 
     let color = ColorWhen::new(!matches.is_present("no-color")).color();
     let debug = matches.is_present("debug");
@@ -375,6 +378,12 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .long("debug")
                 .global(true)
                 .about("Display request parameters"),
+        )
+        .arg(
+            Arg::with_name("local-only")
+                .long("local-only")
+                .global(true)
+                .about("This is a local only subcommand, do not check alerts and get network type")
         )
 }
 
