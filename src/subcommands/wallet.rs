@@ -277,12 +277,16 @@ impl<'a> WalletSubCommand<'a> {
                     None,
                 )?;
                 let mut change_path_opt = None;
-                for (path, hash160) in key_set.external.iter().chain(key_set.change.iter()) {
-                    if hash160 == &change_last {
+                for (path, hash160) in key_set
+                    .external
+                    .into_iter()
+                    .chain(key_set.change.into_iter())
+                {
+                    if hash160 == change_last {
                         change_path_opt = Some(path.clone());
                     }
-                    path_map.insert(hash160.clone(), path.clone());
-                    let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                    path_map.insert(hash160.clone(), path);
+                    let payload = AddressPayload::from_pubkey_hash(hash160);
                     lock_scripts.push((
                         Script::from(&payload),
                         sighash_placeholder_witness.clone(),

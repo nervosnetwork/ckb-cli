@@ -226,7 +226,7 @@ impl GlobalConfig {
         } else {
             match CkbRpcClient::new(self.get_url()).get_tip_block_number() {
                 Ok(number) => format!("#{}", number.value()),
-                Err(_err) => "#unknown".to_string(),
+                Err(err) => err.to_string(),
             }
         };
         let url_string = format!(
