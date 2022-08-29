@@ -371,14 +371,26 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .long("url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .about("CKB RPC server url.\nThe default value is http://127.0.0.1:8114 \nmainnet public: https://mainnet.ckbapp.dev/rpc \ntestnet public: https://testnet.ckbapp.dev/rpc"),
+                .about(
+                    r#"CKB RPC server url.
+  * default: http://127.0.0.1:8114
+  * mainnet public: https://mainnet.ckbapp.dev/rpc
+  * testnet public: https://testnet.ckbapp.dev/rpc
+More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+                ),
         )
         .arg(
             Arg::with_name("ckb-indexer-url")
                 .long("ckb-indexer-url")
                 .takes_value(true)
                 .validator(|input| UrlParser.validate(input))
-                .about("CKB indexer server RPC url.\nThe default value is http://127.0.0.1:8116 \nmainnet public: https://mainnet.ckbapp.dev/indexer \ntestnet public: https://testnet.ckbapp.dev/indexer"),
+                .about(
+                    r#"CKB indexer server RPC url.
+  * default: http://127.0.0.1:8116
+  * mainnet public: https://mainnet.ckbapp.dev/indexer
+  * testnet public: https://testnet.ckbapp.dev/indexer
+More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+                ),
         )
         .arg(
             Arg::with_name("output-format")
@@ -405,7 +417,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
             Arg::with_name("local-only")
                 .long("local-only")
                 .global(true)
-                .about("This is a local only subcommand, do not check alerts and get network type")
+                .about("This is a local only subcommand, do not check alerts and get network type"),
         )
 }
 
@@ -424,14 +436,26 @@ pub fn build_interactive() -> App<'static> {
                         .long("url")
                         .validator(|input| UrlParser.validate(input))
                         .takes_value(true)
-                        .about("CKB RPC server url.\nThe default value is http://127.0.0.1:8114 \nmainnet public: https://mainnet.ckbapp.dev/rpc \ntestnet public: https://testnet.ckbapp.dev/rpc"),
+                        .about(
+                            r#"CKB RPC server url.
+  * default: http://127.0.0.1:8114
+  * mainnet public: https://mainnet.ckbapp.dev/rpc
+  * testnet public: https://testnet.ckbapp.dev/rpc
+More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+                        ),
                 )
                 .arg(
                     Arg::with_name("ckb-indexer-url")
                         .long("ckb-indexer-url")
                         .takes_value(true)
                         .validator(|input| UrlParser.validate(input))
-                        .about("CKB indexer server RPC url.\nThe default value is http://127.0.0.1:8116 \nmainnet public: https://mainnet.ckbapp.dev/indexer \ntestnet public: https://testnet.ckbapp.dev/indexer"),
+                        .about(
+                            r#"CKB indexer server RPC url.
+  * default: http://127.0.0.1:8116
+  * mainnet public: https://mainnet.ckbapp.dev/indexer
+  * testnet public: https://testnet.ckbapp.dev/indexer
+More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+                        ),
                 )
                 .arg(
                     Arg::with_name("color")
