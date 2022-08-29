@@ -1,23 +1,23 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs;
+use std::io::{self, Write};
 use std::ops::Deref;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 
 use ansi_term::Colour::Yellow;
-use ckb_sdk::NetworkType;
-use ckb_util::RwLock;
+use ckb_sdk::{CkbRpcClient, IndexerRpcClient, NetworkType};
 use regex::{Captures, Regex};
+use serde_json::json;
 
-use crate::utils::{
-    index::IndexThreadState,
-    printer::{OutputFormat, Printable},
-};
+use crate::utils::printer::{OutputFormat, Printable};
 
-const DEFAULT_JSONRPC_URL: &str = "http://127.0.0.1:8114";
+pub const DEFAULT_CKB_URL: &str = "http://127.0.0.1:8114";
+pub const DEFAULT_CKB_INDEXER_URL: &str = "http://127.0.0.1:8116";
 
 pub struct GlobalConfig {
     url: Option<String>,
+    ckb_indexer_url: Option<String>,
     network: Option<NetworkType>,
     color: bool,
     debug: bool,
@@ -27,13 +27,13 @@ pub struct GlobalConfig {
     completion_style: bool,
     edit_style: bool,
     env_variable: HashMap<String, serde_json::Value>,
-    index_state: Arc<RwLock<IndexThreadState>>,
 }
 
 impl GlobalConfig {
-    pub fn new(url: Option<String>, index_state: Arc<RwLock<IndexThreadState>>) -> Self {
+    pub fn new(url: Option<String>, ckb_indexer_url: Option<String>) -> Self {
         GlobalConfig {
             url,
+            ckb_indexer_url,
             network: None,
             color: true,
             debug: false,
@@ -43,7 +43,6 @@ impl GlobalConfig {
             completion_style: true,
             edit_style: true,
             env_variable: HashMap::new(),
-            index_state,
         }
     }
 
@@ -113,11 +112,24 @@ impl GlobalConfig {
         if value.starts_with("http://") || value.starts_with("https://") {
             self.url = Some(value);
         } else {
-            self.url = Some("http://".to_owned() + &value);
+            self.url = Some(format!("http://{}", value));
         }
     }
     pub fn get_url(&self) -> &str {
-        self.url.as_deref().unwrap_or(DEFAULT_JSONRPC_URL)
+        self.url.as_deref().unwrap_or(DEFAULT_CKB_URL)
+    }
+
+    pub fn set_ckb_indexer_url(&mut self, value: String) {
+        if value.starts_with("http://") || value.starts_with("https://") {
+            self.ckb_indexer_url = Some(value);
+        } else {
+            self.ckb_indexer_url = Some(format!("http://{}", value));
+        }
+    }
+    pub fn get_ckb_indexer_url(&self) -> &str {
+        self.ckb_indexer_url
+            .as_deref()
+            .unwrap_or(DEFAULT_CKB_INDEXER_URL)
     }
 
     pub fn set_network(&mut self, network: Option<NetworkType>) {
@@ -133,10 +145,6 @@ impl GlobalConfig {
 
     pub fn switch_debug(&mut self) {
         self.debug = !self.debug;
-    }
-
-    pub fn switch_no_sync(&mut self) {
-        self.no_sync = !self.no_sync;
     }
 
     pub fn switch_completion_style(&mut self) {
@@ -195,7 +203,7 @@ impl GlobalConfig {
         self.edit_style
     }
 
-    pub fn print(&self) {
+    pub fn print(&self, fast_mode: bool) {
         let path = self.path.to_string_lossy();
         let color = self.color.to_string();
         let debug = self.debug.to_string();
@@ -207,17 +215,48 @@ impl GlobalConfig {
             "Circular"
         };
         let edit_style = if self.edit_style { "Emacs" } else { "Vi" };
-        let index_state = self.index_state.read().to_string();
         let version = crate::get_version();
         let version_long = version.long();
         let network_string = self
             .network()
             .map(|value| format!("{:?}", value))
             .unwrap_or_else(|| "unknown".to_string());
-        let url_string = format!("{} (network: {})", self.get_url(), network_string);
+        let ckb_tip = if fast_mode {
+            "loading...".to_string()
+        } else {
+            match CkbRpcClient::new(self.get_url()).get_tip_block_number() {
+                Ok(number) => format!("#{}", number.value()),
+                Err(err) => err.to_string(),
+            }
+        };
+        let url_string = format!(
+            "{} (network: {}, {})",
+            self.get_url(),
+            network_string,
+            ckb_tip
+        );
+        let ckb_indexer_url = self.get_ckb_indexer_url();
+        let ckb_indexer_tip = if fast_mode {
+            "loading...".to_string()
+        } else {
+            match IndexerRpcClient::new(ckb_indexer_url).get_tip() {
+                Ok(Some(tip)) => {
+                    format!(
+                        "0x{}#{}",
+                        faster_hex::hex_string(&tip.block_hash.as_bytes()[0..3]),
+                        tip.block_number.value()
+                    )
+                }
+                Ok(None) => "waiting...".to_string(),
+                Err(err) => err.to_string(),
+            }
+        };
+        let ckb_indexer_status = format!("{} ({})", ckb_indexer_url, ckb_indexer_tip);
+
         let values = [
             ("ckb-cli version", version_long.as_str()),
             ("url", url_string.as_str()),
+            ("ckb-indexer", ckb_indexer_status.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),
@@ -225,7 +264,6 @@ impl GlobalConfig {
             ("output format", output_format.as_str()),
             ("completion style", completion_style),
             ("edit style", edit_style),
-            ("index db state", index_state.as_str()),
         ];
 
         let max_width = values
@@ -246,6 +284,23 @@ impl GlobalConfig {
             .collect::<Vec<String>>()
             .join("\n");
         println!("{}", output);
+    }
+
+    pub fn save(&self, path: &Path) -> Result<(), io::Error> {
+        let mut file = fs::File::create(path)?;
+        let content = serde_json::to_string_pretty(&json!({
+            "url": self.get_url().to_string(),
+            "ckb-indexer-url": self.get_ckb_indexer_url().to_string(),
+            "color": self.color(),
+            "debug": self.debug(),
+            "no-sync": self.no_sync(),
+            "output_format": self.output_format().to_string(),
+            "completion_style": self.completion_style(),
+            "edit_style": self.edit_style(),
+        }))
+        .unwrap();
+        file.write_all(content.as_bytes())?;
+        Ok(())
     }
 }
 

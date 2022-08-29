@@ -1,12 +1,11 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
-use ckb_types::{bytes::Bytes, core::service::Request, packed::Script, prelude::*, H256};
+use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
@@ -15,13 +14,12 @@ use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use serde::{Deserialize, Serialize};
 
-use super::{CliSubCommand, LiveCells, Output, TransferArgs, WalletSubCommand};
+use super::{CliSubCommand, Output, TransferArgs, WalletSubCommand};
 use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
     genesis_info::GenesisInfo,
-    index::{IndexController, IndexRequest},
     other::{get_genesis_info, get_network_type},
     rpc::HttpRpcClient,
 };
@@ -30,8 +28,7 @@ pub struct ApiServerSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: Option<PluginManager>,
     genesis_info: Option<GenesisInfo>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
+    ckb_indexer_url: &'a str,
 }
 
 impl<'a> ApiServerSubCommand<'a> {
@@ -39,15 +36,13 @@ impl<'a> ApiServerSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: PluginManager,
         genesis_info: Option<GenesisInfo>,
-        index_dir: PathBuf,
-        index_controller: IndexController,
+        ckb_indexer_url: &'a str,
     ) -> ApiServerSubCommand<'a> {
         ApiServerSubCommand {
             rpc_client,
             plugin_mgr: Some(plugin_mgr),
             genesis_info,
-            index_dir,
-            index_controller,
+            ckb_indexer_url,
         }
     }
 
@@ -100,8 +95,6 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             Address::new(network, payload, false).to_string()
         });
 
-        Request::call(self.index_controller.sender(), IndexRequest::Kick);
-
         let mut io_handler = IoHandler::new();
         let handler = ApiRpcImpl {
             rpc_client: Arc::new(Mutex::new(HttpRpcClient::new(
@@ -110,19 +103,13 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             plugin_mgr: Arc::new(Mutex::new(self.plugin_mgr.take().unwrap())),
             genesis_info: Arc::new(Mutex::new(self.genesis_info.clone())),
             privkey_path,
-            index_dir: self.index_dir.clone(),
-            index_controller: self.index_controller.clone(),
+            ckb_indexer_url: self.ckb_indexer_url.to_string(),
         };
         io_handler.extend_with(handler.to_delegate());
 
         thread::sleep(Duration::from_millis(200));
         log::info!("Node rpc server: {}", self.rpc_client.url());
         log::info!("Network: {:?}", network_result);
-        log::info!("Index database directory: {:?}", self.index_dir);
-        log::info!(
-            "Index database state: {}",
-            *self.index_controller.state().read()
-        );
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
         RpcServer::start(&listen_addr, io_handler).wait();
@@ -163,44 +150,41 @@ pub trait ApiRpc {
     #[rpc(name = "get_capacity_by_address")]
     fn get_capacity_by_address(&self, _address: String) -> RpcResult<GetCapacityResponse>;
 
-    #[rpc(name = "get_capacity_by_lock_hash")]
-    fn get_capacity_by_lock_hash(&self, _lock_hash: H256) -> RpcResult<GetCapacityResponse>;
+    // #[rpc(name = "get_live_cells_by_address")]
+    // fn get_live_cells_by_address(
+    //     &self,
+    //     _address: String,
+    //     _from_number_opt: Option<u64>,
+    //     _to_number_opt: Option<u64>,
+    //     _limit: usize,
+    // ) -> RpcResult<LiveCells>;
 
-    #[rpc(name = "get_live_cells_by_address")]
-    fn get_live_cells_by_address(
-        &self,
-        _address: String,
-        _from_number_opt: Option<u64>,
-        _to_number_opt: Option<u64>,
-        _limit: usize,
-    ) -> RpcResult<LiveCells>;
+    // #[rpc(name = "get_live_cells_by_lock_hash")]
+    // fn get_live_cells_by_lock_hash(
+    //     &self,
+    //     _lock_hash: H256,
+    //     _from_number_opt: Option<u64>,
+    //     _to_number_opt: Option<u64>,
+    //     _limit: usize,
+    // ) -> RpcResult<LiveCells>;
 
-    #[rpc(name = "get_live_cells_by_lock_hash")]
-    fn get_live_cells_by_lock_hash(
-        &self,
-        _lock_hash: H256,
-        _from_number_opt: Option<u64>,
-        _to_number_opt: Option<u64>,
-        _limit: usize,
-    ) -> RpcResult<LiveCells>;
+    // #[rpc(name = "get_live_cells_by_type_hash")]
+    // fn get_live_cells_by_type_hash(
+    //     &self,
+    //     _type_hash: H256,
+    //     _from_number_opt: Option<u64>,
+    //     _to_number_opt: Option<u64>,
+    //     _limit: usize,
+    // ) -> RpcResult<LiveCells>;
 
-    #[rpc(name = "get_live_cells_by_type_hash")]
-    fn get_live_cells_by_type_hash(
-        &self,
-        _type_hash: H256,
-        _from_number_opt: Option<u64>,
-        _to_number_opt: Option<u64>,
-        _limit: usize,
-    ) -> RpcResult<LiveCells>;
-
-    #[rpc(name = "get_live_cells_by_code_hash")]
-    fn get_live_cells_by_code_hash(
-        &self,
-        _code_hash: H256,
-        _from_number_opt: Option<u64>,
-        _to_number_opt: Option<u64>,
-        _limit: usize,
-    ) -> RpcResult<LiveCells>;
+    // #[rpc(name = "get_live_cells_by_code_hash")]
+    // fn get_live_cells_by_code_hash(
+    //     &self,
+    //     _code_hash: H256,
+    //     _from_number_opt: Option<u64>,
+    //     _to_number_opt: Option<u64>,
+    //     _limit: usize,
+    // ) -> RpcResult<LiveCells>;
 }
 
 struct ApiRpcImpl {
@@ -208,8 +192,7 @@ struct ApiRpcImpl {
     plugin_mgr: Arc<Mutex<PluginManager>>,
     genesis_info: Arc<Mutex<Option<GenesisInfo>>>,
     privkey_path: Option<String>,
-    index_dir: PathBuf,
-    index_controller: IndexController,
+    ckb_indexer_url: String,
 }
 
 impl ApiRpcImpl {
@@ -233,9 +216,7 @@ impl ApiRpcImpl {
             &mut rpc_client,
             &mut plugin_mgr,
             Some(genesis_info),
-            self.index_dir.clone(),
-            self.index_controller.clone(),
-            true,
+            self.ckb_indexer_url.as_str(),
         ))
     }
 }
@@ -266,15 +247,8 @@ impl ApiRpc for ApiRpcImpl {
             .set_network(network)
             .parse(&address)
             .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
-        self.get_capacity_by_lock_hash(lock_hash)
-    }
-
-    fn get_capacity_by_lock_hash(&self, lock_hash: H256) -> RpcResult<GetCapacityResponse> {
-        log::info!("[call]: get_capacity_by_lock_hash({:#x})", lock_hash);
-        let lock_hashes = vec![lock_hash.pack()];
         self.with_wallet(|cmd| {
-            cmd.get_capacity(lock_hashes)
+            cmd.get_capacity(vec![Script::from(address.payload())])
                 .map(|(total, immature, dao)| GetCapacityResponse {
                     total,
                     immature,
@@ -284,118 +258,118 @@ impl ApiRpc for ApiRpcImpl {
         })
     }
 
-    fn get_live_cells_by_address(
-        &self,
-        address: String,
-        from_number_opt: Option<u64>,
-        to_number_opt: Option<u64>,
-        limit: usize,
-    ) -> RpcResult<LiveCells> {
-        log::info!(
-            "[call]: get_live_cells_by_address({}, {:?}, {:?}, {})",
-            address,
-            from_number_opt,
-            to_number_opt,
-            limit,
-        );
-        let network = {
-            let mut rpc_client = self.rpc_client.lock().unwrap();
-            get_network_type(&mut rpc_client).map_err(internal_err)?
-        };
-        let address = AddressParser::default()
-            .set_network(network)
-            .parse(&address)
-            .map_err(RpcError::invalid_params)?;
-        let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
-        self.get_live_cells_by_lock_hash(lock_hash, from_number_opt, to_number_opt, limit)
-    }
+    // fn get_live_cells_by_address(
+    //     &self,
+    //     address: String,
+    //     from_number_opt: Option<u64>,
+    //     to_number_opt: Option<u64>,
+    //     limit: usize,
+    // ) -> RpcResult<LiveCells> {
+    //     log::info!(
+    //         "[call]: get_live_cells_by_address({}, {:?}, {:?}, {})",
+    //         address,
+    //         from_number_opt,
+    //         to_number_opt,
+    //         limit,
+    //     );
+    //     let network = {
+    //         let mut rpc_client = self.rpc_client.lock().unwrap();
+    //         get_network_type(&mut rpc_client).map_err(internal_err)?
+    //     };
+    //     let address = AddressParser::default()
+    //         .set_network(network)
+    //         .parse(&address)
+    //         .map_err(RpcError::invalid_params)?;
+    //     let lock_hash: H256 = Script::from(address.payload()).calc_script_hash().unpack();
+    //     self.get_live_cells_by_lock_hash(lock_hash, from_number_opt, to_number_opt, limit)
+    // }
 
-    fn get_live_cells_by_lock_hash(
-        &self,
-        lock_hash: H256,
-        from_number_opt: Option<u64>,
-        to_number_opt: Option<u64>,
-        limit: usize,
-    ) -> RpcResult<LiveCells> {
-        log::info!(
-            "[call]: get_live_cells_by_lock_hash({:#x}, {:?}, {:?}, {})",
-            lock_hash,
-            from_number_opt,
-            to_number_opt,
-            limit,
-        );
-        let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-        self.with_wallet(|cmd| {
-            cmd.get_live_cells(
-                to_number,
-                limit,
-                |db, terminator| {
-                    db.get_live_cells_by_lock(lock_hash.pack(), from_number_opt, terminator)
-                },
-                true,
-            )
-            .map(|result| result.0)
-            .map_err(RpcError::invalid_params)
-        })
-    }
+    // fn get_live_cells_by_lock_hash(
+    //     &self,
+    //     lock_hash: H256,
+    //     from_number_opt: Option<u64>,
+    //     to_number_opt: Option<u64>,
+    //     limit: usize,
+    // ) -> RpcResult<LiveCells> {
+    //     log::info!(
+    //         "[call]: get_live_cells_by_lock_hash({:#x}, {:?}, {:?}, {})",
+    //         lock_hash,
+    //         from_number_opt,
+    //         to_number_opt,
+    //         limit,
+    //     );
+    //     let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+    //     self.with_wallet(|cmd| {
+    //         cmd.get_live_cells(
+    //             to_number,
+    //             limit,
+    //             |db, terminator| {
+    //                 db.get_live_cells_by_lock(lock_hash.pack(), from_number_opt, terminator)
+    //             },
+    //             true,
+    //         )
+    //         .map(|result| result.0)
+    //         .map_err(RpcError::invalid_params)
+    //     })
+    // }
 
-    fn get_live_cells_by_type_hash(
-        &self,
-        type_hash: H256,
-        from_number_opt: Option<u64>,
-        to_number_opt: Option<u64>,
-        limit: usize,
-    ) -> RpcResult<LiveCells> {
-        log::info!(
-            "[call]: get_live_cells_by_type_hash({:#x}, {:?}, {:?}, {})",
-            type_hash,
-            from_number_opt,
-            to_number_opt,
-            limit,
-        );
-        let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-        self.with_wallet(|cmd| {
-            cmd.get_live_cells(
-                to_number,
-                limit,
-                |db, terminator| {
-                    db.get_live_cells_by_type(type_hash.pack(), from_number_opt, terminator)
-                },
-                true,
-            )
-            .map(|result| result.0)
-            .map_err(RpcError::invalid_params)
-        })
-    }
+    // fn get_live_cells_by_type_hash(
+    //     &self,
+    //     type_hash: H256,
+    //     from_number_opt: Option<u64>,
+    //     to_number_opt: Option<u64>,
+    //     limit: usize,
+    // ) -> RpcResult<LiveCells> {
+    //     log::info!(
+    //         "[call]: get_live_cells_by_type_hash({:#x}, {:?}, {:?}, {})",
+    //         type_hash,
+    //         from_number_opt,
+    //         to_number_opt,
+    //         limit,
+    //     );
+    //     let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+    //     self.with_wallet(|cmd| {
+    //         cmd.get_live_cells(
+    //             to_number,
+    //             limit,
+    //             |db, terminator| {
+    //                 db.get_live_cells_by_type(type_hash.pack(), from_number_opt, terminator)
+    //             },
+    //             true,
+    //         )
+    //         .map(|result| result.0)
+    //         .map_err(RpcError::invalid_params)
+    //     })
+    // }
 
-    fn get_live_cells_by_code_hash(
-        &self,
-        code_hash: H256,
-        from_number_opt: Option<u64>,
-        to_number_opt: Option<u64>,
-        limit: usize,
-    ) -> RpcResult<LiveCells> {
-        log::info!(
-            "[call]: get_live_cells_by_code_hash({:#x}, {:?}, {:?}, {})",
-            code_hash,
-            from_number_opt,
-            to_number_opt,
-            limit,
-        );
-        let to_number = to_number_opt.unwrap_or(std::u64::MAX);
-        self.with_wallet(|cmd| {
-            cmd.get_live_cells(
-                to_number,
-                limit,
-                |db, terminator| {
-                    db.get_live_cells_by_code(code_hash.pack(), from_number_opt, terminator)
-                },
-                true,
-            )
-            .map(|result| result.0)
-            .map_err(RpcError::invalid_params)
-        })
-    }
+    // fn get_live_cells_by_code_hash(
+    //     &self,
+    //     code_hash: H256,
+    //     from_number_opt: Option<u64>,
+    //     to_number_opt: Option<u64>,
+    //     limit: usize,
+    // ) -> RpcResult<LiveCells> {
+    //     log::info!(
+    //         "[call]: get_live_cells_by_code_hash({:#x}, {:?}, {:?}, {})",
+    //         code_hash,
+    //         from_number_opt,
+    //         to_number_opt,
+    //         limit,
+    //     );
+    //     let to_number = to_number_opt.unwrap_or(std::u64::MAX);
+    //     self.with_wallet(|cmd| {
+    //         cmd.get_live_cells(
+    //             to_number,
+    //             limit,
+    //             |db, terminator| {
+    //                 db.get_live_cells_by_code(code_hash.pack(), from_number_opt, terminator)
+    //             },
+    //             true,
+    //         )
+    //         .map(|result| result.0)
+    //         .map_err(RpcError::invalid_params)
+    //     })
+    // }
 }
 
 fn internal_err(message: String) -> RpcError {

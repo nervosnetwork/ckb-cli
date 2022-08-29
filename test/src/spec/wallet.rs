@@ -35,8 +35,8 @@ impl Spec for WalletTransfer {
             "wallet get-live-cells --address {}",
             miner_address
         ));
-        assert!(output.contains("current_count: 1\n"));
-        assert!(output.contains("total_count: 1"));
+        let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
+        assert_eq!(value["live_cells"].as_sequence().unwrap().len(), 1);
 
         setup.miner().generate_blocks(30);
 
@@ -49,7 +49,7 @@ impl Spec for WalletTransfer {
             "transfer from miner to account1 with 20000 CKB: {}",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
@@ -67,7 +67,7 @@ impl Spec for WalletTransfer {
             account1_privkey, ACCOUNT2_ADDRESS,
         ));
         log::info!("transfer 2000.0 CKB from account1 to account2: {}", tx_hash);
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
@@ -108,7 +108,7 @@ impl Spec for WalletTransfer {
             "transfer from miner to account2 with 30000.0 CKB (include input maturity filter): {}",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             ACCOUNT2_ADDRESS
@@ -129,7 +129,7 @@ impl Spec for WalletTransfer {
             "transfer from miner to account1 with 20000 CKB: {}, and with type_id lock script",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             ACCOUNT1_ADDRESS
@@ -179,7 +179,7 @@ impl Spec for WalletTransfer {
             "transfer from miner to an anyone-can-pay address with 180 CKB: {}",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
             anyone_can_pay_address,
@@ -211,7 +211,7 @@ impl Spec for WalletTimelockedAddress {
                 "transfer from miner to account1 with 50000 CKB: {}",
                 tx_hash
             );
-            setup.miner().generate_blocks(3);
+            setup.miner().mine_until_transaction_confirm(&tx_hash);
         }
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
@@ -247,7 +247,7 @@ impl Spec for WalletTimelockedAddress {
             "transfer from miner to account1 with 30000 CKB: {}",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
 
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",
@@ -271,7 +271,7 @@ impl Spec for WalletTimelockedAddress {
             "transfer from account2 timelocked address to account2 with 30000 CKB: {}",
             tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
 
         let output = setup.cli(&format!(
             "wallet get-capacity --address {}",

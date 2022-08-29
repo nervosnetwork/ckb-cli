@@ -63,9 +63,10 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
             capacity_ckb,
         ));
         log::info!("deploy script binary {}, tx_hash: {}", bin_path, tx_hash);
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
         let code_hash = {
             let output = setup.cli(&format!("util cell-meta --tx-hash {} --index 0", tx_hash));
+            log::info!("cell-meta output: {}", output);
             let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
             value["type_hash"].as_str().unwrap().to_string()
         };
@@ -102,7 +103,9 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
             tx_hash,
             dep_group_tx_hash
         );
-        setup.miner().generate_blocks(3);
+        setup
+            .miner()
+            .mine_until_transaction_confirm(&dep_group_tx_hash);
         dep_group_tx_hashes.push(dep_group_tx_hash);
     }
 
@@ -159,12 +162,12 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
 
     // Transfer 2000 ckb to 3 addresses
     for addr in [OWNER_ADDR, ACCOUNT1_ADDR, ACCOUNT2_ADDR] {
-        setup.cli(&format!(
+        let tx_hash = setup.cli(&format!(
             "wallet transfer --privkey-path {} --to-address {} --capacity 2000",
             miner_privkey, addr,
         ));
         log::info!("transfer 2000 CKB from miner to {}", addr);
-        setup.miner().generate_blocks(3);
+        setup.miner().mine_until_transaction_confirm(&tx_hash);
     }
 }
 
@@ -180,7 +183,7 @@ pub fn check_amount(
         owner_addr, addr, cell_deps_path,
     ));
     log::debug!("get amount:\n{}", output);
-    setup.miner().generate_blocks(3);
+    setup.miner().generate_blocks(6);
     let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
     assert_eq!(
         value["total_amount"].as_str().unwrap(),
@@ -201,7 +204,7 @@ pub fn create_acp_cell(
         owner_addr, addr, cell_deps_path, privkey_path,
     ));
     log::info!("create empty acp cell for {}:\n{}", addr, output);
-    setup.miner().generate_blocks(3);
+    setup.miner().generate_blocks(6);
     let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
     value["acp-address"].as_str().unwrap().to_string()
 }

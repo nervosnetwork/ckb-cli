@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use clap::{App, Arg, ArgMatches};
 
@@ -8,7 +7,8 @@ use ckb_sdk::{
     constants::SIGHASH_TYPE_HASH,
     traits::{
         default_impls::{
-            DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
+            DefaultCellCollector, DefaultCellDepResolver, DefaultHeaderDepResolver,
+            DefaultTransactionDependencyProvider,
         },
         CellCollector, CellQueryOptions, Signer,
     },
@@ -41,10 +41,8 @@ use crate::utils::{
         AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
         UdtTargetParser,
     },
-    cell_collector::LocalCellCollector,
     cell_dep::{CellDepName, CellDeps},
     genesis_info::GenesisInfo,
-    index::IndexController,
     other::{get_network_type, read_password},
     rpc::HttpRpcClient,
     signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
@@ -53,7 +51,7 @@ use crate::utils::{
 pub struct SudtSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
     rpc_client: &'a mut HttpRpcClient,
-    cell_collector: LocalCellCollector,
+    cell_collector: DefaultCellCollector,
     cell_dep_resolver: DefaultCellDepResolver,
     header_dep_resolver: DefaultHeaderDepResolver,
     tx_dep_provider: DefaultTransactionDependencyProvider,
@@ -64,18 +62,10 @@ impl<'a> SudtSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: GenesisInfo,
-        index_dir: PathBuf,
-        index_controller: IndexController,
-        wait_for_sync: bool,
+        ckb_indexer_url: &str,
     ) -> Self {
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_client.url(), 10);
-        let cell_collector = LocalCellCollector::new(
-            index_dir,
-            index_controller,
-            HttpRpcClient::new(rpc_client.url().to_string()),
-            Some(genesis_info.header().clone()),
-            wait_for_sync,
-        );
+        let cell_collector = DefaultCellCollector::new(ckb_indexer_url, rpc_client.url());
         let cell_dep_resolver = genesis_info.cell_dep_resolver;
         let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {
@@ -1190,7 +1180,7 @@ pub fn arg_cell_deps<'a>() -> Arg<'a> {
 pub struct UdtTxBuilder<'a> {
     pub plugin_mgr: &'a mut PluginManager,
     pub rpc_client: &'a HttpRpcClient,
-    pub cell_collector: &'a mut LocalCellCollector,
+    pub cell_collector: &'a mut DefaultCellCollector,
     pub cell_dep_resolver: &'a mut DefaultCellDepResolver,
     pub header_dep_resolver: &'a DefaultHeaderDepResolver,
     pub tx_dep_provider: &'a DefaultTransactionDependencyProvider,
@@ -1274,14 +1264,12 @@ impl<'a> UdtTxBuilder<'a> {
         let balancer = CapacityBalancer {
             fee_rate: FeeRate::from_u64(fee_rate),
             change_lock_script: None,
-            capacity_provider: CapacityProvider {
-                lock_scripts: vec![(
-                    capacity_provider,
-                    WitnessArgs::new_builder()
-                        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-                        .build(),
-                )],
-            },
+            capacity_provider: CapacityProvider::new_simple(vec![(
+                capacity_provider,
+                WitnessArgs::new_builder()
+                    .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                    .build(),
+            )]),
             force_small_change_as_fee: None,
         };
 

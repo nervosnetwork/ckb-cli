@@ -6,56 +6,92 @@ use ckb_chain_spec::consensus::Consensus;
 use ckb_chain_spec::ChainSpec;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 pub struct Setup {
     ckb_bin: String,
+    ckb_indexer_bin: String,
     cli_bin: String,
     pub keystore_plugin_bin: String,
     ckb_dir: String,
-    _ckb_cli_dir: String,
+    ckb_indexer_dir: String,
     rpc_port: u16,
+    indexer_port: u16,
     miner: Option<Miner>,
+    success: bool,
+    tempdir: PathBuf,
 }
 
 // TODO Make CLI base_dir configurable
 impl Setup {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ckb_bin: String,
+        ckb_indexer_bin: String,
         cli_bin: String,
         keystore_plugin_bin: String,
         ckb_dir: String,
-        ckb_cli_dir: String,
+        ckb_indexer_dir: String,
         rpc_port: u16,
+        indexer_port: u16,
+        tempdir: tempfile::TempDir,
     ) -> Self {
         Self {
             ckb_bin,
+            ckb_indexer_bin,
             cli_bin,
             keystore_plugin_bin,
             ckb_dir,
-            _ckb_cli_dir: ckb_cli_dir,
+            ckb_indexer_dir,
             rpc_port,
+            indexer_port,
             miner: None,
+            success: false,
+            tempdir: tempdir.into_path(),
         }
     }
 
-    pub fn ready(&mut self, spec: &dyn Spec) -> ProcessGuard {
+    pub fn ready(&mut self, spec: &dyn Spec) -> (ProcessGuard, ProcessGuard) {
         self.modify_ckb_toml(&*spec);
         self.modify_spec_toml(&*spec);
 
-        let child_process = Command::new(&self.ckb_bin)
+        let mut ckb_cmd = Command::new(&self.ckb_bin);
+        ckb_cmd.args(&["-C", &self.ckb_dir, "run", "--ba-advanced"]);
+
+        let mut indexer_cmd = Command::new(&self.ckb_indexer_bin);
+        indexer_cmd.env("RUST_BACKTRACE", "full").args(&[
+            "-c",
+            self.rpc_url().as_str(),
+            "-s",
+            self.ckb_indexer_dir.as_str(),
+            "-l",
+            self.indexer_addr().as_str(),
+        ]);
+        log::info!("run ckb: {:?}", ckb_cmd);
+        log::info!("run ckb indexer: {:?}", indexer_cmd);
+
+        let ckb_child_process = ckb_cmd
             .env("RUST_BACKTRACE", "full")
-            .args(&["-C", &self.ckb_dir, "run", "--ba-advanced"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
             .spawn()
             .expect("Run `ckb run` failed");
+
+        let indexer_child_process = indexer_cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("Run `ckb-indexer` failed");
         sleep(Duration::from_secs(3)); // Wait for ckb starting RPC thread
-        ProcessGuard(child_process)
+        (
+            ProcessGuard(ckb_child_process),
+            ProcessGuard(indexer_child_process),
+        )
     }
 
     pub fn miner(&mut self) -> &Miner {
@@ -65,8 +101,18 @@ impl Setup {
         self.miner.as_ref().unwrap()
     }
 
+    pub fn success(&mut self) {
+        self.success = true;
+    }
+
     pub fn rpc_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.rpc_port)
+    }
+    pub fn indexer_url(&self) -> String {
+        format!("http://{}", self.indexer_addr())
+    }
+    pub fn indexer_addr(&self) -> String {
+        format!("127.0.0.1:{}", self.indexer_port)
     }
 
     pub fn consensus(&self) -> Consensus {
@@ -80,7 +126,12 @@ impl Setup {
         log::info!("[Execute]: {}", command);
         loop {
             let mut child = Command::new(&self.cli_bin)
-                .args(vec!["--url", &self.rpc_url()])
+                .args(vec![
+                    "--url",
+                    &self.rpc_url(),
+                    "--ckb-indexer-url",
+                    &self.indexer_url(),
+                ])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -127,6 +178,15 @@ impl Setup {
 
         spec.modify_spec_toml(&mut spec_toml);
         fs::write(&path, toml::to_string(&spec_toml).unwrap()).expect("Dump dev.toml");
+    }
+}
+
+impl Drop for Setup {
+    fn drop(&mut self) {
+        if self.success {
+            log::info!("remove directory: {:?}", self.tempdir);
+            fs::remove_dir_all(&self.tempdir).unwrap();
+        }
     }
 }
 

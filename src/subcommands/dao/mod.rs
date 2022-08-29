@@ -1,14 +1,13 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use byteorder::{ByteOrder, LittleEndian};
 
-use ckb_index::LiveCellInfo;
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, SIGHASH_TYPE_HASH},
     traits::{
         default_impls::{
-            DefaultCellDepResolver, DefaultHeaderDepResolver, DefaultTransactionDependencyProvider,
+            DefaultCellCollector, DefaultCellDepResolver, DefaultHeaderDepResolver,
+            DefaultTransactionDependencyProvider,
         },
         CellCollector, CellQueryOptions, Signer, ValueRangeOption,
     },
@@ -29,12 +28,11 @@ use ckb_types::{
     prelude::*,
     H160,
 };
+use plugin_protocol::LiveCellInfo;
 
 use self::command::TransactArgs;
 use crate::plugin::PluginManager;
-use crate::utils::cell_collector::LocalCellCollector;
 use crate::utils::genesis_info::GenesisInfo;
-use crate::utils::index::IndexController;
 use crate::utils::other::{read_password, to_live_cell_info};
 use crate::utils::rpc::HttpRpcClient;
 use crate::utils::signer::KeyStoreHandlerSigner;
@@ -46,7 +44,7 @@ mod util;
 pub struct DAOSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
     rpc_client: &'a mut HttpRpcClient,
-    cell_collector: LocalCellCollector,
+    cell_collector: DefaultCellCollector,
     cell_dep_resolver: DefaultCellDepResolver,
     header_dep_resolver: DefaultHeaderDepResolver,
     tx_dep_provider: DefaultTransactionDependencyProvider,
@@ -57,18 +55,10 @@ impl<'a> DAOSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: GenesisInfo,
-        index_dir: PathBuf,
-        index_controller: IndexController,
-        wait_for_sync: bool,
+        ckb_indexer_url: &str,
     ) -> Self {
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_client.url(), 10);
-        let cell_collector = LocalCellCollector::new(
-            index_dir,
-            index_controller,
-            HttpRpcClient::new(rpc_client.url().to_string()),
-            Some(genesis_info.header().clone()),
-            wait_for_sync,
-        );
+        let cell_collector = DefaultCellCollector::new(ckb_indexer_url, rpc_client.url());
         let cell_dep_resolver = genesis_info.cell_dep_resolver;
         let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {
@@ -90,14 +80,12 @@ impl<'a> DAOSubCommand<'a> {
         let balancer = CapacityBalancer {
             fee_rate: FeeRate::from_u64(args.fee_rate),
             change_lock_script: None,
-            capacity_provider: CapacityProvider {
-                lock_scripts: vec![(
-                    lock_script.clone(),
-                    WitnessArgs::new_builder()
-                        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-                        .build(),
-                )],
-            },
+            capacity_provider: CapacityProvider::new_simple(vec![(
+                lock_script.clone(),
+                WitnessArgs::new_builder()
+                    .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+                    .build(),
+            )]),
             force_small_change_as_fee: None,
         };
 

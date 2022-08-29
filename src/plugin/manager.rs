@@ -12,7 +12,6 @@ use std::thread::{self, JoinHandle};
 use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
-use ckb_index::LiveCellInfo;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
 use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
@@ -22,7 +21,7 @@ use crate::utils::other::read_password;
 use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
-    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, PluginConfig, PluginRequest,
+    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, LiveCellInfo, PluginConfig, PluginRequest,
     PluginResponse, PluginRole, RpcRequest, SignTarget,
 };
 
@@ -671,7 +670,7 @@ impl ServiceProvider {
                                         Ok(keystore_process) => {
                                             let handler = keystore_daemon
                                                 .as_ref()
-                                                .or_else(|| keystore_process.as_ref())
+                                                .or(keystore_process.as_ref())
                                                 .map(|process| process.handler())
                                                 .unwrap_or_else(|| default_keystore.handler())
                                                 .clone();
@@ -725,7 +724,7 @@ impl ServiceProvider {
                                         Ok(indexer_process) => {
                                             let handler = indexer_daemon
                                                 .as_ref()
-                                                .or_else(|| indexer_process.as_ref())
+                                                .or(indexer_process.as_ref())
                                                 .map(|process| process.handler())
                                                 .unwrap_or_else(|| default_indexer.handler())
                                                 .clone();
@@ -1066,7 +1065,7 @@ impl PluginProcess {
 pub struct Plugin {
     // Executable binary path
     path: PathBuf,
-    args: Vec<String>,
+    _args: Vec<String>,
     is_active: bool,
 }
 
@@ -1074,7 +1073,7 @@ impl Plugin {
     pub fn new(path: PathBuf, args: Vec<String>, is_active: bool) -> Plugin {
         Plugin {
             path,
-            args,
+            _args: args,
             is_active,
         }
     }

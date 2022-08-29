@@ -1,11 +1,9 @@
 pub mod arg;
 pub mod arg_parser;
-pub mod cell_collector;
 pub mod cell_dep;
 pub mod completer;
 pub mod config;
 pub mod genesis_info;
-pub mod index;
 pub mod json_color;
 pub mod mock_tx_helper;
 pub mod other;

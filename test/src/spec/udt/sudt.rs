@@ -31,7 +31,7 @@ impl Spec for SudtIssueToCheque {
             .as_str()
             .unwrap()
             .to_string();
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -61,7 +61,7 @@ impl Spec for SudtIssueToCheque {
             "Claim the SUDT to the new created anyone-can-pay-cell:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -93,7 +93,7 @@ impl Spec for SudtIssueToCheque {
             "Transfer a part of the claimd SUDT to new cell:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -149,7 +149,7 @@ impl Spec for SudtIssueToAcp {
             "Issue 300 SUDT to account 1's anyone-can-pay address:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
         check_amount(
             setup,
             OWNER_ADDR,
@@ -178,7 +178,7 @@ impl Spec for SudtIssueToAcp {
             "Issue 200 SUDT to account 1 and 400 to account 2:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -238,7 +238,7 @@ impl Spec for SudtTransferToMultiAcp {
             owner_key_path,
         ));
         log::info!("Issue 300 SUDT to account 1's acp address:\n{}", output);
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
         let output = setup.cli(&format!(
             "sudt transfer --owner {} --sender {} --udt-to {}:150 --udt-to {}:100 --to-acp-address --cell-deps {} --privkey-path {}",
             OWNER_ADDR,
@@ -252,7 +252,7 @@ impl Spec for SudtTransferToMultiAcp {
             "Transfer 150 SUDT to owner, 100 SUDT to account 2, from account 1:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
         check_amount(
             setup,
             OWNER_ADDR,
@@ -315,7 +315,7 @@ impl Spec for SudtTransferToChequeForClaim {
             "Issue 1100 SUDT to account 1's anyone-can-pay address:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -334,7 +334,7 @@ impl Spec for SudtTransferToChequeForClaim {
             account1_key_path,
         ));
         log::info!("Transfer 500 SUDT from account 1 anyone-can-pay address to account 2 cheque address:\n{}", output);
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -360,7 +360,7 @@ impl Spec for SudtTransferToChequeForClaim {
             account2_key_path,
         ));
         log::info!("Claim the SUDT to account 2:\n{}", output);
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -408,7 +408,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
             "Issue 1100 SUDT to account 1's anyone-can-pay address:\n{}",
             output
         );
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -427,7 +427,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
             account1_key_path,
         ));
         log::info!("Transfer 500 SUDT from account 1 anyone-can-pay address to account 2 cheque address:\n{}", output);
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,
@@ -459,7 +459,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
             account1_key_path,
         ));
         log::info!("Withdraw the SUDT amount:\n{}", output);
-        setup.miner().generate_blocks(3);
+        setup.miner().generate_blocks(6);
 
         check_amount(
             setup,

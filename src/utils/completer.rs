@@ -7,7 +7,7 @@ use ansi_term::Colour::{Green, Red};
 use rustyline::completion::{extract_word, Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
-use rustyline::hint::{Hinter, HistoryHinter};
+use rustyline::hint::Hinter;
 use rustyline::validate::{self, MatchingBracketValidator, Validator};
 use rustyline::{CompletionType, Context};
 use rustyline_derive::Helper;
@@ -34,7 +34,6 @@ pub struct CkbCompleter<'a> {
     clap_app: Arc<clap::App<'a>>,
     completer: FilenameCompleter,
     validator: MatchingBracketValidator,
-    hinter: HistoryHinter,
 }
 
 impl<'a> CkbCompleter<'a> {
@@ -42,7 +41,6 @@ impl<'a> CkbCompleter<'a> {
         CkbCompleter {
             clap_app: Arc::new(clap_app),
             completer: FilenameCompleter::new(),
-            hinter: HistoryHinter {},
             validator: MatchingBracketValidator::new(),
         }
     }
@@ -198,8 +196,8 @@ impl<'a> Completer for CkbCompleter<'a> {
 impl<'a> Hinter for CkbCompleter<'a> {
     type Hint = String;
 
-    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<String> {
-        self.hinter.hint(line, pos, ctx)
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        None
     }
 }
 

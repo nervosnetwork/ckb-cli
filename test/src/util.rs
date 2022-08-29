@@ -1,5 +1,5 @@
 use std::net::TcpListener;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use tempfile::{tempdir, TempDir};
 
 pub struct ProcessGuard(pub Child);
@@ -16,14 +16,16 @@ impl Drop for ProcessGuard {
 
 pub fn run_cmd(bin: &str, args: Vec<&str>) -> String {
     log::info!("[Execute]: {} {:?}", bin, args.join(" "));
-    let init_output = Command::new(bin.to_owned())
+    let init_output = Command::new(bin)
         .env("RUST_BACKTRACE", "full")
         .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .output()
         .expect("Run command failed");
 
     if !init_output.status.success() {
-        log::error!("{}", String::from_utf8_lossy(init_output.stderr.as_slice()));
+        log::error!("output: {:?}", init_output);
         panic!("Fail to execute command");
     }
     String::from_utf8_lossy(init_output.stdout.as_slice()).to_string()

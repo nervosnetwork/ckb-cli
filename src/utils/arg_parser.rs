@@ -21,6 +21,7 @@ use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
 
 use crate::utils::cell_dep::CellDeps;
 
+#[allow(clippy::wrong_self_convention)]
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
 
@@ -63,7 +64,7 @@ pub trait ArgParser<T> {
     ) -> Result<Vec<R>, String> {
         matches
             .values_of_lossy(name)
-            .unwrap_or_else(Vec::new)
+            .unwrap_or_default()
             .into_iter()
             .map(|input| self.parse(&input).map(Into::into))
             .collect()
