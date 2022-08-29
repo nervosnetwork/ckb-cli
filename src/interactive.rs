@@ -134,8 +134,7 @@ impl InteractiveEnv {
 
         let rl_config = Config::builder()
             .history_ignore_space(true)
-            .completion_type(CompletionType::List)
-            .edit_mode(EditMode::Emacs)
+            .max_history_size(1000)
             .build();
         let mut rl = Editor::with_config(rl_config);
         let helper = CkbCompleter::new(parser.clone());
