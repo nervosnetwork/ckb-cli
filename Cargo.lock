@@ -389,7 +389,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "ansi_term",
  "atty",
@@ -405,7 +405,7 @@ dependencies = [
  "ckb-jsonrpc-types",
  "ckb-mock-tx-types",
  "ckb-script",
- "ckb-sdk 2.0.0",
+ "ckb-sdk",
  "ckb-signer",
  "ckb-types",
  "ckb-util",
@@ -451,7 +451,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli-plugin-protocol"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "ckb-jsonrpc-types",
  "ckb-types",
@@ -670,36 +670,6 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e73cd1e12195e22b169321c650ea06ec430583894224ab4661de5f082d7026f"
-dependencies = [
- "bech32",
- "bytes 1.2.1",
- "ckb-crypto",
- "ckb-dao-utils",
- "ckb-hash",
- "ckb-jsonrpc-types",
- "ckb-resource",
- "ckb-traits",
- "ckb-types",
- "futures 0.3.21",
- "jsonrpc-core",
- "log",
- "lru",
- "parking_lot 0.12.1",
- "reqwest",
- "secp256k1",
- "serde",
- "serde_derive",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util 0.6.10",
-]
-
-[[package]]
-name = "ckb-sdk"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e92fc6b17a2425031480515f4c538323eaa3cae1196a726e0afce3f9a4fce239"
@@ -735,14 +705,14 @@ dependencies = [
 
 [[package]]
 name = "ckb-signer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-ctr",
  "bitcoin",
  "chrono",
  "ckb-crypto",
  "ckb-hash",
- "ckb-sdk 1.1.0",
+ "ckb-sdk",
  "ckb-types",
  "faster-hex",
  "parking_lot 0.11.2",
