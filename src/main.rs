@@ -373,10 +373,8 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
                 .validator(|input| UrlParser.validate(input))
                 .about(
                     r#"CKB RPC server url.
-  * default: http://127.0.0.1:8114
-  * mainnet public: https://mainnet.ckbapp.dev/rpc
-  * testnet public: https://testnet.ckbapp.dev/rpc
-More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+The default value is http://127.0.0.1:8114
+You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                 ),
         )
         .arg(
@@ -386,10 +384,8 @@ More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Publ
                 .validator(|input| UrlParser.validate(input))
                 .about(
                     r#"CKB indexer server RPC url.
-  * default: http://127.0.0.1:8116
-  * mainnet public: https://mainnet.ckbapp.dev/indexer
-  * testnet public: https://testnet.ckbapp.dev/indexer
-More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+The default value is http://127.0.0.1:8116
+You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                 ),
         )
         .arg(
@@ -438,10 +434,8 @@ pub fn build_interactive() -> App<'static> {
                         .takes_value(true)
                         .about(
                             r#"CKB RPC server url.
-  * default: http://127.0.0.1:8114
-  * mainnet public: https://mainnet.ckbapp.dev/rpc
-  * testnet public: https://testnet.ckbapp.dev/rpc
-More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+The default value is http://127.0.0.1:8114
+You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                         ),
                 )
                 .arg(
@@ -451,10 +445,8 @@ More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Publ
                         .validator(|input| UrlParser.validate(input))
                         .about(
                             r#"CKB indexer server RPC url.
-  * default: http://127.0.0.1:8116
-  * mainnet public: https://mainnet.ckbapp.dev/indexer
-  * testnet public: https://testnet.ckbapp.dev/indexer
-More available nodes, please see: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
+The default value is http://127.0.0.1:8116
+You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                         ),
                 )
                 .arg(
