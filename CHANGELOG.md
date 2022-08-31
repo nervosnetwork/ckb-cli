@@ -1,3 +1,17 @@
+# v1.1.0
+* Update ckb deps from `v0.103.0` to `v0.104.0`
+* **BREAKING**: remove `ckb-index` crate, and effect following subcommands:
+  - remove `index` subcommand
+  - remove `wallet top-capacity` subcommand
+  - remove `wallet get-capacity --lock-hash` support
+  - remove `wallet get-live-cells --lock-hash` support
+  - remove `wallet get-live-cells --type-hash` support
+  - remove `wallet get-live-cells --code-hash` support
+* Use [`ckb-indexer`][ckb-indexer-repo] as index backend
+* Update `ckb-sdk` to `v2.0.0`
+* Guide user to select ckb/ckb-indexer url for the first time
+* Add `--local-only` flag to not check alerts and get network type when startup
+
 # v1.0.0
 * Update ckb from `v0.101.3` to `v0.103.0`
 * Remove `ckb-sdk` from `ckb-cli` and created as an [standalone repository](https://github.com/nervosnetwork/ckb-sdk-rust)
@@ -21,3 +35,4 @@
 
 
 [sudt-wiki]: https://github.com/nervosnetwork/ckb-cli/wiki/UDT-(sudt)-Operations-Tutorial
+[ckb-indexer-repo]: https://github.com/nervosnetwork/ckb-indexer
