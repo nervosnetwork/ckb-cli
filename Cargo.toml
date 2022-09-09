@@ -1,6 +1,6 @@
 [package]
 name = "ckb-cli"
-version = "1.1.0"
+version = "1.1.1"
 license = "MIT"
 authors = ["Linfeng Qian <thewawar@gmail.com>", "Nervos Core Dev <dev@nervos.org>"]
 edition = "2021"

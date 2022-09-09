@@ -62,9 +62,6 @@ fn main() -> Result<(), io::Error> {
 
     let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
         let dir = PathBuf::from(dir_string.as_str());
-        if !dir.exists() {
-            fs::create_dir_all(&dir)?;
-        }
         if dir.exists() && !dir.is_dir() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -77,6 +74,9 @@ fn main() -> Result<(), io::Error> {
         dir.push(".ckb-cli");
         dir
     };
+    if !ckb_cli_dir.exists() {
+        fs::create_dir_all(&ckb_cli_dir)?;
+    }
 
     let mut config = GlobalConfig::new(ckb_url_opt.clone(), ckb_indexer_url_opt.clone());
     let mut config_file = ckb_cli_dir.clone();
