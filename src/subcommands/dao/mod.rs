@@ -55,10 +55,9 @@ impl<'a> DAOSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: GenesisInfo,
-        ckb_indexer_url: &str,
     ) -> Self {
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(rpc_client.url(), 10);
-        let cell_collector = DefaultCellCollector::new(ckb_indexer_url, rpc_client.url());
+        let cell_collector = DefaultCellCollector::new(rpc_client.url());
         let cell_dep_resolver = genesis_info.cell_dep_resolver;
         let header_dep_resolver = DefaultHeaderDepResolver::new(rpc_client.url());
         Self {

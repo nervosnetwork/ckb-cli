@@ -11,15 +11,6 @@ rm -rf test/target && ln -snf ../target/ test/target
 mkdir -p ../ckb-cli-integration
 cd ../ckb-cli-integration
 
-# Install ckb-indexer
-if [ ! -d "ckb-indexer" ]; then
-    git clone --depth 1 --branch v0.4.1 https://github.com/nervosnetwork/ckb-indexer.git
-fi
-cd ckb-indexer
-cargo build --release
-CKB_INDEXER_BIN="$(pwd)/target/release/ckb-indexer"
-cd ..
-
 cd ${CKB_CLI_DIR}
 make prod
 cd ../ckb-cli-integration
@@ -46,8 +37,10 @@ else
     rm -rf target && ln -snf ${CKB_CLI_DIR}/target target
     # make prod_portable
     echo "building portable ckb"
-    RUSTFLAGS="--cfg disable_faketime" cargo build --profile prod --features "with_sentry,with_dns_seeding,portable"
     CKB_BIN="$(pwd)/target/prod/ckb"
+    if [ ! -f $CKB_BIN ]; then
+        make prod_portable
+    fi
 fi
 
 cd $CKB_CLI_DIR
@@ -60,6 +53,5 @@ export RUST_LOG=ckb_cli=info,cli_test=info
 
 cd test && cargo run -- \
                  --ckb-bin "${CKB_BIN}" \
-                 --ckb-indexer-bin "${CKB_INDEXER_BIN}" \
                  --cli-bin "${CKB_CLI_DIR}/target/release/ckb-cli" \
                  --keystore-plugin "${CKB_CLI_DIR}/target/debug/examples/keystore_no_password"

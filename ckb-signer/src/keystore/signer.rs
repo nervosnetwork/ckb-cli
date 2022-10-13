@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::anyhow;
+use bitcoin::util::bip32::DerivationPath;
 use parking_lot::Mutex;
 
-use bitcoin::util::bip32::DerivationPath;
 use ckb_sdk::traits::{Signer, SignerError};
 use ckb_sdk::util::serialize_signature;
 use ckb_types::{bytes::Bytes, core::TransactionView, H160, H256};
@@ -44,8 +45,8 @@ impl FileSystemKeystoreSigner {
         if ckb_root_opt.is_none() {
             self.hd_ids.remove(hash160);
         }
-        let ckb_root = ckb_root_opt
-            .ok_or_else(|| SignerError::Other("master key not found".to_string().into()))?;
+        let ckb_root =
+            ckb_root_opt.ok_or_else(|| SignerError::Other(anyhow!("master key not found")))?;
         self.hd_ids
             .insert(hash160.clone(), (DerivationPath::default(), None));
 

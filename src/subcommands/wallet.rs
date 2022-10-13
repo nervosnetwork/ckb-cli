@@ -59,7 +59,6 @@ pub struct WalletSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
     rpc_client: &'a mut HttpRpcClient,
     genesis_info: Option<GenesisInfo>,
-    ckb_indexer_url: &'a str,
 }
 
 impl<'a> WalletSubCommand<'a> {
@@ -67,13 +66,11 @@ impl<'a> WalletSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: &'a mut PluginManager,
         genesis_info: Option<GenesisInfo>,
-        ckb_indexer_url: &'a str,
     ) -> WalletSubCommand<'a> {
         WalletSubCommand {
             rpc_client,
             plugin_mgr,
             genesis_info,
-            ckb_indexer_url,
         }
     }
 
@@ -380,8 +377,7 @@ impl<'a> WalletSubCommand<'a> {
             force_small_change_as_fee: None,
         };
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(self.rpc_client.url(), 10);
-        let mut cell_collector =
-            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
+        let mut cell_collector = DefaultCellCollector::new(self.rpc_client.url());
         let header_dep_resolver = DefaultHeaderDepResolver::new(self.rpc_client.url());
 
         // Add outputs
@@ -452,8 +448,7 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     pub fn get_capacity(&mut self, lock_scripts: Vec<Script>) -> Result<(u64, u64, u64), String> {
-        let mut cell_collector =
-            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
+        let mut cell_collector = DefaultCellCollector::new(self.rpc_client.url());
         let max_mature_number = get_max_mature_number(self.rpc_client.client())?;
         let mut total_all = 0;
         let mut total_immature = 0;
@@ -493,8 +488,7 @@ impl<'a> WalletSubCommand<'a> {
         to_number: u64,
         limit: u32,
     ) -> Result<Vec<LiveCell>, String> {
-        let mut cell_collector =
-            DefaultCellCollector::new(self.ckb_indexer_url, self.rpc_client.url());
+        let mut cell_collector = DefaultCellCollector::new(self.rpc_client.url());
 
         let mut query = CellQueryOptions::new(script, script_type);
         query.maturity = MaturityOption::Both;

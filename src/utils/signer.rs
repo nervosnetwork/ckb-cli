@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use bitcoin::util::bip32::DerivationPath;
 
 use ckb_hash::blake2b_256;
@@ -245,10 +246,10 @@ impl Signer for KeyStoreHandlerSigner {
         let (password, sign_target) = if self
             .handler
             .has_account_in_default(account.clone())
-            .map_err(|err| SignerError::Other(err.into()))?
+            .map_err(|err| SignerError::Other(anyhow!(err)))?
         {
             let password = self.passwords.get(&account).cloned().ok_or_else(|| {
-                SignerError::Other(format!("no password is set for account: {:x}", account).into())
+                SignerError::Other(anyhow!("no password is set for account: {:x}", account))
             })?;
             let target = SignTarget::AnyData(Default::default());
             (Some(password), target)
@@ -266,9 +267,7 @@ impl Signer for KeyStoreHandlerSigner {
                 .collect::<Result<Vec<_>, TransactionDependencyError>>()
                 .map_err(|err| SignerError::Other(err.into()))?;
             let change_path = self.change_paths.get(&account).cloned().ok_or_else(|| {
-                SignerError::Other(
-                    format!("no change path is set for account: {:x}", account).into(),
-                )
+                SignerError::Other(anyhow!("no change path is set for account: {:x}", account))
             })?;
             let target = SignTarget::Transaction {
                 tx: tx.data().into(),
@@ -279,7 +278,7 @@ impl Signer for KeyStoreHandlerSigner {
         };
         self.handler
             .sign(account, &path, msg, sign_target, password, recoverable)
-            .map_err(|err| SignerError::Other(err.into()))
+            .map_err(|err| SignerError::Other(anyhow!(err)))
     }
 }
 
