@@ -18,7 +18,7 @@ ci: fmt clippy test security-audit check-crates check-licenses
 
 integration:
 	# bash devtools/ci/integration.sh v0.104.0
-	bash devtools/ci/integration.sh zhangsoledad/merge-indexer-customize
+	bash devtools/ci/integration.sh develop
 
 prod: ## Build binary with release profile.
 	cargo build --release
