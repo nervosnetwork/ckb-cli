@@ -80,9 +80,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.62"
+version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1485d4d2cc45e7b201ee3767015c96faa5904387c9d87c6efdd0fb511f12d305"
+checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
 name = "arrayref"
@@ -190,15 +190,6 @@ name = "blake2b-ref"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95916998c798756098a4eb1b3f2cd510659705a9817bf203d61abd30fbec3e7b"
-
-[[package]]
-name = "blake2b-rs"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e35e362830ef90ecea16f09b21b75d22d33a8562a679c74ab4f4fa49b4fcb87"
-dependencies = [
- "cc",
-]
 
 [[package]]
 name = "blake2b-rs"
@@ -544,7 +535,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac70ef20b9dac406f06bead70c0a2e4742205234f58051885e6ae1f50786e6be"
 dependencies = [
  "blake2b-ref",
- "blake2b-rs 0.2.0",
+ "blake2b-rs",
 ]
 
 [[package]]
@@ -670,10 +661,11 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "2.0.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e92fc6b17a2425031480515f4c538323eaa3cae1196a726e0afce3f9a4fce239"
+checksum = "d616057ea02546c88a78e4cc04fb99a4a4f74b491eca025db444ab211bae88c8"
 dependencies = [
+ "anyhow",
  "bech32",
  "bitflags",
  "bytes 1.2.1",
@@ -731,7 +723,7 @@ version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa5c59063142de7a68cfad4449c6b3863563856219a2925dfb8c5f019ec2aa47"
 dependencies = [
- "blake2b-rs 0.2.0",
+ "blake2b-rs",
  "faster-hex",
  "includedir",
  "includedir_codegen",
@@ -2946,11 +2938,12 @@ dependencies = [
 
 [[package]]
 name = "sparse-merkle-tree"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f84214ec89cb9d304b5d54c7a266951c25bd396b2df5388420a9497a6896120a"
+checksum = "003e22ea773521fc026fa2a1374bd3d89cd287b6ae10ad925c971faeb30f2139"
 dependencies = [
- "blake2b-rs 0.1.5",
+ "blake2b-rs",
+ "cc",
  "cfg-if 0.1.10",
 ]
 
