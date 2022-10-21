@@ -6,18 +6,16 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use ansi_term::Colour::Yellow;
-use ckb_sdk::{CkbRpcClient, IndexerRpcClient, NetworkType};
+use ckb_sdk::{CkbRpcClient, NetworkType};
 use regex::{Captures, Regex};
 use serde_json::json;
 
 use crate::utils::printer::{OutputFormat, Printable};
 
 pub const DEFAULT_CKB_URL: &str = "http://127.0.0.1:8114";
-pub const DEFAULT_CKB_INDEXER_URL: &str = "http://127.0.0.1:8116";
 
 pub struct GlobalConfig {
     url: Option<String>,
-    ckb_indexer_url: Option<String>,
     network: Option<NetworkType>,
     color: bool,
     debug: bool,
@@ -30,10 +28,9 @@ pub struct GlobalConfig {
 }
 
 impl GlobalConfig {
-    pub fn new(url: Option<String>, ckb_indexer_url: Option<String>) -> Self {
+    pub fn new(url: Option<String>) -> Self {
         GlobalConfig {
             url,
-            ckb_indexer_url,
             network: None,
             color: true,
             debug: false,
@@ -117,19 +114,6 @@ impl GlobalConfig {
     }
     pub fn get_url(&self) -> &str {
         self.url.as_deref().unwrap_or(DEFAULT_CKB_URL)
-    }
-
-    pub fn set_ckb_indexer_url(&mut self, value: String) {
-        if value.starts_with("http://") || value.starts_with("https://") {
-            self.ckb_indexer_url = Some(value);
-        } else {
-            self.ckb_indexer_url = Some(format!("http://{}", value));
-        }
-    }
-    pub fn get_ckb_indexer_url(&self) -> &str {
-        self.ckb_indexer_url
-            .as_deref()
-            .unwrap_or(DEFAULT_CKB_INDEXER_URL)
     }
 
     pub fn set_network(&mut self, network: Option<NetworkType>) {
@@ -235,28 +219,10 @@ impl GlobalConfig {
             network_string,
             ckb_tip
         );
-        let ckb_indexer_url = self.get_ckb_indexer_url();
-        let ckb_indexer_tip = if fast_mode {
-            "loading...".to_string()
-        } else {
-            match IndexerRpcClient::new(ckb_indexer_url).get_tip() {
-                Ok(Some(tip)) => {
-                    format!(
-                        "0x{}#{}",
-                        faster_hex::hex_string(&tip.block_hash.as_bytes()[0..3]),
-                        tip.block_number.value()
-                    )
-                }
-                Ok(None) => "waiting...".to_string(),
-                Err(err) => err.to_string(),
-            }
-        };
-        let ckb_indexer_status = format!("{} ({})", ckb_indexer_url, ckb_indexer_tip);
 
         let values = [
             ("ckb-cli version", version_long.as_str()),
             ("url", url_string.as_str()),
-            ("ckb-indexer", ckb_indexer_status.as_str()),
             ("pwd", path.deref()),
             ("color", color.as_str()),
             ("debug", debug.as_str()),
@@ -290,7 +256,6 @@ impl GlobalConfig {
         let mut file = fs::File::create(path)?;
         let content = serde_json::to_string_pretty(&json!({
             "url": self.get_url().to_string(),
-            "ckb-indexer-url": self.get_ckb_indexer_url().to_string(),
             "color": self.color(),
             "debug": self.debug(),
             "no-sync": self.no_sync(),

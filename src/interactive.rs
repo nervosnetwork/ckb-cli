@@ -38,7 +38,6 @@ pub struct InteractiveEnv {
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
     raw_rpc_client: RawHttpRpcClient,
-    ckb_indexer_url: String,
     genesis_info: Option<GenesisInfo>,
 }
 
@@ -48,7 +47,6 @@ impl InteractiveEnv {
         mut config: GlobalConfig,
         plugin_mgr: PluginManager,
         key_store: KeyStore,
-        ckb_indexer_url: String,
     ) -> Result<InteractiveEnv, String> {
         if !ckb_cli_dir.as_path().exists() {
             fs::create_dir(&ckb_cli_dir).map_err(|err| err.to_string())?;
@@ -81,7 +79,6 @@ impl InteractiveEnv {
             key_store,
             rpc_client,
             raw_rpc_client,
-            ckb_indexer_url,
             genesis_info: None,
         })
     }
@@ -260,10 +257,6 @@ impl InteractiveEnv {
                             .set_network(get_network_type(&mut self.rpc_client).ok());
                         self.genesis_info = None;
                     };
-                    if let Some(url) = m.value_of("ckb-indexer-url") {
-                        self.config.set_ckb_indexer_url(url.to_string());
-                        self.ckb_indexer_url = url.to_string();
-                    }
                     if m.is_present("color") {
                         self.config.switch_color();
                     }
@@ -362,7 +355,6 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         Some(genesis_info),
-                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);
@@ -374,7 +366,6 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
-                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);
@@ -386,7 +377,6 @@ impl InteractiveEnv {
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,
-                        self.ckb_indexer_url.as_str(),
                     )
                     .process(sub_matches, debug)?;
                     output.print(format, color);

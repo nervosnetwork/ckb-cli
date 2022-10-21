@@ -28,7 +28,6 @@ pub struct ApiServerSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: Option<PluginManager>,
     genesis_info: Option<GenesisInfo>,
-    ckb_indexer_url: &'a str,
 }
 
 impl<'a> ApiServerSubCommand<'a> {
@@ -36,13 +35,11 @@ impl<'a> ApiServerSubCommand<'a> {
         rpc_client: &'a mut HttpRpcClient,
         plugin_mgr: PluginManager,
         genesis_info: Option<GenesisInfo>,
-        ckb_indexer_url: &'a str,
     ) -> ApiServerSubCommand<'a> {
         ApiServerSubCommand {
             rpc_client,
             plugin_mgr: Some(plugin_mgr),
             genesis_info,
-            ckb_indexer_url,
         }
     }
 
@@ -103,7 +100,6 @@ impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
             plugin_mgr: Arc::new(Mutex::new(self.plugin_mgr.take().unwrap())),
             genesis_info: Arc::new(Mutex::new(self.genesis_info.clone())),
             privkey_path,
-            ckb_indexer_url: self.ckb_indexer_url.to_string(),
         };
         io_handler.extend_with(handler.to_delegate());
 
@@ -192,7 +188,6 @@ struct ApiRpcImpl {
     plugin_mgr: Arc<Mutex<PluginManager>>,
     genesis_info: Arc<Mutex<Option<GenesisInfo>>>,
     privkey_path: Option<String>,
-    ckb_indexer_url: String,
 }
 
 impl ApiRpcImpl {
@@ -216,7 +211,6 @@ impl ApiRpcImpl {
             &mut rpc_client,
             &mut plugin_mgr,
             Some(genesis_info),
-            self.ckb_indexer_url.as_str(),
         ))
     }
 }

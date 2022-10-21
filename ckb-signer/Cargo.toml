@@ -1,6 +1,6 @@
 [package]
 name = "ckb-signer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Signer SDK for Nervos CKB"
@@ -22,8 +22,9 @@ bitcoin = "0.27"
 chrono = "0.4"
 thiserror = "1.0.30"
 parking_lot = "0.11"
+anyhow = "1.0.63"
 
 ckb-types = "=0.104.0"
 ckb-hash = "=0.104.0"
 ckb-crypto = { version = "=0.104.0", features = ["secp"] }
-ckb-sdk = "2.0.0"
+ckb-sdk = "2.2.0"
