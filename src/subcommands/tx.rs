@@ -707,7 +707,7 @@ fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
-struct ReprTxHelper {
+pub(crate) struct ReprTxHelper {
     transaction: json_types::Transaction,
     multisig_configs: HashMap<H160, ReprMultisigConfig>,
     signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
@@ -780,7 +780,7 @@ impl TryFrom<ReprTxHelper> for TxHelper {
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
-struct ReprMultisigConfig {
+pub(crate) struct ReprMultisigConfig {
     sighash_addresses: Vec<String>,
     require_first_n: u8,
     threshold: u8,
