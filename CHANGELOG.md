@@ -1,3 +1,12 @@
+# v1.2.0
+* Update ckb deps from `v0.104.0` to `v0.105.1`
+* Update deps
+  - ckb-sdk to `v2.3.0`
+  - secp256k1 to `v0.24`
+  - bitcoin to `v0.27`
+* Support ckb-indexer rpc from ckb node 
+* Add `account bitcoin-xpub` subcommand
+
 # v1.1.0
 * Update ckb deps from `v0.103.0` to `v0.104.0`
 * **BREAKING**: remove `ckb-index` crate, and effect following subcommands:
