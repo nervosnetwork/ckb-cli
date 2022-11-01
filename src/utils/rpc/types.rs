@@ -330,16 +330,83 @@ impl From<rpc_types::TransactionView> for TransactionView {
     }
 }
 
+/// The enum `Either` with variants `Left` and `Right` is a general purpose
+/// sum type with two cases.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+#[serde(untagged)]
+pub enum Either<L, R> {
+    /// A value of type `L`.
+    Left(L),
+    /// A value of type `R`.
+    Right(R),
+}
+
+/// This is a wrapper for JSON serialization to select the format between Json and Hex.
+///
+/// ## Examples
+///
+/// `ResponseFormat<BlockView>` returns the block in its Json format or molecule serialized
+/// Hex format.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+#[serde(transparent)]
+pub struct ResponseFormat<V> {
+    /// The inner value.
+    pub inner: Either<V, JsonBytes>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionWithStatus {
+    /// The transaction.
     pub transaction: Option<TransactionView>,
-    /// Indicate the Transaction status
+    /// The Transaction status.
     pub tx_status: TxStatus,
 }
-impl From<rpc_types::TransactionWithStatus> for TransactionWithStatus {
-    fn from(json: rpc_types::TransactionWithStatus) -> TransactionWithStatus {
-        TransactionWithStatus {
-            transaction: json.transaction.map(|tx| tx.into()),
+impl TryFrom<rpc_types::TransactionWithStatusResponse> for TransactionWithStatus {
+    type Error = String;
+    fn try_from(
+        json: rpc_types::TransactionWithStatusResponse,
+    ) -> Result<TransactionWithStatus, Self::Error> {
+        Ok(TransactionWithStatus {
+            transaction: json
+                .transaction
+                .map(|tx| match tx.inner {
+                    rpc_types::Either::Left(v) => Ok(TransactionView::from(v)),
+                    rpc_types::Either::Right(bytes) => {
+                        packed::TransactionReader::from_slice(bytes.as_bytes())
+                            .map(|reader| {
+                                rpc_types::TransactionView::from(reader.to_entity().into_view())
+                                    .into()
+                            })
+                            .map_err(|err| {
+                                format!("invalid molecule encoded TransactionView: {}", err)
+                            })
+                    }
+                })
+                .transpose()?,
+            tx_status: json.tx_status,
+        })
+    }
+}
+
+/// The JSON view of a transaction as well as its status.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct TransactionWithStatusResponse {
+    /// The transaction.
+    pub transaction: Option<ResponseFormat<TransactionView>>,
+    /// The Transaction status.
+    pub tx_status: TxStatus,
+}
+impl From<rpc_types::TransactionWithStatusResponse> for TransactionWithStatusResponse {
+    fn from(json: rpc_types::TransactionWithStatusResponse) -> TransactionWithStatusResponse {
+        TransactionWithStatusResponse {
+            transaction: json.transaction.map(|tx| match tx.inner {
+                rpc_types::Either::Left(v) => ResponseFormat {
+                    inner: Either::Left(v.into()),
+                },
+                rpc_types::Either::Right(bytes) => ResponseFormat {
+                    inner: Either::Right(bytes),
+                },
+            }),
             tx_status: json.tx_status,
         }
     }
