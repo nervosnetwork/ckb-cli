@@ -44,10 +44,10 @@ impl Signer for PrivkeyWrapper {
         }
         let msg = secp256k1::Message::from_slice(message).expect("Convert to message failed");
         if recoverable {
-            let sig = SECP256K1.sign_recoverable(&msg, &self.0);
+            let sig = SECP256K1.sign_ecdsa_recoverable(&msg, &self.0);
             Ok(Bytes::from(serialize_signature(&sig).to_vec()))
         } else {
-            let sig = SECP256K1.sign(&msg, &self.0);
+            let sig = SECP256K1.sign_ecdsa(&msg, &self.0);
             Ok(Bytes::from(sig.serialize_compact().to_vec()))
         }
     }

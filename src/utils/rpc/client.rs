@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use ckb_jsonrpc_types::{
     Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script,
 };
@@ -102,8 +104,9 @@ impl HttpRpcClient {
     ) -> Result<Option<types::TransactionWithStatus>, String> {
         self.client
             .get_transaction(hash)
-            .map(|opt| opt.map(Into::into))
-            .map_err(|err| err.to_string())
+            .map(|opt| opt.map(TryInto::try_into))
+            .map_err(|err| err.to_string())?
+            .transpose()
     }
     pub fn get_transaction_proof(
         &mut self,

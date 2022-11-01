@@ -274,7 +274,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
                 } else {
                     let message = secp256k1::Message::from_slice(message.as_bytes())
                         .expect("Convert to secp256k1 message failed");
-                    let signature = SECP256K1.sign_recoverable(&message, &privkey);
+                    let signature = SECP256K1.sign_ecdsa_recoverable(&message, &privkey);
                     Ok(Some(serialize_signature(&signature)))
                 }
             } else {
@@ -284,7 +284,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
-pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
+pub fn serialize_signature(signature: &secp256k1::ecdsa::RecoverableSignature) -> [u8; 65] {
     let (recov_id, data) = signature.serialize_compact();
     let mut signature_bytes = [0u8; 65];
     signature_bytes[0..64].copy_from_slice(&data[0..64]);
