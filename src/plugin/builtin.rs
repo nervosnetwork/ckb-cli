@@ -205,7 +205,6 @@ impl DefaultKeyStore {
                         .extended_pubkey_with_password(&hash160, &path, password.as_bytes())
                         .map_err(|err| err.to_string())?
                         .public_key
-                        .key
                         .serialize()
                         .to_vec();
                     Ok(PluginResponse::Bytes(JsonBytes::from_vec(data)))

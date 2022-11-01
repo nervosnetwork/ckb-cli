@@ -9,5 +9,5 @@ pub use types::{
     CellDep, CellInput, CellOutput, ChainInfo, DepType, EpochView, Header, HeaderView, JsonBytes,
     LocalNode, MerkleProof, MinerReward, NodeAddress, OutPoint, ProposalShortId, RemoteNode,
     Script, ScriptHashType, Transaction, TransactionProof, TransactionView, TransactionWithStatus,
-    TxPoolInfo, TxStatus, Uint128, UncleBlock, UncleBlockView,
+    TransactionWithStatusResponse, TxPoolInfo, TxStatus, Uint128, UncleBlock, UncleBlockView,
 };

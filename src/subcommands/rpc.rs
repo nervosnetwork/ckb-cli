@@ -455,7 +455,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .raw_rpc_client
                         .get_transaction(hash)
-                        .map(RawOptionTransactionWithStatus)
+                        .map(RawOptionTransactionWithStatusResponse)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
@@ -801,7 +801,9 @@ pub struct BannedAddrList(pub Vec<BannedAddr>);
 pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
-pub struct RawOptionTransactionWithStatus(pub Option<rpc_types::TransactionWithStatus>);
+pub struct RawOptionTransactionWithStatusResponse(
+    pub Option<rpc_types::TransactionWithStatusResponse>,
+);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionBlockView(pub Option<rpc_types::BlockView>);

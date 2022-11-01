@@ -8,7 +8,7 @@ use clap::{App, Arg, ArgMatches};
 use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
 use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
-use secp256k1::recovery::{RecoverableSignature, RecoveryId};
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId, Signature};
 
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
@@ -554,13 +554,15 @@ message = "0x"
                         .map_err(|err| err.to_string())?
                         .to_standard()
                 } else if signature.len() == 64 {
-                    secp256k1::Signature::from_compact(&signature).map_err(|err| err.to_string())?
+                    Signature::from_compact(&signature).map_err(|err| err.to_string())?
                 } else {
                     return Err(format!("Invalid signature length: {}", signature.len()));
                 };
                 let message = secp256k1::Message::from_slice(message.as_bytes())
                     .expect("Convert to message failed");
-                let verify_ok = SECP256K1.verify(&message, &signature, &pubkey).is_ok();
+                let verify_ok = SECP256K1
+                    .verify_ecdsa(&message, &signature, &pubkey)
+                    .is_ok();
                 let result = serde_json::json!({
                     "pubkey": format!("0x{}", hex_string(&pubkey.serialize()[..])),
                     "recoverable": recoverable,
@@ -875,13 +877,13 @@ fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
         (Some(privkey), _, false) => {
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
             Ok(SECP256K1
-                .sign(&message, privkey)
+                .sign_ecdsa(&message, privkey)
                 .serialize_compact()
                 .to_vec())
         }
         (Some(privkey), _, true) => {
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
-            Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
+            Ok(serialize_signature(&SECP256K1.sign_ecdsa_recoverable(&message, privkey)).to_vec())
         }
         (None, Some((plugin_mgr, account)), false) => plugin_mgr
             .keystore_handler()
