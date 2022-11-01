@@ -408,7 +408,7 @@ dependencies = [
  "ckb-signer",
  "ckb-types",
  "ckb-util",
- "ckb-vm-definitions 0.21.3",
+ "ckb-vm-definitions",
  "clap",
  "clap_generate",
  "colored",
@@ -800,7 +800,7 @@ dependencies = [
  "byteorder",
  "bytes 1.2.1",
  "cc",
- "ckb-vm-definitions 0.22.0",
+ "ckb-vm-definitions",
  "derive_more",
  "goblin 0.2.3",
  "goblin 0.4.0",
@@ -808,12 +808,6 @@ dependencies = [
  "scroll",
  "serde",
 ]
-
-[[package]]
-name = "ckb-vm-definitions"
-version = "0.21.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7968c559498b68833791364e87182fdd1a3aba803e8a16c34b1aa45fc08add1c"
 
 [[package]]
 name = "ckb-vm-definitions"
