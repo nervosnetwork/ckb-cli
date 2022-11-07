@@ -206,7 +206,11 @@ impl TxHelper {
 
     pub fn sign_inputs<C>(
         &self,
-        mut signer: SignerFn,
+        signer: &mut dyn FnMut(
+            &HashSet<H160>,
+            &H256,
+            &rpc_types::Transaction,
+        ) -> Result<Option<[u8; 65]>, String>,
         get_live_cell: C,
         skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>

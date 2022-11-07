@@ -1,0 +1,34 @@
+[[cells]]
+name = "my_cell"
+enable_type_id = true 
+location = { file = "build/release/my_cell" }
+
+# reference to on-chain cells, this config is referenced by dep_groups.cells
+[[cells]]
+name = "genesis_cell"
+enable_type_id = false
+location = { tx_hash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", index = 0 }
+ 
+# Dep group cells
+[[dep_groups]]
+name = "my_dep_group"
+cells = [
+  "my_cell",
+  "genesis_cell"
+]
+
+# The lock script set to output cells
+[lock]
+code_hash = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
+args = "0x0000000000000000000000000000000000000000"
+hash_type = "type"
+
+# For unlocking inputs with multisig lock script
+[multisig_config]
+sighash_addresses = [
+  "ckt1qyq111111111111111111111111111111111111111",
+  "ckt1qyq222222222222222222222222222222222222222",
+  "ckt1qyq333333333333333333333333333333333333333",
+]
+require_first_n = 1
+threshold = 2

@@ -15,6 +15,7 @@ use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
+    util::serialize_signature,
     Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
@@ -35,7 +36,7 @@ use crate::utils::{
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     genesis_info::GenesisInfo,
-    other::{address_json, get_address, get_network_type, read_password, serialize_signature},
+    other::{address_json, get_address, get_network_type, read_password},
     rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};

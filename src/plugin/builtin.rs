@@ -5,12 +5,13 @@ use std::thread::{self, JoinHandle};
 use bitcoin::util::bip32::DerivationPath;
 use crossbeam_channel::bounded;
 
+use ckb_sdk::util::serialize_signature;
 use ckb_signer::{DerivedKeySet, Key, KeyStore, MasterPrivKey};
 use ckb_types::core::service::Request;
 use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginResponse};
 
 use super::manager::PluginHandler;
-use crate::utils::other::{get_key_store, serialize_signature};
+use crate::utils::other::get_key_store;
 use crate::utils::rpc::JsonBytes;
 
 pub const ERROR_KEYSTORE_REQUIRE_PASSWORD: &str = "keystore require password";
