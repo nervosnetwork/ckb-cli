@@ -39,6 +39,11 @@ pub enum StateChange<C, R> {
     Removed {
         old_recipe: R,
     },
+    Reference {
+        config: C,
+        tx_hash: H256,
+        index: u32,
+    },
 }
 
 impl<C, R> StateChange<C, R> {
@@ -48,6 +53,7 @@ impl<C, R> StateChange<C, R> {
             StateChange::NewAdded { .. } => true,
             StateChange::Removed { .. } => false,
             StateChange::Unchanged { .. } => false,
+            StateChange::Reference { .. } => false,
         }
     }
 }
@@ -83,6 +89,7 @@ impl ChangeInfo for CellChange {
             StateChange::Changed { config, .. } => &config.name,
             StateChange::NewAdded { config, .. } => &config.name,
             StateChange::Unchanged { config, .. } => &config.name,
+            StateChange::Reference { config, .. } => &config.name,
             StateChange::Removed { old_recipe } => &old_recipe.name,
         }
     }
@@ -93,6 +100,7 @@ impl ChangeInfo for CellChange {
             StateChange::Changed { old_recipe, .. } => ("Changed", old_recipe.occupied_capacity),
             StateChange::NewAdded { .. } => ("NewAdded", 0),
             StateChange::Unchanged { .. } => ("Unchanged", new_capacity),
+            StateChange::Reference { .. } => ("Reference", 0),
             StateChange::Removed { old_recipe } => ("Removed", old_recipe.occupied_capacity),
         };
         ReprStateChange {
@@ -108,12 +116,16 @@ impl ChangeInfo for CellChange {
     }
 
     fn has_new_recipe(&self) -> bool {
-        !matches!(self, StateChange::Removed { .. })
+        !matches!(
+            self,
+            StateChange::Removed { .. } | StateChange::Reference { .. }
+        )
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
         let (data, config) = match self {
             StateChange::Removed { .. } => return 0,
+            StateChange::Reference { .. } => return 0,
             StateChange::Changed { data, config, .. } => (data, config),
             StateChange::Unchanged { data, config, .. } => (data, config),
             StateChange::NewAdded { data, config, .. } => (data, config),
@@ -145,12 +157,9 @@ impl ChangeInfo for CellChange {
         first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
         let (data, config, output_index, old_type_id_args) = match self {
-            StateChange::Removed { .. } => {
-                return None;
-            }
-            StateChange::Unchanged { .. } => {
-                return None;
-            }
+            StateChange::Removed { .. } => return None,
+            StateChange::Unchanged { .. } => return None,
+            StateChange::Reference { .. } => return None,
             StateChange::Changed {
                 data,
                 config,
@@ -203,9 +212,8 @@ impl CellChange {
         new_tx_hash: &H256,
     ) -> Option<CellRecipe> {
         let (tx_hash, index, data_hash, config, old_type_id_args) = match self {
-            StateChange::Removed { .. } => {
-                return None;
-            }
+            StateChange::Removed { .. } => return None,
+            StateChange::Reference { .. } => return None,
             StateChange::Changed {
                 data_hash,
                 config,
@@ -276,6 +284,7 @@ impl ChangeInfo for DepGroupChange {
             StateChange::Changed { config, .. } => &config.name,
             StateChange::NewAdded { config, .. } => &config.name,
             StateChange::Unchanged { config, .. } => &config.name,
+            StateChange::Reference { config, .. } => &config.name,
             StateChange::Removed { old_recipe } => &old_recipe.name,
         }
     }
@@ -286,6 +295,7 @@ impl ChangeInfo for DepGroupChange {
             StateChange::Changed { old_recipe, .. } => ("Changed", old_recipe.occupied_capacity),
             StateChange::NewAdded { .. } => ("NewAdded", 0),
             StateChange::Unchanged { .. } => ("Unchanged", new_capacity),
+            StateChange::Reference { .. } => ("Reference", 0),
             StateChange::Removed { old_recipe } => ("Removed", old_recipe.occupied_capacity),
         };
         ReprStateChange {
@@ -301,7 +311,10 @@ impl ChangeInfo for DepGroupChange {
     }
 
     fn has_new_recipe(&self) -> bool {
-        !matches!(self, StateChange::Removed { .. })
+        !matches!(
+            self,
+            StateChange::Removed { .. } | StateChange::Reference { .. }
+        )
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
@@ -309,6 +322,7 @@ impl ChangeInfo for DepGroupChange {
             StateChange::Removed { .. } => return 0,
             StateChange::Changed { data, .. } => data,
             StateChange::Unchanged { data, .. } => data,
+            StateChange::Reference { .. } => return 0,
             StateChange::NewAdded { data, .. } => data,
         };
         let data_size = data.len() as u64;
@@ -332,12 +346,9 @@ impl ChangeInfo for DepGroupChange {
         _first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
         let data = match self {
-            StateChange::Removed { .. } => {
-                return None;
-            }
-            StateChange::Unchanged { .. } => {
-                return None;
-            }
+            StateChange::Removed { .. } => return None,
+            StateChange::Unchanged { .. } => return None,
+            StateChange::Reference { .. } => return None,
             StateChange::Changed { data, .. } => data,
             StateChange::NewAdded { data, .. } => data,
         };
@@ -374,6 +385,9 @@ impl DepGroupChange {
                 old_recipe.index,
                 data_hash.clone(),
             ),
+            StateChange::Reference { .. } => {
+                return None;
+            }
             StateChange::NewAdded {
                 data_hash,
                 output_index,

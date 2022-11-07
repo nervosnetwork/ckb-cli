@@ -5,7 +5,8 @@ use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
-        DefaultTransactionDependencyProvider, SecpCkbRawKeySigner,
+        DefaultTransactionDependencyProvider, OffchainTransactionDependencyProvider, Signer,
+        SignerError, TransactionDependencyError, TransactionDependencyProvider,
     },
     tx_builder::{balance_tx_capacity, fill_placeholder_witnesses, CapacityBalancer},
     unlock::{
@@ -14,7 +15,12 @@ use ckb_sdk::{
     },
     Address, ScriptId,
 };
-use ckb_types::{bytes::Bytes, core::TransactionBuilder, packed, prelude::*};
+use ckb_types::{
+    bytes::Bytes,
+    core::{HeaderView, TransactionBuilder, TransactionView},
+    packed::{self, Byte32, CellOutput, OutPoint},
+    prelude::*,
+};
 
 use super::state_change::ChangeInfo;
 use crate::utils::genesis_info::GenesisInfo;
@@ -38,13 +44,17 @@ pub fn build_tx<T: ChangeInfo>(
         return Ok(None);
     }
 
-    let mut collector = DefaultCellCollector::new(ckb_rpc);
+    let mut cell_collector = DefaultCellCollector::new(ckb_rpc);
+    if let Some(pending_tx) = pending_tx.as_ref() {
+        cell_collector.apply_tx(pending_tx.clone())?;
+    }
+
     let from_script = packed::Script::from(from_address.payload());
     let (mut inputs, mut input_capacities): (Vec<_>, Vec<_>) =
         infos.iter().filter_map(|info| info.build_input()).unzip();
     if inputs.is_empty() {
         let query = CellQueryOptions::new_lock(from_script.clone());
-        let (more_infos, more_capacity) = collector.collect_live_cells(&query, true)?;
+        let (more_infos, more_capacity) = cell_collector.collect_live_cells(&query, true)?;
         if more_infos.is_empty() {
             return Err(anyhow!("No live cell found from address: {}", from_address));
         }
@@ -69,7 +79,9 @@ pub fn build_tx<T: ChangeInfo>(
         cell_deps.push(genesis_info.multisig_dep());
     }
     let mut unlockers = HashMap::new();
-    let signer = SecpCkbRawKeySigner::default();
+    let signer = DummySigner {
+        args: vec![from_address.payload().args()],
+    };
     let sighash_unlocker = SecpSighashUnlocker::from(Box::new(signer.clone()) as Box<_>);
     let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
     unlockers.insert(
@@ -91,13 +103,24 @@ pub fn build_tx<T: ChangeInfo>(
         .build();
     let balancer = CapacityBalancer::new_simple(from_script, placeholder_witness, fee_rate);
 
-    let mut cell_collector = DefaultCellCollector::new(ckb_rpc);
     let header_dep_resolver = DefaultHeaderDepResolver::new(ckb_rpc);
-    let tx_dep_provider = DefaultTransactionDependencyProvider::new(ckb_rpc, 0);
+    let tx_dep_provider = {
+        let inner = DefaultTransactionDependencyProvider::new(ckb_rpc, 0);
+        let mut offchain = OffchainTransactionDependencyProvider::default();
+        if let Some(pending_tx) = pending_tx {
+            let tx_view = pending_tx.into_view();
+            let tx_hash = tx_view.hash().unpack();
+            offchain.txs.insert(tx_hash.clone(), tx_view.clone());
+            for (output_idx, (output, output_data)) in tx_view.outputs_with_data_iter().enumerate()
+            {
+                offchain
+                    .cells
+                    .insert((tx_hash.clone(), output_idx as u32), (output, output_data));
+            }
+        }
+        TxDepProviderWrapper { inner, offchain }
+    };
 
-    if let Some(pending_tx) = pending_tx {
-        cell_collector.apply_tx(pending_tx)?;
-    }
     let base_tx = TransactionBuilder::default()
         .cell_deps(cell_deps)
         .inputs(inputs)
@@ -116,4 +139,48 @@ pub fn build_tx<T: ChangeInfo>(
         &header_dep_resolver,
     )?;
     Ok(Some(balanced_tx.data()))
+}
+
+#[derive(Clone)]
+struct DummySigner {
+    args: Vec<Bytes>,
+}
+impl Signer for DummySigner {
+    fn match_id(&self, id: &[u8]) -> bool {
+        self.args.iter().any(|arg| arg.as_ref() == id)
+    }
+    fn sign(&self, _: &[u8], _: &[u8], _: bool, _: &TransactionView) -> Result<Bytes, SignerError> {
+        unreachable!()
+    }
+}
+
+struct TxDepProviderWrapper {
+    inner: DefaultTransactionDependencyProvider,
+    offchain: OffchainTransactionDependencyProvider,
+}
+
+impl TransactionDependencyProvider for TxDepProviderWrapper {
+    fn get_transaction(
+        &self,
+        tx_hash: &Byte32,
+    ) -> Result<TransactionView, TransactionDependencyError> {
+        self.offchain
+            .get_transaction(tx_hash)
+            .or_else(|_| self.inner.get_transaction(tx_hash))
+    }
+    fn get_cell(&self, out_point: &OutPoint) -> Result<CellOutput, TransactionDependencyError> {
+        self.offchain
+            .get_cell(out_point)
+            .or_else(|_| self.inner.get_cell(out_point))
+    }
+    fn get_cell_data(&self, out_point: &OutPoint) -> Result<Bytes, TransactionDependencyError> {
+        self.offchain
+            .get_cell_data(out_point)
+            .or_else(|_| self.inner.get_cell_data(out_point))
+    }
+    fn get_header(&self, block_hash: &Byte32) -> Result<HeaderView, TransactionDependencyError> {
+        self.offchain
+            .get_header(block_hash)
+            .or_else(|_| self.inner.get_header(block_hash))
+    }
 }

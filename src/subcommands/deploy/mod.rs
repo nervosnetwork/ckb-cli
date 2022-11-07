@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Error, Result};
 use chrono::prelude::*;
-use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
@@ -15,13 +14,7 @@ use ckb_sdk::{
     unlock::MultisigConfig,
     Address, HumanCapacity,
 };
-use ckb_types::{
-    bytes::Bytes,
-    core::{Capacity, ScriptHashType},
-    packed,
-    prelude::*,
-    H160, H256,
-};
+use ckb_types::{bytes::Bytes, packed, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 
 use super::{CliSubCommand, Output};
@@ -36,6 +29,7 @@ use crate::utils::{
     other::{get_live_cell_with_cache, get_network_type, read_password},
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
+    tx_helper::SignerFn,
 };
 
 mod deployment;
@@ -214,6 +208,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     last_recipe
                         .as_ref()
                         .map(|recipe| &recipe.dep_group_recipes[..]),
+                    &cell_changes,
                     &new_cell_recipes,
                 )
                 .map_err(|err| err.to_string())?;
@@ -285,9 +280,8 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
 
                 // Sign if required
                 if m.is_present("sign-now") {
+                    let account = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
                     let signer = {
-                        let account =
-                            H160::from_slice(from_address.payload().args().as_ref()).unwrap();
                         let handler = self.plugin_mgr.keystore_handler();
                         let change_path = handler.root_key_path(account.clone())?;
                         let mut signer = KeyStoreHandlerSigner::new(
@@ -300,10 +294,33 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         if self.plugin_mgr.keystore_require_password() {
                             signer.set_password(account.clone(), read_password(false, None)?);
                         }
-                        signer.set_change_path(account, change_path.to_string());
+                        signer.set_change_path(account.clone(), change_path.to_string());
                         Box::new(signer)
                     };
-                    let _ = sign_info(&mut info, self.rpc_client, signer, true)
+                    let signer_fn = Box::new(
+                        move |lock_args: &HashSet<H160>,
+                              message: &H256,
+                              tx: &json_types::Transaction| {
+                            if lock_args.contains(&account) {
+                                signer
+                                    .sign(
+                                        account.as_bytes(),
+                                        message.as_bytes(),
+                                        true,
+                                        &packed::Transaction::from(tx.clone()).into_view(),
+                                    )
+                                    .map(|signature| {
+                                        let mut data = [0u8; 65];
+                                        data.copy_from_slice(signature.as_ref());
+                                        Some(data)
+                                    })
+                                    .map_err(|err| err.to_string())
+                            } else {
+                                Ok(None)
+                            }
+                        },
+                    );
+                    let _ = sign_info(&mut info, self.rpc_client, signer_fn, true)
                         .map_err(|err| err.to_string())?;
                 }
 
@@ -346,7 +363,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                     let signer: Box<dyn Signer> = if let Some(privkey) = privkey_opt {
                         Box::new(privkey)
                     } else {
-                        let account = account_opt.unwrap();
+                        let account = account_opt.clone().unwrap();
                         let handler = self.plugin_mgr.keystore_handler();
                         let change_path = handler
                             .root_key_path(account.clone())
@@ -367,10 +384,44 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         signer.set_change_path(account, change_path.to_string());
                         Box::new(signer)
                     };
+                    let signer_fn = Box::new(
+                        move |lock_args: &HashSet<H160>,
+                              message: &H256,
+                              tx: &json_types::Transaction| {
+                            let mut lock_arg_opt = None;
+                            if let Some(account) = account_opt.as_ref() {
+                                if lock_args.contains(account) {
+                                    lock_arg_opt = Some(account.clone());
+                                }
+                            } else if let Some(lock_arg) = lock_args
+                                .iter()
+                                .find(|lock_arg| signer.match_id(lock_arg.as_bytes()))
+                            {
+                                lock_arg_opt = Some(lock_arg.clone());
+                            }
+                            if let Some(lock_arg) = lock_arg_opt {
+                                signer
+                                    .sign(
+                                        lock_arg.as_bytes(),
+                                        message.as_bytes(),
+                                        true,
+                                        &packed::Transaction::from(tx.clone()).into_view(),
+                                    )
+                                    .map(|signature| {
+                                        let mut data = [0u8; 65];
+                                        data.copy_from_slice(signature.as_ref());
+                                        Some(data)
+                                    })
+                                    .map_err(|err| err.to_string())
+                            } else {
+                                Ok(None)
+                            }
+                        },
+                    );
                     sign_info(
                         info,
                         self.rpc_client,
-                        signer,
+                        signer_fn,
                         m.is_present("add-signatures"),
                     )
                 })
@@ -413,7 +464,9 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
                         {
                             let out_point =
                                 packed::OutPoint::new(tx_hash.clone(), output_index as u32);
-                            live_cell_cache.insert((out_point, true), (output, data));
+                            live_cell_cache
+                                .insert((out_point.clone(), true), (output.clone(), data.clone()));
+                            live_cell_cache.insert((out_point, false), (output, Bytes::default()));
                         }
                     }
                     let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
@@ -554,7 +607,7 @@ fn load_last_snapshot(migration_dir: &Path) -> Result<Option<DeploymentRecipe>> 
 fn sign_info(
     info: &mut IntermediumInfo,
     rpc_client: &mut HttpRpcClient,
-    signer: Box<dyn Signer>,
+    mut signer_fn: SignerFn,
     add_signatures: bool,
 ) -> Result<HashMap<String, HashMap<JsonBytes, JsonBytes>>> {
     let skip_check = false;
@@ -566,7 +619,8 @@ fn sign_info(
         let tx_hash = cell_tx.hash();
         for (output_index, (output, data)) in cell_tx.outputs_with_data_iter().enumerate() {
             let out_point = packed::OutPoint::new(tx_hash.clone(), output_index as u32);
-            live_cell_cache.insert((out_point, true), (output, data));
+            live_cell_cache.insert((out_point.clone(), true), (output.clone(), data));
+            live_cell_cache.insert((out_point, false), (output, Bytes::default()));
         }
     }
     let mut get_live_cell = |out_point: packed::OutPoint, with_data: bool| {
@@ -574,30 +628,6 @@ fn sign_info(
             .map(|(output, _)| output)
     };
 
-    let mut signer_fn = Box::new(
-        |lock_args: &HashSet<H160>, message: &H256, tx: &json_types::Transaction| {
-            if let Some(lock_arg) = lock_args
-                .iter()
-                .find(|lock_arg| signer.match_id(lock_arg.as_bytes()))
-            {
-                signer
-                    .sign(
-                        lock_arg.as_bytes(),
-                        message.as_bytes(),
-                        true,
-                        &packed::Transaction::from(tx.clone()).into_view(),
-                    )
-                    .map(|signature| {
-                        let mut data = [0u8; 65];
-                        data.copy_from_slice(signature.as_ref());
-                        Some(data)
-                    })
-                    .map_err(|err| err.to_string())
-            } else {
-                Ok(None)
-            }
-        },
-    );
     let mut all_signatures: HashMap<String, HashMap<_, _>> = Default::default();
     if let Some(helper) = info.cell_tx_helper()? {
         let _ = helper.check_tx(&mut get_live_cell).map_err(Error::msg)?;
@@ -688,42 +718,11 @@ fn load_cells(
                 (data_hash, data)
             }
             CellLocation::OutPoint { tx_hash, index } => {
-                let (data_hash, data, info) = load_cell_info(rpc_client, tx_hash, *index)?;
-                let output = packed::CellOutput::from(info);
-                let occupied_capacity = output
-                    .occupied_capacity(Capacity::bytes(data.len()).unwrap())
-                    .unwrap()
-                    .as_u64();
-                let (old_type_id, old_type_id_args) =
-                    if let Some(type_script) = output.type_().to_opt() {
-                        if type_script.code_hash() == TYPE_ID_CODE_HASH.pack()
-                            && type_script.hash_type() == ScriptHashType::Type.into()
-                        {
-                            (
-                                Some(type_script.calc_script_hash().unpack()),
-                                Some(type_script.args().raw_data()),
-                            )
-                        } else {
-                            (None, None)
-                        }
-                    } else {
-                        (None, None)
-                    };
-                let change = StateChange::Unchanged {
-                    data,
-                    data_hash: data_hash.clone(),
+                cell_changes.push(StateChange::Reference {
                     config,
-                    old_recipe: CellRecipe {
-                        name: cell.name.clone(),
-                        tx_hash: tx_hash.clone(),
-                        index: *index,
-                        occupied_capacity,
-                        data_hash,
-                        type_id: old_type_id,
-                    },
-                    old_type_id_args,
-                };
-                cell_changes.push(change);
+                    tx_hash: tx_hash.clone(),
+                    index: *index,
+                });
                 continue;
             }
         };
@@ -810,6 +809,7 @@ fn load_dep_groups(
     lock_script: &packed::Script,
     dep_groups: &[DepGroup],
     dep_group_recipes_opt: Option<&[DepGroupRecipe]>,
+    cell_changes: &[CellChange],
     new_cell_recipes: &[CellRecipe],
 ) -> Result<Vec<DepGroupChange>> {
     let mut dep_group_recipes_map: HashMap<&String, (&DepGroupRecipe, bool)> =
@@ -824,6 +824,23 @@ fn load_dep_groups(
     let new_cell_recipes_map: HashMap<&String, &CellRecipe> = new_cell_recipes
         .iter()
         .map(|recipe| (&recipe.name, recipe))
+        .collect();
+    let refs_map: HashMap<&String, packed::OutPoint> = cell_changes
+        .iter()
+        .filter_map(|change| match change {
+            StateChange::Reference {
+                tx_hash,
+                index,
+                config,
+            } => {
+                let out_point = packed::OutPoint::new_builder()
+                    .tx_hash(tx_hash.pack())
+                    .index(index.pack())
+                    .build();
+                Some((&config.name, out_point))
+            }
+            _ => None,
+        })
         .collect();
     let mut dep_group_changes = Vec::new();
     let mut output_index: u64 = 0;
@@ -840,6 +857,7 @@ fn load_dep_groups(
                             .index(cell_recipe.index.pack())
                             .build()
                     })
+                    .or_else(|| refs_map.get(cell_name).cloned())
                     .ok_or_else(|| {
                         anyhow!(
                             "Can not find cell by name: {} in dep_group: {}",
@@ -967,7 +985,7 @@ fn explain_txs(info: &IntermediumInfo) -> Result<()> {
     }
     fn print_item(tag: &str, max_width: usize, change: &ReprStateChange) {
         println!(
-            "[{}] {:<9} name: {:>width$}, old-capacity: {:>7}, new-capacity: {:>7}",
+            "[{}] {:<9}, name: {:>width$}, old-capacity: {:>7}, new-capacity: {:>7}",
             tag,
             change.kind,
             change.name,
