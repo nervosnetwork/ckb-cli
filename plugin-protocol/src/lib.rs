@@ -4,7 +4,7 @@ pub mod method;
 
 use std::fmt;
 
-use ckb_jsonrpc_types::{BlockView, HeaderView, JsonBytes, Transaction};
+use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
@@ -83,7 +83,6 @@ pub enum PluginRequest {
     SubCommand(String),
     Callback(CallbackRequest),
     // == Send from plugin to ckb-cli
-    Rpc(RpcRequest),
     ReadPassword(String),
     PrintStdout(String),
     PrintStderr(String),
@@ -106,9 +105,6 @@ pub enum PluginResponse {
     H256Opt(Option<H256>),
     H160(H160),
     H160Vec(Vec<H160>),
-    HeaderView(Box<HeaderView>),
-    HeaderViewOpt(Box<Option<HeaderView>>),
-    BlockViewOpt(Box<Option<BlockView>>),
     Bytes(JsonBytes),
     BytesVec(Vec<JsonBytes>),
 
@@ -233,12 +229,4 @@ pub enum KeyStoreRequest {
     // For plugin to use custom keystore
     // return: PluginResponse::JsonValue
     Any(serde_json::Value),
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum RpcRequest {
-    GetBlock { hash: H256 },
-    GetBlockByNumber { number: u64 },
-    GetBlockHash { number: u64 },
-    // TODO: add more
 }

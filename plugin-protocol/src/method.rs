@@ -9,11 +9,6 @@ pub const SUB_COMMAND: &str = "sub_command";
 pub const CALLBACK_PREFIX: &str = "callback_";
 pub const CALLBACK_SEND_TRANSACTION: &str = "callback_send_transaction";
 
-pub const RPC_PREFIX: &str = "rpc_";
-pub const RPC_GET_BLOCK: &str = "rpc_get_block";
-pub const RPC_GET_BLOCK_BY_NUMBER: &str = "rpc_get_block_by_number";
-pub const RPC_GET_BLOCK_HASH: &str = "rpc_get_block_hash";
-
 pub const KEYSTORE_PREFIX: &str = "keystore_";
 pub const KEYSTORE_LIST_ACCOUNT: &str = "keystore_list_account";
 pub const KEYSTORE_HAS_ACCOUNT: &str = "keystore_has_account";

@@ -117,7 +117,7 @@ fn main() -> Result<(), io::Error> {
             format!("Open file based key store error: {}", err),
         )
     })?;
-    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url).unwrap();
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir).unwrap();
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
             ("subscribe", Some(sub_sub_matches)) => {

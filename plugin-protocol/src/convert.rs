@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 
 use super::{
     method, CallbackRequest, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginRequest,
-    PluginResponse, RpcRequest, JSONRPC_VERSION,
+    PluginResponse, JSONRPC_VERSION,
 };
 
 impl From<(u64, PluginRequest)> for JsonrpcRequest {
@@ -27,7 +27,6 @@ impl From<(u64, PluginRequest)> for JsonrpcRequest {
             }
             PluginRequest::SubCommand(args) => (method::SUB_COMMAND, vec![serde_json::json!(args)]),
             PluginRequest::Callback(callback_request) => callback_request.into(),
-            PluginRequest::Rpc(rpc_request) => rpc_request.into(),
             PluginRequest::KeyStore(keystore_request) => keystore_request.into(),
         };
         JsonrpcRequest {
@@ -58,9 +57,6 @@ impl TryFrom<JsonrpcRequest> for (u64, PluginRequest) {
             method::SUB_COMMAND => PluginRequest::SubCommand(parse_param(&data, 0, "args")?),
             method if method.starts_with(method::CALLBACK_PREFIX) => {
                 CallbackRequest::try_from(&data).map(PluginRequest::Callback)?
-            }
-            method if method.starts_with(method::RPC_PREFIX) => {
-                RpcRequest::try_from(&data).map(PluginRequest::Rpc)?
             }
             method if method.starts_with(method::KEYSTORE_PREFIX) => {
                 KeyStoreRequest::try_from(&data).map(PluginRequest::KeyStore)?
@@ -279,41 +275,6 @@ impl TryFrom<&JsonrpcRequest> for KeyStoreRequest {
                 password: parse_param(data, 5, "password")?,
             },
             method::KEYSTORE_ANY => KeyStoreRequest::Any(parse_param(data, 0, "value")?),
-            _ => {
-                return Err(format!("Invalid request method: {}", data.method));
-            }
-        };
-        Ok(request)
-    }
-}
-
-impl From<RpcRequest> for (&'static str, Vec<serde_json::Value>) {
-    fn from(request: RpcRequest) -> (&'static str, Vec<serde_json::Value>) {
-        match request {
-            RpcRequest::GetBlock { hash } => (method::RPC_GET_BLOCK, vec![serde_json::json!(hash)]),
-            RpcRequest::GetBlockByNumber { number } => (
-                method::RPC_GET_BLOCK_BY_NUMBER,
-                vec![serde_json::json!(number)],
-            ),
-            RpcRequest::GetBlockHash { number } => {
-                (method::RPC_GET_BLOCK_HASH, vec![serde_json::json!(number)])
-            }
-        }
-    }
-}
-impl TryFrom<&JsonrpcRequest> for RpcRequest {
-    type Error = String;
-    fn try_from(data: &JsonrpcRequest) -> Result<RpcRequest, Self::Error> {
-        let request = match data.method.as_str() {
-            method::RPC_GET_BLOCK => RpcRequest::GetBlock {
-                hash: parse_param(data, 0, "hash")?,
-            },
-            method::RPC_GET_BLOCK_BY_NUMBER => RpcRequest::GetBlockByNumber {
-                number: parse_param(data, 0, "number")?,
-            },
-            method::RPC_GET_BLOCK_HASH => RpcRequest::GetBlockHash {
-                number: parse_param(data, 0, "number")?,
-            },
             _ => {
                 return Err(format!("Invalid request method: {}", data.method));
             }

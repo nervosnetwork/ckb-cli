@@ -14,7 +14,7 @@ pub enum PluginRole {
 }
 ```
 
-The `key_store` and `indexer` role plugin can replace the default implementation and can be accessed by all plugins by sending request to stdout and then receive response from stdin.
+The `key_store` role plugin can replace the default implementation and can be accessed by all plugins by sending request to stdout and then receive response from stdin.
 
 The `sub_command` role plugin will add a top level sub-command in ckb-cli, the plugin will need to parse the command line argument itself.
 
@@ -34,8 +34,6 @@ struct PluginConfig {
 One plugin can have multiple roles.
 
 A plugin can define as `daemon` pluign, ckb-cli will start all actived `daemon` plugin processes when ckb-cli start and let them keep running. ckb-cli will start a non-daemon when needed, send request to its stdin and wait the response from its stdout then kill the process.
-
-The plugin can access rpc request by `rpc_` prefixed methods, they are just proxies of [CKB json-rpc](https://github.com/nervosnetwork/ckb/blob/develop/rpc/README.md) calls. It is useful when implement your own indexer.
 
 # RPC protocol
 The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package provide a more semantic interface.

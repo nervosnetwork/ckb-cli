@@ -12,17 +12,15 @@ use std::thread::{self, JoinHandle};
 use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
-use ckb_jsonrpc_types::{BlockNumber, JsonBytes};
+use ckb_jsonrpc_types::JsonBytes;
 use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
 
 use super::builtin::{DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;
-use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, JsonrpcError, JsonrpcRequest, JsonrpcResponse,
-    KeyStoreRequest, PluginConfig, PluginRequest, PluginResponse, PluginRole, RpcRequest,
-    SignTarget,
+    KeyStoreRequest, PluginConfig, PluginRequest, PluginResponse, PluginRole, SignTarget,
 };
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
@@ -94,7 +92,7 @@ impl PluginManager {
         Ok(plugins)
     }
 
-    pub fn init(ckb_cli_dir: &Path, rpc_url: String) -> Result<PluginManager, String> {
+    pub fn init(ckb_cli_dir: &Path) -> Result<PluginManager, String> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let plugins = Self::load(ckb_cli_dir).map_err(|err| err.to_string())?;
         let default_keystore = DefaultKeyStore::start(ckb_cli_dir)?;
@@ -133,7 +131,7 @@ impl PluginManager {
             }
         }
         let default_keystore_handler = default_keystore.handler().clone();
-        let service_provider = ServiceProvider::start(default_keystore, keystore_plugin, rpc_url)?;
+        let service_provider = ServiceProvider::start(default_keystore, keystore_plugin)?;
         for (plugin, config) in daemon_plugins {
             let plugin_name = config.name.clone();
             let process = PluginProcess::start(plugin, config, service_provider.handler().clone())?;
@@ -388,11 +386,6 @@ impl PluginManager {
         }
     }
 
-    #[allow(unused)]
-    pub fn rpc_url_changed(&self, new_url: String) -> Result<(), String> {
-        self.call_service(ServiceRequest::RpcUrlChanged(new_url))
-    }
-
     pub fn sub_command(
         &self,
         command_name: &str,
@@ -474,9 +467,6 @@ pub enum ServiceRequest {
         request: PluginRequest,
     },
     KeyStoreChanged(Option<(Plugin, PluginConfig)>),
-
-    #[allow(unused)]
-    RpcUrlChanged(String),
 }
 
 pub enum ServiceResponse {
@@ -489,7 +479,6 @@ impl ServiceProvider {
     fn start(
         default_keystore: DefaultKeyStore,
         mut keystore_plugin: Option<(Plugin, PluginConfig)>,
-        rpc_url: String,
     ) -> Result<ServiceProvider, String> {
         fn start_daemon(
             plugin: &Option<(Plugin, PluginConfig)>,
@@ -506,7 +495,6 @@ impl ServiceProvider {
         }
 
         let (sender, receiver) = bounded(5);
-        let mut rpc_client = HttpRpcClient::new(rpc_url);
         let service_handler = sender.clone();
         let mut keystore_daemon = start_daemon(&keystore_plugin, &service_handler)?;
 
@@ -543,12 +531,6 @@ impl ServiceProvider {
                             }
                             keystore_plugin = None;
                             keystore_daemon = None;
-                            ServiceResponse::Ok
-                        }
-                        ServiceRequest::RpcUrlChanged(new_url) => {
-                            if new_url != rpc_client.url() {
-                                rpc_client = HttpRpcClient::new(new_url);
-                            }
                             ServiceResponse::Ok
                         }
                         ServiceRequest::Request { request, .. } => {
@@ -606,39 +588,6 @@ impl ServiceProvider {
                                             data: None,
                                         }),
                                     }
-                                }
-                                PluginRequest::Rpc(rpc_request) => {
-                                    let response_result = match rpc_request {
-                                        RpcRequest::GetBlock { hash } => {
-                                            // TODO: handle error
-                                            rpc_client
-                                                .client()
-                                                .get_block(hash)
-                                                .map(|data| {
-                                                    PluginResponse::BlockViewOpt(Box::new(data))
-                                                })
-                                                .map_err(|err| err.to_string())
-                                        }
-                                        RpcRequest::GetBlockByNumber { number } => rpc_client
-                                            .client()
-                                            .get_block_by_number(BlockNumber::from(number))
-                                            .map(|data| {
-                                                PluginResponse::BlockViewOpt(Box::new(data))
-                                            })
-                                            .map_err(|err| err.to_string()),
-                                        RpcRequest::GetBlockHash { number } => rpc_client
-                                            .client()
-                                            .get_block_hash(BlockNumber::from(number))
-                                            .map(PluginResponse::H256Opt)
-                                            .map_err(|err| err.to_string()),
-                                    };
-                                    response_result.unwrap_or_else(|err| {
-                                        PluginResponse::Error(JsonrpcError {
-                                            code: 0,
-                                            message: err,
-                                            data: None,
-                                        })
-                                    })
                                 }
                                 PluginRequest::ReadPassword(prompt) => {
                                     read_password(false, Some(prompt.as_str()))
