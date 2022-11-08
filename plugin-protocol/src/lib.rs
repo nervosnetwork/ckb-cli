@@ -80,7 +80,7 @@ pub enum PluginRequest {
     // Notify all daemon plugins when rpc url changed
     RpcUrlChanged(String),
     // The plugin need to parse the rest command line arguments
-    SubCommand(String),
+    SubCommand(Vec<String>),
     Callback(CallbackRequest),
     // == Send from plugin to ckb-cli
     ReadPassword(String),

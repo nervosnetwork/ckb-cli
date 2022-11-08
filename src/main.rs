@@ -20,8 +20,8 @@ use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgParser, UrlParser},
     config::GlobalConfig,
-    other::{check_alerts, get_key_store, get_network_type},
-    printer::{ColorWhen, OutputFormat},
+    other::{call_plugin_subcommand, check_alerts, get_key_store, get_network_type},
+    printer::{ColorWhen, OutputFormat, Printable},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
@@ -46,15 +46,8 @@ fn main() -> Result<(), io::Error> {
     //   revisit here when clap updated.
     let version_short = format!("{}\n", version.short());
     let version_long = format!("{}\n", version.long());
-    let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
 
     let mut env_map: HashMap<String, String> = env::vars().collect();
-    let ckb_url_opt = matches
-        .value_of("url")
-        .map(ToOwned::to_owned)
-        .or_else(|| env_map.remove("API_URL"));
-    let local_only = matches.is_present("local-only");
-
     let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
         let dir = PathBuf::from(dir_string.as_str());
         if dir.exists() && !dir.is_dir() {
@@ -72,7 +65,28 @@ fn main() -> Result<(), io::Error> {
     if !ckb_cli_dir.exists() {
         fs::create_dir_all(&ckb_cli_dir)?;
     }
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir).unwrap();
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() >= 2 {
+        match call_plugin_subcommand(&plugin_mgr, &args[1..]) {
+            Ok(Some(plugin_resp)) => {
+                println!("{}", plugin_resp.render(OutputFormat::Yaml, true));
+                return Ok(());
+            }
+            Ok(None) => {}
+            Err(err) => {
+                eprintln!("{}", err);
+                process::exit(1);
+            }
+        }
+    }
 
+    let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
+
+    let ckb_url_opt = matches
+        .value_of("url")
+        .map(ToOwned::to_owned)
+        .or_else(|| env_map.remove("API_URL"));
     let mut config = GlobalConfig::new(ckb_url_opt.clone());
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
@@ -100,7 +114,7 @@ fn main() -> Result<(), io::Error> {
     let mut rpc_client = HttpRpcClient::new(ckb_url.clone());
     let mut raw_rpc_client = RawHttpRpcClient::new(ckb_url.as_str());
 
-    if !local_only {
+    if !matches.is_present("local-only") {
         check_alerts(&mut rpc_client);
         config.set_network(get_network_type(&mut rpc_client).ok());
     }
@@ -117,7 +131,7 @@ fn main() -> Result<(), io::Error> {
             format!("Open file based key store error: {}", err),
         )
     })?;
-    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir).unwrap();
+
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
             ("subscribe", Some(sub_sub_matches)) => {

@@ -18,7 +18,7 @@ The `key_store` role plugin can replace the default implementation and can be ac
 
 The `sub_command` role plugin will add a top level sub-command in ckb-cli, the plugin will need to parse the command line argument itself.
 
-The `callback` role plugin will be called when certain event happend (send transaction for example).
+The `callback` role plugin will be called when certain event happened (send transaction for example).
 
 Here is the config return as the response of `get_config` method.
 

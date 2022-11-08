@@ -64,12 +64,12 @@ fn handle(request: PluginRequest) -> Option<PluginResponse> {
             }
 
             Some(PluginResponse::JsonValue(serde_json::json!({
-                "debug": format!("This is debugger plugin, args: {}", rest_args)
+                "debug": format!("This is debugger plugin, args: {:?}", rest_args)
             })))
         }
         _ => Some(PluginResponse::Error(JsonrpcError {
             code: 0,
-            message: String::from("Invalid request to keystore"),
+            message: String::from("Invalid request to debugger"),
             data: None,
         })),
     }

@@ -389,7 +389,7 @@ impl PluginManager {
     pub fn sub_command(
         &self,
         command_name: &str,
-        rest_args: String,
+        rest_args: Vec<String>,
     ) -> Result<serde_json::Value, String> {
         if let Some(plugin_name) = self.sub_commands.get(command_name) {
             self.handle(plugin_name.as_str(), |handler| {

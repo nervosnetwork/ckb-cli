@@ -21,7 +21,7 @@ use crate::utils::{
     completer::CkbCompleter,
     config::GlobalConfig,
     genesis_info::GenesisInfo,
-    other::{check_alerts, get_genesis_info, get_network_type},
+    other::{call_plugin_subcommand, check_alerts, get_genesis_info, get_network_type},
     printer::{ColorWhen, OutputFormat, Printable},
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
@@ -231,18 +231,8 @@ impl InteractiveEnv {
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
 
-        let current_cmd_name = &args[0];
-        if self
-            .plugin_mgr
-            .sub_commands()
-            .contains_key(current_cmd_name.as_str())
-        {
-            let rest_args = line[current_cmd_name.len()..].to_string();
-            log::debug!("[call sub command]: {} {}", current_cmd_name, rest_args);
-            let resp = self
-                .plugin_mgr
-                .sub_command(current_cmd_name.as_str(), rest_args)?;
-            println!("{}", resp.render(format, color));
+        if let Some(plugin_resp) = call_plugin_subcommand(&self.plugin_mgr, &args)? {
+            println!("{}", plugin_resp.render(format, color));
             return Ok(false);
         }
 

@@ -30,7 +30,7 @@ use super::arg_parser::{
 };
 use super::rpc::{AlertMessage, HttpRpcClient};
 use super::tx_helper::SignerFn;
-use crate::plugin::{KeyStoreHandler, SignTarget};
+use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::genesis_info::GenesisInfo;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
@@ -326,4 +326,22 @@ pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value 
         "mainnet": Address::new(NetworkType::Mainnet, payload.clone(), is_new).to_string(),
         "testnet": Address::new(NetworkType::Testnet, payload, is_new).to_string(),
     })
+}
+
+pub fn call_plugin_subcommand(
+    plugin_mgr: &PluginManager,
+    args: &[String],
+) -> Result<Option<serde_json::Value>, String> {
+    if args.is_empty() {
+        return Ok(None);
+    }
+    let cmd_name = &args[0];
+    if plugin_mgr.sub_commands().contains_key(cmd_name.as_str()) {
+        let rest_args = args[1..].to_vec();
+        log::debug!("[call sub command plugin]: {} {:?}", cmd_name, rest_args);
+        let resp = plugin_mgr.sub_command(cmd_name.as_str(), rest_args)?;
+        Ok(Some(resp))
+    } else {
+        Ok(None)
+    }
 }
