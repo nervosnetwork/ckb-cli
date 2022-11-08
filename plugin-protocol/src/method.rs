@@ -14,15 +14,6 @@ pub const RPC_GET_BLOCK: &str = "rpc_get_block";
 pub const RPC_GET_BLOCK_BY_NUMBER: &str = "rpc_get_block_by_number";
 pub const RPC_GET_BLOCK_HASH: &str = "rpc_get_block_hash";
 
-pub const INDEXER_PREFIX: &str = "indexer_";
-pub const INDEXER_TIP_HEADER: &str = "indexer_tip_header";
-pub const INDEXER_LAST_HEADER: &str = "indexer_last_header";
-pub const INDEXER_GET_CAPACITY: &str = "indexer_get_capacity";
-pub const INDEXER_GET_LIVE_CELLS: &str = "indexer_get_live_cells";
-pub const INDEXER_GET_TOPN: &str = "indexer_get_topn";
-pub const INDEXER_GET_INDEXER_INFO: &str = "indexer_get_indexer_info";
-pub const INDEXER_ANY: &str = "indexer_any";
-
 pub const KEYSTORE_PREFIX: &str = "keystore_";
 pub const KEYSTORE_LIST_ACCOUNT: &str = "keystore_list_account";
 pub const KEYSTORE_HAS_ACCOUNT: &str = "keystore_has_account";

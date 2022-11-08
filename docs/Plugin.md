@@ -7,7 +7,6 @@ There are 4 role types.
 pub enum PluginRole {
     // The argument is for if keystore need password
     KeyStore { require_password: bool },
-    Indexer,
     // The argument is for where the sub-command is injected to.
     SubCommand { name: String },
     // The argument is for the callback function name

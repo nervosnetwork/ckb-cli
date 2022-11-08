@@ -12,17 +12,17 @@ use std::thread::{self, JoinHandle};
 use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
-use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
+use ckb_jsonrpc_types::{BlockNumber, JsonBytes};
 use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
 use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
 
-use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
+use super::builtin::{DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;
 use crate::utils::rpc::HttpRpcClient;
 use plugin_protocol::{
-    CallbackName, CallbackRequest, CallbackResponse, IndexerRequest, JsonrpcError, JsonrpcRequest,
-    JsonrpcResponse, KeyStoreRequest, LiveCellIndexType, LiveCellInfo, PluginConfig, PluginRequest,
-    PluginResponse, PluginRole, RpcRequest, SignTarget,
+    CallbackName, CallbackRequest, CallbackResponse, JsonrpcError, JsonrpcRequest, JsonrpcResponse,
+    KeyStoreRequest, PluginConfig, PluginRequest, PluginResponse, PluginRole, RpcRequest,
+    SignTarget,
 };
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
@@ -41,8 +41,6 @@ pub struct PluginManager {
     // == Plugin role configs
     // The keystore plugins currently actived
     keystores: Vec<String>,
-    // The indexer plugins currently actived
-    indexers: Vec<String>,
     // The actived sub command plugins. The key is sub-command name
     sub_commands: HashMap<String, String>,
     // The actived callback plugins. The key is callback name
@@ -100,18 +98,14 @@ impl PluginManager {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let plugins = Self::load(ckb_cli_dir).map_err(|err| err.to_string())?;
         let default_keystore = DefaultKeyStore::start(ckb_cli_dir)?;
-        // TODO: impl indexer thread
-        let default_indexer = DefaultIndexer::start();
 
         // Make sure ServiceProvider start before all daemon processes
         let mut daemon_plugins = Vec::new();
         let mut daemon_processes = HashMap::new();
         let mut keystores = Vec::new();
-        let mut indexers = Vec::new();
         let mut sub_commands = HashMap::new();
         let mut callbacks: HashMap<CallbackName, Vec<String>> = HashMap::new();
         let mut keystore_plugin = None;
-        let mut indexer_plugin = None;
         // TODO plugins order matters
         for (plugin_name, (plugin, config)) in &plugins {
             for role in &config.roles {
@@ -121,12 +115,6 @@ impl PluginManager {
                             keystore_plugin = Some((plugin.clone(), config.clone()));
                         }
                         keystores.push(plugin_name.clone());
-                    }
-                    PluginRole::Indexer => {
-                        if plugin.is_active() && indexer_plugin.is_none() {
-                            indexer_plugin = Some((plugin.clone(), config.clone()));
-                        }
-                        indexers.push(plugin_name.clone());
                     }
                     PluginRole::SubCommand { name } => {
                         sub_commands.insert(name.clone(), plugin_name.clone());
@@ -145,13 +133,7 @@ impl PluginManager {
             }
         }
         let default_keystore_handler = default_keystore.handler().clone();
-        let service_provider = ServiceProvider::start(
-            default_keystore,
-            default_indexer,
-            keystore_plugin,
-            indexer_plugin,
-            rpc_url,
-        )?;
+        let service_provider = ServiceProvider::start(default_keystore, keystore_plugin, rpc_url)?;
         for (plugin, config) in daemon_plugins {
             let plugin_name = config.name.clone();
             let process = PluginProcess::start(plugin, config, service_provider.handler().clone())?;
@@ -164,7 +146,6 @@ impl PluginManager {
             plugin_dir,
             plugins,
             daemon_processes,
-            indexers,
             keystores,
             sub_commands,
             callbacks,
@@ -202,24 +183,6 @@ impl PluginManager {
             })
             .next()
     }
-    pub fn actived_indexer(&self) -> Option<(&Plugin, &PluginConfig)> {
-        self.indexers
-            .iter()
-            .filter_map(|name| {
-                self.plugins
-                    .get(name)
-                    .filter(|(plugin, _)| plugin.is_active())
-                    .map(|(plugin, config)| {
-                        for role in &config.roles {
-                            if let PluginRole::Indexer = role {
-                                return (plugin, config);
-                            }
-                        }
-                        panic!("Plugin {} is not a indexer plugin", config.name);
-                    })
-            })
-            .next()
-    }
 
     pub fn keystore_require_password(&self) -> bool {
         self.actived_keystore()
@@ -233,10 +196,6 @@ impl PluginManager {
             self.actived_keystore().map(|(_, cfg, _)| cfg.clone()),
         )
     }
-    #[allow(unused)]
-    pub fn indexer_handler(&self) -> IndexerHandler {
-        IndexerHandler::new(self.service_provider.handler().clone())
-    }
     pub fn root_key_path(&self, h160: H160) -> Result<DerivationPath, String> {
         self.keystore_handler().root_key_path(h160)
     }
@@ -249,9 +208,6 @@ impl PluginManager {
         let last_actived_keystore = self
             .actived_keystore()
             .map(|(_, config, _)| config.name.clone());
-        let last_actived_indexer = self
-            .actived_indexer()
-            .map(|(_, config)| config.name.clone());
         if let Some((plugin, config)) = self.plugins.get_mut(name).and_then(|(plugin, config)| {
             if !plugin.is_active() {
                 plugin.active();
@@ -264,9 +220,6 @@ impl PluginManager {
                 match role {
                     PluginRole::KeyStore { .. } => {
                         self.keystores.push(config.name.clone());
-                    }
-                    PluginRole::Indexer => {
-                        self.indexers.push(config.name.clone());
                     }
                     PluginRole::SubCommand { name } => {
                         self.sub_commands.insert(name.clone(), config.name.clone());
@@ -297,7 +250,7 @@ impl PluginManager {
             if let Some((plugin, _)) = self.plugins.get_mut(name) {
                 plugin.set_path(new_path);
             }
-            self.service_plugin_changed(last_actived_keystore, last_actived_indexer)?;
+            self.service_plugin_changed(last_actived_keystore)?;
         }
         Ok(())
     }
@@ -309,9 +262,6 @@ impl PluginManager {
         let last_actived_keystore = self
             .actived_keystore()
             .map(|(_, config, _)| config.name.clone());
-        let last_actived_indexer = self
-            .actived_indexer()
-            .map(|(_, config)| config.name.clone());
         if let Some((plugin, config)) = self.plugins.get_mut(name).and_then(|(plugin, config)| {
             if plugin.is_active() {
                 plugin.deactive();
@@ -325,14 +275,6 @@ impl PluginManager {
                     PluginRole::KeyStore { .. } => {
                         self.keystores = self
                             .keystores
-                            .split_off(0)
-                            .into_iter()
-                            .filter(|plugin_name| plugin_name != name)
-                            .collect::<Vec<_>>();
-                    }
-                    PluginRole::Indexer => {
-                        self.indexers = self
-                            .indexers
                             .split_off(0)
                             .into_iter()
                             .filter(|plugin_name| plugin_name != name)
@@ -367,7 +309,7 @@ impl PluginManager {
             if let Some((plugin, _)) = self.plugins.get_mut(name) {
                 plugin.set_path(new_path);
             }
-            self.service_plugin_changed(last_actived_keystore, last_actived_indexer)?;
+            self.service_plugin_changed(last_actived_keystore)?;
         }
         Ok(())
     }
@@ -428,23 +370,12 @@ impl PluginManager {
         }
     }
 
-    fn service_plugin_changed(
-        &self,
-        last_actived_keystore: Option<String>,
-        last_actived_indexer: Option<String>,
-    ) -> Result<(), String> {
+    fn service_plugin_changed(&self, last_actived_keystore: Option<String>) -> Result<(), String> {
         let actived_keystore = self.actived_keystore();
         if last_actived_keystore != actived_keystore.map(|(_, config, _)| config.name.clone()) {
             let keystore_plugin =
                 actived_keystore.map(|(plugin, config, _)| (plugin.clone(), config.clone()));
             self.call_service(ServiceRequest::KeyStoreChanged(keystore_plugin))?;
-        }
-
-        let actived_indexer = self.actived_indexer();
-        if last_actived_indexer != actived_indexer.map(|(_, config)| config.name.clone()) {
-            let indexer_plugin =
-                actived_indexer.map(|(plugin, config)| (plugin.clone(), config.clone()));
-            self.call_service(ServiceRequest::IndexerChanged(indexer_plugin))?;
         }
         Ok(())
     }
@@ -543,7 +474,6 @@ pub enum ServiceRequest {
         request: PluginRequest,
     },
     KeyStoreChanged(Option<(Plugin, PluginConfig)>),
-    IndexerChanged(Option<(Plugin, PluginConfig)>),
 
     #[allow(unused)]
     RpcUrlChanged(String),
@@ -558,9 +488,7 @@ pub enum ServiceResponse {
 impl ServiceProvider {
     fn start(
         default_keystore: DefaultKeyStore,
-        default_indexer: DefaultIndexer,
         mut keystore_plugin: Option<(Plugin, PluginConfig)>,
-        mut indexer_plugin: Option<(Plugin, PluginConfig)>,
         rpc_url: String,
     ) -> Result<ServiceProvider, String> {
         fn start_daemon(
@@ -581,7 +509,6 @@ impl ServiceProvider {
         let mut rpc_client = HttpRpcClient::new(rpc_url);
         let service_handler = sender.clone();
         let mut keystore_daemon = start_daemon(&keystore_plugin, &service_handler)?;
-        let mut indexer_daemon = start_daemon(&indexer_plugin, &service_handler)?;
 
         let inner_sender = sender.clone();
         let handle = thread::spawn(move || loop {
@@ -616,32 +543,6 @@ impl ServiceProvider {
                             }
                             keystore_plugin = None;
                             keystore_daemon = None;
-                            ServiceResponse::Ok
-                        }
-                        ServiceRequest::IndexerChanged(Some((plugin, config))) => {
-                            if Some(&config.name)
-                                != indexer_plugin.as_ref().map(|(_, config)| &config.name)
-                            {
-                                indexer_plugin = Some((plugin, config));
-                                match start_daemon(&indexer_plugin, &service_handler) {
-                                    Ok(process) => {
-                                        indexer_daemon = process;
-                                        ServiceResponse::Ok
-                                    }
-                                    Err(err) => ServiceResponse::Error(err),
-                                }
-                            } else {
-                                ServiceResponse::Ok
-                            }
-                        }
-                        ServiceRequest::IndexerChanged(None) => {
-                            if let Some((_, config)) = indexer_plugin {
-                                if indexer_daemon.is_some() {
-                                    log::info!("Stop indexer daemon plugin: {}", config.name);
-                                }
-                            }
-                            indexer_plugin = None;
-                            indexer_daemon = None;
                             ServiceResponse::Ok
                         }
                         ServiceRequest::RpcUrlChanged(new_url) => {
@@ -683,60 +584,6 @@ impl ServiceProvider {
                                                         code: 0,
                                                         message: String::from(
                                                             "Send request to keystore failed",
-                                                        ),
-                                                        data: None,
-                                                    })
-                                                        });
-                                                if let Err(err) = responder
-                                                    .send(ServiceResponse::Response(response))
-                                                {
-                                                    log::warn!(
-                                                        "Send ServiceResponse failed: {:?}",
-                                                        err
-                                                    );
-                                                }
-                                            });
-                                            // Otherwise, if plugin send request to ServiceProvider, will case a dead loop
-                                            continue;
-                                        }
-                                        Err(err) => PluginResponse::Error(JsonrpcError {
-                                            code: 0,
-                                            message: err,
-                                            data: None,
-                                        }),
-                                    }
-                                }
-                                PluginRequest::Indexer { .. } => {
-                                    match indexer_plugin
-                                        .as_ref()
-                                        .filter(|(plugin, config)| {
-                                            plugin.is_active() && !config.daemon
-                                        })
-                                        .map(|(plugin, config)| {
-                                            PluginProcess::start(
-                                                plugin.clone(),
-                                                config.clone(),
-                                                inner_sender.clone(),
-                                            )
-                                        })
-                                        .transpose()
-                                    {
-                                        Ok(indexer_process) => {
-                                            let handler = indexer_daemon
-                                                .as_ref()
-                                                .or(indexer_process.as_ref())
-                                                .map(|process| process.handler())
-                                                .unwrap_or_else(|| default_indexer.handler())
-                                                .clone();
-                                            thread::spawn(move || {
-                                                let response =
-                                                    Request::call(&handler, (0, request.clone()))
-                                                        .map(|(_id, response)| response)
-                                                        .unwrap_or_else(|| {
-                                                            PluginResponse::Error(JsonrpcError {
-                                                        code: 0,
-                                                        message: String::from(
-                                                            "Send request to indexer failed",
                                                         ),
                                                         data: None,
                                                     })
@@ -1576,118 +1423,6 @@ impl KeyStoreHandler {
             secp256k1::PublicKey::from_slice(data.as_bytes()).map_err(|err| err.to_string())
         } else {
             Err("Mismatch keystore response".to_string())
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct IndexerHandler {
-    handler: ServiceHandler,
-}
-
-#[allow(unused)]
-impl IndexerHandler {
-    fn new(handler: ServiceHandler) -> IndexerHandler {
-        IndexerHandler { handler }
-    }
-
-    fn call(&self, request: PluginRequest) -> Result<PluginResponse, String> {
-        let request = ServiceRequest::Request {
-            is_from_plugin: false,
-            plugin_name: String::from("default_indexer"),
-            request,
-        };
-        match Request::call(&self.handler, request) {
-            Some(ServiceResponse::Response(PluginResponse::Error(error))) => Err(error.message),
-            Some(ServiceResponse::Response(response)) => Ok(response),
-            Some(_) => Err(String::from("Mismatch plugin response")),
-            None => Err(String::from("Send request error")),
-        }
-    }
-
-    pub fn tip_header(&self, genesis_hash: H256) -> Result<Box<HeaderView>, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::TipHeader,
-        };
-        if let PluginResponse::HeaderView(header_view) = self.call(request)? {
-            Ok(header_view)
-        } else {
-            Err("Invalid plugin response".to_string())
-        }
-    }
-    pub fn last_header(&self, genesis_hash: H256) -> Result<Box<Option<HeaderView>>, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::LastHeader,
-        };
-        if let PluginResponse::HeaderViewOpt(header_view_opt) = self.call(request)? {
-            Ok(header_view_opt)
-        } else {
-            Err("Invalid plugin response".to_string())
-        }
-    }
-    pub fn get_capacity(&self, genesis_hash: H256, lock_hash: H256) -> Result<u64, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::GetCapacity(lock_hash),
-        };
-        if let PluginResponse::Integer64(capacity) = self.call(request)? {
-            Ok(capacity)
-        } else {
-            Err("Invalid plugin response".to_string())
-        }
-    }
-    pub fn get_live_cells(
-        &self,
-        genesis_hash: H256,
-        index: LiveCellIndexType,
-        hash: H256,
-        from_number: Option<u64>,
-        to_number: Option<u64>,
-        limit: u64,
-    ) -> Result<Vec<LiveCellInfo>, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::LiveCells {
-                index,
-                hash,
-                from_number,
-                to_number,
-                limit,
-            },
-        };
-        if let PluginResponse::LiveCells(infos) = self.call(request)? {
-            Ok(infos)
-        } else {
-            Err("Invalid plugin response".to_string())
-        }
-    }
-    pub fn get_top_n(
-        &self,
-        genesis_hash: H256,
-        n: u64,
-    ) -> Result<Vec<(H256, Option<Script>, u64)>, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::TopN(n),
-        };
-        if let PluginResponse::TopN(infos) = self.call(request)? {
-            Ok(infos)
-        } else {
-            Err("Invalid plugin response".to_string())
-        }
-    }
-    // JSON format indexer status info
-    pub fn get_indexer_info(&self, genesis_hash: H256) -> Result<serde_json::Value, String> {
-        let request = PluginRequest::Indexer {
-            genesis_hash,
-            request: IndexerRequest::IndexerInfo,
-        };
-        if let PluginResponse::JsonValue(info) = self.call(request)? {
-            Ok(info)
-        } else {
-            Err("Invalid plugin response".to_string())
         }
     }
 }

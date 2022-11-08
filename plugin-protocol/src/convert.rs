@@ -2,11 +2,10 @@ use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use faster_hex::{hex_decode, hex_string};
 use serde::de::DeserializeOwned;
 use std::convert::TryFrom;
-use std::str::FromStr;
 
 use super::{
-    method, CallbackRequest, IndexerRequest, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest,
-    LiveCellIndexType, PluginRequest, PluginResponse, RpcRequest, JSONRPC_VERSION,
+    method, CallbackRequest, JsonrpcRequest, JsonrpcResponse, KeyStoreRequest, PluginRequest,
+    PluginResponse, RpcRequest, JSONRPC_VERSION,
 };
 
 impl From<(u64, PluginRequest)> for JsonrpcRequest {
@@ -29,14 +28,6 @@ impl From<(u64, PluginRequest)> for JsonrpcRequest {
             PluginRequest::SubCommand(args) => (method::SUB_COMMAND, vec![serde_json::json!(args)]),
             PluginRequest::Callback(callback_request) => callback_request.into(),
             PluginRequest::Rpc(rpc_request) => rpc_request.into(),
-            PluginRequest::Indexer {
-                genesis_hash,
-                request: indexer_request,
-            } => {
-                let (method, mut params) = indexer_request.into();
-                params.insert(0, serde_json::json!(genesis_hash));
-                (method, params)
-            }
             PluginRequest::KeyStore(keystore_request) => keystore_request.into(),
         };
         JsonrpcRequest {
@@ -70,13 +61,6 @@ impl TryFrom<JsonrpcRequest> for (u64, PluginRequest) {
             }
             method if method.starts_with(method::RPC_PREFIX) => {
                 RpcRequest::try_from(&data).map(PluginRequest::Rpc)?
-            }
-            method if method.starts_with(method::INDEXER_PREFIX) => {
-                let genesis_hash = parse_param(&data, 0, "genesis_hash")?;
-                IndexerRequest::try_from(&data).map(|request| PluginRequest::Indexer {
-                    genesis_hash,
-                    request,
-                })?
             }
             method if method.starts_with(method::KEYSTORE_PREFIX) => {
                 KeyStoreRequest::try_from(&data).map(PluginRequest::KeyStore)?
@@ -330,69 +314,6 @@ impl TryFrom<&JsonrpcRequest> for RpcRequest {
             method::RPC_GET_BLOCK_HASH => RpcRequest::GetBlockHash {
                 number: parse_param(data, 0, "number")?,
             },
-            _ => {
-                return Err(format!("Invalid request method: {}", data.method));
-            }
-        };
-        Ok(request)
-    }
-}
-
-impl From<IndexerRequest> for (&'static str, Vec<serde_json::Value>) {
-    fn from(request: IndexerRequest) -> (&'static str, Vec<serde_json::Value>) {
-        match request {
-            IndexerRequest::TipHeader => (method::INDEXER_TIP_HEADER, Vec::new()),
-            IndexerRequest::LastHeader => (method::INDEXER_LAST_HEADER, Vec::new()),
-            IndexerRequest::GetCapacity(lock_hash) => (
-                method::INDEXER_GET_CAPACITY,
-                vec![serde_json::json!(lock_hash)],
-            ),
-            IndexerRequest::LiveCells {
-                index,
-                hash,
-                from_number,
-                to_number,
-                limit,
-            } => {
-                let params = vec![
-                    serde_json::json!(index.to_string()),
-                    serde_json::json!(hash),
-                    serde_json::json!(from_number),
-                    serde_json::json!(to_number),
-                    serde_json::json!(limit),
-                ];
-                (method::INDEXER_GET_LIVE_CELLS, params)
-            }
-            IndexerRequest::TopN(n) => (method::INDEXER_GET_TOPN, vec![serde_json::json!(n)]),
-            IndexerRequest::IndexerInfo => (method::INDEXER_GET_INDEXER_INFO, Vec::new()),
-            IndexerRequest::Any(value) => (method::INDEXER_ANY, vec![value]),
-        }
-    }
-}
-impl TryFrom<&JsonrpcRequest> for IndexerRequest {
-    type Error = String;
-    fn try_from(data: &JsonrpcRequest) -> Result<IndexerRequest, Self::Error> {
-        // NOTE: the first parameter is genesis_hash
-        let request = match data.method.as_str() {
-            method::INDEXER_TIP_HEADER => IndexerRequest::TipHeader,
-            method::INDEXER_LAST_HEADER => IndexerRequest::LastHeader,
-            method::INDEXER_GET_CAPACITY => {
-                IndexerRequest::GetCapacity(parse_param(data, 1, "lock_hash")?)
-            }
-            method::INDEXER_GET_LIVE_CELLS => {
-                let index_string: String = parse_param(data, 1, "index-type")?;
-                let index = LiveCellIndexType::from_str(index_string.as_str())?;
-                IndexerRequest::LiveCells {
-                    index,
-                    hash: parse_param(data, 2, "hash")?,
-                    from_number: parse_param(data, 3, "from_number")?,
-                    to_number: parse_param(data, 4, "to_number")?,
-                    limit: parse_param(data, 5, "limit")?,
-                }
-            }
-            method::INDEXER_GET_TOPN => IndexerRequest::TopN(parse_param(data, 1, "n")?),
-            method::INDEXER_GET_INDEXER_INFO => IndexerRequest::IndexerInfo,
-            method::INDEXER_ANY => IndexerRequest::Any(parse_param(data, 1, "value")?),
             _ => {
                 return Err(format!("Invalid request method: {}", data.method));
             }

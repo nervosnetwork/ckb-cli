@@ -266,24 +266,3 @@ impl DefaultKeyStore {
         &self.handler
     }
 }
-
-pub(crate) struct DefaultIndexer {
-    handler: PluginHandler,
-    _thread: JoinHandle<()>,
-}
-
-impl DefaultIndexer {
-    pub(crate) fn start() -> DefaultIndexer {
-        // TODO:
-        let (sender, _receiver) = bounded(1);
-        let thread = thread::spawn(|| {});
-        DefaultIndexer {
-            handler: sender,
-            _thread: thread,
-        }
-    }
-
-    pub(crate) fn handler(&self) -> &PluginHandler {
-        &self.handler
-    }
-}

@@ -3,9 +3,8 @@ mod jsonrpc;
 pub mod method;
 
 use std::fmt;
-use std::str::FromStr;
 
-use ckb_jsonrpc_types::{BlockView, HeaderView, JsonBytes, Script, Transaction};
+use ckb_jsonrpc_types::{BlockView, HeaderView, JsonBytes, Transaction};
 use ckb_types::{H160, H256};
 use serde_derive::{Deserialize, Serialize};
 
@@ -40,7 +39,6 @@ impl PluginConfig {
         for role in &self.roles {
             match role {
                 PluginRole::KeyStore { .. } => (),
-                PluginRole::Indexer => (),
                 _ => {
                     return true;
                 }
@@ -55,7 +53,6 @@ impl PluginConfig {
 pub enum PluginRole {
     // The argument is for if keystore need password
     KeyStore { require_password: bool },
-    Indexer,
     // The argument is for where the sub-command is injected to.
     SubCommand { name: String },
     // The argument is for the callback function name
@@ -80,7 +77,7 @@ pub enum PluginRequest {
     // Tell a daemon plugin to quit
     Quit,
     GetConfig,
-    // Notify all daemon plugins and indexer when rpc url changed
+    // Notify all daemon plugins when rpc url changed
     RpcUrlChanged(String),
     // The plugin need to parse the rest command line arguments
     SubCommand(String),
@@ -92,10 +89,6 @@ pub enum PluginRequest {
     PrintStderr(String),
     // == Can send from both direction
     KeyStore(KeyStoreRequest),
-    Indexer {
-        genesis_hash: H256,
-        request: IndexerRequest,
-    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -128,9 +121,6 @@ pub enum PluginResponse {
         external: Vec<(String, H160)>,
         change: Vec<(String, H160)>,
     },
-
-    LiveCells(Vec<LiveCellInfo>),
-    TopN(Vec<(H256, Option<Script>, u64)>),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -251,53 +241,4 @@ pub enum RpcRequest {
     GetBlockByNumber { number: u64 },
     GetBlockHash { number: u64 },
     // TODO: add more
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum LiveCellIndexType {
-    LockHash,
-    TypeHash,
-    // Code hash of type script
-    CodeHash,
-}
-impl fmt::Display for LiveCellIndexType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let repr = match self {
-            LiveCellIndexType::LockHash => "lock_hash",
-            LiveCellIndexType::TypeHash => "type_hash",
-            LiveCellIndexType::CodeHash => "code_hash",
-        };
-        write!(f, "{}", repr)
-    }
-}
-impl FromStr for LiveCellIndexType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "lock_hash" => Ok(LiveCellIndexType::LockHash),
-            "type_hash" => Ok(LiveCellIndexType::TypeHash),
-            "code_hash" => Ok(LiveCellIndexType::CodeHash),
-            _ => Err(format!("Invalid index type: {}", s)),
-        }
-    }
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum IndexerRequest {
-    TipHeader,
-    LastHeader,
-    // Get total capacity by lock hash
-    GetCapacity(H256),
-    LiveCells {
-        index: LiveCellIndexType,
-        hash: H256,
-        from_number: Option<u64>,
-        to_number: Option<u64>,
-        limit: u64,
-    },
-    TopN(u64),
-    IndexerInfo,
-    // For plugin to use custom indexer
-    Any(serde_json::Value),
 }
