@@ -129,7 +129,7 @@ impl<'a> DeploySubCommand<'a> {
                 App::new("apply-txs")
                     .arg(arg_info_file.clone())
                     .arg(arg_migration_dir)
-                    .about("Send cell/dep_group and write results to migration directory"),
+                    .about("Send cell/dep_group transactions and write results to migration directory"),
                 App::new("init-config")
                     .arg(arg_deployment.validator(|input| FilePathParser::new(false).validate(input)))
                     .about("Initialize default deployment config (format: toml)")
