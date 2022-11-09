@@ -11,6 +11,7 @@ use clap::{App, AppSettings, Arg};
 
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
+use plugin_protocol::{ENV_CKB_CLI_HOME, ENV_CKB_RPC};
 use subcommands::{
     AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
     MoleculeSubCommand, PluginSubCommand, PubSubCommand, RpcSubCommand, SudtSubCommand,
@@ -48,7 +49,7 @@ fn main() -> Result<(), io::Error> {
     let version_long = format!("{}\n", version.long());
 
     let mut env_map: HashMap<String, String> = env::vars().collect();
-    let ckb_cli_dir = if let Some(dir_string) = env_map.remove("CKB_CLI_HOME") {
+    let ckb_cli_dir = if let Some(dir_string) = env_map.remove(ENV_CKB_CLI_HOME) {
         let dir = PathBuf::from(dir_string.as_str());
         if dir.exists() && !dir.is_dir() {
             return Err(io::Error::new(
@@ -65,37 +66,16 @@ fn main() -> Result<(), io::Error> {
     if !ckb_cli_dir.exists() {
         fs::create_dir_all(&ckb_cli_dir)?;
     }
-    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir).unwrap();
-    let args = env::args().collect::<Vec<String>>();
-    if args.len() >= 2 {
-        match call_plugin_subcommand(&plugin_mgr, &args[1..]) {
-            Ok(Some(plugin_resp)) => {
-                println!("{}", plugin_resp.render(OutputFormat::Yaml, true));
-                return Ok(());
-            }
-            Ok(None) => {}
-            Err(err) => {
-                eprintln!("{}", err);
-                process::exit(1);
-            }
-        }
-    }
 
-    let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
-
-    let ckb_url_opt = matches
-        .value_of("url")
-        .map(ToOwned::to_owned)
-        .or_else(|| env_map.remove("API_URL"));
-    let mut config = GlobalConfig::new(ckb_url_opt.clone());
+    let env_ckb_url_opt = env_map.remove(ENV_CKB_RPC);
+    let mut config = GlobalConfig::new(env_ckb_url_opt.clone());
+    let mut output_format = OutputFormat::Yaml;
     let mut config_file = ckb_cli_dir.clone();
     config_file.push("config");
-
-    let mut output_format = OutputFormat::Yaml;
     if config_file.as_path().exists() {
         let content = fs::read_to_string(&config_file)?;
         let configs: serde_json::Value = serde_json::from_str(content.as_str()).unwrap();
-        if ckb_url_opt.is_none() {
+        if env_ckb_url_opt.is_none() {
             if let Some(value) = configs["url"].as_str() {
                 config.set_url(value.to_string());
             }
@@ -108,6 +88,29 @@ fn main() -> Result<(), io::Error> {
         config.set_output_format(output_format);
         config.set_completion_style(configs["completion_style"].as_bool().unwrap_or(true));
         config.set_edit_style(configs["edit_style"].as_bool().unwrap_or(true));
+    }
+
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, config.get_url()).unwrap();
+    let args = env::args().collect::<Vec<String>>();
+    if args.len() >= 2 {
+        match call_plugin_subcommand(&plugin_mgr, &args[1..]) {
+            Ok((false, None)) => {}
+            Ok((false, Some(plugin_resp))) => {
+                println!("{}", plugin_resp.render(OutputFormat::Yaml, true));
+                return Ok(());
+            }
+            // already handled by proxy subcommand plugin
+            Ok((true, _)) => return Ok(()),
+            Err(err) => {
+                eprintln!("{}", err);
+                process::exit(1);
+            }
+        }
+    }
+
+    let matches = build_cli(version_short.as_str(), version_long.as_str()).get_matches();
+    if let Some(url) = matches.value_of("url").map(ToOwned::to_owned) {
+        config.set_url(url);
     }
 
     let ckb_url = config.get_url().to_string();

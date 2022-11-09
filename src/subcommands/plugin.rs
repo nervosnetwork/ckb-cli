@@ -23,37 +23,38 @@ impl<'a> PluginSubCommand<'a> {
         App::new(name)
             .about("ckb-cli plugin management")
             .subcommands(vec![
-                App::new("active")
-                    .about(
-                        "Active a plugin (at most one keystore/indexer role plugin can be actived)",
-                    )
-                    .arg(arg_plugin_name.clone()),
-                App::new("deactive")
-                    .about("Deactive a plugin")
-                    .arg(arg_plugin_name.clone()),
-                App::new("list").about("List all plugins"),
-                App::new("info")
-                    .about("Show the detail information of a plugin")
-                    .arg(arg_plugin_name.clone()),
-                App::new("install")
-                    .about("Install a plugin, will active it immediately by default")
-                    .arg(
-                        Arg::with_name("binary-path")
-                            .long("binary-path")
-                            .required(true)
-                            .takes_value(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("The binary file path of the plugin"),
-                    )
-                    .arg(
-                        Arg::with_name("inactive")
-                            .long("inactive")
-                            .about("Install the plugin but not active it"),
-                    ),
-                App::new("uninstall")
-                    .about("Uninstall a plugin, deactive it then remove the binary file")
-                    .arg(arg_plugin_name.clone()),
-            ])
+            App::new("active")
+                .about("Active a plugin (at most one keystore/indexer role plugin can be actived)")
+                .arg(arg_plugin_name.clone()),
+            App::new("deactive")
+                .about("Deactive a plugin")
+                .arg(arg_plugin_name.clone()),
+            App::new("list").about("List all plugins"),
+            App::new("info")
+                .about("Show the detail information of a plugin")
+                .arg(arg_plugin_name.clone()),
+            App::new("install")
+                .about("Install a plugin, will active it immediately by default")
+                .arg(
+                    Arg::with_name("binary-path")
+                        .long("binary-path")
+                        .required(true)
+                        .takes_value(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .about("The binary file path of the plugin"),
+                )
+                .arg(
+                    Arg::with_name("inactive")
+                        .long("inactive")
+                        .about("Install the plugin but not active it"),
+                )
+                .arg(Arg::with_name("proxy").long("proxy").about(
+                    "Install the plugin as proxy mode (must binary name prefix with \"ckb-cli-\")",
+                )),
+            App::new("uninstall")
+                .about("Uninstall a plugin, deactive it then remove the binary file")
+                .arg(arg_plugin_name.clone()),
+        ])
     }
 }
 
@@ -109,7 +110,20 @@ impl<'a> CliSubCommand for PluginSubCommand<'a> {
             ("install", Some(m)) => {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "binary-path")?;
                 let active = !m.is_present("inactive");
-                let config = self.plugin_mgr.install(path, active)?;
+                let proxy = m.is_present("proxy");
+                if proxy {
+                    if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+                        if !file_name.starts_with("ckb-cli-") {
+                            return Err(
+                                "proxy mode plugin's binary file name must start with \"ckb-cli-\""
+                                    .to_string(),
+                            );
+                        }
+                    } else {
+                        return Err(format!("invalid binary path: {:?}", path));
+                    }
+                }
+                let config = self.plugin_mgr.install(path, active, proxy)?;
                 let resp = serde_json::json!({
                     "name": config.name,
                     "description": config.description,

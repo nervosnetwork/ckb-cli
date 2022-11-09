@@ -231,9 +231,14 @@ impl InteractiveEnv {
         let color = ColorWhen::new(self.config.color()).color();
         let debug = self.config.debug();
 
-        if let Some(plugin_resp) = call_plugin_subcommand(&self.plugin_mgr, &args)? {
-            println!("{}", plugin_resp.render(format, color));
-            return Ok(false);
+        match call_plugin_subcommand(&self.plugin_mgr, &args)? {
+            (false, None) => {}
+            (false, Some(plugin_resp)) => {
+                println!("{}", plugin_resp.render(format, color));
+                return Ok(false);
+            }
+            // already handled by proxy subcommand plugin
+            (true, _) => return Ok(false),
         }
 
         match parser.clone().try_get_matches_from(args) {

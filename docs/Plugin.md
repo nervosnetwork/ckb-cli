@@ -1,5 +1,8 @@
 # Basic architecture
-ckb-cli communicate with plugins by starting a plugin process and read/write request/response tough stdin/stdout. So it should be possible to write them in any language, and a crashing plugin should not cause ckb-cli crash.
+ckb-cli communicate with plugins by starting a plugin process and read/write request/response tough stdin/stdout, we call it `Request/Response` mode. So it should be possible to write them in any language, and a crashing plugin should not cause ckb-cli crash.
+
+There is a special mode of plugin protocol, ckb-cli just passing all command line arguments directly to the plugin, we call it `Proxy` mode.
+
 
 There are 4 role types.
 
@@ -16,7 +19,7 @@ pub enum PluginRole {
 
 The `key_store` role plugin can replace the default implementation and can be accessed by all plugins by sending request to stdout and then receive response from stdin.
 
-The `sub_command` role plugin will add a top level sub-command in ckb-cli, the plugin will need to parse the command line argument itself.
+The `sub_command` role plugin will add a top level sub-command in ckb-cli, the plugin will need to parse the command line argument itself. In `Proxy` mode, the plugin is a special `sub_command`.
 
 The `callback` role plugin will be called when certain event happened (send transaction for example).
 
@@ -34,6 +37,7 @@ struct PluginConfig {
 One plugin can have multiple roles.
 
 A plugin can define as `daemon` pluign, ckb-cli will start all actived `daemon` plugin processes when ckb-cli start and let them keep running. ckb-cli will start a non-daemon when needed, send request to its stdin and wait the response from its stdout then kill the process.
+
 
 # RPC protocol
 The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package provide a more semantic interface.
@@ -438,6 +442,19 @@ The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package 
     "jsonrpc": "2.0"
 }
 ```
+
+# Proxy mode sub-command plugin
+
+Install the plugin:
+```
+ckb-cli plugin install --binary-path ./ckb-cli-light-client --proxy
+```
+
+Use the plugin:
+```
+ckb-cli light-client transfer --help
+```
+
 
 # A keystore demo plugin
 

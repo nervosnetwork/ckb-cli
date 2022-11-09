@@ -12,6 +12,9 @@ pub use jsonrpc::{
     CellIndex, JsonrpcError, JsonrpcRequest, JsonrpcResponse, LiveCellInfo, JSONRPC_VERSION,
 };
 
+pub const ENV_CKB_CLI_HOME: &str = "CKB_CLI_HOME";
+pub const ENV_CKB_RPC: &str = "CKB_CLI_CKB_RPC";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PluginConfig {
     pub name: String,

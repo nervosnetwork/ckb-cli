@@ -21,6 +21,7 @@ use crate::utils::other::read_password;
 use plugin_protocol::{
     CallbackName, CallbackRequest, CallbackResponse, JsonrpcError, JsonrpcRequest, JsonrpcResponse,
     KeyStoreRequest, PluginConfig, PluginRequest, PluginResponse, PluginRole, SignTarget,
+    ENV_CKB_CLI_HOME, ENV_CKB_RPC,
 };
 
 pub const PLUGINS_DIRNAME: &str = "plugins";
@@ -30,6 +31,7 @@ pub const PLUGIN_FILENAME_EXT: &str = "bin";
 #[cfg(not(unix))]
 pub const PLUGIN_FILENAME_EXT: &str = "exe";
 pub const ACCOUNT_SOURCE_FS: &str = "Local File System";
+pub const PROXY_SUB_CMD_PREFIX: &str = "ckb-cli-";
 
 pub struct PluginManager {
     plugin_dir: PathBuf,
@@ -47,6 +49,11 @@ pub struct PluginManager {
     default_keystore_handler: PluginHandler,
     service_provider: ServiceProvider,
     _jsonrpc_id: Arc<AtomicU64>,
+
+    // used to passing to subcommand as `CKB_CLI_HOME` environment variable
+    ckb_cli_dir: PathBuf,
+    // used to passing to subcommand as `CKB_CLI_HOME` environment variable
+    ckb_rpc: String,
 }
 
 pub type PluginHandler = Sender<Request<(u64, PluginRequest), (u64, PluginResponse)>>;
@@ -72,19 +79,29 @@ impl PluginManager {
                         .map(|ext| ext == PLUGIN_FILENAME_EXT)
                         .unwrap_or(false)
                 {
-                    let plugin = Plugin::new(path.clone(), Vec::new(), *is_active);
-                    match plugin.get_config() {
+                    let mut plugin = Plugin::new(path.clone(), Vec::new(), *is_active, false);
+                    match config_from_proxy_subcomand(&path) {
                         Ok(config) => {
-                            if let Err(err) = config.validate() {
-                                log::warn!("Invalid plugin config: {:?}, error: {}", config, err);
-                            } else {
-                                log::info!("Loaded plugin: {}", config.name);
-                                plugins.insert(config.name.clone(), (plugin, config));
+                            plugin.is_proxy = true;
+                            plugins.insert(config.name.clone(), (plugin, config));
+                        }
+                        Err(_err) => match plugin.get_config() {
+                            Ok(config) => {
+                                if let Err(err) = config.validate() {
+                                    log::warn!(
+                                        "Invalid plugin config: {:?}, error: {}",
+                                        config,
+                                        err
+                                    );
+                                } else {
+                                    log::info!("Loaded plugin: {}", config.name);
+                                    plugins.insert(config.name.clone(), (plugin, config));
+                                }
                             }
-                        }
-                        Err(err) => {
-                            log::warn!("get_config error: {}, path: {:?}", err, path);
-                        }
+                            Err(err) => {
+                                log::info!("get_config error: {}, path: {:?}", err, path);
+                            }
+                        },
                     }
                 }
             }
@@ -92,7 +109,7 @@ impl PluginManager {
         Ok(plugins)
     }
 
-    pub fn init(ckb_cli_dir: &Path) -> Result<PluginManager, String> {
+    pub fn init(ckb_cli_dir: &Path, ckb_rpc: &str) -> Result<PluginManager, String> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
         let plugins = Self::load(ckb_cli_dir).map_err(|err| err.to_string())?;
         let default_keystore = DefaultKeyStore::start(ckb_cli_dir)?;
@@ -150,6 +167,8 @@ impl PluginManager {
             service_provider,
             default_keystore_handler,
             _jsonrpc_id: jsonrpc_id,
+            ckb_cli_dir: ckb_cli_dir.to_owned(),
+            ckb_rpc: ckb_rpc.to_owned(),
         })
     }
 
@@ -311,25 +330,35 @@ impl PluginManager {
         }
         Ok(())
     }
-    pub fn install(&mut self, tmp_path: PathBuf, active: bool) -> Result<PluginConfig, String> {
-        let tmp_plugin = Plugin::new(tmp_path, Vec::new(), active);
-        let config = tmp_plugin.get_config()?;
-        config.validate()?;
-        if self.plugins.contains_key(&config.name) {
-            return Err(format!(
-                "Plugin {} already installed! If you want update, please uninstall it first",
-                config.name
-            ));
-        }
+    pub fn install(
+        &mut self,
+        tmp_path: PathBuf,
+        active: bool,
+        proxy: bool,
+    ) -> Result<PluginConfig, String> {
+        let tmp_plugin = Plugin::new(tmp_path.clone(), Vec::new(), active, proxy);
+        let config = if !proxy {
+            let config = tmp_plugin.get_config()?;
+            config.validate()?;
+            config
+        } else {
+            config_from_proxy_subcomand(&tmp_path)?
+        };
         let base_dir = if active {
             self.plugin_dir.clone()
         } else {
             self.plugin_dir.join(INACTIVE_DIRNAME)
         };
         let path = base_dir.join(format!("{}.{}", config.name, PLUGIN_FILENAME_EXT));
+        if self.plugins.contains_key(&config.name) {
+            return Err(format!(
+                "Plugin {} already installed! If you want update, please uninstall it first",
+                config.name
+            ));
+        }
         fs::copy(tmp_plugin.path(), &path).map_err(|err| err.to_string())?;
         // TODO: change this address to executable
-        let plugin = Plugin::new(path, Vec::new(), false);
+        let plugin = Plugin::new(path, Vec::new(), false, proxy);
         self.plugins
             .insert(config.name.clone(), (plugin, config.clone()));
         if active {
@@ -346,7 +375,6 @@ impl PluginManager {
     }
 
     /// Handle sub-command and callback call
-    #[allow(unused)]
     pub fn handle<T, F: FnOnce(&PluginHandler) -> Result<T, String>>(
         &self,
         name: &str,
@@ -390,21 +418,33 @@ impl PluginManager {
         &self,
         command_name: &str,
         rest_args: Vec<String>,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<Option<serde_json::Value>, String> {
         if let Some(plugin_name) = self.sub_commands.get(command_name) {
-            self.handle(plugin_name.as_str(), |handler| {
-                let request = PluginRequest::SubCommand(rest_args);
-                let id: u64 = 0;
-                match Request::call(handler, (id, request))
-                    .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
-                {
-                    (_id, PluginResponse::JsonValue(output)) => Ok(output),
-                    (_id, PluginResponse::Error(rpc_err)) => {
-                        Err(format!("ERROR: {}", rpc_err.message))
+            let (plugin, _) = self.plugins.get(plugin_name.as_str()).expect("get plugin");
+            if plugin.is_proxy {
+                let _exit_status = Command::new(plugin.path())
+                    .env(ENV_CKB_CLI_HOME, &self.ckb_cli_dir)
+                    .env(ENV_CKB_RPC, &self.ckb_rpc)
+                    .args(rest_args)
+                    .spawn()
+                    .map_err(|err| err.to_string())?
+                    .wait();
+                Ok(None)
+            } else {
+                self.handle(plugin_name.as_str(), |handler| {
+                    let request = PluginRequest::SubCommand(rest_args);
+                    let id: u64 = 0;
+                    match Request::call(handler, (id, request))
+                        .ok_or_else(|| format!("Send request to plugin {} failed", plugin_name))?
+                    {
+                        (_id, PluginResponse::JsonValue(output)) => Ok(Some(output)),
+                        (_id, PluginResponse::Error(rpc_err)) => {
+                            Err(format!("ERROR: {}", rpc_err.message))
+                        }
+                        _ => Err("Invalid plugin response".to_string()),
                     }
-                    _ => Err("Invalid plugin response".to_string()),
-                }
-            })
+                })
+            }
         } else {
             Err(format!(
                 "plugin for sub-command {} not found or inactive",
@@ -444,6 +484,34 @@ impl PluginManager {
             ))
         }
     }
+}
+
+fn config_from_proxy_subcomand(path: &Path) -> Result<PluginConfig, String> {
+    if !path.is_file() {
+        return Err(format!(
+            "the proxy subcommand binary path is not a file: {:?}",
+            path
+        ));
+    }
+
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|file_name| {
+            file_name
+                .rsplit_once('.')
+                .map(|parts| parts.0)
+                .unwrap_or(file_name)
+                .strip_prefix(PROXY_SUB_CMD_PREFIX)
+                .map(|name| PluginConfig {
+                    name: name.to_string(),
+                    description: format!("[proxy plugin]: {}", name),
+                    daemon: false,
+                    roles: vec![PluginRole::SubCommand {
+                        name: name.to_string(),
+                    }],
+                })
+        })
+        .ok_or_else(|| format!("invalid proxy subcommand binary path: {:?}", path))
 }
 
 fn deserilize_key_set(set: Vec<(String, H160)>) -> Result<Vec<(DerivationPath, H160)>, String> {
@@ -863,14 +931,17 @@ pub struct Plugin {
     path: PathBuf,
     _args: Vec<String>,
     is_active: bool,
+    // if this is a proxy sub-command plugin
+    is_proxy: bool,
 }
 
 impl Plugin {
-    pub fn new(path: PathBuf, args: Vec<String>, is_active: bool) -> Plugin {
+    pub fn new(path: PathBuf, args: Vec<String>, is_active: bool, is_proxy: bool) -> Plugin {
         Plugin {
             path,
             _args: args,
             is_active,
+            is_proxy,
         }
     }
 

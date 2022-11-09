@@ -331,17 +331,17 @@ pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value 
 pub fn call_plugin_subcommand(
     plugin_mgr: &PluginManager,
     args: &[String],
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<(bool, Option<serde_json::Value>), String> {
     if args.is_empty() {
-        return Ok(None);
+        return Ok((false, None));
     }
     let cmd_name = &args[0];
     if plugin_mgr.sub_commands().contains_key(cmd_name.as_str()) {
         let rest_args = args[1..].to_vec();
         log::debug!("[call sub command plugin]: {} {:?}", cmd_name, rest_args);
         let resp = plugin_mgr.sub_command(cmd_name.as_str(), rest_args)?;
-        Ok(Some(resp))
+        Ok((resp.is_none(), resp))
     } else {
-        Ok(None)
+        Ok((false, None))
     }
 }
