@@ -145,6 +145,15 @@ pub fn fee_rate<'a>() -> Arg<'a> {
         .about("The transaction fee rate (unit: shannons/KB)")
 }
 
+pub fn force_small_change_as_fee<'a>() -> Arg<'a> {
+    Arg::with_name("force-small-change-as-fee")
+        .long("force-small-change-as-fee")
+        .takes_value(true)
+        .value_name("capacity")
+        .validator(|input|CapacityParser.validate(input))
+        .about("When there is no more inputs for create a change cell to balance the transaction capacity, force the addition capacity as fee, the value is actual maximum transaction fee.")
+}
+
 pub fn live_cells_limit<'a>() -> Arg<'a> {
     Arg::with_name("limit")
         .long("limit")

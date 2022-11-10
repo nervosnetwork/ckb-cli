@@ -97,6 +97,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
                     .arg(arg::fee_rate())
+                    .arg(arg::force_small_change_as_fee())
                     .arg(arg::derive_receiving_address_length())
                     .arg(
                         arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
@@ -141,6 +142,7 @@ impl<'a> WalletSubCommand<'a> {
             derive_change_address,
             capacity,
             fee_rate,
+            force_small_change_as_fee,
             to_address,
             to_data,
             is_type_id,
@@ -174,6 +176,8 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let to_capacity: u64 = CapacityParser.parse(&capacity)?.into();
         let fee_rate: u64 = FromStrParser::<u64>::default().parse(&fee_rate)?;
+        let force_small_change_as_fee: Option<u64> =
+            force_small_change_as_fee.map(|s| CapacityParser.parse(&s).unwrap().into());
         let receiving_address_length: u32 = derive_receiving_address_length
             .map(|input| FromStrParser::<u32>::default().parse(&input))
             .transpose()?
@@ -374,7 +378,7 @@ impl<'a> WalletSubCommand<'a> {
             fee_rate: FeeRate::from_u64(fee_rate),
             change_lock_script: Some(Script::from(&change_address_payload)),
             capacity_provider: CapacityProvider::new(lock_scripts),
-            force_small_change_as_fee: None,
+            force_small_change_as_fee,
         };
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(self.rpc_client.url(), 10);
         let mut cell_collector = DefaultCellCollector::new(self.rpc_client.url());
@@ -526,6 +530,9 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     password: None,
                     capacity: get_arg_value(m, "capacity")?,
                     fee_rate: get_arg_value(m, "fee-rate")?,
+                    force_small_change_as_fee: m
+                        .value_of("force-small-change-as-fee")
+                        .map(|s| s.to_string()),
                     derive_receiving_address_length: Some(get_arg_value(
                         m,
                         "derive-receiving-address-length",
@@ -649,6 +656,7 @@ pub struct TransferArgs {
     pub derive_change_address: Option<String>,
     pub capacity: String,
     pub fee_rate: String,
+    pub force_small_change_as_fee: Option<String>,
     pub to_address: String,
     pub to_data: Option<Bytes>,
     pub is_type_id: bool,

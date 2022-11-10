@@ -397,6 +397,7 @@ impl HttpTransferArgs {
             derive_change_address: None,
             capacity,
             fee_rate,
+            force_small_change_as_fee: None,
             to_address: self.to_address,
             to_data: self.to_data,
             is_type_id: false,
