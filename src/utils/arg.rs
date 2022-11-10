@@ -2,7 +2,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use ckb_types::{H160, H256};
+use ckb_types::H160;
 use clap::Arg;
 
 pub fn privkey_path<'a>() -> Arg<'a> {
@@ -29,14 +29,6 @@ pub fn address<'a>() -> Arg<'a> {
         .about(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
-}
-
-pub fn lock_hash<'a>() -> Arg<'a> {
-    Arg::with_name("lock-hash")
-        .long("lock-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("Lock hash")
 }
 
 pub fn derive_receiving_address_length<'a>() -> Arg<'a> {

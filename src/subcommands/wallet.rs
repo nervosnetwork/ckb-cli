@@ -118,7 +118,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::lock_arg())
                     .arg(arg::derive_receiving_address_length())
                     .arg(arg::derive_change_address_length())
-                    .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
+                    .arg(arg::derived()),
                 App::new("get-live-cells")
                     .about("Get live cells by address")
                     .arg(arg::address())
