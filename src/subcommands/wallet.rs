@@ -97,7 +97,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
                     .arg(arg::fee_rate())
-                    .arg(arg::force_small_change_as_fee())
+                    .arg(arg::max_tx_fee())
                     .arg(arg::derive_receiving_address_length())
                     .arg(
                         arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
@@ -530,9 +530,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     password: None,
                     capacity: get_arg_value(m, "capacity")?,
                     fee_rate: get_arg_value(m, "fee-rate")?,
-                    force_small_change_as_fee: m
-                        .value_of("force-small-change-as-fee")
-                        .map(|s| s.to_string()),
+                    force_small_change_as_fee: m.value_of("max-tx-fee").map(|s| s.to_string()),
                     derive_receiving_address_length: Some(get_arg_value(
                         m,
                         "derive-receiving-address-length",
