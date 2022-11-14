@@ -382,6 +382,7 @@ pub struct HttpTransferArgs {
     pub to_address: String,
     pub from_locked_address: Option<String>,
     pub to_data: Option<Bytes>,
+    pub force_small_change_as_fee: Option<String>,
 }
 
 impl HttpTransferArgs {
@@ -397,7 +398,7 @@ impl HttpTransferArgs {
             derive_change_address: None,
             capacity,
             fee_rate,
-            force_small_change_as_fee: None,
+            force_small_change_as_fee: self.force_small_change_as_fee,
             to_address: self.to_address,
             to_data: self.to_data,
             is_type_id: false,

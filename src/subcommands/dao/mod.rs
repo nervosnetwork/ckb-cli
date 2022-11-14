@@ -85,7 +85,7 @@ impl<'a> DAOSubCommand<'a> {
                     .lock(Some(Bytes::from(vec![0u8; 65])).pack())
                     .build(),
             )]),
-            force_small_change_as_fee: None,
+            force_small_change_as_fee: args.force_small_change_as_fee,
         };
 
         let signer: Box<dyn Signer> = if let Some(privkey) = args.privkey.as_ref() {
