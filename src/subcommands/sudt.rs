@@ -33,7 +33,6 @@ use ckb_types::{
     H160, H256,
 };
 
-use crate::plugin::PluginManager;
 use crate::subcommands::{CliSubCommand, Output};
 use crate::utils::{
     arg,
@@ -47,6 +46,7 @@ use crate::utils::{
     rpc::HttpRpcClient,
     signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
 };
+use crate::{plugin::PluginManager, subcommands::util::map_tx_builder_error_2_str};
 
 pub struct SudtSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
@@ -1348,7 +1348,9 @@ impl<'a> UdtTxBuilder<'a> {
                 &balancer,
                 &unlockers,
             )
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| {
+                map_tx_builder_error_2_str(balancer.force_small_change_as_fee.is_none(), err)
+            })?;
 
         assert!(
             still_locked_groups.is_empty(),

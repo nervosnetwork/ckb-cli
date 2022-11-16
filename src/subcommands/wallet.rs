@@ -36,7 +36,6 @@ use ckb_types::{
 use plugin_protocol::LiveCellInfo;
 
 use super::{CliSubCommand, Output};
-use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{
@@ -51,6 +50,7 @@ use crate::utils::{
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
+use crate::{plugin::PluginManager, subcommands::util::map_tx_builder_error_2_str};
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
@@ -411,7 +411,9 @@ impl<'a> WalletSubCommand<'a> {
                 &balancer,
                 &unlockers,
             )
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| {
+                map_tx_builder_error_2_str(balancer.force_small_change_as_fee.is_none(), err)
+            })?;
         if is_type_id {
             let mut blake2b = new_blake2b();
             let first_cell_input = tx.inputs().into_iter().next().expect("inputs empty");
