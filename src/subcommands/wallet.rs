@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use bitcoin::util::bip32::DerivationPath;
 use clap::{App, Arg, ArgMatches};
@@ -15,8 +15,8 @@ use ckb_sdk::{
         ValueRangeOption,
     },
     tx_builder::{
-        transfer::CapacityTransferBuilder, unlock_tx, CapacityBalancer, CapacityProvider,
-        SinceSource, TxBuilder,
+        transfer::CapacityTransferBuilder, unlock_tx, BalanceTxCapacityError, CapacityBalancer,
+        CapacityProvider, SinceSource, TxBuilder, TxBuilderError,
     },
     types::ScriptId,
     unlock::{
@@ -412,6 +412,21 @@ impl<'a> WalletSubCommand<'a> {
                 &unlockers,
             )
             .map_err(|err| {
+                if balancer.force_small_change_as_fee.is_none() {
+                    if let TxBuilderError::BalanceCapacity(BalanceTxCapacityError::CapacityNotEnough(ref msg)) =
+                        err
+                    {
+                        let prefix = "can not create change cell, left capacity=";
+                        if msg.contains(prefix) {
+                            let left_capacity = HumanCapacity::from_str(&msg[prefix.len()..]);
+                            if let Ok(left_capacity) = left_capacity {
+                                let suggest_capacity = HumanCapacity(left_capacity.0 + to_capacity);
+
+                                return format!("{}, try to transfer {} or try parameter `--max-tx-fee` to make small left capacity as transaction fee", err, suggest_capacity);
+                            }
+                        }
+                    }
+                }
                 map_tx_builder_error_2_str(balancer.force_small_change_as_fee.is_none(), err)
             })?;
         if is_type_id {
