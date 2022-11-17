@@ -23,7 +23,7 @@ use ckb_sdk::{
         AcpScriptSigner, AcpUnlocker, ChequeAction, ChequeScriptSigner, ChequeUnlocker,
         ScriptUnlocker, SecpSighashScriptSigner, SecpSighashUnlocker,
     },
-    Address, AddressPayload, NetworkType,
+    Address, AddressPayload, HumanCapacity, NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -885,7 +885,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let force_small_change_as_fee =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+                    FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
                 let to_cheque_address = m.is_present("to-cheque-address");
                 let to_acp_address = m.is_present("to-acp-address");
 
@@ -936,7 +936,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let to_acp_address = m.is_present("to-acp-address");
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let force_small_change_as_fee =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+                    FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
 
                 check_udt_args(
                     &udt_to_vec,
@@ -990,7 +990,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let force_small_change_as_fee =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+                    FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
                 self.new_empty_acp(
                     NewAcpArgs {
                         owner,
@@ -1025,7 +1025,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let force_small_change_as_fee =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+                    FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
 
                 if capacity_provider.as_ref() == Some(&sender) {
                     return Err("<capacity-provider> can't be the same with <sender>".to_string());
@@ -1065,7 +1065,7 @@ impl<'a> CliSubCommand for SudtSubCommand<'a> {
                 let cell_deps: CellDeps = CellDepsParser.from_matches(m, "cell-deps")?;
                 let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
                 let force_small_change_as_fee =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+                    FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
                 self.cheque_withdraw(
                     WithdrawArgs {
                         owner,

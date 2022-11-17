@@ -9,7 +9,7 @@ use crate::utils::{
     other::{get_address, get_network_type},
 };
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{packed::Script, H160};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
@@ -145,7 +145,7 @@ impl TransactArgs {
         let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
 
         let force_small_change_as_fee =
-            FromStrParser::<u64>::default().from_matches_opt(m, "max-tx-fee")?;
+            FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
         Ok(Self {
             privkey,
             address,
