@@ -6,7 +6,7 @@ use ckb_sdk::{
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, OffchainTransactionDependencyProvider, Signer,
-        SignerError, TransactionDependencyError, TransactionDependencyProvider,
+        SignerError, TransactionDependencyError, TransactionDependencyProvider, ValueRangeOption,
     },
     tx_builder::{balance_tx_capacity, fill_placeholder_witnesses, CapacityBalancer},
     unlock::{
@@ -53,7 +53,9 @@ pub fn build_tx<T: ChangeInfo>(
     let (mut inputs, mut input_capacities): (Vec<_>, Vec<_>) =
         infos.iter().filter_map(|info| info.build_input()).unzip();
     if inputs.is_empty() {
-        let query = CellQueryOptions::new_lock(from_script.clone());
+        let mut query = CellQueryOptions::new_lock(from_script.clone());
+        query.secondary_script_len_range = Some(ValueRangeOption::new_exact(0));
+        query.data_len_range = Some(ValueRangeOption::new_exact(0));
         let (more_infos, more_capacity) = cell_collector.collect_live_cells(&query, true)?;
         if more_infos.is_empty() {
             return Err(anyhow!("No live cell found from address: {}", from_address));
