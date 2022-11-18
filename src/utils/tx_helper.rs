@@ -206,7 +206,11 @@ impl TxHelper {
 
     pub fn sign_inputs<C>(
         &self,
-        mut signer: SignerFn,
+        signer: &mut dyn FnMut(
+            &HashSet<H160>,
+            &H256,
+            &rpc_types::Transaction,
+        ) -> Result<Option<[u8; 65]>, String>,
         get_live_cell: C,
         skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
@@ -279,14 +283,16 @@ impl TxHelper {
                 continue;
             }
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
-                let lock_script = Script::new_builder()
-                    .hash_type(ScriptHashType::Type.into())
-                    .code_hash(code_hash.clone())
-                    .args(lock_arg.pack())
-                    .build();
+                let lock_script = rpc_types::Script::from(
+                    Script::new_builder()
+                        .hash_type(ScriptHashType::Type.into())
+                        .code_hash(code_hash.clone())
+                        .args(lock_arg.pack())
+                        .build(),
+                );
                 format!(
-                    "Missing signatures for lock_hash: {:#x}",
-                    lock_script.calc_script_hash()
+                    "Missing signatures for lock_script: {}",
+                    serde_json::to_string_pretty(&lock_script).unwrap()
                 )
             })?;
             let lock_field = if code_hash == MULTISIG_TYPE_HASH.pack() {

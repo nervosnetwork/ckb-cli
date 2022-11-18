@@ -13,9 +13,9 @@ use ckb_signer::KeyStore;
 
 use crate::plugin::PluginManager;
 use crate::subcommands::{
-    AccountSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand, MoleculeSubCommand,
-    PluginSubCommand, RpcSubCommand, SudtSubCommand, TxSubCommand, UtilSubCommand,
-    WalletSubCommand,
+    AccountSubCommand, CliSubCommand, DAOSubCommand, DeploySubCommand, MockTxSubCommand,
+    MoleculeSubCommand, PluginSubCommand, RpcSubCommand, SudtSubCommand, TxSubCommand,
+    UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
     completer::CkbCompleter,
@@ -374,6 +374,17 @@ impl InteractiveEnv {
                 ("sudt", Some(sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = SudtSubCommand::new(
+                        &mut self.rpc_client,
+                        &mut self.plugin_mgr,
+                        genesis_info,
+                    )
+                    .process(sub_matches, debug)?;
+                    output.print(format, color);
+                    Ok(())
+                }
+                ("deploy", Some(sub_matches)) => {
+                    let genesis_info = self.genesis_info()?;
+                    let output = DeploySubCommand::new(
                         &mut self.rpc_client,
                         &mut self.plugin_mgr,
                         genesis_info,

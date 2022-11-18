@@ -467,7 +467,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                     .transpose()?;
                 let skip_check: bool = m.is_present("skip-check");
 
-                let signer = if let Some(privkey) = privkey_opt {
+                let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
                 } else {
                     let password = if self.plugin_mgr.keystore_require_password() {
@@ -494,7 +494,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(signer, get_live_cell, skip_check)?;
+                    let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
                     if m.is_present("add-signatures") {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
@@ -708,13 +708,13 @@ fn modify_tx_file<T, F: FnOnce(&mut TxHelper) -> Result<T, String>>(
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReprTxHelper {
-    transaction: json_types::Transaction,
-    multisig_configs: HashMap<H160, ReprMultisigConfig>,
-    signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+    pub(crate) transaction: json_types::Transaction,
+    pub(crate) multisig_configs: HashMap<H160, ReprMultisigConfig>,
+    pub(crate) signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
 }
 
 impl ReprTxHelper {
-    fn new(tx: TxHelper, network: NetworkType) -> Self {
+    pub(crate) fn new(tx: TxHelper, network: NetworkType) -> Self {
         ReprTxHelper {
             transaction: tx.transaction().data().into(),
             multisig_configs: tx
@@ -780,14 +780,14 @@ impl TryFrom<ReprTxHelper> for TxHelper {
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ReprMultisigConfig {
-    sighash_addresses: Vec<String>,
-    require_first_n: u8,
-    threshold: u8,
+pub struct ReprMultisigConfig {
+    pub sighash_addresses: Vec<String>,
+    pub require_first_n: u8,
+    pub threshold: u8,
 }
 
 impl ReprMultisigConfig {
-    fn new(cfg: MultisigConfig, network: NetworkType) -> Self {
+    pub(crate) fn new(cfg: MultisigConfig, network: NetworkType) -> Self {
         let sighash_addresses = cfg
             .sighash_addresses()
             .iter()

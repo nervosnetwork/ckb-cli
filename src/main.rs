@@ -12,9 +12,9 @@ use clap::{App, AppSettings, Arg};
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
 use subcommands::{
-    AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand, MockTxSubCommand,
-    MoleculeSubCommand, PluginSubCommand, PubSubCommand, RpcSubCommand, SudtSubCommand,
-    TxSubCommand, UtilSubCommand, WalletSubCommand,
+    AccountSubCommand, ApiServerSubCommand, CliSubCommand, DAOSubCommand, DeploySubCommand,
+    MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, PubSubCommand, RpcSubCommand,
+    SudtSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
 use utils::{
@@ -163,6 +163,12 @@ fn main() -> Result<(), io::Error> {
                     .process(sub_matches, debug)
             })
         }
+        ("deploy", Some(sub_matches)) => {
+            get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
+                DeploySubCommand::new(&mut rpc_client, &mut plugin_mgr, genesis_info)
+                    .process(sub_matches, debug)
+            })
+        }
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, plugin_mgr, key_store)
@@ -238,7 +244,9 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
+        .subcommand(DeploySubCommand::subcommand("deploy"))
         .arg(
+
             Arg::with_name("url")
                 .long("url")
                 .takes_value(true)
@@ -344,4 +352,5 @@ You may also use some public available nodes, check the list of public nodes: ht
         .subcommand(WalletSubCommand::subcommand())
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
+        .subcommand(DeploySubCommand::subcommand("deploy"))
 }

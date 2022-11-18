@@ -4,11 +4,12 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ckb_hash::blake2b_256;
+use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
+    util::serialize_signature,
     Address, AddressPayload, NetworkType, SECP256K1,
 };
 use ckb_signer::{KeyStore, ScryptType};
@@ -16,7 +17,7 @@ use ckb_types::{
     bytes::Bytes,
     core::{BlockView, Capacity, TransactionView},
     h256,
-    packed::{CellOutput, OutPoint},
+    packed::{CellInput, CellOutput, OutPoint},
     prelude::*,
     H160, H256,
 };
@@ -284,14 +285,6 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
-pub fn serialize_signature(signature: &secp256k1::ecdsa::RecoverableSignature) -> [u8; 65] {
-    let (recov_id, data) = signature.serialize_compact();
-    let mut signature_bytes = [0u8; 65];
-    signature_bytes[0..64].copy_from_slice(&data[0..64]);
-    signature_bytes[64] = recov_id.to_i32() as u8;
-    signature_bytes
-}
-
 pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {
     matches
         .value_of(name)
@@ -326,4 +319,12 @@ pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value 
         "mainnet": Address::new(NetworkType::Mainnet, payload.clone(), is_new).to_string(),
         "testnet": Address::new(NetworkType::Testnet, payload, is_new).to_string(),
     })
+}
+pub fn calculate_type_id(first_cell_input: &CellInput, output_index: u64) -> [u8; 32] {
+    let mut blake2b = new_blake2b();
+    blake2b.update(first_cell_input.as_slice());
+    blake2b.update(&output_index.to_le_bytes());
+    let mut ret = [0u8; 32];
+    blake2b.finalize(&mut ret);
+    ret
 }
