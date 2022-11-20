@@ -9,6 +9,7 @@ use ckb_jsonrpc_types as rpc_types;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
+    tx_builder::{BalanceTxCapacityError, TxBuilderError},
     util::serialize_signature,
     Address, AddressPayload, NetworkType, SECP256K1,
 };
@@ -320,6 +321,7 @@ pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value 
         "testnet": Address::new(NetworkType::Testnet, payload, is_new).to_string(),
     })
 }
+
 pub fn calculate_type_id(first_cell_input: &CellInput, output_index: u64) -> [u8; 32] {
     let mut blake2b = new_blake2b();
     blake2b.update(first_cell_input.as_slice());
@@ -327,4 +329,17 @@ pub fn calculate_type_id(first_cell_input: &CellInput, output_index: u64) -> [u8
     let mut ret = [0u8; 32];
     blake2b.finalize(&mut ret);
     ret
+}
+
+pub(crate) fn map_tx_builder_error_2_str(no_max_tx_fee: bool, err: TxBuilderError) -> String {
+    if no_max_tx_fee {
+        if let TxBuilderError::BalanceCapacity(BalanceTxCapacityError::CapacityNotEnough(ref msg)) =
+            err
+        {
+            if msg.contains("can not create change cell") {
+                return format!("{}, {}.", err, "try to calculate capacity again or try parameter `--max-tx-fee` to make small left capacity as transaction fee");
+            }
+        }
+    }
+    err.to_string()
 }

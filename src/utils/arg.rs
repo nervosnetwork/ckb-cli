@@ -2,7 +2,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use ckb_types::{H160, H256};
+use ckb_types::H160;
 use clap::Arg;
 
 pub fn privkey_path<'a>() -> Arg<'a> {
@@ -29,14 +29,6 @@ pub fn address<'a>() -> Arg<'a> {
         .about(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
-}
-
-pub fn lock_hash<'a>() -> Arg<'a> {
-    Arg::with_name("lock-hash")
-        .long("lock-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("Lock hash")
 }
 
 pub fn derive_receiving_address_length<'a>() -> Arg<'a> {
@@ -143,6 +135,16 @@ pub fn fee_rate<'a>() -> Arg<'a> {
         .validator(|input| FromStrParser::<u64>::default().validate(input))
         .default_value("1000")
         .about("The transaction fee rate (unit: shannons/KB)")
+}
+
+/// create an Arg object to receive value of force_small_change_as_fee for CapacityBalancer
+pub fn max_tx_fee<'a>() -> Arg<'a> {
+    Arg::with_name("max-tx-fee")
+        .long("max-tx-fee")
+        .takes_value(true)
+        .value_name("capacity")
+        .validator(|input|CapacityParser.validate(input))
+        .about("When there is no more inputs for create a change cell to balance the transaction capacity, force the addition capacity as fee, the value is actual maximum transaction fee(unit CKB, example:0.001)")
 }
 
 pub fn live_cells_limit<'a>() -> Arg<'a> {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use bitcoin::util::bip32::DerivationPath;
 use clap::{App, Arg, ArgMatches};
@@ -15,8 +15,8 @@ use ckb_sdk::{
         ValueRangeOption,
     },
     tx_builder::{
-        transfer::CapacityTransferBuilder, unlock_tx, CapacityBalancer, CapacityProvider,
-        SinceSource, TxBuilder,
+        transfer::CapacityTransferBuilder, unlock_tx, BalanceTxCapacityError, CapacityBalancer,
+        CapacityProvider, SinceSource, TxBuilder, TxBuilderError,
     },
     types::ScriptId,
     unlock::{
@@ -46,7 +46,7 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, read_password, to_live_cell_info,
+        get_to_data, map_tx_builder_error_2_str, read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
@@ -97,6 +97,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::to_data_path())
                     .arg(arg::capacity().required(true))
                     .arg(arg::fee_rate())
+                    .arg(arg::max_tx_fee())
                     .arg(arg::derive_receiving_address_length())
                     .arg(
                         arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
@@ -117,7 +118,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::lock_arg())
                     .arg(arg::derive_receiving_address_length())
                     .arg(arg::derive_change_address_length())
-                    .arg(arg::derived().conflicts_with(arg::lock_hash().get_name())),
+                    .arg(arg::derived()),
                 App::new("get-live-cells")
                     .about("Get live cells by address")
                     .arg(arg::address())
@@ -141,6 +142,7 @@ impl<'a> WalletSubCommand<'a> {
             derive_change_address,
             capacity,
             fee_rate,
+            force_small_change_as_fee,
             to_address,
             to_data,
             is_type_id,
@@ -174,6 +176,8 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let to_capacity: u64 = CapacityParser.parse(&capacity)?.into();
         let fee_rate: u64 = FromStrParser::<u64>::default().parse(&fee_rate)?;
+        let force_small_change_as_fee: Option<u64> =
+            force_small_change_as_fee.map(|s| CapacityParser.parse(&s).unwrap().into());
         let receiving_address_length: u32 = derive_receiving_address_length
             .map(|input| FromStrParser::<u32>::default().parse(&input))
             .transpose()?
@@ -374,7 +378,7 @@ impl<'a> WalletSubCommand<'a> {
             fee_rate: FeeRate::from_u64(fee_rate),
             change_lock_script: Some(Script::from(&change_address_payload)),
             capacity_provider: CapacityProvider::new(lock_scripts),
-            force_small_change_as_fee: None,
+            force_small_change_as_fee,
         };
         let tx_dep_provider = DefaultTransactionDependencyProvider::new(self.rpc_client.url(), 10);
         let mut cell_collector = DefaultCellCollector::new(self.rpc_client.url());
@@ -407,7 +411,24 @@ impl<'a> WalletSubCommand<'a> {
                 &balancer,
                 &unlockers,
             )
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| {
+                if balancer.force_small_change_as_fee.is_none() {
+                    if let TxBuilderError::BalanceCapacity(BalanceTxCapacityError::CapacityNotEnough(ref msg)) =
+                        err
+                    {
+                        let prefix = "can not create change cell, left capacity=";
+                        if msg.contains(prefix) {
+                            let left_capacity = HumanCapacity::from_str(&msg[prefix.len()..]);
+                            if let Ok(left_capacity) = left_capacity {
+                                let suggest_capacity = HumanCapacity(left_capacity.0 + to_capacity);
+
+                                return format!("{}, try to transfer {} or try parameter `--max-tx-fee` to make small left capacity as transaction fee", err, suggest_capacity);
+                            }
+                        }
+                    }
+                }
+                map_tx_builder_error_2_str(balancer.force_small_change_as_fee.is_none(), err)
+            })?;
         if is_type_id {
             let mut blake2b = new_blake2b();
             let first_cell_input = tx.inputs().into_iter().next().expect("inputs empty");
@@ -526,6 +547,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     password: None,
                     capacity: get_arg_value(m, "capacity")?,
                     fee_rate: get_arg_value(m, "fee-rate")?,
+                    force_small_change_as_fee: m.value_of("max-tx-fee").map(|s| s.to_string()),
                     derive_receiving_address_length: Some(get_arg_value(
                         m,
                         "derive-receiving-address-length",
@@ -649,6 +671,7 @@ pub struct TransferArgs {
     pub derive_change_address: Option<String>,
     pub capacity: String,
     pub fee_rate: String,
+    pub force_small_change_as_fee: Option<String>,
     pub to_address: String,
     pub to_data: Option<Bytes>,
     pub is_type_id: bool,

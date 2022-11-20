@@ -9,7 +9,7 @@ use crate::utils::{
     other::{get_address, get_network_type},
 };
 use ckb_crypto::secp::SECP256K1;
-use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{packed::Script, H160};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
@@ -109,6 +109,7 @@ pub struct TransactArgs {
     pub(crate) privkey: Option<PrivkeyWrapper>,
     pub(crate) address: Address,
     pub(crate) fee_rate: u64,
+    pub(crate) force_small_change_as_fee: Option<u64>,
 }
 
 impl TransactArgs {
@@ -142,10 +143,14 @@ impl TransactArgs {
             Address::new(network_type, payload, false)
         };
         let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
+
+        let force_small_change_as_fee =
+            FromStrParser::<HumanCapacity>::default().from_matches_opt(m, "max-tx-fee")?;
         Ok(Self {
             privkey,
             address,
             fee_rate,
+            force_small_change_as_fee,
         })
     }
 
@@ -154,6 +159,7 @@ impl TransactArgs {
             arg::privkey_path().required_unless(arg::from_account().get_name()),
             arg::from_account().required_unless(arg::privkey_path().get_name()),
             arg::fee_rate(),
+            arg::max_tx_fee(),
         ]
     }
 }

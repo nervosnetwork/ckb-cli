@@ -31,11 +31,15 @@ use ckb_types::{
 use plugin_protocol::LiveCellInfo;
 
 use self::command::TransactArgs;
-use crate::plugin::PluginManager;
-use crate::utils::genesis_info::GenesisInfo;
-use crate::utils::other::{read_password, to_live_cell_info};
-use crate::utils::rpc::HttpRpcClient;
-use crate::utils::signer::KeyStoreHandlerSigner;
+use crate::{
+    plugin::PluginManager,
+    utils::{
+        genesis_info::GenesisInfo,
+        other::{map_tx_builder_error_2_str, read_password, to_live_cell_info},
+        rpc::HttpRpcClient,
+        signer::KeyStoreHandlerSigner,
+    },
+};
 
 mod command;
 mod util;
@@ -85,7 +89,7 @@ impl<'a> DAOSubCommand<'a> {
                     .lock(Some(Bytes::from(vec![0u8; 65])).pack())
                     .build(),
             )]),
-            force_small_change_as_fee: None,
+            force_small_change_as_fee: args.force_small_change_as_fee,
         };
 
         let signer: Box<dyn Signer> = if let Some(privkey) = args.privkey.as_ref() {
@@ -123,7 +127,9 @@ impl<'a> DAOSubCommand<'a> {
                 &balancer,
                 &unlockers,
             )
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| {
+                map_tx_builder_error_2_str(balancer.force_small_change_as_fee.is_none(), err)
+            })?;
         assert!(still_locked_groups.is_empty());
         Ok(tx)
     }
