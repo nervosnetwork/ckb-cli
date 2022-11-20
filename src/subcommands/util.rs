@@ -694,8 +694,8 @@ message = "0x"
                 if debug {
                     eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
-                        NaiveDateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0),
-                        NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
+                        NaiveDateTime::from_timestamp_opt(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
+                        NaiveDateTime::from_timestamp_opt(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
                         elapsed / 1000,
                         epoch_fraction,
                         hex_string(multisig_addr.payload().args().as_ref()),
