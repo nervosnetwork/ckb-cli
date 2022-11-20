@@ -717,7 +717,7 @@ impl Key {
 
     pub fn filename(&self) -> String {
         let utc_now = Utc::now();
-        let date = utc_now.date();
+        let date = utc_now.date_naive();
         let time = utc_now.time();
         format!(
             "UTC--{:04}-{:02}-{:02}T{:02}-{:02}-{:02}.{:09}Z--{:x}",

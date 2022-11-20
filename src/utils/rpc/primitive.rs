@@ -96,7 +96,7 @@ fn epoch_to_string(value: u64) -> String {
     )
 }
 fn timestamp_to_string(value: u64) -> String {
-    let dt = Local.timestamp_millis(value as i64);
+    let dt = Local.timestamp_millis_opt(value as i64).unwrap();
     format!("{} ({})", value, dt)
 }
 fn since_to_string(value: u64) -> String {
@@ -118,7 +118,10 @@ fn since_to_string(value: u64) -> String {
                 epoch.length()
             )
         }
-        SinceType::Timestamp => format!("timestamp({})", Local.timestamp(inner_value as i64, 0)),
+        SinceType::Timestamp => format!(
+            "timestamp({})",
+            Local.timestamp_opt(inner_value as i64, 0).unwrap()
+        ),
     };
     format!("0x{:x} ({} {})", value, prefix, value_string)
 }
