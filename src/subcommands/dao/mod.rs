@@ -31,11 +31,15 @@ use ckb_types::{
 use plugin_protocol::LiveCellInfo;
 
 use self::command::TransactArgs;
-use crate::utils::genesis_info::GenesisInfo;
-use crate::utils::other::{read_password, to_live_cell_info};
-use crate::utils::rpc::HttpRpcClient;
-use crate::utils::signer::KeyStoreHandlerSigner;
-use crate::{plugin::PluginManager, subcommands::util::map_tx_builder_error_2_str};
+use crate::{
+    plugin::PluginManager,
+    utils::{
+        genesis_info::GenesisInfo,
+        other::{map_tx_builder_error_2_str, read_password, to_live_cell_info},
+        rpc::HttpRpcClient,
+        signer::KeyStoreHandlerSigner,
+    },
+};
 
 mod command;
 mod util;

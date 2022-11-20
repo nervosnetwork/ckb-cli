@@ -15,7 +15,6 @@ use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
     constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
-    tx_builder::{BalanceTxCapacityError, TxBuilderError},
     util::serialize_signature,
     Address, AddressPayload, NetworkType, OldAddress,
 };
@@ -932,19 +931,6 @@ fn to_timestamp(input: &str) -> Result<u64, String> {
     let date = NaiveDateTime::parse_from_str(&format!("{} 00:00:00", date), "%Y-%m-%d  %H:%M:%S")
         .map_err(|err| format!("{:?}", err))?;
     Ok(date.timestamp_millis() as u64)
-}
-
-pub(crate) fn map_tx_builder_error_2_str(no_max_tx_fee: bool, err: TxBuilderError) -> String {
-    if no_max_tx_fee {
-        if let TxBuilderError::BalanceCapacity(BalanceTxCapacityError::CapacityNotEnough(ref msg)) =
-            err
-        {
-            if msg.contains("can not create change cell") {
-                return format!("{}, {}.", err, "try to calculate capacity again or try parameter `--max-tx-fee` to make small left capacity as transaction fee");
-            }
-        }
-    }
-    err.to_string()
 }
 
 #[cfg(test)]

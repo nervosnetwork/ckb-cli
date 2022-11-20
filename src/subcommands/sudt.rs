@@ -33,20 +33,22 @@ use ckb_types::{
     H160, H256,
 };
 
-use crate::subcommands::{CliSubCommand, Output};
-use crate::utils::{
-    arg,
-    arg_parser::{
-        AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
-        UdtTargetParser,
+use crate::{
+    plugin::PluginManager,
+    subcommands::{CliSubCommand, Output},
+    utils::{
+        arg,
+        arg_parser::{
+            AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser,
+            PrivkeyWrapper, UdtTargetParser,
+        },
+        cell_dep::{CellDepName, CellDeps},
+        genesis_info::GenesisInfo,
+        other::{get_network_type, map_tx_builder_error_2_str, read_password},
+        rpc::HttpRpcClient,
+        signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
     },
-    cell_dep::{CellDepName, CellDeps},
-    genesis_info::GenesisInfo,
-    other::{get_network_type, read_password},
-    rpc::HttpRpcClient,
-    signer::{CommonSigner, KeyStoreHandlerSigner, PrivkeySigner},
 };
-use crate::{plugin::PluginManager, subcommands::util::map_tx_builder_error_2_str};
 
 pub struct SudtSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,

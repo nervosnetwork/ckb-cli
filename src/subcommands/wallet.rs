@@ -36,6 +36,7 @@ use ckb_types::{
 use plugin_protocol::LiveCellInfo;
 
 use super::{CliSubCommand, Output};
+use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
     arg_parser::{
@@ -45,12 +46,11 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, read_password, to_live_cell_info,
+        get_to_data, map_tx_builder_error_2_str, read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
-use crate::{plugin::PluginManager, subcommands::util::map_tx_builder_error_2_str};
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
