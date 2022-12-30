@@ -1,3 +1,18 @@
+# v1.4.0
+* Update ckb deps from `v0.105.1` to `v0.106.0`
+* Update deps
+  - ckb-sdk to `v2.4.0`
+  - secp256k1 to `v0.25.0`
+
+# v1.3.0
+* Add deploy subcommand, this is a more advanced version of `capsule deploy` #515
+  - more resonable CKB transaction structure
+  - support `multisig` lock
+* Add `--max-tx-fee` argument to subcommands, so that you can transfer all your CKB to another address more easy #517
+  - `wallet transfer`
+  - `sudt`
+  - `dao`
+
 # v1.2.0
 * Update ckb deps from `v0.104.0` to `v0.105.1`
 * Update deps
