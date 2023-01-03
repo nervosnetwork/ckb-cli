@@ -168,6 +168,18 @@ impl ArgParser<Vec<u8>> for HexParser {
     }
 }
 
+pub struct FeeRateStaticsTargetParser;
+
+impl ArgParser<u64> for FeeRateStaticsTargetParser {
+    fn parse(&self, input: &str) -> Result<u64, String> {
+        let target = FromStrParser::<u64>::default().parse(input)?;
+        if target == 0 || target > 101 {
+            return Err(format!("target ({}) is out of range[1 ~ 101]", target));
+        }
+        Ok(target)
+    }
+}
+
 #[derive(Default)]
 pub struct FixedHashParser<T> {
     _h: PhantomData<T>,

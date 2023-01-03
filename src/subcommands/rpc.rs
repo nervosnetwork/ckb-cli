@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
-    ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
+    ArgParser, DurationParser, FeeRateStaticsTargetParser, FilePathParser, FixedHashParser,
+    FromStrParser, HexParser,
 };
 use crate::utils::rpc::{
     BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, HttpRpcClient,
@@ -148,6 +149,25 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_block_economic_state")
                     .about("Returns increased issuance, miner reward, and the total transaction fee of a block")
                     .arg(arg_hash.clone().about("Specifies the block hash which rewards should be analyzed")),
+                App::new("estimate_cycles")
+                    .arg(
+                        Arg::with_name("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .required(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .about("Transaction content (json format, see rpc estimate_cycles)")
+                    )
+                    .about("estimate_cycles run a transaction and return the execution consumed cycles."),
+                App::new("get_fee_rate_statics")
+                    .arg(
+                        Arg::with_name("target")
+                        .long("target")
+                        .takes_value(true)
+                        .validator(|input| FromStrParser::<u64>::default().validate(input))
+                        .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                    )
+                    .about("estimate_cycles run a transaction and return the execution consumed cycles."),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -570,6 +590,39 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .rpc_client
                         .get_block_economic_state(hash)
                         .map(OptionBlockEconomicState)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("estimate_cycles", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let tx: Transaction =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .estimate_cycles(tx)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.estimate_cycles(tx.into())?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_fee_rate_statics", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let target: Option<u64> =
+                    FeeRateStaticsTargetParser {}.from_matches_opt(m, "target")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_fee_rate_statics(target.map(|v| v.into()))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_fee_rate_statics(target)?;
                     Ok(Output::new_output(resp))
                 }
             }

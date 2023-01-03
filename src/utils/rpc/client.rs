@@ -157,6 +157,24 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
+    pub fn estimate_cycles(
+        &mut self,
+        tx: packed::Transaction,
+    ) -> Result<types::EstimateCycles, String> {
+        self.client
+            .estimate_cycles(tx.into())
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_fee_rate_statics(
+        &mut self,
+        target: Option<u64>,
+    ) -> Result<types::FeeRateStatics, String> {
+        self.client
+            .get_fee_rate_statics(target.map(Into::into))
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
     // Net
     pub fn get_banned_addresses(&mut self) -> Result<Vec<types::BannedAddr>, String> {
         self.client
