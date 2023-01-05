@@ -358,6 +358,8 @@ pub struct ResponseFormat<V> {
 pub struct TransactionWithStatus {
     /// The transaction.
     pub transaction: Option<TransactionView>,
+    /// The transaction consumed cycles.
+    pub cycles: Option<Cycle>,
     /// The Transaction status.
     pub tx_status: TxStatus,
 }
@@ -383,6 +385,7 @@ impl TryFrom<rpc_types::TransactionWithStatusResponse> for TransactionWithStatus
                     }
                 })
                 .transpose()?,
+            cycles: json.cycles.map(|c| c.into()),
             tx_status: json.tx_status,
         })
     }
@@ -1263,6 +1266,39 @@ impl From<rpc_types::RawTxPool> for RawTxPool {
         match json {
             rpc_types::RawTxPool::Ids(ids) => RawTxPool::Ids(ids),
             rpc_types::RawTxPool::Verbose(verbose) => RawTxPool::Verbose(verbose.into()),
+        }
+    }
+}
+
+/// Response result of the RPC method `estimate_cycles`.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct EstimateCycles {
+    /// The count of cycles that the VM has consumed to verify this transaction.
+    pub cycles: Cycle,
+}
+
+impl From<rpc_types::EstimateCycles> for EstimateCycles {
+    fn from(json: rpc_types::EstimateCycles) -> EstimateCycles {
+        EstimateCycles {
+            cycles: json.cycles.into(),
+        }
+    }
+}
+
+/// The fee_rate statistics information, includes mean and median, unit: shannons per kilo-weight
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+pub struct FeeRateStatics {
+    /// mean
+    pub mean: Uint64,
+    /// median
+    pub median: Uint64,
+}
+
+impl From<rpc_types::FeeRateStatics> for FeeRateStatics {
+    fn from(json: rpc_types::FeeRateStatics) -> FeeRateStatics {
+        FeeRateStatics {
+            mean: json.mean.into(),
+            median: json.median.into(),
         }
     }
 }
