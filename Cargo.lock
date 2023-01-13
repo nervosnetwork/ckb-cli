@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "ckb-cli"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "ansi_term",
  "anyhow",
@@ -411,7 +411,7 @@ dependencies = [
  "ckb-jsonrpc-types",
  "ckb-mock-tx-types",
  "ckb-script",
- "ckb-sdk",
+ "ckb-sdk 2.4.1",
  "ckb-signer",
  "ckb-types",
  "ckb-util",
@@ -722,6 +722,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckb-sdk"
+version = "2.4.1"
+dependencies = [
+ "anyhow",
+ "bech32 0.8.1",
+ "bitflags",
+ "bytes 1.3.0",
+ "ckb-crypto",
+ "ckb-dao-utils",
+ "ckb-hash",
+ "ckb-jsonrpc-types",
+ "ckb-resource",
+ "ckb-script",
+ "ckb-traits",
+ "ckb-types",
+ "dashmap",
+ "enum-repr-derive",
+ "futures 0.3.25",
+ "jsonrpc-core",
+ "lazy_static",
+ "log",
+ "lru",
+ "parking_lot 0.12.1",
+ "reqwest",
+ "secp256k1",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "sha3 0.10.6",
+ "sparse-merkle-tree",
+ "thiserror",
+ "tokio",
+ "tokio-util 0.6.10",
+]
+
+[[package]]
 name = "ckb-signer"
 version = "0.4.0"
 dependencies = [
@@ -731,7 +767,7 @@ dependencies = [
  "chrono",
  "ckb-crypto",
  "ckb-hash",
- "ckb-sdk",
+ "ckb-sdk 2.4.0",
  "ckb-types",
  "faster-hex",
  "parking_lot 0.11.2",

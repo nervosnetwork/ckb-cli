@@ -1,3 +1,6 @@
+# v1.4.1
+* `get_block` and `get_block_by_number` support parameter `with_cycles`
+
 # v1.4.0
 * Update ckb deps from `v0.105.1` to `v0.106.0`
 * Update dep ckb-sdk to `v2.4.0`

@@ -621,6 +621,48 @@ impl From<BlockView> for core::BlockView {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct BlockResponse {
+    pub block: BlockView,
+    pub cycles: Option<Vec<Cycle>>,
+}
+
+impl TryFrom<rpc_types::BlockResponse> for BlockResponse {
+    type Error = String;
+    fn try_from(json: rpc_types::BlockResponse) -> Result<BlockResponse, Self::Error> {
+        let resp = match json {
+            rpc_types::BlockResponse::Regular(block_view) => {
+                let block = match block_view.inner {
+                    rpc_types::Either::Left(v) => v,
+                    rpc_types::Either::Right(_bytes) => {
+                        return Err("ckb-sdk-rust implements verbose parameter?".to_string())
+                    }
+                };
+                BlockResponse {
+                    block: block.into(),
+                    cycles: None,
+                }
+            }
+            rpc_types::BlockResponse::WithCycles(block_with_cycles_response) => {
+                let block = match block_with_cycles_response.block.inner {
+                    rpc_types::Either::Left(v) => v,
+                    rpc_types::Either::Right(_bytes) => {
+                        return Err("ckb-sdk-rust implements verbose parameter?".to_string())
+                    }
+                };
+                let cycles = block_with_cycles_response
+                    .cycles
+                    .map(|v| v.into_iter().map(|v| v.into()).collect());
+                BlockResponse {
+                    block: block.into(),
+                    cycles,
+                }
+            }
+        };
+        Ok(resp)
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct EpochView {
     pub number: EpochNumber,
     pub start_number: BlockNumber,

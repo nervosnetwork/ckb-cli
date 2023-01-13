@@ -31,11 +31,16 @@ impl HttpRpcClient {
 
 impl HttpRpcClient {
     // Chain
-    pub fn get_block(&mut self, hash: H256) -> Result<Option<types::BlockView>, String> {
+    pub fn get_block_with_cycles(
+        &mut self,
+        hash: H256,
+        with_cycles: bool,
+    ) -> Result<Option<types::BlockResponse>, String> {
         self.client
-            .get_block(hash)
-            .map(|opt| opt.map(Into::into))
-            .map_err(|err| err.to_string())
+            .get_block_with_cycles(hash, with_cycles)
+            .map(|opt| opt.map(TryInto::try_into))
+            .map_err(|err| err.to_string())?
+            .transpose()
     }
     pub fn get_block_by_number(&mut self, number: u64) -> Result<Option<types::BlockView>, String> {
         self.client
@@ -43,6 +48,19 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+
+    pub fn get_block_by_number_with_cycles(
+        &mut self,
+        number: u64,
+        with_cycles: bool,
+    ) -> Result<Option<types::BlockResponse>, String> {
+        self.client
+            .get_block_by_number_with_cycles(BlockNumber::from(number), with_cycles)
+            .map(|opt| opt.map(TryInto::try_into))
+            .map_err(|err| err.to_string())?
+            .transpose()
+    }
+
     pub fn get_block_hash(&mut self, number: u64) -> Result<Option<H256>, String> {
         self.client
             .get_block_hash(BlockNumber::from(number))
