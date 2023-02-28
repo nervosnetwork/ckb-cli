@@ -350,12 +350,6 @@ dependencies = [
 
 [[package]]
 name = "ckb-build-info"
-version = "0.105.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b27119a63dc1d5deb00ae3a44e4431dd2a0a65ca3283ef2b5e86306d347412fc"
-
-[[package]]
-name = "ckb-build-info"
 version = "0.106.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "875484aae077e761089a7f707590f1ee9ed31e4bb8a330f93c822d2f4f40644b"
@@ -401,8 +395,7 @@ dependencies = [
  "bitcoin",
  "byteorder",
  "chrono",
- "ckb-build-info 0.105.1",
- "ckb-build-info 0.106.0",
+ "ckb-build-info",
  "ckb-chain-spec",
  "ckb-cli-plugin-protocol",
  "ckb-crypto",
