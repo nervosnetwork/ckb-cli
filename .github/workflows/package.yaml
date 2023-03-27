@@ -187,6 +187,57 @@ jobs:
     env:
       REL_PKG: x86_64-apple-darwin.zip
 
+  package-for-mac-aarch64:
+    name: package-for-mac
+    runs-on: [self-hosted, macOS, ARM64]
+    steps:
+    - name: Setup PATH
+      run: |
+        echo /opt/homebrew/bin >> $GITHUB_PATH
+        echo /opt/homebrew/sbin >> $GITHUB_PATH
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    - name: Install Depedencies
+      run: |
+        if ! [ -d /opt/homebrew/opt/openssl@1.1 ]; then
+          brew install "openssl@1.1"
+        fi
+        if ! type -f gpg &> /dev/null; then
+          brew install gnupg
+        fi
+        if ! [ -f "$HOME/.cargo/bin/rustup" ]; then
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        fi
+
+    - uses: actions/checkout@v2
+    - name: Set Env
+      run: |
+        export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
+        echo "GIT_TAG_NAME=$GIT_TAG_NAME" >> $GITHUB_ENV
+    - name: Build and package ckb-cli
+      env:
+        LARGE_SECRET_PASSPHRASE: ${{ secrets.LARGE_SECRET_PASSPHRASE }}
+        GPG_SIGNER: ${{ secrets.GPG_SIGNER }}
+      run: |
+        export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
+        make OPENSSL_STATIC=1 OPENSSL_LIB_DIR=/usr/local/opt/openssl@1.1/lib OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl@1.1/include prod
+        gpg --quiet --batch --yes --decrypt --passphrase="$LARGE_SECRET_PASSPHRASE" --output devtools/ci/signer.asc devtools/ci/signer.asc.gpg
+        gpg --import devtools/ci/signer.asc
+        devtools/ci/package.sh target/release/ckb-cli
+        mv ${{ github.workspace }}/releases/ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }} ${{ github.workspace }}
+        mv ${{ github.workspace }}/releases/ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }}.asc ${{ github.workspace }}
+    - name: upload-zip-file
+      uses: actions/upload-artifact@v2
+      with:
+        name: ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }}
+        path: ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }}
+    - name: upload-asc-file
+      uses: actions/upload-artifact@v2
+      with:
+        name: ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }}.asc
+        path: ckb-cli_${{env.GIT_TAG_NAME }}_${{env.REL_PKG }}.asc
+    env:
+      REL_PKG: aarch64-apple-darwin.zip
+
   package-for-windows:
     name: package-for-windows
     runs-on: windows-2019
