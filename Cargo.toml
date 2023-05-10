@@ -29,7 +29,7 @@ secp256k1 = { version = "0.24", features = ["recovery"] }
 bitcoin = "0.29"
 faster-hex = "0.6"
 env_logger = "0.6"
-crossbeam-channel = "0.5.1"
+crossbeam-channel = "0.5.8"
 clap = "=3.0.0-beta.1"
 clap_generate = "=3.0.0-beta.1"
 serde = { version = "1.0", features = ["derive"] }
@@ -73,7 +73,7 @@ termion = "1.5"
 rand = "0.7"
 
 [build-dependencies]
-ckb-build-info = "=0.105.1"
+ckb-build-info = "=0.106.0"
 
 [workspace]
 members = ["ckb-signer", "plugin-protocol"]
