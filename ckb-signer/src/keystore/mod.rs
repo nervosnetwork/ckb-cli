@@ -202,12 +202,12 @@ impl KeyStore {
         scrypt_type: ScryptType,
     ) -> Result<serde_json::Value, Error> {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.to_json(new_password, scrypt_type))
     }
     pub fn export_key(&self, hash160: &H160, password: &[u8]) -> Result<MasterPrivKey, Error> {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.master_privkey)
     }
 
@@ -245,7 +245,7 @@ impl KeyStore {
         P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.master_privkey.sign(message, path))
     }
     pub fn sign_recoverable_with_password<P>(
@@ -259,7 +259,7 @@ impl KeyStore {
         P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.master_privkey.sign_recoverable(message, path))
     }
     pub fn extended_pubkey<P>(&mut self, hash160: &H160, path: &P) -> Result<ExtendedPubKey, Error>
@@ -281,7 +281,7 @@ impl KeyStore {
         P: AsRef<[ChildNumber]>,
     {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.master_privkey.extended_pubkey(path))
     }
     pub fn ckb_root_with_password(
@@ -290,7 +290,7 @@ impl KeyStore {
         password: &[u8],
     ) -> Result<CkbRoot, Error> {
         let filepath = self.get_filepath(hash160)?;
-        let key = self.storage.get_key(hash160, &filepath, password)?;
+        let key = self.storage.get_key(hash160, filepath, password)?;
         Ok(key.ckb_root())
     }
 
@@ -397,7 +397,7 @@ impl PassphraseKeyStore {
         password: &[u8],
     ) -> Result<Key, Error> {
         let filepath = self.join_path(filename);
-        let mut file = fs::File::open(&filepath)?;
+        let mut file = fs::File::open(filepath)?;
         let data = serde_json::from_reader(&mut file)
             .map_err(|err| Error::ParseJsonFailed(err.to_string()))?;
         let key = Key::from_json(&data, password)?;

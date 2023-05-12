@@ -48,7 +48,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
                 let total_capacity = cells.iter().map(|live| live.capacity).sum::<u64>();
                 let resp = serde_json::json!({
                     "live_cells": cells.into_iter().map(|info| {
-                        serde_json::to_value(&info).unwrap()
+                        serde_json::to_value(info).unwrap()
                     }).collect::<Vec<_>>(),
                     "total_capacity": total_capacity,
                 });

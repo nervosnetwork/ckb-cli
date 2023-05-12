@@ -46,11 +46,11 @@ impl Setup {
     }
 
     pub fn ready(&mut self, spec: &dyn Spec) -> ProcessGuard {
-        self.modify_ckb_toml(&*spec);
-        self.modify_spec_toml(&*spec);
+        self.modify_ckb_toml(spec);
+        self.modify_spec_toml(spec);
 
         let mut ckb_cmd = Command::new(&self.ckb_bin);
-        ckb_cmd.args(&["-C", &self.ckb_dir, "run", "--indexer", "--ba-advanced"]);
+        ckb_cmd.args(["-C", &self.ckb_dir, "run", "--indexer", "--ba-advanced"]);
 
         log::info!("run ckb: {:?}", ckb_cmd);
 
@@ -83,7 +83,7 @@ impl Setup {
 
     pub fn consensus(&self) -> Consensus {
         let path = Path::new(&self.ckb_dir).join("specs").join("dev.toml");
-        let content = fs::read_to_string(&path).unwrap();
+        let content = fs::read_to_string(path).unwrap();
         let spec_toml: ChainSpec = toml::from_str(&content).unwrap();
         spec_toml.build_consensus().unwrap()
     }
