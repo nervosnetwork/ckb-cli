@@ -31,15 +31,66 @@ impl HttpRpcClient {
 
 impl HttpRpcClient {
     // Chain
+    pub fn get_packed_block(&mut self, hash: H256) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_block(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
     pub fn get_block(&mut self, hash: H256) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block(hash)
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_packed_block_with_cycles(
+        &mut self,
+        hash: H256,
+    ) -> Result<Option<types::PackedBlockResponse>, String> {
+        self.client
+            .get_packed_block_with_cycles(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_block_with_cycles(
+        &mut self,
+        hash: H256,
+    ) -> Result<Option<types::BlockResponse>, String> {
+        self.client
+            .get_block_with_cycles(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_packed_block_by_number(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_block_by_number(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
     pub fn get_block_by_number(&mut self, number: u64) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block_by_number(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_packed_block_by_number_with_cycles(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::PackedBlockResponse>, String> {
+        self.client
+            .get_packed_block_by_number_with_cycles(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_block_by_number_with_cycles(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::BlockResponse>, String> {
+        self.client
+            .get_block_by_number_with_cycles(BlockNumber::from(number))
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }

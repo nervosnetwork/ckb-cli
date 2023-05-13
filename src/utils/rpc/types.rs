@@ -621,6 +621,35 @@ impl From<BlockView> for core::BlockView {
 }
 
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct BlockResponse {
+    pub block: BlockView,
+    pub cycles: Vec<Cycle>,
+}
+
+impl From<(ckb_jsonrpc_types::BlockView, Vec<Cycle>)> for BlockResponse {
+    fn from(orig: (ckb_jsonrpc_types::BlockView, Vec<Cycle>)) -> BlockResponse {
+        let (block, cycles) = orig;
+        BlockResponse {
+            block: block.into(),
+            cycles,
+        }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct PackedBlockResponse {
+    pub block: JsonBytes,
+    pub cycles: Vec<Cycle>,
+}
+
+impl From<(ckb_jsonrpc_types::JsonBytes, Vec<Cycle>)> for PackedBlockResponse {
+    fn from(orig: (ckb_jsonrpc_types::JsonBytes, Vec<Cycle>)) -> PackedBlockResponse {
+        let (block, cycles) = orig;
+        PackedBlockResponse { block, cycles }
+    }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct EpochView {
     pub number: EpochNumber,
     pub start_number: BlockNumber,
