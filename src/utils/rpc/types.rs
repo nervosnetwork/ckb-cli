@@ -391,6 +391,34 @@ impl TryFrom<rpc_types::TransactionWithStatusResponse> for TransactionWithStatus
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct PackedTransactionWithStatus {
+    /// The transaction.
+    pub transaction: Option<JsonBytes>,
+    /// The transaction consumed cycles.
+    pub cycles: Option<Cycle>,
+    /// The Transaction status.
+    pub tx_status: TxStatus,
+}
+impl TryFrom<rpc_types::TransactionWithStatusResponse> for PackedTransactionWithStatus {
+    type Error = String;
+    fn try_from(
+        json: rpc_types::TransactionWithStatusResponse,
+    ) -> Result<PackedTransactionWithStatus, Self::Error> {
+        Ok(PackedTransactionWithStatus {
+            transaction: json
+                .transaction
+                .map(|tx| match tx.inner {
+                    rpc_types::Either::Left(_v) => Err("does not get packed result".to_string()),
+                    rpc_types::Either::Right(bytes) => Ok(bytes),
+                })
+                .transpose()?,
+            cycles: json.cycles.map(|c| c.into()),
+            tx_status: json.tx_status,
+        })
+    }
+}
+
 /// The JSON view of a transaction as well as its status.
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionWithStatusResponse {
