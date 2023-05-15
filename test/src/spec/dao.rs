@@ -2,6 +2,7 @@ use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
 use ckb_chain_spec::ChainSpec;
+use std::{thread, time::Duration};
 
 const EPOCH_LENGTH: u64 = 32;
 const LOCK_PERIOD_EPOCHES: u64 = 180;
@@ -226,7 +227,16 @@ fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
         command = format!("{} --out-point {}", command, out_point);
     }
 
-    let prepare_tx_hash = setup.cli(&command);
+    let mut prepare_tx_hash = setup.cli(&command);
+    let mut cnt = 0;
+    while !prepare_tx_hash.starts_with("0x") {
+        cnt += 1;
+        if cnt > 50 {
+            panic!("{} failed", command);
+        }
+        thread::sleep(Duration::from_millis(200));
+        prepare_tx_hash = setup.cli(&command);
+    }
     setup
         .miner()
         .mine_until_transaction_confirm(&prepare_tx_hash);
