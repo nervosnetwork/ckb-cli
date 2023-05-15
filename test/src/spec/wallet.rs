@@ -186,6 +186,10 @@ impl Spec for WalletTransfer {
         ));
         assert_eq!(output, "total: 180.0 (CKB)");
     }
+
+    fn spec_name(&self) -> &'static str {
+        "WalletTransfer"
+    }
 }
 
 pub struct WalletTimelockedAddress;
@@ -283,5 +287,9 @@ impl Spec for WalletTimelockedAddress {
             account2_locked_address
         ));
         assert_eq!(output, "total: 0.0 (CKB)");
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "WalletTimelockedAddress"
     }
 }

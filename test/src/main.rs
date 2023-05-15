@@ -24,8 +24,11 @@ fn main() {
     };
     let app = app::App::init();
     for spec in all_specs() {
+        log::info!(
+            "==================== {} ====================\n",
+            spec.spec_name()
+        );
         run_spec(spec, &app);
-        log::info!("====================\n");
     }
 }
 

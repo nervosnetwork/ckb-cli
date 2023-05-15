@@ -108,4 +108,8 @@ impl Spec for Plugin {
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert!(value.as_sequence().unwrap().is_empty());
     }
+
+    fn spec_name(&self) -> &'static str {
+        "Plugin"
+    }
 }

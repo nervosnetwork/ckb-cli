@@ -49,6 +49,10 @@ impl Spec for DaoPrepareOne {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareOne"
+    }
 }
 
 pub struct DaoPrepareMultiple;
@@ -96,6 +100,10 @@ impl Spec for DaoPrepareMultiple {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareMultiple"
+    }
 }
 
 pub struct DaoWithdrawMultiple;
@@ -138,6 +146,10 @@ impl Spec for DaoWithdrawMultiple {
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoWithdrawMultiple"
     }
 }
 

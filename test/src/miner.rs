@@ -125,7 +125,25 @@ impl Miner {
         self.mine_until_transaction_confirm_with_windows(
             &tx_hash.pack(),
             DEFAULT_TX_PROPOSAL_WINDOW.0,
-        )
+        );
+        let mut count = 0;
+        while self
+            .rpc
+            .lock()
+            .unwrap()
+            .get_transaction_status(tx_hash.clone())
+            .unwrap()
+            .tx_status
+            .status
+            != ckb_jsonrpc_types::Status::Committed
+        {
+            count += 1;
+
+            if count > 900 {
+                panic!("wait transaction to commited failed");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     pub fn privkey_path(&self) -> &str {

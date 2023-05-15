@@ -128,4 +128,8 @@ impl Spec for Util {
         assert_eq!(value["lock_script"]["hash_type"].as_str().unwrap(), "type");
         assert_eq!(value["lock_script"]["args"].as_str().unwrap(), "0x4cc2e6526204ae6a2e8fcf12f7ad472f41a1606d5b9624beebd215d780809f6a9104bd0fcd2c86f81407f6aa098182cc7621b6d0");
     }
+
+    fn spec_name(&self) -> &'static str {
+        "Util"
+    }
 }

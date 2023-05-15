@@ -92,6 +92,7 @@ impl Setup {
         log::info!("[Execute]: {}", command);
         loop {
             let mut child = Command::new(&self.cli_bin)
+                .env("RUST_BACKTRACE", "full")
                 .args(vec!["--url", &self.rpc_url()])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
