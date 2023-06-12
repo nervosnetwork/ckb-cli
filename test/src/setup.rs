@@ -4,6 +4,7 @@ use crate::util::ProcessGuard;
 use ckb_app_config::CKBAppConfig;
 use ckb_chain_spec::consensus::Consensus;
 use ckb_chain_spec::ChainSpec;
+use log::info;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -115,6 +116,42 @@ impl Setup {
                 return stderr.to_string();
             }
         }
+    }
+
+    pub fn cli_command(&self, command: &[&str], inputs: &[&str]) -> String {
+        info!("Execute: {:?}, with stdin: {:?}", command, inputs);
+        let rpc_url = self.rpc_url();
+        let mut args = vec!["--url", &rpc_url];
+        args.append(&mut command.to_vec());
+        let mut child = Command::new(&self.cli_bin)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn child process");
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        let pass_jh = std::thread::spawn({
+            let inputs: Vec<String> = inputs.iter().map(|&s| s.to_string()).collect();
+            move || {
+                inputs.iter().for_each(|input| {
+                    stdin
+                        .write_all(input.as_bytes())
+                        .expect("Failed to write to stdin");
+                    stdin
+                        .write_all(b"\n")
+                        .expect("Failed to write newline to stdin");
+                    info!("write to stdin: {}", input);
+                });
+            }
+        });
+        pass_jh.join().expect("Failed to join pass stdin thread");
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout.to_string() + &stderr
     }
 
     fn modify_ckb_toml(&self, spec: &dyn Spec) {
