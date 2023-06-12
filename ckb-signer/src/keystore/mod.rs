@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -419,7 +421,23 @@ impl PassphraseKeyStore {
     ) -> Result<PathBuf, Error> {
         let filepath = self.join_path(filename);
         let json_value = key.to_json(password, self.scrypt_type);
+
+        #[cfg(unix)]
+        let mut file = {
+            let mut open_option = fs::OpenOptions::new();
+            open_option
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .append(false)
+                .mode(0o600)
+                .open(&filepath)
+        }?;
+
+        #[cfg(not(unix))]
         let mut file = fs::File::create(&filepath)?;
+
         serde_json::to_writer(&mut file, &json_value).map_err(|err| Error::Io(err.to_string()))?;
         Ok(filepath)
     }
