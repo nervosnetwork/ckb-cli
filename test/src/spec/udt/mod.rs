@@ -5,8 +5,10 @@ pub use sudt::{
     SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp,
 };
 
-use std::fs;
+use core::panic;
 use std::str::FromStr;
+use std::time::Duration;
+use std::{fs, thread};
 
 use crate::miner::Miner;
 use crate::setup::Setup;
@@ -162,10 +164,30 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
 
     // Transfer 2000 ckb to 3 addresses
     for addr in [OWNER_ADDR, ACCOUNT1_ADDR, ACCOUNT2_ADDR] {
-        let tx_hash = setup.cli(&format!(
+        let mut tx_hash = setup.cli(&format!(
             "wallet transfer --privkey-path {} --to-address {} --capacity 2000",
             miner_privkey, addr,
         ));
+        let mut cnt = 0;
+        while !tx_hash.starts_with("0x") {
+            log::error!(
+                "transfer 2000 CKB from miner to {} got \"{}\"",
+                addr,
+                tx_hash
+            );
+            cnt += 1;
+            if cnt > 50 {
+                panic!(
+                    "transfer 2000 CKB from miner to {} failed after tried 50 times",
+                    addr
+                );
+            }
+            thread::sleep(Duration::from_millis(200));
+            tx_hash = setup.cli(&format!(
+                "wallet transfer --privkey-path {} --to-address {} --capacity 2000",
+                miner_privkey, addr,
+            ))
+        }
         log::info!("transfer 2000 CKB from miner to {}", addr);
         setup.miner().mine_until_transaction_confirm(&tx_hash);
     }

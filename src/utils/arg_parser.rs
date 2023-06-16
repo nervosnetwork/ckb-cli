@@ -286,7 +286,7 @@ pub struct HexFilePathParser;
 impl ArgParser<Vec<u8>> for HexFilePathParser {
     fn parse(&self, input: &str) -> Result<Vec<u8>, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
-        let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
         HexParser.parse(content.as_str())
     }
 }
@@ -297,7 +297,7 @@ impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
     fn parse(&self, input: &str) -> Result<PrivkeyWrapper, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
         let mut content = String::new();
-        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
         file.read_to_string(&mut content)
             .map_err(|err| err.to_string())?;
         let privkey_string: String = content
@@ -318,7 +318,7 @@ impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
     fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
         let mut content = String::new();
-        let mut file = fs::File::open(&path).map_err(|err| err.to_string())?;
+        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
         file.read_to_string(&mut content)
             .map_err(|err| err.to_string())?;
         let lines = content
@@ -355,7 +355,7 @@ pub struct CellDepsParser;
 impl ArgParser<CellDeps> for CellDepsParser {
     fn parse(&self, input: &str) -> Result<CellDeps, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
-        let content = fs::read_to_string(&path).map_err(|err| err.to_string())?;
+        let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
         if input.ends_with(".json") {
             serde_json::from_str(content.as_str()).map_err(|err| err.to_string())
         } else {

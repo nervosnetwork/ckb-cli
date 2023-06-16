@@ -2,6 +2,7 @@ use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
 use ckb_chain_spec::ChainSpec;
+use std::{thread, time::Duration};
 
 const EPOCH_LENGTH: u64 = 32;
 const LOCK_PERIOD_EPOCHES: u64 = 180;
@@ -48,6 +49,10 @@ impl Spec for DaoPrepareOne {
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareOne"
     }
 }
 
@@ -96,6 +101,10 @@ impl Spec for DaoPrepareMultiple {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareMultiple"
+    }
 }
 
 pub struct DaoWithdrawMultiple;
@@ -138,6 +147,10 @@ impl Spec for DaoWithdrawMultiple {
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoWithdrawMultiple"
     }
 }
 
@@ -214,7 +227,16 @@ fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
         command = format!("{} --out-point {}", command, out_point);
     }
 
-    let prepare_tx_hash = setup.cli(&command);
+    let mut prepare_tx_hash = setup.cli(&command);
+    let mut cnt = 0;
+    while !prepare_tx_hash.starts_with("0x") {
+        cnt += 1;
+        if cnt > 50 {
+            panic!("{} failed", command);
+        }
+        thread::sleep(Duration::from_millis(200));
+        prepare_tx_hash = setup.cli(&command);
+    }
     setup
         .miner()
         .mine_until_transaction_confirm(&prepare_tx_hash);

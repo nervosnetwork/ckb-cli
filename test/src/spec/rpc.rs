@@ -9,4 +9,8 @@ impl Spec for RpcGetTipBlockNumber {
         let output = setup.cli("rpc get_tip_block_number");
         assert_eq!("1".to_string(), output);
     }
+
+    fn spec_name(&self) -> &'static str {
+        "RpcGetTipBlockNumber"
+    }
 }

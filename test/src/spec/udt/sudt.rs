@@ -110,6 +110,10 @@ impl Spec for SudtIssueToCheque {
             600,
         );
     }
+
+    fn spec_name(&self) -> &'static str {
+        "SudtIssueToCheque"
+    }
 }
 
 pub struct SudtIssueToAcp;
@@ -195,6 +199,10 @@ impl Spec for SudtIssueToAcp {
             400,
         );
     }
+
+    fn spec_name(&self) -> &'static str {
+        "SudtIssueToAcp"
+    }
 }
 
 pub struct SudtTransferToMultiAcp;
@@ -274,6 +282,10 @@ impl Spec for SudtTransferToMultiAcp {
             account2_acp_addr.as_str(),
             100,
         );
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "SudtTransferToMultiAcp"
     }
 }
 
@@ -377,6 +389,10 @@ impl Spec for SudtTransferToChequeForClaim {
             500,
         );
     }
+
+    fn spec_name(&self) -> &'static str {
+        "SudtTransferToChequeForClaim"
+    }
 }
 
 pub struct SudtTransferToChequeForWithdraw;
@@ -472,5 +488,9 @@ impl Spec for SudtTransferToChequeForWithdraw {
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "SudtTransferToChequeForWithdraw"
     }
 }

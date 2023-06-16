@@ -5,8 +5,7 @@ use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_sdk::{constants::ONE_CKB, HumanCapacity};
 use tempfile::tempdir;
 
-use std::fs;
-use std::str::FromStr;
+use std::{fs, str::FromStr, thread, time::Duration};
 
 // Random private key just for tests
 pub const ACCOUNT1_PRIVKEY: &str =
@@ -15,6 +14,22 @@ pub const ACCOUNT1_ADDRESS: &str = "ckt1qyqp76jus2sst4qy57nnphuqgsmlmzkv2l7s8ksg
 pub const ACCOUNT2_PRIVKEY: &str =
     "0x11e86559b6d71abcf9fe2d6dd4f5e6d2fb8a1ef79db0d4b535244ceb13add189";
 pub const ACCOUNT2_ADDRESS: &str = "ckt1qyq2em03yml8thgy6wthjfvfgepds9e63pxs0zc6k7";
+
+fn get_capacity(setup: &mut Setup, address: &str, target: &str) -> String {
+    let cli = format!("wallet get-capacity --address {}", address);
+    let mut cnt = 0;
+    loop {
+        let output = setup.cli(&cli);
+        if output == target {
+            return output;
+        }
+        if cnt > 100 {
+            panic!("get capacity failed");
+        }
+        cnt += 1;
+        thread::sleep(Duration::from_millis(20));
+    }
+}
 
 pub struct WalletTransfer;
 
@@ -50,10 +65,7 @@ impl Spec for WalletTransfer {
             tx_hash
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT1_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 20000.0 (CKB)");
         assert_eq!(output, "total: 20000.0 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-live-cells --address {}",
@@ -68,15 +80,9 @@ impl Spec for WalletTransfer {
         ));
         log::info!("transfer 2000.0 CKB from account1 to account2: {}", tx_hash);
         setup.miner().mine_until_transaction_confirm(&tx_hash);
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT1_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 17999.99999072 (CKB)");
         assert_eq!(output, "total: 17999.99999072 (CKB)");
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT2_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT2_ADDRESS, "total: 2000.0 (CKB)");
         assert_eq!(output, "total: 2000.0 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-live-cells --address {}",
@@ -109,10 +115,8 @@ impl Spec for WalletTransfer {
             tx_hash
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT2_ADDRESS
-        ));
+
+        let output = get_capacity(setup, ACCOUNT2_ADDRESS, "total: 32000.0 (CKB)");
         assert_eq!(output, "total: 32000.0 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-live-cells --address {}",
@@ -130,10 +134,7 @@ impl Spec for WalletTransfer {
             tx_hash
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT1_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 37999.99999072 (CKB)");
         assert_eq!(output, "total: 37999.99999072 (CKB)");
         let output = setup.cli(&format!(
             "wallet get-live-cells --address {}",
@@ -180,11 +181,12 @@ impl Spec for WalletTransfer {
             tx_hash
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            anyone_can_pay_address,
-        ));
+        let output = get_capacity(setup, anyone_can_pay_address, "total: 180.0 (CKB)");
         assert_eq!(output, "total: 180.0 (CKB)");
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "WalletTransfer"
     }
 }
 
@@ -213,10 +215,8 @@ impl Spec for WalletTimelockedAddress {
             );
             setup.miner().mine_until_transaction_confirm(&tx_hash);
         }
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT1_ADDRESS
-        ));
+
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 200000.0 (CKB)");
         assert_eq!(output, "total: 200000.0 (CKB)");
 
         // Generate a timelocked address (a past time)
@@ -249,15 +249,9 @@ impl Spec for WalletTimelockedAddress {
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
 
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT1_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 169999.99999528 (CKB)");
         assert_eq!(output, "total: 169999.99999528 (CKB)");
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            account2_locked_address
-        ));
+        let output = get_capacity(setup, account2_locked_address, "total: 30000.0 (CKB)");
         assert_eq!(output, "total: 30000.0 (CKB)");
 
         // Transfer from this time locked address to normal address
@@ -273,15 +267,13 @@ impl Spec for WalletTimelockedAddress {
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
 
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            ACCOUNT2_ADDRESS
-        ));
+        let output = get_capacity(setup, ACCOUNT2_ADDRESS, "total: 29999.99999621 (CKB)");
         assert_eq!(output, "total: 29999.99999621 (CKB)");
-        let output = setup.cli(&format!(
-            "wallet get-capacity --address {}",
-            account2_locked_address
-        ));
+        let output = get_capacity(setup, account2_locked_address, "total: 0.0 (CKB)");
         assert_eq!(output, "total: 0.0 (CKB)");
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "WalletTimelockedAddress"
     }
 }

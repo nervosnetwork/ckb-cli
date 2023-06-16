@@ -53,6 +53,12 @@ impl<'a> RpcSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .about("Node's peer id");
+        let with_cycles = Arg::with_name("with-cycles")
+            .long("with-cycles")
+            .about("get block info with cycles");
+        let packed = Arg::with_name("packed")
+            .long("packed")
+            .about("returns a 0x-prefixed hex string");
 
         App::new("rpc")
             .about("Invoke RPC call to node")
@@ -66,10 +72,14 @@ impl<'a> RpcSubCommand<'a> {
                 // [Chain]
                 App::new("get_block")
                     .about("Get block content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
+                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(with_cycles.clone())
+                    .arg(packed.clone()),
                 App::new("get_block_by_number")
                     .about("Get block content by block number")
-                    .arg(arg_number.clone()),
+                    .arg(arg_number.clone())
+                    .arg(with_cycles.clone())
+                    .arg(packed.clone()),
                 App::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
@@ -79,10 +89,12 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_number.clone().about("Epoch number")),
                 App::new("get_header")
                     .about("Get block header content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
+                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(packed.clone()),
                 App::new("get_header_by_number")
                     .about("Get block header by block number")
-                    .arg(arg_number.clone()),
+                    .arg(arg_number.clone())
+                    .arg(packed.clone()),
                 App::new("get_live_cell")
                     .about("Get live cell (live means unspent)")
                     .arg(
@@ -107,10 +119,12 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Get live cell with data")
                     ),
                 App::new("get_tip_block_number").about("Get tip block number"),
-                App::new("get_tip_header").about("Get tip header"),
+                App::new("get_tip_header").about("Get tip header")
+                .arg(packed.clone()),
                 App::new("get_transaction")
                     .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().about("Tx hash")),
+                    .arg(arg_hash.clone().about("Tx hash"))
+                    .arg(packed.clone()),
                 App::new("get_transaction_proof")
                     .about("Returns a Merkle proof that transactions are included in a block")
                     .arg(
@@ -140,7 +154,8 @@ impl<'a> RpcSubCommand<'a> {
                     ),
                 App::new("get_fork_block")
                     .about("Returns the information about a fork block by hash")
-                    .arg(arg_hash.clone().about("The fork block hash")),
+                    .arg(arg_hash.clone().about("The fork block hash"))
+                    .arg(packed.clone()),
                 App::new("get_consensus")
                     .about("Return various consensus parameters"),
                 App::new("get_block_median_time")
@@ -310,37 +325,101 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             // [Chain]
             ("get_block", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let with_cycles = m.is_present("with-cycles");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    let verbose = if packed {
+                        Some("0x0")
+                    } else {
+                        None /* Some("0x2") */
+                    };
                     let resp = self
                         .raw_rpc_client
-                        .get_block(hash)
-                        .map(RawOptionBlockView)
+                        .post::<_, Option<rpc_types::BlockResponse>>(
+                            "get_block",
+                            (hash, verbose, with_cycles),
+                        )
+                        .map(RawOptionBlockResponse)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_block(hash).map(OptionBlockView)?;
-                    Ok(Output::new_output(resp))
+                    match (packed, with_cycles) {
+                        (true, true) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_with_cycles(hash)
+                                .map(OptionPackedBlockResponse)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (true, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block(hash)
+                                .map(OptionJsonBytes)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, true) => {
+                            let resp = self.rpc_client.get_block_with_cycles(hash)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, false) => {
+                            let resp = self.rpc_client.get_block(hash).map(OptionBlockView)?;
+                            Ok(Output::new_output(resp))
+                        }
+                    }
                 }
             }
             ("get_block_by_number", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let with_cycles = m.is_present("with-cycles");
+                let packed = m.is_present("packed");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 if is_raw_data {
+                    let verbose = if packed {
+                        Some("0x0")
+                    } else {
+                        None /* Some("0x2") */
+                    };
                     let resp = self
                         .raw_rpc_client
-                        .get_block_by_number(BlockNumber::from(number))
-                        .map(RawOptionBlockView)
+                        .post::<_, Option<rpc_types::BlockResponse>>(
+                            "get_block_by_number",
+                            (BlockNumber::from(number), verbose, with_cycles),
+                        )
+                        .map(RawOptionBlockResponse)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self
-                        .rpc_client
-                        .get_block_by_number(number)
-                        .map(OptionBlockView)?;
-                    Ok(Output::new_output(resp))
+                    match (packed, with_cycles) {
+                        (true, true) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_by_number_with_cycles(number)
+                                .map(OptionPackedBlockResponse)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (true, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_by_number(number)
+                                .map(OptionJsonBytes)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, true) => {
+                            let resp = self.rpc_client.get_block_by_number_with_cycles(number)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_block_by_number(number)
+                                .map(OptionBlockView)?;
+                            Ok(Output::new_output(resp))
+                        }
+                    }
                 }
             }
             ("get_block_hash", Some(m)) => {
@@ -383,14 +462,30 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_header", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_header(hash)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_header(hash)
+                            .map(RawOptionHeaderView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
                     let resp = self
-                        .raw_rpc_client
-                        .get_header(hash)
-                        .map(RawOptionHeaderView)
-                        .map_err(|err| err.to_string())?;
+                        .rpc_client
+                        .get_packed_header(hash)
+                        .map(OptionJsonBytes)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_header(hash).map(OptionHeaderView)?;
@@ -399,14 +494,30 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_header_by_number", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 if is_raw_data {
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_header_by_number(BlockNumber::from(number))
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_header_by_number(BlockNumber::from(number))
+                            .map(RawOptionHeaderView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
                     let resp = self
-                        .raw_rpc_client
-                        .get_header_by_number(BlockNumber::from(number))
-                        .map(RawOptionHeaderView)
-                        .map_err(|err| err.to_string())?;
+                        .rpc_client
+                        .get_packed_header_by_number(number)
+                        .map(OptionJsonBytes)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self
@@ -456,11 +567,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_tip_header", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_tip_header()
-                        .map_err(|err| err.to_string())?;
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_tip_header()
+                            .map(Some)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_tip_header()
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
+                    let resp = self.rpc_client.get_packed_tip_header()?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_tip_header()?;
@@ -469,14 +594,22 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_transaction", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    let verbosity = if packed { Some("0x0") } else { None };
                     let resp = self
                         .raw_rpc_client
-                        .get_transaction(hash)
+                        .post::<_, Option<rpc_types::TransactionWithStatusResponse>>(
+                            "get_transaction",
+                            (hash, verbosity),
+                        )
                         .map(RawOptionTransactionWithStatusResponse)
                         .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else if packed {
+                    let resp = self.rpc_client.get_packed_transaction(hash)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self
@@ -528,15 +661,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_fork_block", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_fork_block(hash)
-                        .map(RawOptionBlockView)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_fork_block(hash)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_fork_block(hash)
+                            .map(RawOptionBlockView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
                 } else {
                     let resp = self.rpc_client.get_fork_block(hash).map(OptionBlockView)?;
                     Ok(Output::new_output(resp))
@@ -837,6 +980,10 @@ pub struct OptionBlockEconomicState(pub Option<BlockEconomicState>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionBlockView(pub Option<BlockView>);
+#[derive(Serialize, Deserialize)]
+pub struct OptionPackedBlockResponse(pub Option<crate::utils::rpc::PackedBlockResponse>);
+#[derive(Serialize, Deserialize)]
+pub struct OptionJsonBytes(pub Option<rpc_types::JsonBytes>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionHeaderView(pub Option<HeaderView>);
@@ -860,6 +1007,8 @@ pub struct RawOptionTransactionWithStatusResponse(
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionBlockView(pub Option<rpc_types::BlockView>);
+#[derive(Serialize, Deserialize)]
+pub struct RawOptionBlockResponse(pub Option<rpc_types::BlockResponse>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionHeaderView(pub Option<rpc_types::HeaderView>);

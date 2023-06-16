@@ -31,15 +31,66 @@ impl HttpRpcClient {
 
 impl HttpRpcClient {
     // Chain
+    pub fn get_packed_block(&mut self, hash: H256) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_block(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
     pub fn get_block(&mut self, hash: H256) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block(hash)
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_packed_block_with_cycles(
+        &mut self,
+        hash: H256,
+    ) -> Result<Option<types::PackedBlockResponse>, String> {
+        self.client
+            .get_packed_block_with_cycles(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_block_with_cycles(
+        &mut self,
+        hash: H256,
+    ) -> Result<Option<types::BlockResponse>, String> {
+        self.client
+            .get_block_with_cycles(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_packed_block_by_number(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_block_by_number(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
     pub fn get_block_by_number(&mut self, number: u64) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_block_by_number(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_packed_block_by_number_with_cycles(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::PackedBlockResponse>, String> {
+        self.client
+            .get_packed_block_by_number_with_cycles(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_block_by_number_with_cycles(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::BlockResponse>, String> {
+        self.client
+            .get_block_by_number_with_cycles(BlockNumber::from(number))
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -67,12 +118,27 @@ impl HttpRpcClient {
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
+    pub fn get_packed_header(&mut self, hash: H256) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_header(hash)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
     pub fn get_header_by_number(
         &mut self,
         number: u64,
     ) -> Result<Option<types::HeaderView>, String> {
         self.client
             .get_header_by_number(BlockNumber::from(number))
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_packed_header_by_number(
+        &mut self,
+        number: u64,
+    ) -> Result<Option<types::JsonBytes>, String> {
+        self.client
+            .get_packed_header_by_number(BlockNumber::from(number))
             .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
@@ -98,6 +164,12 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
+    pub fn get_packed_tip_header(&mut self) -> Result<types::JsonBytes, String> {
+        self.client
+            .get_packed_tip_header()
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
     pub fn get_transaction(
         &mut self,
         hash: H256,
@@ -107,6 +179,15 @@ impl HttpRpcClient {
             .map(|opt| opt.map(TryInto::try_into))
             .map_err(|err| err.to_string())?
             .transpose()
+    }
+    pub fn get_packed_transaction(
+        &mut self,
+        hash: H256,
+    ) -> Result<types::PackedTransactionWithStatus, String> {
+        self.client
+            .get_packed_transaction(hash)
+            .map(TryInto::try_into)
+            .map_err(|err| err.to_string())?
     }
     pub fn get_transaction_proof(
         &mut self,

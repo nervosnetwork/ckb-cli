@@ -248,7 +248,7 @@ impl<'a> CliSubCommand for TxSubCommand<'a> {
                 let repr = ReprTxHelper::new(helper, network);
 
                 if let Some(tx_file) = tx_file_opt {
-                    let mut file = fs::File::create(&tx_file).map_err(|err| err.to_string())?;
+                    let mut file = fs::File::create(tx_file).map_err(|err| err.to_string())?;
                     let content =
                         serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
                     file.write_all(content.as_bytes())
@@ -751,8 +751,8 @@ impl TryFrom<ReprTxHelper> for TxHelper {
         let transaction = packed::Transaction::from(repr.transaction).into_view();
         let multisig_configs = repr
             .multisig_configs
-            .into_iter()
-            .map(|(_, repr_cfg)| MultisigConfig::try_from(repr_cfg))
+            .into_values()
+            .map(MultisigConfig::try_from)
             .collect::<Result<Vec<_>, String>>()?;
         let signatures: HashMap<Bytes, HashSet<Bytes>> = repr
             .signatures

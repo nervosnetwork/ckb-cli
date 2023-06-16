@@ -41,6 +41,9 @@ impl Default for TxHelper {
     }
 }
 
+type SignFn =
+    dyn FnMut(&HashSet<H160>, &H256, &rpc_types::Transaction) -> Result<Option<[u8; 65]>, String>;
+
 impl TxHelper {
     pub fn new(transaction: TransactionView) -> TxHelper {
         TxHelper {
@@ -206,11 +209,7 @@ impl TxHelper {
 
     pub fn sign_inputs<C>(
         &self,
-        signer: &mut dyn FnMut(
-            &HashSet<H160>,
-            &H256,
-            &rpc_types::Transaction,
-        ) -> Result<Option<[u8; 65]>, String>,
+        signer: &mut SignFn,
         get_live_cell: C,
         skip_check: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>

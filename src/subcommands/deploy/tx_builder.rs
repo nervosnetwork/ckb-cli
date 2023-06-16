@@ -13,7 +13,7 @@ use ckb_sdk::{
         MultisigConfig, ScriptUnlocker, SecpMultisigScriptSigner, SecpMultisigUnlocker,
         SecpSighashUnlocker,
     },
-    Address, ScriptId,
+    Address, CkbRpcClient, ScriptId,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -46,7 +46,9 @@ pub fn build_tx<T: ChangeInfo>(
 
     let mut cell_collector = DefaultCellCollector::new(ckb_rpc);
     if let Some(pending_tx) = pending_tx.as_ref() {
-        cell_collector.apply_tx(pending_tx.clone())?;
+        let mut ckb_client = CkbRpcClient::new(ckb_rpc);
+        let tip_num = ckb_client.get_tip_block_number().unwrap().value();
+        cell_collector.apply_tx(pending_tx.clone(), tip_num)?;
     }
 
     let from_script = packed::Script::from(from_address.payload());

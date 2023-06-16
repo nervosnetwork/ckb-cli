@@ -593,7 +593,7 @@ message = "0x"
                         file.read_to_end(&mut data).map_err(|err| err.to_string())?;
                         Ok(data)
                     })?;
-                let hash_data = blake2b_256(&binary);
+                let hash_data = blake2b_256(binary);
                 let slice = if m.is_present("prefix-160") {
                     &hash_data[0..20]
                 } else {
@@ -889,11 +889,11 @@ fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
         (None, Some((plugin_mgr, account)), false) => plugin_mgr
             .keystore_handler()
             .sign(account, path, message.clone(), target, password, false)
-            .map(|bytes| (&bytes[..]).to_vec()),
+            .map(|bytes| (bytes[..]).to_vec()),
         (None, Some((plugin_mgr, account)), true) => plugin_mgr
             .keystore_handler()
             .sign(account, path, message.clone(), target, password, true)
-            .map(|bytes| (&bytes[..]).to_vec()),
+            .map(|bytes| (bytes[..]).to_vec()),
         _ => Err(String::from("Both privkey and key store is missing")),
     }
 }

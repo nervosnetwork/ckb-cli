@@ -586,7 +586,7 @@ fn snapshot_recipe(path: &Path, recipe: &DeploymentRecipe) -> Result<()> {
     fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&path)?
+        .open(path)?
         .write_all(&content)?;
     Ok(())
 }
