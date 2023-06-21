@@ -1,12 +1,16 @@
+use ckb_chain_spec::consensus::ConsensusBuilder;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
+use std::sync::Arc;
 
 use ckb_error::OtherError;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as rpc_types;
 use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
-use ckb_script::TransactionScriptsVerifier;
+use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
+use ckb_types::core::hardfork::{HardForks, CKB2021, CKB2023};
+use ckb_types::core::HeaderBuilder;
 use ckb_types::{
     bytes::Bytes,
     core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
@@ -152,7 +156,9 @@ impl<'a> MockTransactionHelper<'a> {
             .collect::<HashMap<_, _>>();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
-                (ScriptHashType::Data, data_hash) | (ScriptHashType::Data1, data_hash) => {
+                (ScriptHashType::Data, data_hash)
+                | (ScriptHashType::Data1, data_hash)
+                | (ScriptHashType::Data2, data_hash) => {
                     let dep = data_deps.get(data_hash).cloned().ok_or_else(|| {
                         format!("Can not find data hash in mock deps: {}", data_hash)
                     })?;
@@ -316,7 +322,21 @@ impl<'a> MockTransactionHelper<'a> {
                 .map_err(|err| format!("Resolve transaction error: {:?}", err))?
         };
 
-        let mut verifier = TransactionScriptsVerifier::new(&rtx, &resource);
+        let consensus = ConsensusBuilder::default()
+            .hardfork_switch(HardForks {
+                ckb2021: CKB2021::new_dev_default(),
+                ckb2023: CKB2023::new_dev_default(),
+            })
+            .build();
+        let tip = HeaderBuilder::default().number(0.pack()).build();
+        let tx_verify_env = TxVerifyEnv::new_submit(&tip);
+
+        let mut verifier = TransactionScriptsVerifier::new(
+            Arc::new(rtx),
+            resource,
+            Arc::new(consensus),
+            Arc::new(tx_verify_env),
+        );
         verifier.set_debug_printer(|script_hash, message| {
             println!("script: {:x}, debug: {}", script_hash, message);
         });

@@ -46,7 +46,7 @@ pub fn build_tx<T: ChangeInfo>(
 
     let mut cell_collector = DefaultCellCollector::new(ckb_rpc);
     if let Some(pending_tx) = pending_tx.as_ref() {
-        let mut ckb_client = CkbRpcClient::new(ckb_rpc);
+        let ckb_client = CkbRpcClient::new(ckb_rpc);
         let tip_num = ckb_client.get_tip_block_number().unwrap().value();
         cell_collector.apply_tx(pending_tx.clone(), tip_num)?;
     }
