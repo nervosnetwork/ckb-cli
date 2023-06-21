@@ -250,7 +250,7 @@ impl HttpRpcClient {
     pub fn get_fee_rate_statics(
         &mut self,
         target: Option<u64>,
-    ) -> Result<types::FeeRateStatics, String> {
+    ) -> Result<types::FeeRateStatistics, String> {
         self.client
             .get_fee_rate_statics(target.map(Into::into))
             .map(Into::into)

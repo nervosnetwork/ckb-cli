@@ -1344,16 +1344,16 @@ impl From<rpc_types::EstimateCycles> for EstimateCycles {
 
 /// The fee_rate statistics information, includes mean and median, unit: shannons per kilo-weight
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct FeeRateStatics {
+pub struct FeeRateStatistics {
     /// mean
     pub mean: Uint64,
     /// median
     pub median: Uint64,
 }
 
-impl From<rpc_types::FeeRateStatics> for FeeRateStatics {
-    fn from(json: rpc_types::FeeRateStatics) -> FeeRateStatics {
-        FeeRateStatics {
+impl From<rpc_types::FeeRateStatistics> for FeeRateStatistics {
+    fn from(json: rpc_types::FeeRateStatistics) -> FeeRateStatistics {
+        FeeRateStatistics {
             mean: json.mean.into(),
             median: json.median.into(),
         }
