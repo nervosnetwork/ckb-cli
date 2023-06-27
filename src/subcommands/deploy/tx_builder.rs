@@ -187,4 +187,13 @@ impl TransactionDependencyProvider for TxDepProviderWrapper {
             .get_header(block_hash)
             .or_else(|_| self.inner.get_header(block_hash))
     }
+
+    fn get_block_extension(
+        &self,
+        _block_hash: &Byte32,
+    ) -> std::result::Result<Option<packed::Bytes>, TransactionDependencyError> {
+        Err(TransactionDependencyError::NotFound(
+            "get_block_extension not supported".to_string(),
+        ))
+    }
 }
