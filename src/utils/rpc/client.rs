@@ -207,6 +207,18 @@ impl HttpRpcClient {
             .verify_transaction_proof(tx_proof.into())
             .map_err(|err| err.to_string())
     }
+
+    pub fn get_transaction_and_witness_proof(
+        &mut self,
+        tx_hashes: Vec<H256>,
+        block_hash: Option<H256>,
+    ) -> Result<types::TransactionAndWitnessProof, String> {
+        self.client
+            .get_transaction_and_witness_proof(tx_hashes, block_hash)
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+
     pub fn get_fork_block(&mut self, block_hash: H256) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_fork_block(block_hash)

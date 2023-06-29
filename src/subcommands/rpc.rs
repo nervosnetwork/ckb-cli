@@ -177,10 +177,10 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_fee_rate_statics")
                     .arg(
                         Arg::with_name("target")
-                        .long("target")
-                        .takes_value(true)
-                        .validator(|input| FromStrParser::<u64>::default().validate(input))
-                        .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                            .long("target")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
                     .about("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
                 App::new("get_fee_rate_statistics")
@@ -192,6 +192,22 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
                     .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .multiple(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Transaction hashes")
+                    )
+                    .arg(
+                        Arg::with_name("block-hash")
+                            .long("block-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Looks for transactions in the block with this hash")
+                    ).about("Returns a Merkle proof that transactions and witnesses are included in a block"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -805,6 +821,26 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_deployments_info()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let tx_hashes: Vec<H256> =
+                    FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
+                let block_hash: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)?;
                     Ok(Output::new_output(resp))
                 }
             }

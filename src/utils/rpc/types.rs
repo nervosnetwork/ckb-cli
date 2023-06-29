@@ -844,6 +844,27 @@ impl From<MerkleProof> for rpc_types::MerkleProof {
     }
 }
 
+/// Merkle proof for transactions' witnesses in a block.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct TransactionAndWitnessProof {
+    /// Block hash
+    pub block_hash: H256,
+    /// Merkle proof of all transactions' hash
+    pub transactions_proof: MerkleProof,
+    /// Merkle proof of transactions' witnesses
+    pub witnesses_proof: MerkleProof,
+}
+
+impl From<rpc_types::TransactionAndWitnessProof> for TransactionAndWitnessProof {
+    fn from(json: rpc_types::TransactionAndWitnessProof) -> TransactionAndWitnessProof {
+        TransactionAndWitnessProof {
+            block_hash: json.block_hash,
+            transactions_proof: json.transactions_proof.into(),
+            witnesses_proof: json.witnesses_proof.into(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct ProposalWindow {
     /// The closest distance between the proposal and the commitment.
@@ -1220,7 +1241,7 @@ pub struct DeploymentsInfo {
 impl From<rpc_types::DeploymentsInfo> for DeploymentsInfo {
     fn from(value: ckb_jsonrpc_types::DeploymentsInfo) -> Self {
         DeploymentsInfo {
-            hash: value.hash.into(),
+            hash: value.hash,
             epoch: value.epoch.into(),
             deployments: value
                 .deployments
