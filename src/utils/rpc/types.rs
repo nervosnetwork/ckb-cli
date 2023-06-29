@@ -1,5 +1,5 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 
 pub use ckb_jsonrpc_types::{
@@ -19,6 +19,25 @@ type AlertId = u32;
 type AlertPriority = u32;
 type Uint32 = u32;
 type Uint64 = u64;
+
+/// Represents the ratio `numerator / denominator`, where `numerator` and `denominator` are both
+/// unsigned 64-bit integers.
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Ratio {
+    /// Numerator.
+    pub numer: Uint64,
+    /// Denominator.
+    pub denom: Uint64,
+}
+
+impl From<rpc_types::Ratio> for Ratio {
+    fn from(value: ckb_jsonrpc_types::Ratio) -> Self {
+        Self {
+            numer: value.numer.value(),
+            denom: value.denom.value(),
+        }
+    }
+}
 
 // ===============
 //  blockchain.rs
@@ -888,6 +907,7 @@ pub struct Consensus {
     /// Keep difficulty be permanent if the pow is dummy
     pub permanent_difficulty_in_dummy: bool,
 }
+
 impl From<rpc_types::Consensus> for Consensus {
     fn from(json: rpc_types::Consensus) -> Consensus {
         Consensus {
@@ -916,6 +936,125 @@ impl From<rpc_types::Consensus> for Consensus {
                 .primary_epoch_reward_halving_interval
                 .into(),
             permanent_difficulty_in_dummy: json.permanent_difficulty_in_dummy,
+        }
+    }
+}
+
+/// The possible softfork deployment state
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentState {
+    /// First state that each softfork starts.
+    /// The 0 epoch is by definition in this state for each deployment.
+    Defined,
+    /// For epochs past the `start` epoch.
+    Started,
+    /// For one epoch after the first epoch period with STARTED epochs of
+    /// which at least `threshold` has the associated bit set in `version`.
+    LockedIn,
+    /// For all epochs after the LOCKED_IN epoch.
+    Active,
+    /// For one epoch period past the `timeout_epoch`, if LOCKED_IN was not reached.
+    Failed,
+}
+
+impl From<rpc_types::DeploymentState> for DeploymentState {
+    fn from(value: rpc_types::DeploymentState) -> Self {
+        match value {
+            rpc_types::DeploymentState::Defined => DeploymentState::Defined,
+            rpc_types::DeploymentState::Started => DeploymentState::Started,
+            rpc_types::DeploymentState::LockedIn => DeploymentState::LockedIn,
+            rpc_types::DeploymentState::Active => DeploymentState::Active,
+            rpc_types::DeploymentState::Failed => DeploymentState::Failed,
+        }
+    }
+}
+
+/// An object containing various state info regarding deployments of consensus changes
+#[derive(Deserialize, Serialize, Debug)]
+pub struct DeploymentInfo {
+    /// determines which bit in the `version` field of the block is to be used to signal the softfork lock-in and activation.
+    /// It is chosen from the set {0,1,2,...,28}.
+    pub bit: u8,
+    /// specifies the first epoch in which the bit gains meaning.
+    pub start: EpochNumber,
+    /// specifies an epoch at which the miner signaling ends.
+    /// Once this epoch has been reached,
+    /// if the softfork has not yet locked_in (excluding this epoch block's bit state),
+    /// the deployment is considered failed on all descendants of the block.
+    pub timeout: EpochNumber,
+    /// specifies the epoch at which the softfork is allowed to become active.
+    pub min_activation_epoch: EpochNumber,
+    /// the length in epochs of the signalling period
+    pub period: EpochNumber,
+    /// the ratio of blocks with the version bit set required to activate the feature
+    pub threshold: Ratio,
+    /// The first epoch which the current state applies
+    pub since: EpochNumber,
+    /// With each epoch and softfork, we associate a deployment state. The possible states are:
+    /// * `DEFINED` is the first state that each softfork starts. The blocks of 0 epoch is by definition in this state for each deployment.
+    /// * `STARTED` for all blocks reach or past the start_epoch.
+    /// * `LOCKED_IN` for one period after the first period with STARTED blocks of which at least threshold has the associated bit set in version.
+    /// * `ACTIVE` for all blocks after the LOCKED_IN period.
+    /// * `FAILED` for all blocks after the timeout_epoch, if LOCKED_IN was not reached.
+    pub state: DeploymentState,
+}
+
+impl From<rpc_types::DeploymentInfo> for DeploymentInfo {
+    fn from(value: ckb_jsonrpc_types::DeploymentInfo) -> Self {
+        DeploymentInfo {
+            bit: value.bit,
+            start: value.start.into(),
+            timeout: value.timeout.into(),
+            min_activation_epoch: value.min_activation_epoch.into(),
+            period: value.period.into(),
+            threshold: value.threshold.into(),
+            since: value.since.into(),
+            state: value.state.into(),
+        }
+    }
+}
+
+/// Deployment name
+#[derive(Clone, Hash, Deserialize, Serialize, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentPos {
+    /// Dummy
+    Testdummy,
+    /// light client protocol
+    LightClient,
+}
+
+impl From<rpc_types::DeploymentPos> for DeploymentPos {
+    fn from(value: ckb_jsonrpc_types::DeploymentPos) -> Self {
+        match value {
+            rpc_types::DeploymentPos::Testdummy => DeploymentPos::Testdummy,
+            rpc_types::DeploymentPos::LightClient => DeploymentPos::LightClient,
+        }
+    }
+}
+
+/// Chain information.
+#[derive(Deserialize, Serialize, Debug)]
+pub struct DeploymentsInfo {
+    /// requested block hash
+    pub hash: H256,
+    /// requested block epoch
+    pub epoch: EpochNumber,
+    /// deployments info
+    pub deployments: BTreeMap<DeploymentPos, DeploymentInfo>,
+}
+
+impl From<rpc_types::DeploymentsInfo> for DeploymentsInfo {
+    fn from(value: ckb_jsonrpc_types::DeploymentsInfo) -> Self {
+        DeploymentsInfo {
+            hash: value.hash.into(),
+            epoch: value.epoch.into(),
+            deployments: value
+                .deployments
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
         }
     }
 }

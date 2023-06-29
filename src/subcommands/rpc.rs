@@ -180,7 +180,7 @@ impl<'a> RpcSubCommand<'a> {
                         .long("target")
                         .takes_value(true)
                         .validator(|input| FromStrParser::<u64>::default().validate(input))
-                        .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                        .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
                     .about("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
                 App::new("get_fee_rate_statistics")
@@ -192,8 +192,6 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
                     .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
-                App::new("get_deployments_info")
-                    .about("Returns the information about all deployments"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -776,7 +774,37 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_fee_rate_statics(target)?;
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_fee_rate_statistics", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let target: Option<u64> =
+                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_fee_rate_statics(target.map(|v| v.into()))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_deployments_info", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_deployments_info()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_deployments_info()?;
                     Ok(Output::new_output(resp))
                 }
             }
