@@ -1,4 +1,5 @@
 mod client;
+mod json_rpc;
 mod primitive;
 mod types;
 
