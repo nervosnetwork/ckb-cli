@@ -865,6 +865,16 @@ impl From<rpc_types::TransactionAndWitnessProof> for TransactionAndWitnessProof 
     }
 }
 
+impl From<TransactionAndWitnessProof> for rpc_types::TransactionAndWitnessProof {
+    fn from(value: TransactionAndWitnessProof) -> Self {
+        rpc_types::TransactionAndWitnessProof {
+            block_hash: value.block_hash,
+            transactions_proof: value.transactions_proof.into(),
+            witnesses_proof: value.witnesses_proof.into(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct ProposalWindow {
     /// The closest distance between the proposal and the commitment.

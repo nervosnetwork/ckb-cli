@@ -208,6 +208,15 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
+    pub fn verify_transaction_and_witness_proof(
+        &mut self,
+        tx_and_witness_proof: types::TransactionAndWitnessProof,
+    ) -> Result<Vec<H256>, String> {
+        self.client
+            .verify_transaction_and_witness_proof(tx_and_witness_proof.into())
+            .map_err(|err| err.to_string())
+    }
+
     pub fn get_transaction_and_witness_proof(
         &mut self,
         tx_hashes: Vec<H256>,

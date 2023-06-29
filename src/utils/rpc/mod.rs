@@ -10,6 +10,6 @@ pub use types::{
     BlockView, Byte32, CellDep, CellInput, CellOutput, ChainInfo, DepType, EpochView, Header,
     HeaderView, JsonBytes, LocalNode, MerkleProof, MinerReward, NodeAddress, OutPoint,
     PackedBlockResponse, ProposalShortId, RemoteNode, Script, ScriptHashType, Transaction,
-    TransactionProof, TransactionView, TransactionWithStatus, TransactionWithStatusResponse,
-    TxPoolInfo, TxStatus, Uint128, UncleBlock, UncleBlockView,
+    TransactionAndWitnessProof, TransactionProof, TransactionView, TransactionWithStatus,
+    TransactionWithStatusResponse, TxPoolInfo, TxStatus, Uint128, UncleBlock, UncleBlockView,
 };

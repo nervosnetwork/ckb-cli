@@ -208,6 +208,16 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .about("Looks for transactions in the block with this hash")
                     ).about("Returns a Merkle proof that transactions and witnesses are included in a block"),
+                App::new("verify_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
+                    )
+                    .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -841,6 +851,27 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self
                         .rpc_client
                         .get_transaction_and_witness_proof(tx_hashes, block_hash)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("verify_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+
+                let tx_and_witness_proof: rpc_types::TransactionAndWitnessProof =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof.into())?;
                     Ok(Output::new_output(resp))
                 }
             }
