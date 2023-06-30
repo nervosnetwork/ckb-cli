@@ -499,7 +499,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
 
                 let cell_tx_hash = if let Some(tx) = cell_tx_opt {
                     let calculated_tx_hash: H256 = tx.hash().unpack();
-                    println!("> [send cell transaction]: {:#x}", calculated_tx_hash);
+                    eprintln!("> [send cell transaction]: {:#x}", calculated_tx_hash);
                     let tx_hash = self
                         .rpc_client
                         .send_transaction(
@@ -514,7 +514,7 @@ impl<'a> CliSubCommand for DeploySubCommand<'a> {
 
                 let dep_group_tx_hash = if let Some(tx) = dep_group_tx_opt {
                     let calculated_tx_hash: H256 = tx.hash().unpack();
-                    println!("> [send dep group transaction]: {:#x}", calculated_tx_hash);
+                    eprintln!("> [send dep group transaction]: {:#x}", calculated_tx_hash);
                     let tx_hash = self
                         .rpc_client
                         .send_transaction(
