@@ -192,6 +192,7 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
                     .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_deployments_info").about("Returns the information about all deployments"),
                 App::new("get_transaction_and_witness_proof")
                     .arg(
                         Arg::with_name("tx-hash")
