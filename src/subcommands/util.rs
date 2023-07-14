@@ -802,7 +802,7 @@ message = "0x"
                     "secp256k1_data": {
                         "out_point": {
                             "tx_hash": genesis_cellbase_tx_hash,
-                            "index": 3,
+                            "index": json_types::Uint32::from(3),
                         }
                     },
                     "type_id": {
