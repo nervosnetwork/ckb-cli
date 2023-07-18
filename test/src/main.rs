@@ -7,6 +7,7 @@ pub mod util;
 use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
+    AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
     DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, Plugin, RpcGetTipBlockNumber, Spec,
     SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
     SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
@@ -70,6 +71,9 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
+        Box::new(AccountKeystorePerm),
+        Box::new(AccountKeystoreExportPerm),
+        Box::new(AccountKeystoreUpdatePassword),
         Box::new(SudtIssueToCheque),
         Box::new(SudtIssueToAcp),
         Box::new(SudtTransferToMultiAcp),

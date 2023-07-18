@@ -1,5 +1,7 @@
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use bitcoin::util::bip32::DerivationPath;
@@ -376,11 +378,27 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let bytes = master_privkey.to_bytes();
                 let privkey = H256::from_slice(&bytes[0..32]).unwrap();
                 let chain_code = H256::from_slice(&bytes[32..64]).unwrap();
-                let mut file = fs::File::create(key_path).map_err(|err| err.to_string())?;
+
+                #[cfg(unix)]
+                let mut file = {
+                    fs::OpenOptions::new()
+                        .create_new(true)
+                        .read(true)
+                        .write(true)
+                        .append(false)
+                        .mode(0o400)
+                        .open(key_path)
+                        .map_err(|err| err.to_string())
+                }?;
+
+                #[cfg(not(unix))]
+                let mut file = fs::File::create(&key_path).map_err(|err| err.to_string())?;
+
                 file.write(format!("{:x}\n", privkey).as_bytes())
                     .map_err(|err| err.to_string())?;
                 file.write(format!("{:x}", chain_code).as_bytes())
                     .map_err(|err| err.to_string())?;
+                file.flush().map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
                     "message": format!(
                         "Success exported account as extended privkey to: \"{}\", please use this file carefully",

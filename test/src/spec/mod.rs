@@ -1,3 +1,4 @@
+mod account_keystore_perm;
 mod dao;
 mod plugin;
 mod rpc;
@@ -5,6 +6,7 @@ mod udt;
 mod util;
 mod wallet;
 
+pub use account_keystore_perm::*;
 pub use dao::*;
 pub use plugin::*;
 pub use rpc::*;
