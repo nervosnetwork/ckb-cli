@@ -27,4 +27,4 @@ anyhow = "1.0.63"
 ckb-types = "=0.111.0"
 ckb-hash = "=0.111.0"
 ckb-crypto = { version = "=0.111.0", features = ["secp"] }
-ckb-sdk = { git = "https://github.com/eval-exec/ckb-sdk-rust", branch = "exec/data2"}
+ckb-sdk = "3.0.0"
