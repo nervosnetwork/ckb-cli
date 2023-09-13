@@ -7,15 +7,15 @@ edition = "2021"
 description = "ckb command line interface"
 
 [dependencies]
-ckb-jsonrpc-types = "=0.111.0-rc12"
-ckb-hash = "=0.111.0-rc12"
-ckb-crypto = { version = "=0.111.0-rc12", features = ["secp"] }
-ckb-build-info = "=0.111.0-rc12"
-ckb-types = "=0.111.0-rc12"
-ckb-util = "=0.111.0-rc12"
-ckb-error = "=0.111.0-rc12"
-ckb-script = "=0.111.0-rc12"
-ckb-chain-spec = "=0.111.0-rc12"
+ckb-jsonrpc-types = "=0.111.0"
+ckb-hash = "=0.111.0"
+ckb-crypto = { version = "=0.111.0", features = ["secp"] }
+ckb-build-info = "=0.111.0"
+ckb-types = "=0.111.0"
+ckb-util = "=0.111.0"
+ckb-error = "=0.111.0"
+ckb-script = "=0.111.0"
+ckb-chain-spec = "=0.111.0"
 ckb-mock-tx-types = { git = "https:/github.com/nervosnetwork/ckb-standalone-debugger", branch = "develop" }
 ckb-sdk = { git = "https://github.com/eval-exec/ckb-sdk-rust", branch = "exec/data2"}
 ckb-signer = { path = "ckb-signer", version = "0.4.0" }
@@ -73,7 +73,7 @@ termion = "1.5"
 rand = "0.7"
 
 [build-dependencies]
-ckb-build-info = "=0.111.0-rc12"
+ckb-build-info = "=0.111.0"
 
 [workspace]
 members = ["ckb-signer", "plugin-protocol"]
