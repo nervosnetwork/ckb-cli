@@ -16,7 +16,7 @@ ckb-util = "=0.111.0"
 ckb-error = "=0.111.0"
 ckb-script = "=0.111.0"
 ckb-chain-spec = "=0.111.0"
-ckb-mock-tx-types = { git = "https:/github.com/nervosnetwork/ckb-standalone-debugger", branch = "develop" }
+ckb-mock-tx-types = "=0.111.0"
 ckb-sdk = "3.0.0"
 ckb-signer = { path = "ckb-signer", version = "0.4.0" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=1.3.0" }
