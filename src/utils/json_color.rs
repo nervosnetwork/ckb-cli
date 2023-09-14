@@ -27,7 +27,7 @@ macro_rules! colorize {
 }
 
 /// The set of available colors for the various JSON components.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum Color {
     #[allow(dead_code)]
     Black,
@@ -43,13 +43,8 @@ pub enum Color {
     Yellow,
 
     /// Default color
+    #[default]
     Plain,
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Color::Plain
-    }
 }
 
 #[derive(Default)]
