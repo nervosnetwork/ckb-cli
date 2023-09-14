@@ -209,10 +209,7 @@ impl Spec for WalletTimelockedAddress {
                 "wallet transfer --privkey-path {} --to-address {} --capacity 500",
                 miner_privkey, ACCOUNT1_ADDRESS,
             ));
-            log::info!(
-                "transfer from miner to account1 with 500 CKB: {}",
-                tx_hash
-            );
+            log::info!("transfer from miner to account1 with 500 CKB: {}", tx_hash);
             setup.miner().mine_until_transaction_confirm(&tx_hash);
         }
 
@@ -243,10 +240,7 @@ impl Spec for WalletTimelockedAddress {
             "wallet transfer --privkey-path {} --to-address {} --capacity 300",
             account1_privkey, account2_locked_address,
         ));
-        log::info!(
-            "transfer from miner to account1 with 300 CKB: {}",
-            tx_hash
-        );
+        log::info!("transfer from miner to account1 with 300 CKB: {}", tx_hash);
         setup.miner().mine_until_transaction_confirm(&tx_hash);
 
         let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 1699.99999528 (CKB)");
