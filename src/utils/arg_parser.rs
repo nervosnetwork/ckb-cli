@@ -168,9 +168,9 @@ impl ArgParser<Vec<u8>> for HexParser {
     }
 }
 
-pub struct FeeRateStaticsTargetParser;
+pub struct FeeRateStatisticsTargetParser;
 
-impl ArgParser<u64> for FeeRateStaticsTargetParser {
+impl ArgParser<u64> for FeeRateStatisticsTargetParser {
     fn parse(&self, input: &str) -> Result<u64, String> {
         let target = FromStrParser::<u64>::default().parse(input)?;
         if target == 0 || target > 101 {

@@ -222,6 +222,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     inputs: vec![mock_input],
                     cell_deps: vec![mock_cell_dep],
                     header_deps: vec![HeaderBuilder::default().build()],
+                    extensions: vec![],
                 };
                 let tx = TransactionBuilder::default()
                     .input(input)
@@ -368,6 +369,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         inputs: mock_inputs,
                         cell_deps: mock_cell_deps,
                         header_deps: mock_header_deps,
+                        extensions: vec![],
                     },
                     tx: src_tx,
                 };

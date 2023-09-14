@@ -877,7 +877,7 @@ impl Drop for PluginProcess {
 }
 
 impl PluginProcess {
-    #[allow(clippy::zero_ptr, clippy::drop_copy)]
+    #[allow(clippy::zero_ptr, dropping_copy_types)]
     pub fn start(
         plugin: Plugin,
         config: PluginConfig,

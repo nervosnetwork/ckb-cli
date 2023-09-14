@@ -207,6 +207,27 @@ impl HttpRpcClient {
             .verify_transaction_proof(tx_proof.into())
             .map_err(|err| err.to_string())
     }
+
+    pub fn verify_transaction_and_witness_proof(
+        &mut self,
+        tx_and_witness_proof: types::TransactionAndWitnessProof,
+    ) -> Result<Vec<H256>, String> {
+        self.client
+            .verify_transaction_and_witness_proof(tx_and_witness_proof.into())
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_transaction_and_witness_proof(
+        &mut self,
+        tx_hashes: Vec<H256>,
+        block_hash: Option<H256>,
+    ) -> Result<types::TransactionAndWitnessProof, String> {
+        self.client
+            .get_transaction_and_witness_proof(tx_hashes, block_hash)
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+
     pub fn get_fork_block(&mut self, block_hash: H256) -> Result<Option<types::BlockView>, String> {
         self.client
             .get_fork_block(block_hash)
@@ -247,12 +268,18 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
-    pub fn get_fee_rate_statics(
+    pub fn get_fee_rate_statistics(
         &mut self,
         target: Option<u64>,
-    ) -> Result<types::FeeRateStatics, String> {
+    ) -> Result<types::FeeRateStatistics, String> {
         self.client
             .get_fee_rate_statics(target.map(Into::into))
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+    pub fn get_deployments_info(&mut self) -> Result<types::DeploymentsInfo, String> {
+        self.client
+            .get_deployments_info()
             .map(Into::into)
             .map_err(|err| err.to_string())
     }

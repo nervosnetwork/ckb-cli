@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
-    ArgParser, DurationParser, FeeRateStaticsTargetParser, FilePathParser, FixedHashParser,
+    ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
     FromStrParser, HexParser,
 };
 use crate::utils::rpc::{
@@ -177,12 +177,48 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("get_fee_rate_statics")
                     .arg(
                         Arg::with_name("target")
-                        .long("target")
-                        .takes_value(true)
-                        .validator(|input| FromStrParser::<u64>::default().validate(input))
-                        .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                            .long("target")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
-                    .about("estimate_cycles run a transaction and return the execution consumed cycles."),
+                    .about("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_fee_rate_statistics")
+                    .arg(
+                        Arg::with_name("target")
+                            .long("target")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                    )
+                    .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_deployments_info").about("Returns the information about all deployments"),
+                App::new("get_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .multiple(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Transaction hashes")
+                    )
+                    .arg(
+                        Arg::with_name("block-hash")
+                            .long("block-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Looks for transactions in the block with this hash")
+                    ).about("Returns a Merkle proof that transactions and witnesses are included in a block"),
+                App::new("verify_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
+                    )
+                    .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -756,7 +792,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             ("get_fee_rate_statics", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let target: Option<u64> =
-                    FeeRateStaticsTargetParser {}.from_matches_opt(m, "target")?;
+                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
 
                 if is_raw_data {
                     let resp = self
@@ -765,7 +801,78 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_fee_rate_statics(target)?;
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_fee_rate_statistics", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let target: Option<u64> =
+                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_fee_rate_statics(target.map(|v| v.into()))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_deployments_info", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_deployments_info()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_deployments_info()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let tx_hashes: Vec<H256> =
+                    FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
+                let block_hash: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("verify_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+
+                let tx_and_witness_proof: rpc_types::TransactionAndWitnessProof =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof.into())?;
                     Ok(Output::new_output(resp))
                 }
             }

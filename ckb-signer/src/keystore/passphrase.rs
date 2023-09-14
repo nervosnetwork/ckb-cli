@@ -141,17 +141,15 @@ impl ScryptParams {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ScryptType {
+    #[default]
     Standard,
     Light,
-    Custom { log_n: u8, p: u32 },
-}
-
-impl Default for ScryptType {
-    fn default() -> ScryptType {
-        ScryptType::Standard
-    }
+    Custom {
+        log_n: u8,
+        p: u32,
+    },
 }
 
 // Example:

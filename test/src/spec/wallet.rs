@@ -206,18 +206,15 @@ impl Spec for WalletTimelockedAddress {
 
         for _ in 0..4 {
             let tx_hash = setup.cli(&format!(
-                "wallet transfer --privkey-path {} --to-address {} --capacity 50000",
+                "wallet transfer --privkey-path {} --to-address {} --capacity 500",
                 miner_privkey, ACCOUNT1_ADDRESS,
             ));
-            log::info!(
-                "transfer from miner to account1 with 50000 CKB: {}",
-                tx_hash
-            );
+            log::info!("transfer from miner to account1 with 500 CKB: {}", tx_hash);
             setup.miner().mine_until_transaction_confirm(&tx_hash);
         }
 
-        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 200000.0 (CKB)");
-        assert_eq!(output, "total: 200000.0 (CKB)");
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 2000.0 (CKB)");
+        assert_eq!(output, "total: 2000.0 (CKB)");
 
         // Generate a timelocked address (a past time)
         let output = setup.cli(&format!(
@@ -240,23 +237,20 @@ impl Spec for WalletTimelockedAddress {
 
         // Transfer some capacity to timelocked address
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --to-address {} --capacity 30000",
+            "wallet transfer --privkey-path {} --to-address {} --capacity 300",
             account1_privkey, account2_locked_address,
         ));
-        log::info!(
-            "transfer from miner to account1 with 30000 CKB: {}",
-            tx_hash
-        );
+        log::info!("transfer from miner to account1 with 300 CKB: {}", tx_hash);
         setup.miner().mine_until_transaction_confirm(&tx_hash);
 
-        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 169999.99999528 (CKB)");
-        assert_eq!(output, "total: 169999.99999528 (CKB)");
-        let output = get_capacity(setup, account2_locked_address, "total: 30000.0 (CKB)");
-        assert_eq!(output, "total: 30000.0 (CKB)");
+        let output = get_capacity(setup, ACCOUNT1_ADDRESS, "total: 1699.99999528 (CKB)");
+        assert_eq!(output, "total: 1699.99999528 (CKB)");
+        let output = get_capacity(setup, account2_locked_address, "total: 300.0 (CKB)");
+        assert_eq!(output, "total: 300.0 (CKB)");
 
         // Transfer from this time locked address to normal address
         let tx_hash = setup.cli(&format!(
-            "wallet transfer --privkey-path {} --from-locked-address {} --to-address {} --capacity 29999.99999621",
+            "wallet transfer --privkey-path {} --from-locked-address {} --to-address {} --capacity 299.99999621",
             account2_privkey,
             account2_locked_address,
             ACCOUNT2_ADDRESS
@@ -267,8 +261,8 @@ impl Spec for WalletTimelockedAddress {
         );
         setup.miner().mine_until_transaction_confirm(&tx_hash);
 
-        let output = get_capacity(setup, ACCOUNT2_ADDRESS, "total: 29999.99999621 (CKB)");
-        assert_eq!(output, "total: 29999.99999621 (CKB)");
+        let output = get_capacity(setup, ACCOUNT2_ADDRESS, "total: 299.99999621 (CKB)");
+        assert_eq!(output, "total: 299.99999621 (CKB)");
         let output = get_capacity(setup, account2_locked_address, "total: 0.0 (CKB)");
         assert_eq!(output, "total: 0.0 (CKB)");
     }

@@ -405,6 +405,7 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
         ScriptHashType::Type => "type",
         ScriptHashType::Data => "data",
         ScriptHashType::Data1 => "data1",
+        ScriptHashType::Data2 => "data2",
     };
 
     match (code_hash_category, hash_type, lock_args.len()) {

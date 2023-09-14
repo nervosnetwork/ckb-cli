@@ -1,5 +1,5 @@
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 
 pub use ckb_jsonrpc_types::{
@@ -9,6 +9,7 @@ pub use ckb_jsonrpc_types::{
 use ckb_types::{core, packed, prelude::*, H256, U256};
 
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
+use crate::utils::rpc::json_rpc;
 use ckb_sdk::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
 
 type Version = u32;
@@ -19,6 +20,25 @@ type AlertId = u32;
 type AlertPriority = u32;
 type Uint32 = u32;
 type Uint64 = u64;
+
+/// Represents the ratio `numerator / denominator`, where `numerator` and `denominator` are both
+/// unsigned 64-bit integers.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Ratio {
+    /// Numerator.
+    pub numer: Uint64,
+    /// Denominator.
+    pub denom: Uint64,
+}
+
+impl From<rpc_types::Ratio> for Ratio {
+    fn from(value: ckb_jsonrpc_types::Ratio) -> Self {
+        Self {
+            numer: value.numer.value(),
+            denom: value.denom.value(),
+        }
+    }
+}
 
 // ===============
 //  blockchain.rs
@@ -824,6 +844,37 @@ impl From<MerkleProof> for rpc_types::MerkleProof {
     }
 }
 
+/// Merkle proof for transactions' witnesses in a block.
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
+pub struct TransactionAndWitnessProof {
+    /// Block hash
+    pub block_hash: H256,
+    /// Merkle proof of all transactions' hash
+    pub transactions_proof: MerkleProof,
+    /// Merkle proof of transactions' witnesses
+    pub witnesses_proof: MerkleProof,
+}
+
+impl From<rpc_types::TransactionAndWitnessProof> for TransactionAndWitnessProof {
+    fn from(json: rpc_types::TransactionAndWitnessProof) -> TransactionAndWitnessProof {
+        TransactionAndWitnessProof {
+            block_hash: json.block_hash,
+            transactions_proof: json.transactions_proof.into(),
+            witnesses_proof: json.witnesses_proof.into(),
+        }
+    }
+}
+
+impl From<TransactionAndWitnessProof> for rpc_types::TransactionAndWitnessProof {
+    fn from(value: TransactionAndWitnessProof) -> Self {
+        rpc_types::TransactionAndWitnessProof {
+            block_hash: value.block_hash,
+            transactions_proof: value.transactions_proof.into(),
+            witnesses_proof: value.witnesses_proof.into(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct ProposalWindow {
     /// The closest distance between the proposal and the commitment.
@@ -836,6 +887,158 @@ impl From<rpc_types::ProposalWindow> for ProposalWindow {
         ProposalWindow {
             closest: json.closest.into(),
             farthest: json.farthest.into(),
+        }
+    }
+}
+
+/// The information about one hardfork feature.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct HardForkFeature {
+    /// The related RFC ID.
+    pub rfc: String,
+    /// The first epoch when the feature is enabled, `null` indicates that the RFC has never been enabled.
+    pub epoch_number: Option<EpochNumber>,
+}
+
+impl From<rpc_types::HardForkFeature> for HardForkFeature {
+    fn from(value: ckb_jsonrpc_types::HardForkFeature) -> Self {
+        HardForkFeature {
+            rfc: value.rfc,
+            epoch_number: value.epoch_number.map(Into::into),
+        }
+    }
+}
+
+/// Hardfork information
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct HardForks {
+    inner: Vec<HardForkFeature>,
+}
+
+impl From<rpc_types::HardForks> for HardForks {
+    fn from(value: ckb_jsonrpc_types::HardForks) -> Self {
+        let value: json_rpc::HardForks = serde_json::from_value(
+            serde_json::to_value(value).expect("HardForks: serde_json::to_value shouldn't fail"),
+        )
+        .expect("json_rpc::HardForks: serde_json::from_value shouldn't fail");
+        HardForks {
+            inner: value.inner.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// SoftFork information
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum SoftFork {
+    /// buried - the activation epoch is hard-coded into the client implementation
+    Buried(Buried),
+    /// rfc0043 - the activation is controlled by rfc0043 signaling
+    Rfc0043(Rfc0043),
+}
+
+impl From<json_rpc::SoftFork> for SoftFork {
+    fn from(value: json_rpc::SoftFork) -> Self {
+        match value {
+            json_rpc::SoftFork::Buried(buried) => SoftFork::Buried(buried.into()),
+            json_rpc::SoftFork::Rfc0043(rfc0043) => SoftFork::Rfc0043(rfc0043.into()),
+        }
+    }
+}
+
+/// SoftForkStatus which is either `buried` (for soft fork deployments where the activation epoch is
+/// hard-coded into the client implementation), or `rfc0043` (for soft fork deployments
+/// where activation is controlled by rfc0043 signaling).
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SoftForkStatus {
+    /// the activation epoch is hard-coded into the client implementation
+    Buried,
+    /// the activation is controlled by rfc0043 signaling
+    Rfc0043,
+}
+
+impl From<json_rpc::SoftForkStatus> for SoftForkStatus {
+    fn from(value: json_rpc::SoftForkStatus) -> Self {
+        match value {
+            json_rpc::SoftForkStatus::Buried => SoftForkStatus::Buried,
+            json_rpc::SoftForkStatus::Rfc0043 => SoftForkStatus::Rfc0043,
+        }
+    }
+}
+
+/// Represent soft fork deployments where the activation epoch is
+/// hard-coded into the client implementation
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Buried {
+    /// SoftFork status
+    pub status: SoftForkStatus,
+    /// Whether the rules are active
+    pub active: bool,
+    /// The first epoch  which the rules will be enforced
+    pub epoch: EpochNumber,
+}
+
+impl From<json_rpc::Buried> for Buried {
+    fn from(value: json_rpc::Buried) -> Self {
+        Buried {
+            status: value.status.into(),
+            active: value.active,
+            epoch: value.epoch.into(),
+        }
+    }
+}
+
+/// RFC0043 deployment params
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Deployment {
+    /// Determines which bit in the `version` field of the block is to be used to signal the softfork lock-in and activation.
+    /// It is chosen from the set {0,1,2,...,28}.
+    pub bit: u8,
+    /// Specifies the first epoch in which the bit gains meaning.
+    pub start: EpochNumber,
+    /// Specifies an epoch at which the miner signaling ends.
+    /// Once this epoch has been reached, if the softfork has not yet locked_in (excluding this epoch block's bit state),
+    /// the deployment is considered failed on all descendants of the block.
+    pub timeout: EpochNumber,
+    /// Specifies the epoch at which the softfork is allowed to become active.
+    pub min_activation_epoch: EpochNumber,
+    /// Specifies length of epochs of the signalling period.
+    pub period: EpochNumber,
+    /// Specifies the minimum ratio of block per `period`,
+    /// which indicate the locked_in of the softfork during the `period`.
+    pub threshold: Ratio,
+}
+
+impl From<rpc_types::Deployment> for Deployment {
+    fn from(value: ckb_jsonrpc_types::Deployment) -> Self {
+        Deployment {
+            bit: value.bit,
+            start: value.start.into(),
+            timeout: value.timeout.into(),
+            min_activation_epoch: value.min_activation_epoch.into(),
+            period: value.period.into(),
+            threshold: value.threshold.into(),
+        }
+    }
+}
+
+/// Represent soft fork deployments
+/// where activation is controlled by rfc0043 signaling
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+pub struct Rfc0043 {
+    /// SoftFork status
+    pub status: SoftForkStatus,
+    /// RFC0043 deployment params
+    pub rfc0043: Deployment,
+}
+
+impl From<json_rpc::Rfc0043> for Rfc0043 {
+    fn from(value: json_rpc::Rfc0043) -> Self {
+        Rfc0043 {
+            status: value.status.into(),
+            rfc0043: value.rfc0043.into(),
         }
     }
 }
@@ -887,9 +1090,14 @@ pub struct Consensus {
     pub primary_epoch_reward_halving_interval: Uint64,
     /// Keep difficulty be permanent if the pow is dummy
     pub permanent_difficulty_in_dummy: bool,
+    /// Hardfork features
+    pub hardfork_features: HardForks,
+    /// Softforks
+    pub softforks: HashMap<DeploymentPos, SoftFork>,
 }
+
 impl From<rpc_types::Consensus> for Consensus {
-    fn from(json: rpc_types::Consensus) -> Consensus {
+    fn from(json: ckb_jsonrpc_types::Consensus) -> Self {
         Consensus {
             id: json.id,
             genesis_hash: json.genesis_hash,
@@ -916,6 +1124,140 @@ impl From<rpc_types::Consensus> for Consensus {
                 .primary_epoch_reward_halving_interval
                 .into(),
             permanent_difficulty_in_dummy: json.permanent_difficulty_in_dummy,
+            hardfork_features: json.hardfork_features.into(),
+            softforks: {
+                json.softforks
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (k.into(), {
+                            let v = serde_json::to_value(v)
+                                .expect("softforks: serde_json::to_value should not fail");
+                            let v: json_rpc::SoftFork = serde_json::from_value(v)
+                                .expect("softforks: serde_json::from_value should not fail");
+                            v.into()
+                        })
+                    })
+                    .collect()
+            },
+        }
+    }
+}
+
+/// The possible softfork deployment state
+#[derive(Deserialize, Serialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentState {
+    /// First state that each softfork starts.
+    /// The 0 epoch is by definition in this state for each deployment.
+    Defined,
+    /// For epochs past the `start` epoch.
+    Started,
+    /// For one epoch after the first epoch period with STARTED epochs of
+    /// which at least `threshold` has the associated bit set in `version`.
+    LockedIn,
+    /// For all epochs after the LOCKED_IN epoch.
+    Active,
+    /// For one epoch period past the `timeout_epoch`, if LOCKED_IN was not reached.
+    Failed,
+}
+
+impl From<rpc_types::DeploymentState> for DeploymentState {
+    fn from(value: rpc_types::DeploymentState) -> Self {
+        match value {
+            rpc_types::DeploymentState::Defined => DeploymentState::Defined,
+            rpc_types::DeploymentState::Started => DeploymentState::Started,
+            rpc_types::DeploymentState::LockedIn => DeploymentState::LockedIn,
+            rpc_types::DeploymentState::Active => DeploymentState::Active,
+            rpc_types::DeploymentState::Failed => DeploymentState::Failed,
+        }
+    }
+}
+
+/// An object containing various state info regarding deployments of consensus changes
+#[derive(Deserialize, Serialize, Debug)]
+pub struct DeploymentInfo {
+    /// determines which bit in the `version` field of the block is to be used to signal the softfork lock-in and activation.
+    /// It is chosen from the set {0,1,2,...,28}.
+    pub bit: u8,
+    /// specifies the first epoch in which the bit gains meaning.
+    pub start: EpochNumber,
+    /// specifies an epoch at which the miner signaling ends.
+    /// Once this epoch has been reached,
+    /// if the softfork has not yet locked_in (excluding this epoch block's bit state),
+    /// the deployment is considered failed on all descendants of the block.
+    pub timeout: EpochNumber,
+    /// specifies the epoch at which the softfork is allowed to become active.
+    pub min_activation_epoch: EpochNumber,
+    /// the length in epochs of the signalling period
+    pub period: EpochNumber,
+    /// the ratio of blocks with the version bit set required to activate the feature
+    pub threshold: Ratio,
+    /// The first epoch which the current state applies
+    pub since: EpochNumber,
+    /// With each epoch and softfork, we associate a deployment state. The possible states are:
+    /// * `DEFINED` is the first state that each softfork starts. The blocks of 0 epoch is by definition in this state for each deployment.
+    /// * `STARTED` for all blocks reach or past the start_epoch.
+    /// * `LOCKED_IN` for one period after the first period with STARTED blocks of which at least threshold has the associated bit set in version.
+    /// * `ACTIVE` for all blocks after the LOCKED_IN period.
+    /// * `FAILED` for all blocks after the timeout_epoch, if LOCKED_IN was not reached.
+    pub state: DeploymentState,
+}
+
+impl From<rpc_types::DeploymentInfo> for DeploymentInfo {
+    fn from(value: ckb_jsonrpc_types::DeploymentInfo) -> Self {
+        DeploymentInfo {
+            bit: value.bit,
+            start: value.start.into(),
+            timeout: value.timeout.into(),
+            min_activation_epoch: value.min_activation_epoch.into(),
+            period: value.period.into(),
+            threshold: value.threshold.into(),
+            since: value.since.into(),
+            state: value.state.into(),
+        }
+    }
+}
+
+/// Deployment name
+#[derive(Clone, Hash, Deserialize, Serialize, Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeploymentPos {
+    /// Dummy
+    Testdummy,
+    /// light client protocol
+    LightClient,
+}
+
+impl From<rpc_types::DeploymentPos> for DeploymentPos {
+    fn from(value: ckb_jsonrpc_types::DeploymentPos) -> Self {
+        match value {
+            rpc_types::DeploymentPos::Testdummy => DeploymentPos::Testdummy,
+            rpc_types::DeploymentPos::LightClient => DeploymentPos::LightClient,
+        }
+    }
+}
+
+/// Chain information.
+#[derive(Deserialize, Serialize, Debug)]
+pub struct DeploymentsInfo {
+    /// requested block hash
+    pub hash: H256,
+    /// requested block epoch
+    pub epoch: EpochNumber,
+    /// deployments info
+    pub deployments: BTreeMap<DeploymentPos, DeploymentInfo>,
+}
+
+impl From<rpc_types::DeploymentsInfo> for DeploymentsInfo {
+    fn from(value: ckb_jsonrpc_types::DeploymentsInfo) -> Self {
+        DeploymentsInfo {
+            hash: value.hash,
+            epoch: value.epoch.into(),
+            deployments: value
+                .deployments
+                .into_iter()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
         }
     }
 }
@@ -1344,16 +1686,16 @@ impl From<rpc_types::EstimateCycles> for EstimateCycles {
 
 /// The fee_rate statistics information, includes mean and median, unit: shannons per kilo-weight
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
-pub struct FeeRateStatics {
+pub struct FeeRateStatistics {
     /// mean
     pub mean: Uint64,
     /// median
     pub median: Uint64,
 }
 
-impl From<rpc_types::FeeRateStatics> for FeeRateStatics {
-    fn from(json: rpc_types::FeeRateStatics) -> FeeRateStatics {
-        FeeRateStatics {
+impl From<rpc_types::FeeRateStatistics> for FeeRateStatistics {
+    fn from(json: rpc_types::FeeRateStatistics) -> FeeRateStatistics {
+        FeeRateStatistics {
             mean: json.mean.into(),
             median: json.median.into(),
         }
