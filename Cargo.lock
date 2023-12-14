@@ -714,9 +714,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "3.0.0"
+version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ded3042867b04f20456f17a1f752f2604a24659f3aeec1928917d9ee6b659d4"
+checksum = "718c12dee9e39d9e438a6cc6da0168ac83ca8dc17ace32ce08a2568d4b574398"
 dependencies = [
  "anyhow",
  "bech32 0.8.1",
