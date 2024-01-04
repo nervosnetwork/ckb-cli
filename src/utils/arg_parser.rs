@@ -7,6 +7,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
+
 use clap::ArgMatches;
 use faster_hex::hex_decode;
 use url::Url;
@@ -232,6 +235,15 @@ impl ArgParser<PathBuf> for FilePathParser {
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
         let path = self.path_parser.parse(input)?;
         if path.exists() && !path.is_file() {
+            #[cfg(unix)]
+            if path
+                .metadata()
+                .map(|m| m.file_type().is_fifo())
+                .unwrap_or_default()
+            {
+                return Ok(path);
+            }
+
             Err(format!("path <{}> is not file", input))
         } else {
             Ok(path)
