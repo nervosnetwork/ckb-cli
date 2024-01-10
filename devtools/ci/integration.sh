@@ -51,6 +51,8 @@ cd plugin-protocol && cargo build --example keystore_no_password && cd ..
 rm -rf test/target && ln -snf "${CKB_CLI_DIR}/target" test/target
 export RUST_LOG=ckb_cli=info,cli_test=info
 
+./test/cli_test.sh "${CKB_CLI_DIR}/target/release/ckb-cli" 
+
 cd test && cargo run -- \
                  --ckb-bin "${CKB_BIN}" \
                  --cli-bin "${CKB_CLI_DIR}/target/release/ckb-cli" \

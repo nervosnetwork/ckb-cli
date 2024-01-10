@@ -1,3 +1,4 @@
+use cached::proc_macro::cached;
 use std::fmt::Display;
 use std::fs;
 use std::io::Read;
@@ -6,6 +7,9 @@ use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::fs::FileTypeExt;
 
 use clap::ArgMatches;
 use faster_hex::hex_decode;
@@ -232,6 +236,15 @@ impl ArgParser<PathBuf> for FilePathParser {
     fn parse(&self, input: &str) -> Result<PathBuf, String> {
         let path = self.path_parser.parse(input)?;
         if path.exists() && !path.is_file() {
+            #[cfg(unix)]
+            if path
+                .metadata()
+                .map(|m| m.file_type().is_fifo())
+                .unwrap_or_default()
+            {
+                return Ok(path);
+            }
+
             Err(format!("path <{}> is not file", input))
         } else {
             Ok(path)
@@ -293,13 +306,21 @@ impl ArgParser<Vec<u8>> for HexFilePathParser {
 
 pub struct PrivkeyPathParser;
 
+#[cached]
+fn cache_read_privkey_file(path: PathBuf) -> Result<String, String> {
+    let mut content = String::new();
+    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+    file.read_to_string(&mut content)
+        .map_err(|err| err.to_string())?;
+    Ok(content)
+}
+
 impl ArgParser<PrivkeyWrapper> for PrivkeyPathParser {
     fn parse(&self, input: &str) -> Result<PrivkeyWrapper, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
-        let mut content = String::new();
-        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-        file.read_to_string(&mut content)
-            .map_err(|err| err.to_string())?;
+
+        let content = cache_read_privkey_file(path)?;
+
         let privkey_string: String = content
             .split_whitespace()
             .next()
@@ -317,10 +338,9 @@ pub struct ExtendedPrivkeyPathParser;
 impl ArgParser<MasterPrivKey> for ExtendedPrivkeyPathParser {
     fn parse(&self, input: &str) -> Result<MasterPrivKey, String> {
         let path: PathBuf = FilePathParser::new(true).parse(input)?;
-        let mut content = String::new();
-        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-        file.read_to_string(&mut content)
-            .map_err(|err| err.to_string())?;
+
+        let content = cache_read_privkey_file(path)?;
+
         let lines = content
             .split_whitespace()
             .map(ToOwned::to_owned)
