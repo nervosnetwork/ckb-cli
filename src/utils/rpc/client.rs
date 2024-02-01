@@ -411,4 +411,12 @@ impl HttpRpcClient {
             .notify_transaction(tx.into())
             .map_err(|err| err.to_string())
     }
+
+    // Indexer
+    pub fn get_indexer_tip(&mut self) -> Result<Option<types::IndexerTip>, String> {
+        self.client
+            .get_indexer_tip()
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
 }

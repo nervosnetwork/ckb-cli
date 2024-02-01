@@ -349,7 +349,9 @@ impl<'a> RpcSubCommand<'a> {
                             .validator(|input| HexParser.validate(input))
                             .about("Block assembler message (hex format)")
                     )
-                    .about("[TEST ONLY] Generate an empty block")
+                    .about("[TEST ONLY] Generate an empty block"),
+                // [`Indexer`]
+                App::new("get_indexer_tip").about("Returns the indexed tip"),
             ])
     }
 }
@@ -1067,6 +1069,20 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .rpc_client
                     .generate_block(script_opt, message_opt.map(JsonBytes::from_bytes))?;
                 Ok(Output::new_output(resp))
+            }
+            // [Indexer]
+            ("get_indexer_tip", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_indexer_tip()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_indexer_tip()?;
+                    Ok(Output::new_output(resp))
+                }
             }
             _ => Err(Self::subcommand().generate_usage()),
         }
