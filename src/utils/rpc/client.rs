@@ -1,14 +1,16 @@
 use std::convert::TryInto;
 
 use ckb_jsonrpc_types::{
-    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script,
+    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script, Uint32,
 };
+pub use ckb_sdk::{
+    rpc::ckb_indexer::{Order, Pagination, SearchKey},
+    CkbRpcClient as RawHttpRpcClient,
+};
+use ckb_types::{packed, H256};
 
 use super::primitive;
 use super::types;
-use ckb_types::{packed, H256};
-
-pub use ckb_sdk::CkbRpcClient as RawHttpRpcClient;
 
 pub struct HttpRpcClient {
     url: String,
@@ -417,6 +419,22 @@ impl HttpRpcClient {
         self.client
             .get_indexer_tip()
             .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_cells(
+        &mut self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<types::Cell>, String> {
+        self.client
+            .get_cells(search_key, order, limit, after)
+            .map(|p| Pagination {
+                objects: p.objects.into_iter().map(Into::into).collect(),
+                last_cursor: p.last_cursor,
+            })
             .map_err(|err| err.to_string())
     }
 }

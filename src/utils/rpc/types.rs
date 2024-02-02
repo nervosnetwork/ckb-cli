@@ -11,7 +11,7 @@ use ckb_types::{core, packed, prelude::*, H256, U256};
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
 use crate::utils::rpc::json_rpc;
 use ckb_sdk::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
-use ckb_sdk::rpc::ckb_indexer::{self, CellType};
+use ckb_sdk::rpc::ckb_indexer::{self, CellType, Order};
 
 type Version = u32;
 type BlockNumber = u64;
@@ -1802,5 +1802,13 @@ impl From<ckb_indexer::CellsCapacity> for CellsCapacity {
             block_hash: json.block_hash,
             block_number: json.block_number.into(),
         }
+    }
+}
+
+pub fn parse_order(order_str: &str) -> Result<Order, String> {
+    match order_str.to_lowercase().as_str() {
+        "desc" => Ok(Order::Desc),
+        "asc" => Ok(Order::Asc),
+        _ => Err(format!("Invalid order: {}", order_str)),
     }
 }
