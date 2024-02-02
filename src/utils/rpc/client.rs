@@ -438,6 +438,22 @@ impl HttpRpcClient {
             .map_err(|err| err.to_string())
     }
 
+    pub fn get_transactions(
+        &mut self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<types::Tx>, String> {
+        self.client
+            .get_transactions(search_key, order, limit, after)
+            .map(|p| Pagination {
+                objects: p.objects.into_iter().map(Into::into).collect(),
+                last_cursor: p.last_cursor,
+            })
+            .map_err(|err| err.to_string())
+    }
+
     pub fn get_cells_capacity(
         &mut self,
         search_key: SearchKey,

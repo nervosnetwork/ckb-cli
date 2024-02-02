@@ -384,7 +384,39 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Pagination parameter")
                     )
                     .about("Returns the live cells collection by the lock or type script"),
-                    App::new("get_cells_capacity")
+                App::new("get_transactions")
+                    .arg(
+                        Arg::with_name("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .required(true)
+                        .about("Indexer search key"))
+                    .arg(
+                        Arg::with_name("order")
+                            .long("order")
+                            .takes_value(true)
+                            .possible_values(&["asc", "desc"])
+                            .required(true)
+                            .about("Indexer search order")
+                    )
+                    .arg(
+                        Arg::with_name("limit")
+                            .long("limit")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .required(true)
+                            .about("Limit the number of results")
+                    )
+                    .arg(
+                        Arg::with_name("after")
+                            .long("after")
+                            .takes_value(true)
+                            .validator(|input| HexParser.validate(input))
+                            .about("Pagination parameter")
+                    )
+                    .about("Returns the transactions collection by the lock or type script"),
+                App::new("get_cells_capacity")
                     .arg(
                         Arg::with_name("json-path")
                         .long("json-path")
@@ -1149,6 +1181,36 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp =
                         self.rpc_client
                             .get_cells(search_key, order, limit.into(), after_opt)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_transactions", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true)
+                    .from_matches_opt(m, "json-path")?
+                    .expect("json-path is required");
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let order_str = m.value_of("order").expect("order is required");
+                let order = parse_order(order_str)?;
+                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
+                let after_opt: Option<JsonBytes> = HexParser
+                    .from_matches_opt::<Bytes>(m, "after")?
+                    .map(JsonBytes::from_bytes);
+
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_transactions(search_key, order, limit.into(), after_opt)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_transactions(
+                        search_key,
+                        order,
+                        limit.into(),
+                        after_opt,
+                    )?;
                     Ok(Output::new_output(resp))
                 }
             }

@@ -1741,6 +1741,22 @@ impl From<ckb_indexer::Cell> for Cell {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum Tx {
+    Ungrouped(TxWithCell),
+    Grouped(TxWithCells),
+}
+
+impl From<ckb_indexer::Tx> for Tx {
+    fn from(tx: ckb_indexer::Tx) -> Tx {
+        match tx {
+            ckb_indexer::Tx::Ungrouped(tx_with_cell) => Tx::Ungrouped(tx_with_cell.into()),
+            ckb_indexer::Tx::Grouped(tx_with_cells) => Tx::Grouped(tx_with_cells.into()),
+        }
+    }
+}
+
 /// Response type of the RPC method `get_transactions`.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TxWithCell {
