@@ -437,4 +437,14 @@ impl HttpRpcClient {
             })
             .map_err(|err| err.to_string())
     }
+
+    pub fn get_cells_capacity(
+        &mut self,
+        search_key: SearchKey,
+    ) -> Result<Option<types::CellsCapacity>, String> {
+        self.client
+            .get_cells_capacity(search_key)
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
 }
