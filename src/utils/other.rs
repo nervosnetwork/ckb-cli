@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
+use ckb_jsonrpc_types::Status;
 use ckb_sdk::{
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
     traits::LiveCell,
@@ -181,6 +182,38 @@ pub fn get_live_cell_with_cache(
 }
 
 pub fn get_live_cell(
+    client: &mut HttpRpcClient,
+    out_point: OutPoint,
+    with_data: bool,
+) -> Result<(CellOutput, Bytes), String> {
+    let transaction = client
+        .get_transaction(out_point.clone().tx_hash().unpack())
+        .map_err(|err| format!("Error retrieving transaction: {}", err))?
+        .ok_or("Transaction not found")?;
+
+    match transaction.tx_status.status {
+        Status::Pending | Status::Proposed => {
+            let tx = transaction
+                .transaction
+                .ok_or("Transaction not found")?;
+
+            let id: usize = out_point.clone().index().unpack();
+            let output = tx.inner.outputs.get(id)
+                .cloned()
+                .ok_or("Output not found")?;
+
+            Ok((output.into(), Bytes::new()))
+        }
+        Status::Committed => {
+            get_live_cell_internal(client, out_point, with_data)
+        }
+        Status::Unknown | Status::Rejected => {
+            Err(format!("Transaction status is unknown or rejected"))
+        }
+    }
+}
+
+pub fn get_live_cell_internal(
     client: &mut HttpRpcClient,
     out_point: OutPoint,
     with_data: bool,
