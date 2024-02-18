@@ -27,4 +27,4 @@ anyhow = "1.0.63"
 ckb-types = "=0.114.0-rc1"
 ckb-hash = "=0.114.0-rc1"
 ckb-crypto = { version = "=0.114.0-rc1", features = ["secp"] }
-ckb-sdk = "3.0.0"
+ckb-sdk = { git = "https://github.com/eval-exec/ckb-sdk-rust", branch="exec/0.114",features = ["native-tls-vendored"] }
