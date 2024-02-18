@@ -41,25 +41,18 @@ impl Miner {
     }
 
     pub fn generate_block(&self) -> H256 {
-        let template = self
-            .rpc
-            .lock()
-            .unwrap()
-            .get_block_template(None, None, None)
-            .expect("RPC get_block_template");
-        let work_id = template.work_id.value();
-        let block = Into::<Block>::into(template);
         self.rpc
             .lock()
             .unwrap()
-            .submit_block(work_id.to_string(), block.into())
-            .expect("RPC submit_block")
+            .generate_block()
+            .expect("RPC generate_block")
     }
 
     pub fn generate_blocks(&self, count: u64) {
         log::info!("generating {} blocks...", count);
         (0..count).for_each(|_| {
-            self.generate_block();
+            let block_hash = self.generate_block();
+            log::info!("generated block: {}", block_hash);
             thread::sleep(Duration::from_millis(10));
         })
     }
