@@ -24,7 +24,7 @@ thiserror = "1.0.30"
 parking_lot = "0.11"
 anyhow = "1.0.63"
 
-ckb-types = "=0.111.0"
-ckb-hash = "=0.111.0"
-ckb-crypto = { version = "=0.111.0", features = ["secp"] }
+ckb-types = "=0.114.0-rc1"
+ckb-hash = "=0.114.0-rc1"
+ckb-crypto = { version = "=0.114.0-rc1", features = ["secp"] }
 ckb-sdk = "3.0.0"
