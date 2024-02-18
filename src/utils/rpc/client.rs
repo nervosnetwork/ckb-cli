@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use ckb_jsonrpc_types::{
-    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script, Uint32,
+    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Uint32,
 };
 pub use ckb_sdk::{
     rpc::ckb_indexer::{Order, Pagination, SearchKey},
