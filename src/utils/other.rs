@@ -193,20 +193,17 @@ pub fn get_live_cell(
 
     match transaction.tx_status.status {
         Status::Pending | Status::Proposed => {
-            let tx = transaction
-                .transaction
-                .ok_or("Transaction not found")?;
-
+            let tx = transaction.transaction.ok_or("Transaction not found")?;
             let id: usize = out_point.clone().index().unpack();
-            let output = tx.inner.outputs.get(id)
+            let output = tx
+                .inner
+                .outputs
+                .get(id)
                 .cloned()
                 .ok_or("Output not found")?;
-
             Ok((output.into(), Bytes::new()))
         }
-        Status::Committed => {
-            get_live_cell_internal(client, out_point, with_data)
-        }
+        Status::Committed => get_live_cell_internal(client, out_point, with_data),
         Status::Unknown | Status::Rejected => {
             Err(format!("Transaction status is unknown or rejected"))
         }
