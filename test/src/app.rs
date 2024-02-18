@@ -10,9 +10,12 @@ pub struct App {
 impl App {
     pub fn init() -> Self {
         let matches = Self::matches();
-        let ckb_bin = matches.value_of("ckb-bin").unwrap().to_string();
-        let cli_bin = matches.value_of("cli-bin").unwrap().to_string();
-        let keystore_plugin_bin = matches.value_of("keystore-plugin").unwrap().to_string();
+        let ckb_bin = matches.get_one::<String>("ckb-bin").unwrap().to_owned();
+        let cli_bin = matches.get_one::<String>("cli-bin").unwrap().to_owned();
+        let keystore_plugin_bin: String = matches
+            .get_one::<String>("keystore-plugin")
+            .unwrap()
+            .to_owned();
         assert!(
             Path::new(&ckb_bin).exists(),
             "ckb-bin binary not exists: {}",
@@ -52,7 +55,6 @@ impl App {
             .arg(
                 clap::Arg::new("ckb-bin")
                     .long("ckb-bin")
-                    .takes_value(true)
                     .required(true)
                     .value_name("PATH")
                     .help("Path to ckb executable"),
@@ -60,7 +62,6 @@ impl App {
             .arg(
                 clap::Arg::new("cli-bin")
                     .long("cli-bin")
-                    .takes_value(true)
                     .required(true)
                     .value_name("PATH")
                     .help("Path to ckb-cli executable"),
@@ -68,7 +69,6 @@ impl App {
             .arg(
                 clap::Arg::new("keystore-plugin")
                     .long("keystore-plugin")
-                    .takes_value(true)
                     .required(true)
                     .value_name("PATH")
                     .help("Path to keystore plugin executable"),
