@@ -334,6 +334,15 @@ impl<'a> RpcSubCommand<'a> {
                     .about("[TEST ONLY] Truncate blocks to target tip block"),
                 App::new("generate_block")
                     .about("[TEST ONLY] Generate an empty block"),
+                App::new("generate_epochs")
+                    .arg(
+                        Arg::with_name("num_epochs")
+                            .long("num_epochs")
+                            .takes_value(true)
+                            .required(true)
+                            .about("The number of epochs to generate.")
+                    )
+                    .about("[TEST ONLY] Generate epochs"),
                 // [`Indexer`]
                 App::new("get_indexer_tip").about("Returns the indexed tip"),
                 App::new("get_cells")
@@ -1114,6 +1123,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("generate_block", Some(_m)) => {
                 let resp = self.rpc_client.generate_block()?;
+                Ok(Output::new_output(resp))
+            }
+            ("generate_epochs", Some(m)) => {
+                let num_epochs: u64 =
+                    FromStrParser::<u64>::default().from_matches(m, "num-epochs")?;
+                let resp = self.rpc_client.generate_epochs(num_epochs)?;
                 Ok(Output::new_output(resp))
             }
             // [Indexer]

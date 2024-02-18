@@ -1,7 +1,8 @@
 use std::convert::TryInto;
 
 use ckb_jsonrpc_types::{
-    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Uint32,
+    Alert, BlockNumber, CellWithStatus, EpochNumber, EpochNumberWithFraction, JsonBytes,
+    OutputsValidator, Uint32,
 };
 pub use ckb_sdk::{
     rpc::ckb_indexer::{Order, Pagination, SearchKey},
@@ -401,6 +402,12 @@ impl HttpRpcClient {
     }
     pub fn generate_block(&mut self) -> Result<H256, String> {
         self.client.generate_block().map_err(|err| err.to_string())
+    }
+
+    pub fn generate_epochs(&mut self, num_epochs: u64) -> Result<EpochNumberWithFraction, String> {
+        self.client
+            .generate_epochs(EpochNumberWithFraction::from(num_epochs))
+            .map_err(|err| err.to_string())
     }
     pub fn notify_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client
