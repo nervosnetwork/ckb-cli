@@ -399,14 +399,8 @@ impl HttpRpcClient {
             .truncate(target_tip_hash)
             .map_err(|err| err.to_string())
     }
-    pub fn generate_block(
-        &mut self,
-        block_assembler_script: Option<Script>,
-        block_assembler_message: Option<JsonBytes>,
-    ) -> Result<H256, String> {
-        self.client
-            .generate_block(block_assembler_script, block_assembler_message)
-            .map_err(|err| err.to_string())
+    pub fn generate_block(&mut self) -> Result<H256, String> {
+        self.client.generate_block().map_err(|err| err.to_string())
     }
     pub fn notify_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client

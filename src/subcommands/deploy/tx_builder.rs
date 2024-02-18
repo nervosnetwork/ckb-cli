@@ -20,6 +20,7 @@ use ckb_types::{
     core::{HeaderView, TransactionBuilder, TransactionView},
     packed::{self, Byte32, CellOutput, OutPoint},
     prelude::*,
+    H256,
 };
 
 use super::state_change::ChangeInfo;
@@ -113,7 +114,7 @@ pub fn build_tx<T: ChangeInfo>(
         let mut offchain = OffchainTransactionDependencyProvider::default();
         if let Some(pending_tx) = pending_tx {
             let tx_view = pending_tx.into_view();
-            let tx_hash = tx_view.hash().unpack();
+            let tx_hash: H256 = tx_view.hash().unpack();
             offchain.txs.insert(tx_hash.clone(), tx_view.clone());
             for (output_idx, (output, output_data)) in tx_view.outputs_with_data_iter().enumerate()
             {
