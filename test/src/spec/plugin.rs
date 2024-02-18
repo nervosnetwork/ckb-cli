@@ -61,7 +61,7 @@ impl Spec for Plugin {
         let output = setup.cli(&format!("wallet transfer --from-account {} --to-address ckt1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jq5t63cs --capacity 1000", Miner::address()));
         // Means the signature is filled but is wrong: https://nervosnetwork.github.io/ckb-script-error-codes/by-data-hash/709f3fda12f561cfacf92273c57a98fede188a3f1a59b1f888d113f9cce08649.html#-31
         assert!(
-            output.contains("cause: ValidationFailure: see the error code -31 in the page"),
+            output.contains("cause: ValidationFailure: see error code -31 on page"),
             "{}",
             output
         );
