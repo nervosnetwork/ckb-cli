@@ -4,7 +4,7 @@ use ckb_jsonrpc_types::{BlockTemplate, ProposalShortId};
 use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
 use ckb_types::{
     core::BlockNumber,
-    packed::{self, Block},
+    packed::{self},
     prelude::*,
     H160, H256,
 };
@@ -51,8 +51,7 @@ impl Miner {
     pub fn generate_blocks(&self, count: u64) {
         log::info!("generating {} blocks...", count);
         (0..count).for_each(|_| {
-            let block_hash = self.generate_block();
-            log::info!("generated block: {}", block_hash);
+            self.generate_block();
             thread::sleep(Duration::from_millis(10));
         })
     }

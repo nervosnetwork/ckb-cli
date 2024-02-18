@@ -487,6 +487,7 @@ impl Spec for SudtTransferToChequeForWithdraw {
     }
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.epoch_duration_target = Some(EPOCH_LENGTH * 8);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
     }
 
