@@ -11,6 +11,7 @@ use ckb_types::{core, packed, prelude::*, H256, U256};
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
 use crate::utils::rpc::json_rpc;
 use ckb_sdk::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
+use ckb_sdk::rpc::ckb_indexer::{self, CellType, Order};
 
 type Version = u32;
 type BlockNumber = u64;
@@ -1699,5 +1700,131 @@ impl From<rpc_types::FeeRateStatistics> for FeeRateStatistics {
             mean: json.mean.into(),
             median: json.median.into(),
         }
+    }
+}
+
+/// Response type of the RPC method `get_indexer_tip`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct IndexerTip {
+    pub block_hash: H256,
+    pub block_number: BlockNumber,
+}
+
+impl From<ckb_indexer::Tip> for IndexerTip {
+    fn from(tip: ckb_indexer::Tip) -> IndexerTip {
+        IndexerTip {
+            block_hash: tip.block_hash,
+            block_number: tip.block_number.into(),
+        }
+    }
+}
+
+/// Response type of the RPC method `get_cells`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Cell {
+    pub output: CellOutput,
+    pub output_data: Option<JsonBytes>,
+    pub out_point: OutPoint,
+    pub block_number: BlockNumber,
+    pub tx_index: Uint32,
+}
+
+impl From<ckb_indexer::Cell> for Cell {
+    fn from(cell: ckb_indexer::Cell) -> Cell {
+        Cell {
+            output: cell.output.into(),
+            output_data: cell.output_data.map(Into::into),
+            out_point: cell.out_point.into(),
+            block_number: cell.block_number.into(),
+            tx_index: cell.tx_index.into(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum Tx {
+    Ungrouped(TxWithCell),
+    Grouped(TxWithCells),
+}
+
+impl From<ckb_indexer::Tx> for Tx {
+    fn from(tx: ckb_indexer::Tx) -> Tx {
+        match tx {
+            ckb_indexer::Tx::Ungrouped(tx_with_cell) => Tx::Ungrouped(tx_with_cell.into()),
+            ckb_indexer::Tx::Grouped(tx_with_cells) => Tx::Grouped(tx_with_cells.into()),
+        }
+    }
+}
+
+/// Response type of the RPC method `get_transactions`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TxWithCell {
+    pub tx_hash: H256,
+    pub block_number: BlockNumber,
+    pub tx_index: Uint32,
+    pub io_index: Uint32,
+    pub io_type: CellType,
+}
+
+impl From<ckb_indexer::TxWithCell> for TxWithCell {
+    fn from(tx_with_cell: ckb_indexer::TxWithCell) -> TxWithCell {
+        TxWithCell {
+            tx_hash: tx_with_cell.tx_hash,
+            block_number: tx_with_cell.block_number.into(),
+            tx_index: tx_with_cell.tx_index.into(),
+            io_index: tx_with_cell.io_index.into(),
+            io_type: tx_with_cell.io_type,
+        }
+    }
+}
+
+/// Response type of the RPC method `get_transactions`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TxWithCells {
+    pub tx_hash: H256,
+    pub block_number: BlockNumber,
+    pub tx_index: Uint32,
+    pub cells: Vec<(CellType, Uint32)>,
+}
+
+impl From<ckb_indexer::TxWithCells> for TxWithCells {
+    fn from(tx_with_cells: ckb_indexer::TxWithCells) -> TxWithCells {
+        TxWithCells {
+            tx_hash: tx_with_cells.tx_hash,
+            block_number: tx_with_cells.block_number.into(),
+            tx_index: tx_with_cells.tx_index.into(),
+            cells: tx_with_cells
+                .cells
+                .into_iter()
+                .map(|(cell_type, io_index)| (cell_type, io_index.into()))
+                .collect(),
+        }
+    }
+}
+
+/// Response type of the RPC method `get_cells_capacity`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CellsCapacity {
+    pub capacity: Capacity,
+    pub block_hash: H256,
+    pub block_number: BlockNumber,
+}
+
+impl From<ckb_indexer::CellsCapacity> for CellsCapacity {
+    fn from(json: ckb_indexer::CellsCapacity) -> CellsCapacity {
+        CellsCapacity {
+            capacity: json.capacity.into(),
+            block_hash: json.block_hash,
+            block_number: json.block_number.into(),
+        }
+    }
+}
+
+pub fn parse_order(order_str: &str) -> Result<Order, String> {
+    match order_str.to_lowercase().as_str() {
+        "desc" => Ok(Order::Desc),
+        "asc" => Ok(Order::Asc),
+        _ => Err(format!("Invalid order: {}", order_str)),
     }
 }

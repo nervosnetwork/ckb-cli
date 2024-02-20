@@ -70,7 +70,7 @@ hash: 0x0384ebc55b7cb56e51044743e05fb83a4edb7173524339c35df4c71fcdb0854d
 
 ### Example: Get live cell (json output format)
 ```
-ckb-cli rpc get_live_cell --tx-hash 0x4ec75b5a8de8d180853d5046760a99285c73283a5dc528f81d6ee056f5335172 --index 0 --output-format json
+ckb-cli rpc get_live_cell --tx-hash 0x4ec75b5a8de8d180853d5046760a99285c73283a5dc528f81d6ee056f5335172 --index 0
 ```
 
 **Response:**
@@ -90,3 +90,49 @@ ckb-cli rpc get_live_cell --tx-hash 0x4ec75b5a8de8d180853d5046760a99285c73283a5d
   "status": "live"
 }
 ```
+
+### Example: Indexer get cells (yaml output format)
+
+Prepare file searchkey.json as input parameters:
+
+```json
+{
+    "script": {
+        "code_hash": "0xbbad126377d45f90a8ee120da988a2d7332c78ba8fd679aab478a19d6c133494",
+        "hash_type": "data1",
+        "args": "0x"
+    },
+    "script_type": "type",
+    "script_search_mode": "prefix",
+    "filter": {
+        "output_data": "0xa58618a553",
+        "output_data_filter_mode": "partial"
+    },
+    "with_data": false
+}
+```
+
+```
+ckb-cli rpc get_transactions --json-path ./searchkey.json --order asc --limit 3
+```
+Response:
+
+```yaml
+last_cursor: 0xa0bbad126377d45f90a8ee120da988a2d7332c78ba8fd679aab478a19d6c13349402013368282f4cde04254a3a6a2027b33f7c974046a4d5cbd96bc47d7f058c18090000000000b29e04000000050000000000
+objects:
+  - block_number: 10375179
+    io_index: 1
+    io_type: output
+    tx_hash: 0x551ec96717c336b74bbb2e56a1cb9c73e2a9d4b56321079b454cfc1c0e6036ac
+    tx_index: 7
+  - block_number: 11705844
+    io_index: 0
+    io_type: output
+    tx_hash: 0xd690aa336c0d05808e08a97ba2f3031b7691341df9002b305c2d27cb116e2705
+    tx_index: 5
+  - block_number: 11705860
+    io_index: 0
+    io_type: input
+    tx_hash: 0xa3282c23227992933eee0a07e5cbf52ca62006b98f2d113ebf579c5e59cf5a62
+    tx_index: 5
+  ```

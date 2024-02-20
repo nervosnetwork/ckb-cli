@@ -1,14 +1,16 @@
 use std::convert::TryInto;
 
 use ckb_jsonrpc_types::{
-    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script,
+    Alert, BlockNumber, CellWithStatus, EpochNumber, JsonBytes, OutputsValidator, Script, Uint32,
 };
+pub use ckb_sdk::{
+    rpc::ckb_indexer::{Order, Pagination, SearchKey},
+    CkbRpcClient as RawHttpRpcClient,
+};
+use ckb_types::{packed, H256};
 
 use super::primitive;
 use super::types;
-use ckb_types::{packed, H256};
-
-pub use ckb_sdk::CkbRpcClient as RawHttpRpcClient;
 
 pub struct HttpRpcClient {
     url: String,
@@ -409,6 +411,56 @@ impl HttpRpcClient {
     pub fn notify_transaction(&mut self, tx: packed::Transaction) -> Result<H256, String> {
         self.client
             .notify_transaction(tx.into())
+            .map_err(|err| err.to_string())
+    }
+
+    // Indexer
+    pub fn get_indexer_tip(&mut self) -> Result<Option<types::IndexerTip>, String> {
+        self.client
+            .get_indexer_tip()
+            .map(|opt| opt.map(Into::into))
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_cells(
+        &mut self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<types::Cell>, String> {
+        self.client
+            .get_cells(search_key, order, limit, after)
+            .map(|p| Pagination {
+                objects: p.objects.into_iter().map(Into::into).collect(),
+                last_cursor: p.last_cursor,
+            })
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_transactions(
+        &mut self,
+        search_key: SearchKey,
+        order: Order,
+        limit: Uint32,
+        after: Option<JsonBytes>,
+    ) -> Result<Pagination<types::Tx>, String> {
+        self.client
+            .get_transactions(search_key, order, limit, after)
+            .map(|p| Pagination {
+                objects: p.objects.into_iter().map(Into::into).collect(),
+                last_cursor: p.last_cursor,
+            })
+            .map_err(|err| err.to_string())
+    }
+
+    pub fn get_cells_capacity(
+        &mut self,
+        search_key: SearchKey,
+    ) -> Result<Option<types::CellsCapacity>, String> {
+        self.client
+            .get_cells_capacity(search_key)
+            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
 }
