@@ -204,9 +204,10 @@ pub fn get_live_cell(
             Ok((output.into(), Bytes::new()))
         }
         Status::Committed => get_live_cell_internal(client, out_point, with_data),
-        Status::Unknown | Status::Rejected => {
-            Err(format!("Transaction status is unknown or rejected"))
-        }
+        Status::Unknown | Status::Rejected => Err(format!(
+            "Invalid Transaction status: {:?}",
+            transaction.tx_status.status
+        )),
     }
 }
 
