@@ -7,15 +7,15 @@ edition = "2021"
 description = "ckb command line interface"
 
 [dependencies]
-ckb-jsonrpc-types = "=0.114.0-rc1"
-ckb-hash = "=0.114.0-rc1"
-ckb-crypto = { version = "=0.114.0-rc1", features = ["secp"] }
-ckb-build-info = "=0.114.0-rc1"
-ckb-types = "=0.114.0-rc1"
-ckb-util = "=0.114.0-rc1"
-ckb-error = "=0.114.0-rc1"
-ckb-script = "=0.114.0-rc1"
-ckb-chain-spec = "=0.114.0-rc1"
+ckb-jsonrpc-types = "=0.114.0-rc2"
+ckb-hash = "=0.114.0-rc2"
+ckb-crypto = { version = "=0.114.0-rc2", features = ["secp"] }
+ckb-build-info = "=0.114.0-rc2"
+ckb-types = "=0.114.0-rc2"
+ckb-util = "=0.114.0-rc2"
+ckb-error = "=0.114.0-rc2"
+ckb-script = "=0.114.0-rc2"
+ckb-chain-spec = "=0.114.0-rc2"
 ckb-mock-tx-types = { git="https://github.com/eval-exec/ckb-standalone-debugger", branch="exec/bump-0.114.0" }
 ckb-sdk = { git = "https://github.com/eval-exec/ckb-sdk-rust", branch="exec/0.114",features = ["native-tls-vendored"] }
 ckb-signer = { path = "ckb-signer", version = "0.4.0" }
@@ -73,7 +73,7 @@ termion = "1.5"
 rand = "0.7"
 
 [build-dependencies]
-ckb-build-info = "=0.114.0-rc1"
+ckb-build-info = "=0.114.0-rc2"
 
 [workspace]
 members = ["ckb-signer", "plugin-protocol"]
