@@ -17,7 +17,7 @@ ci: fmt clippy test security-audit check-crates check-licenses
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh v0.114.0-rc1
+	bash devtools/ci/integration.sh v0.114.0-rc3
 
 prod: ## Build binary with release profile.
 	cargo build --release
