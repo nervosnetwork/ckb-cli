@@ -1,5 +1,7 @@
-use ckb_jsonrpc_types::{self as rpc_types, Alert, BlockNumber, EpochNumber, Transaction};
-use ckb_types::{packed, prelude::*, H256};
+use ckb_jsonrpc_types::{
+    self as rpc_types, Alert, BlockNumber, EpochNumber, JsonBytes, Transaction,
+};
+use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
@@ -11,7 +13,7 @@ use std::time::Duration;
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
-    FromStrParser,
+    FromStrParser, HexParser,
 };
 use crate::utils::rpc::{
     parse_order, BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, HttpRpcClient,

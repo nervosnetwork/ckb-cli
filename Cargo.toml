@@ -63,7 +63,7 @@ tokio = { version = "1", features = ["net", "io-util", "rt"] }
 futures = "0.3"
 
 # remove this line when ckb-vm stick the version of ckb-vm-definitions
-ckb-vm-definitions = "=0.21.3"
+# ckb-vm-definitions = "=0.21.3"
 
 [target.'cfg(unix)'.dependencies]
 tui = "0.6.0"
