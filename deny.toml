@@ -20,6 +20,7 @@ allow = [
     "ISC",
     "MIT",
     "Unicode-DFS-2016",
+    "BSL-1.0", 
 ]
 copyleft = "deny"
 default = "deny"
