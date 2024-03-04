@@ -168,6 +168,10 @@ impl Setup {
             .as_array_mut()
             .unwrap()
             .push(toml::Value::String("Indexer".to_string()));
+        value["rpc"]["modules"]
+            .as_array_mut()
+            .unwrap()
+            .push(toml::Value::String("IntegrationTest".to_string()));
         // value["indexer_v2"]["index_tx_pool"] = true;
         value
             .as_table_mut()

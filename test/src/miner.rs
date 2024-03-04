@@ -4,7 +4,7 @@ use ckb_jsonrpc_types::{BlockTemplate, ProposalShortId};
 use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
 use ckb_types::{
     core::BlockNumber,
-    packed::{self, Block},
+    packed::{self},
     prelude::*,
     H160, H256,
 };
@@ -41,19 +41,11 @@ impl Miner {
     }
 
     pub fn generate_block(&self) -> H256 {
-        let template = self
-            .rpc
-            .lock()
-            .unwrap()
-            .get_block_template(None, None, None)
-            .expect("RPC get_block_template");
-        let work_id = template.work_id.value();
-        let block = Into::<Block>::into(template);
         self.rpc
             .lock()
             .unwrap()
-            .submit_block(work_id.to_string(), block.into())
-            .expect("RPC submit_block")
+            .generate_block()
+            .expect("RPC generate_block")
     }
 
     pub fn generate_blocks(&self, count: u64) {
