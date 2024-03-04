@@ -1,6 +1,6 @@
 use crate::util::temp_dir;
 use ckb_app_config::BlockAssemblerConfig;
-use ckb_jsonrpc_types::{BlockTemplate, ProposalShortId};
+use ckb_jsonrpc_types::{BlockTemplate, EpochNumberWithFraction, ProposalShortId};
 use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
 use ckb_types::{
     core::BlockNumber,
@@ -46,6 +46,16 @@ impl Miner {
             .unwrap()
             .generate_block()
             .expect("RPC generate_block")
+    }
+
+    pub fn generate_epochs(&self, num_epochs: u64, epoch_length: u64) -> EpochNumberWithFraction {
+        let epoch_number_with_fraction =
+            ckb_types::core::EpochNumberWithFraction::new(num_epochs, 0, epoch_length);
+        self.rpc
+            .lock()
+            .unwrap()
+            .generate_epochs(epoch_number_with_fraction.into())
+            .expect("RPC generate_epoch")
     }
 
     pub fn generate_blocks(&self, count: u64) {

@@ -39,7 +39,7 @@ impl Spec for DaoPrepareOne {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = vec![new_out_point(prepare_tx_hash, 0)];
         let _withdraw_tx_hash = withdraw(setup, &out_points);
         assert_eq!(deposited_capacity(setup), 0);
@@ -89,7 +89,7 @@ impl Spec for DaoPrepareMultiple {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = (0..shannons.len())
             .map(|i| new_out_point(&prepare_tx_hash, i))
             .collect::<Vec<_>>();
@@ -135,7 +135,7 @@ impl Spec for DaoWithdrawMultiple {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = prepare_tx_hashes
             .into_iter()
             .map(|hash| new_out_point(hash, 0))
