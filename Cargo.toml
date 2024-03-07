@@ -58,7 +58,7 @@ ipnetwork = "0.14"
 multiaddr = { package = "parity-multiaddr", version = "0.4.0" }
 byteorder = "1.3.2"
 toml = "0.5.9"
-
+reqwest = "=0.11.20" # see https://github.com/nervosnetwork/ckb/pull/4205
 tokio = { version = "1", features = ["net", "io-util", "rt"] }
 futures = "0.3"
 
