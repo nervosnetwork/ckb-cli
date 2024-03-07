@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.75.0
       - if: matrix.os == 'windows-latest'
         name: Windows Dependencies
         shell: pwsh
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.75.0
       - name: Integration_Test
         run: make integration
 
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.75.0
       - name: Linters
         run: |
           cargo fmt --version || rustup component add rustfmt
@@ -79,7 +79,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.71.1
+          toolchain: 1.75.0
       - uses: EmbarkStudios/cargo-deny-action@v1
         with:
           command: check ${{ matrix.checks }}
