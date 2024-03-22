@@ -738,7 +738,8 @@ fn load_cells(
             let lock_script_unchanged = lock_script.as_slice() == old_lock_script.as_slice();
             let type_id_unchanged = old_recipe.type_id.is_some() == config.enable_type_id;
             // NOTE: we trust `old_recipe.data_hash` here
-            if data_unchanged && lock_script_unchanged && type_id_unchanged {
+            if data_unchanged && lock_script_unchanged && type_id_unchanged && !cell.force_redeploy
+            {
                 StateChange::Unchanged {
                     data,
                     data_hash,
