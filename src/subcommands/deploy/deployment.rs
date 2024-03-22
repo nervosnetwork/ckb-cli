@@ -27,6 +27,8 @@ pub struct Cell {
     pub name: String,
     pub location: CellLocation,
     pub enable_type_id: bool,
+    #[serde(default)]
+    pub force_redeploy: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
