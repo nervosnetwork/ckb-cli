@@ -811,17 +811,9 @@ impl TryFrom<ReprMultisigConfig> for MultisigConfig {
             .sighash_addresses
             .into_iter()
             .map(|address_string| {
-                if let AddressPayload::Short { index, hash } =
-                    Address::from_str(&address_string).map(|addr| addr.payload().clone())?
-                {
-                    if index == CodeHashIndex::Sighash {
-                        Ok(hash)
-                    } else {
-                        Err(format!("invalid address: {}", address_string))
-                    }
-                } else {
-                    Err(format!("invalid address: {}", address_string))
-                }
+                Address::from_str(&address_string)
+                    .map(|addr| H160::from_slice(addr.payload().args().as_ref()))?
+                    .map_err(|err| format!("invalid address: {address_string} error: {err:?}"))
             })
             .collect::<Result<Vec<_>, String>>()?;
         MultisigConfig::new_with(sighash_addresses, repr.require_first_n, repr.threshold)
