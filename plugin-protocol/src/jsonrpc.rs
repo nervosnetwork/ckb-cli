@@ -1,3 +1,8 @@
+use ckb_types::{
+    packed::{CellInput, OutPoint},
+    prelude::Pack,
+    H256,
+};
 use serde_derive::{Deserialize, Serialize};
 
 pub const JSONRPC_VERSION: &str = "2.0";
@@ -43,4 +48,38 @@ pub struct JsonrpcResponse {
     /// An error if there is one, or null
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<JsonrpcError>,
+}
+
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct LiveCellInfo {
+    pub tx_hash: H256,
+    pub output_index: u32,
+    pub data_bytes: u64,
+    pub lock_hash: H256,
+    // Type script's code_hash and script_hash
+    pub type_hashes: Option<(H256, H256)>,
+    // Capacity
+    pub capacity: u64,
+    // Block number
+    pub number: u64,
+    // Location in the block
+    pub index: CellIndex,
+}
+
+impl LiveCellInfo {
+    pub fn out_point(&self) -> OutPoint {
+        OutPoint::new(self.tx_hash.pack(), self.output_index)
+    }
+    pub fn input(&self) -> CellInput {
+        CellInput::new(self.out_point(), 0)
+    }
+}
+
+// LiveCell index in a block
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Copy, Serialize, Deserialize)]
+pub struct CellIndex {
+    // The transaction index in the block
+    pub tx_index: u32,
+    // The output index in the transaction
+    pub output_index: u32,
 }

@@ -22,7 +22,7 @@ impl Spec for Plugin {
         ));
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(value["name"].as_str().unwrap(), "demo_keystore_no_password");
-        assert_eq!(value["daemon"].as_bool().unwrap(), true);
+        assert!(value["daemon"].as_bool().unwrap());
 
         let output = setup.cli("plugin list");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
@@ -58,10 +58,10 @@ impl Spec for Plugin {
         let privkey_content = fs::read_to_string(extended_privkey_path).unwrap();
         assert_eq!(privkey_content, "0303030303030303030303030303030303030303030303030303030303030303\n0404040404040404040404040404040404040404040404040404040404040404");
 
-        let output = setup.cli(&format!("wallet transfer --from-account {} --to-address ckt1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jq5t63cs --capacity 1000 --tx-fee 0.1", Miner::address()));
+        let output = setup.cli(&format!("wallet transfer --from-account {} --to-address ckt1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jq5t63cs --capacity 1000", Miner::address()));
         // Means the signature is filled but is wrong: https://nervosnetwork.github.io/ckb-script-error-codes/by-data-hash/709f3fda12f561cfacf92273c57a98fede188a3f1a59b1f888d113f9cce08649.html#-31
         assert!(
-            output.contains("cause: ValidationFailure: see the error code -31 in the page"),
+            output.contains("cause: ValidationFailure: see error code -31 on page"),
             "{}",
             output
         );
@@ -78,12 +78,16 @@ impl Spec for Plugin {
             .cli("account bip44-addresses --lock-arg 0xb39bbc0b3673c7d36450bc14cfcdad2d559c6c64");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert_eq!(
-            value["receiving"][0]["address"],
+            value["receiving"][0]["address(deprecated)"],
             "ckb1qyqp8eqad7ffy42ezmchkjyz54rhcqf8q9pqrn323p"
+        );
+        assert_eq!(
+            value["receiving"][0]["address"],
+            "ckb1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqgnuswkly5j24v3dutmfzp223muqynszss2yfteq"
         );
         assert_eq!(value["receiving"][0]["path"], "m/44'/309'/0'/0/19");
         assert_eq!(
-            value["change"][1]["address"],
+            value["change"][1]["address(deprecated)"],
             "ckb1qyqt8xaupvm8837nv3gtc9x0ekkj64vud3jqfwyw5v"
         );
         assert_eq!(value["change"][1]["path"], "m/44'/309'/0'/1/20");
@@ -103,5 +107,9 @@ impl Spec for Plugin {
         let output = setup.cli("plugin list");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         assert!(value.as_sequence().unwrap().is_empty());
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "Plugin"
     }
 }

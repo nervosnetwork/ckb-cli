@@ -1,12 +1,5 @@
 use ckb_jsonrpc_types::{
-    self as rpc_types, BlockNumber, EpochNumber, JsonBytes, Script, Transaction,
-};
-use ckb_sdk::{
-    rpc::{
-        BannedAddr, BlockView, EpochView, HeaderView, RawHttpRpcClient, RemoteNode, Timestamp,
-        TransactionProof, TransactionWithStatus,
-    },
-    HttpRpcClient,
+    self as rpc_types, Alert, BlockNumber, EpochNumber, JsonBytes, Transaction,
 };
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
@@ -19,7 +12,12 @@ use std::time::Duration;
 
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
-    ArgParser, DurationParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
+    ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
+    FromStrParser, HexParser,
+};
+use crate::utils::rpc::{
+    parse_order, BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, HttpRpcClient,
+    RawHttpRpcClient, RemoteNode, Timestamp, TransactionProof, TransactionWithStatus,
 };
 
 pub struct RpcSubCommand<'a> {
@@ -55,6 +53,12 @@ impl<'a> RpcSubCommand<'a> {
             .takes_value(true)
             .required(true)
             .about("Node's peer id");
+        let with_cycles = Arg::with_name("with-cycles")
+            .long("with-cycles")
+            .about("get block info with cycles");
+        let packed = Arg::with_name("packed")
+            .long("packed")
+            .about("returns a 0x-prefixed hex string");
 
         App::new("rpc")
             .about("Invoke RPC call to node")
@@ -68,10 +72,14 @@ impl<'a> RpcSubCommand<'a> {
                 // [Chain]
                 App::new("get_block")
                     .about("Get block content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
+                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(with_cycles.clone())
+                    .arg(packed.clone()),
                 App::new("get_block_by_number")
                     .about("Get block content by block number")
-                    .arg(arg_number.clone()),
+                    .arg(arg_number.clone())
+                    .arg(with_cycles.clone())
+                    .arg(packed.clone()),
                 App::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
@@ -81,10 +89,12 @@ impl<'a> RpcSubCommand<'a> {
                     .arg(arg_number.clone().about("Epoch number")),
                 App::new("get_header")
                     .about("Get block header content by hash")
-                    .arg(arg_hash.clone().about("Block hash")),
+                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(packed.clone()),
                 App::new("get_header_by_number")
                     .about("Get block header by block number")
-                    .arg(arg_number.clone()),
+                    .arg(arg_number.clone())
+                    .arg(packed.clone()),
                 App::new("get_live_cell")
                     .about("Get live cell (live means unspent)")
                     .arg(
@@ -109,10 +119,12 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Get live cell with data")
                     ),
                 App::new("get_tip_block_number").about("Get tip block number"),
-                App::new("get_tip_header").about("Get tip header"),
+                App::new("get_tip_header").about("Get tip header")
+                .arg(packed.clone()),
                 App::new("get_transaction")
                     .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().about("Tx hash")),
+                    .arg(arg_hash.clone().about("Tx hash"))
+                    .arg(packed.clone()),
                 App::new("get_transaction_proof")
                     .about("Returns a Merkle proof that transactions are included in a block")
                     .arg(
@@ -142,12 +154,71 @@ impl<'a> RpcSubCommand<'a> {
                     ),
                 App::new("get_fork_block")
                     .about("Returns the information about a fork block by hash")
-                    .arg(arg_hash.clone().about("The fork block hash")),
+                    .arg(arg_hash.clone().about("The fork block hash"))
+                    .arg(packed.clone()),
                 App::new("get_consensus")
                     .about("Return various consensus parameters"),
                 App::new("get_block_median_time")
                     .about("Returns the past median time by block hash")
                     .arg(arg_hash.clone().about("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
+                App::new("get_block_economic_state")
+                    .about("Returns increased issuance, miner reward, and the total transaction fee of a block")
+                    .arg(arg_hash.clone().about("Specifies the block hash which rewards should be analyzed")),
+                App::new("estimate_cycles")
+                    .arg(
+                        Arg::with_name("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .required(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .about("Transaction content (json format, see rpc estimate_cycles)")
+                    )
+                    .about("estimate_cycles run a transaction and return the execution consumed cycles."),
+                App::new("get_fee_rate_statics")
+                    .arg(
+                        Arg::with_name("target")
+                            .long("target")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                    )
+                    .about("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_fee_rate_statistics")
+                    .arg(
+                        Arg::with_name("target")
+                            .long("target")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                    )
+                    .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
+                App::new("get_deployments_info").about("Returns the information about all deployments"),
+                App::new("get_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .multiple(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Transaction hashes")
+                    )
+                    .arg(
+                        Arg::with_name("block-hash")
+                            .long("block-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .about("Looks for transactions in the block with this hash")
+                    ).about("Returns a Merkle proof that transactions and witnesses are included in a block"),
+                App::new("verify_transaction_and_witness_proof")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
+                    )
+                    .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
                 // [Net]
                 App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
                 App::new("get_peers").about("Get connected peers"),
@@ -213,31 +284,46 @@ impl<'a> RpcSubCommand<'a> {
                 App::new("clear_banned_addresses").about("Clears all banned IPs/Subnets"),
                 App::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
                 // [Pool]
+                App::new("remove_transaction")
+                    .about("Removes a transaction and all transactions which depends on it from tx pool if it exists")
+                    .arg(
+                        Arg::with_name("tx-hash")
+                            .long("tx-hash")
+                            .takes_value(true)
+                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
+                            .required(true)
+                            .about("Hash of a transaction"),
+                    ),
                 App::new("tx_pool_info").about("Get transaction pool information"),
+                App::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
                 App::new("get_raw_tx_pool")
                     .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
                     .arg(Arg::with_name("verbose").long("verbose").about("True for a json object, false for array of transaction ids")),
+                App::new("tx_pool_ready").about("Returns whether tx-pool service is started, ready for request"),
                 // [`Stats`]
                 App::new("get_blockchain_info").about("Get chain information"),
+                // [Alert]
+                App::new("send_alert")
+                    .arg(
+                        Arg::with_name("json-path")
+                            .long("json-path")
+                            .takes_value(true)
+                            .required(true)
+                            .validator(|input| FilePathParser::new(true).validate(input))
+                            .about("The alert message (json format)")
+                    )
+                    .about("Sends an alert"),
                 // [`IntegrationTest`]
-                App::new("broadcast_transaction")
+                App::new("notify_transaction")
                     .arg(
                         Arg::with_name("json-path")
                          .long("json-path")
                          .takes_value(true)
                          .required(true)
                          .validator(|input| FilePathParser::new(true).validate(input))
-                         .about("Transaction content (json format, see rpc send_transaction)")
+                         .about("[TEST ONLY] Transaction content (json format, see rpc send_transaction)")
                     )
-                    .arg(
-                        Arg::with_name("cycles")
-                            .long("cycles")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .about("The cycles of the transaction")
-                    )
-                    .about("[TEST ONLY] Broadcast transaction without verify"),
+                    .about("[TEST ONLY] Notify transaction"),
                 App::new("truncate")
                     .arg(
                         Arg::with_name("tip-hash")
@@ -249,21 +335,91 @@ impl<'a> RpcSubCommand<'a> {
                     )
                     .about("[TEST ONLY] Truncate blocks to target tip block"),
                 App::new("generate_block")
+                    .about("[TEST ONLY] Generate an empty block"),
+                App::new("generate_epochs")
+                    .arg(
+                        Arg::with_name("num_epochs")
+                            .long("num_epochs")
+                            .takes_value(true)
+                            .required(true)
+                            .about("The number of epochs to generate.")
+                    )
+                    .about("[TEST ONLY] Generate epochs"),
+                // [`Indexer`]
+                App::new("get_indexer_tip").about("Returns the indexed tip"),
+                App::new("get_cells")
                     .arg(
                         Arg::with_name("json-path")
-                            .long("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .required(true)
+                        .about("Indexer search key"))
+                    .arg(
+                        Arg::with_name("order")
+                            .long("order")
                             .takes_value(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("Block assembler lock script (json format)")
+                            .possible_values(&["asc", "desc"])
+                            .required(true)
+                            .about("Indexer search order")
                     )
                     .arg(
-                        Arg::with_name("message")
-                            .long("message")
+                        Arg::with_name("limit")
+                            .long("limit")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .required(true)
+                            .about("Limit the number of results")
+                    )
+                    .arg(
+                        Arg::with_name("after")
+                            .long("after")
                             .takes_value(true)
                             .validator(|input| HexParser.validate(input))
-                            .about("Block assembler message (hex format)")
+                            .about("Pagination parameter")
                     )
-                    .about("[TEST ONLY] Generate an empty block")
+                    .about("Returns the live cells collection by the lock or type script"),
+                App::new("get_transactions")
+                    .arg(
+                        Arg::with_name("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .required(true)
+                        .about("Indexer search key"))
+                    .arg(
+                        Arg::with_name("order")
+                            .long("order")
+                            .takes_value(true)
+                            .possible_values(&["asc", "desc"])
+                            .required(true)
+                            .about("Indexer search order")
+                    )
+                    .arg(
+                        Arg::with_name("limit")
+                            .long("limit")
+                            .takes_value(true)
+                            .validator(|input| FromStrParser::<u64>::default().validate(input))
+                            .required(true)
+                            .about("Limit the number of results")
+                    )
+                    .arg(
+                        Arg::with_name("after")
+                            .long("after")
+                            .takes_value(true)
+                            .validator(|input| HexParser.validate(input))
+                            .about("Pagination parameter")
+                    )
+                    .about("Returns the transactions collection by the lock or type script"),
+                App::new("get_cells_capacity")
+                    .arg(
+                        Arg::with_name("json-path")
+                        .long("json-path")
+                        .takes_value(true)
+                        .validator(|input| FilePathParser::new(true).validate(input))
+                        .required(true)
+                        .about("Indexer search key"))
+                    .about("Returns the live cells capacity by the lock or type script"),
             ])
     }
 }
@@ -275,37 +431,101 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             // [Chain]
             ("get_block", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let with_cycles = m.is_present("with-cycles");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    let verbose = if packed {
+                        Some("0x0")
+                    } else {
+                        None /* Some("0x2") */
+                    };
                     let resp = self
                         .raw_rpc_client
-                        .get_block(hash)
-                        .map(RawOptionBlockView)
+                        .post::<_, Option<rpc_types::BlockResponse>>(
+                            "get_block",
+                            (hash, verbose, with_cycles),
+                        )
+                        .map(RawOptionBlockResponse)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_block(hash).map(OptionBlockView)?;
-                    Ok(Output::new_output(resp))
+                    match (packed, with_cycles) {
+                        (true, true) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_with_cycles(hash)
+                                .map(OptionPackedBlockResponse)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (true, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block(hash)
+                                .map(OptionJsonBytes)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, true) => {
+                            let resp = self.rpc_client.get_block_with_cycles(hash)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, false) => {
+                            let resp = self.rpc_client.get_block(hash).map(OptionBlockView)?;
+                            Ok(Output::new_output(resp))
+                        }
+                    }
                 }
             }
             ("get_block_by_number", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let with_cycles = m.is_present("with-cycles");
+                let packed = m.is_present("packed");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 if is_raw_data {
+                    let verbose = if packed {
+                        Some("0x0")
+                    } else {
+                        None /* Some("0x2") */
+                    };
                     let resp = self
                         .raw_rpc_client
-                        .get_block_by_number(BlockNumber::from(number))
-                        .map(RawOptionBlockView)
+                        .post::<_, Option<rpc_types::BlockResponse>>(
+                            "get_block_by_number",
+                            (BlockNumber::from(number), verbose, with_cycles),
+                        )
+                        .map(RawOptionBlockResponse)
                         .map_err(|err| err.to_string())?;
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self
-                        .rpc_client
-                        .get_block_by_number(number)
-                        .map(OptionBlockView)?;
-                    Ok(Output::new_output(resp))
+                    match (packed, with_cycles) {
+                        (true, true) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_by_number_with_cycles(number)
+                                .map(OptionPackedBlockResponse)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (true, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_packed_block_by_number(number)
+                                .map(OptionJsonBytes)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, true) => {
+                            let resp = self.rpc_client.get_block_by_number_with_cycles(number)?;
+                            Ok(Output::new_output(resp))
+                        }
+                        (false, false) => {
+                            let resp = self
+                                .rpc_client
+                                .get_block_by_number(number)
+                                .map(OptionBlockView)?;
+                            Ok(Output::new_output(resp))
+                        }
+                    }
                 }
             }
             ("get_block_hash", Some(m)) => {
@@ -348,14 +568,30 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_header", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_header(hash)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_header(hash)
+                            .map(RawOptionHeaderView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
                     let resp = self
-                        .raw_rpc_client
-                        .get_header(hash)
-                        .map(RawOptionHeaderView)
-                        .map_err(|err| err.to_string())?;
+                        .rpc_client
+                        .get_packed_header(hash)
+                        .map(OptionJsonBytes)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_header(hash).map(OptionHeaderView)?;
@@ -364,14 +600,30 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_header_by_number", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 if is_raw_data {
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_header_by_number(BlockNumber::from(number))
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_header_by_number(BlockNumber::from(number))
+                            .map(RawOptionHeaderView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
                     let resp = self
-                        .raw_rpc_client
-                        .get_header_by_number(BlockNumber::from(number))
-                        .map(RawOptionHeaderView)
-                        .map_err(|err| err.to_string())?;
+                        .rpc_client
+                        .get_packed_header_by_number(number)
+                        .map(OptionJsonBytes)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self
@@ -421,11 +673,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_tip_header", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_tip_header()
-                        .map_err(|err| err.to_string())?;
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_tip_header()
+                            .map(Some)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_tip_header()
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
+                } else if packed {
+                    let resp = self.rpc_client.get_packed_tip_header()?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.get_tip_header()?;
@@ -434,14 +700,22 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_transaction", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
+                    let verbosity = if packed { Some("0x0") } else { None };
                     let resp = self
                         .raw_rpc_client
-                        .get_transaction(hash)
-                        .map(RawOptionTransactionWithStatus)
+                        .post::<_, Option<rpc_types::TransactionWithStatusResponse>>(
+                            "get_transaction",
+                            (hash, verbosity),
+                        )
+                        .map(RawOptionTransactionWithStatusResponse)
                         .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else if packed {
+                    let resp = self.rpc_client.get_packed_transaction(hash)?;
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self
@@ -456,7 +730,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 let tx_hashes: Vec<H256> =
                     FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
                 let block_hash: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
 
                 if is_raw_data {
                     let resp = self
@@ -493,15 +767,25 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_fork_block", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
                 if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_fork_block(hash)
-                        .map(RawOptionBlockView)
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_output(resp))
+                    if packed {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_packed_fork_block(hash)
+                            .map(OptionJsonBytes)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    } else {
+                        let resp = self
+                            .raw_rpc_client
+                            .get_fork_block(hash)
+                            .map(RawOptionBlockView)
+                            .map_err(|err| err.to_string())?;
+                        Ok(Output::new_output(resp))
+                    }
                 } else {
                     let resp = self.rpc_client.get_fork_block(hash).map(OptionBlockView)?;
                     Ok(Output::new_output(resp))
@@ -536,6 +820,129 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                         .rpc_client
                         .get_block_median_time(hash)
                         .map(OptionTimestamp)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_block_economic_state", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_block_economic_state(hash)
+                        .map(RawOptionBlockEconomicState)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_block_economic_state(hash)
+                        .map(OptionBlockEconomicState)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("estimate_cycles", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let tx: Transaction =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .estimate_cycles(tx)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.estimate_cycles(tx.into())?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_fee_rate_statics", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let target: Option<u64> =
+                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_fee_rate_statics(target.map(|v| v.into()))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_fee_rate_statistics", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let target: Option<u64> =
+                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_fee_rate_statics(target.map(|v| v.into()))
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_fee_rate_statistics(target)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_deployments_info", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_deployments_info()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_deployments_info()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let tx_hashes: Vec<H256> =
+                    FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
+                let block_hash: Option<H256> =
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
+
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .get_transaction_and_witness_proof(tx_hashes, block_hash)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("verify_transaction_and_witness_proof", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+
+                let tx_and_witness_proof: rpc_types::TransactionAndWitnessProof =
+                    serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self
+                        .rpc_client
+                        .verify_transaction_and_witness_proof(tx_and_witness_proof.into())?;
                     Ok(Output::new_output(resp))
                 }
             }
@@ -638,6 +1045,12 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 Ok(Output::new_success())
             }
             // [Pool]
+            ("remove_transaction", Some(m)) => {
+                let tx_hash: H256 =
+                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+                let resp = self.rpc_client.remove_transaction(tx_hash)?;
+                Ok(Output::new_output(resp))
+            }
             ("tx_pool_info", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
@@ -650,6 +1063,14 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     let resp = self.rpc_client.tx_pool_info()?;
                     Ok(Output::new_output(resp))
                 }
+            }
+            ("clear_tx_pool", _) => {
+                self.rpc_client.clear_tx_pool()?;
+                Ok(Output::new_success())
+            }
+            ("tx_pool_ready", _) => {
+                let resp = self.rpc_client.tx_pool_ready()?;
+                Ok(Output::new_output(resp))
             }
             ("get_raw_tx_pool", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
@@ -679,15 +1100,21 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 }
             }
+            // [Alert]
+            ("send_alert", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let alert: Alert = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                self.rpc_client.send_alert(alert)?;
+                Ok(Output::new_success())
+            }
             // [IntegrationTest]
-            ("broadcast_transaction", Some(m)) => {
-                let cycles: u64 = FromStrParser::<u64>::default().from_matches(m, "cycles")?;
+            ("notify_transaction", Some(m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
-
-                let resp = self.rpc_client.broadcast_transaction(tx.into(), cycles)?;
+                let resp = self.rpc_client.notify_transaction(tx.into())?;
                 Ok(Output::new_output(resp))
             }
             ("truncate", Some(m)) => {
@@ -696,20 +1123,105 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 self.rpc_client.truncate(target_tip_hash)?;
                 Ok(Output::new_success())
             }
-            ("generate_block", Some(m)) => {
-                let json_path_opt: Option<PathBuf> =
-                    FilePathParser::new(true).from_matches_opt(m, "json-path", false)?;
-                let script_opt: Option<Script> = if let Some(json_path) = json_path_opt {
-                    let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
-                    Some(serde_json::from_str(&content).map_err(|err| err.to_string())?)
-                } else {
-                    None
-                };
-                let message_opt: Option<Bytes> = HexParser.from_matches_opt(m, "message", false)?;
-                let resp = self
-                    .rpc_client
-                    .generate_block(script_opt, message_opt.map(JsonBytes::from_bytes))?;
+            ("generate_block", Some(_m)) => {
+                let resp = self.rpc_client.generate_block()?;
                 Ok(Output::new_output(resp))
+            }
+            ("generate_epochs", Some(m)) => {
+                let num_epochs: u64 =
+                    FromStrParser::<u64>::default().from_matches(m, "num-epochs")?;
+                let resp = self.rpc_client.generate_epochs(num_epochs)?;
+                Ok(Output::new_output(resp))
+            }
+            // [Indexer]
+            ("get_indexer_tip", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_indexer_tip()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_indexer_tip()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_cells", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true)
+                    .from_matches_opt(m, "json-path")?
+                    .expect("json-path is required");
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let order_str = m.value_of("order").expect("order is required");
+                let order = parse_order(order_str)?;
+                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
+                let after_opt: Option<JsonBytes> = HexParser
+                    .from_matches_opt::<Bytes>(m, "after")?
+                    .map(JsonBytes::from_bytes);
+
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_cells(search_key, order, limit.into(), after_opt)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp =
+                        self.rpc_client
+                            .get_cells(search_key, order, limit.into(), after_opt)?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_transactions", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true)
+                    .from_matches_opt(m, "json-path")?
+                    .expect("json-path is required");
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+                let order_str = m.value_of("order").expect("order is required");
+                let order = parse_order(order_str)?;
+                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
+                let after_opt: Option<JsonBytes> = HexParser
+                    .from_matches_opt::<Bytes>(m, "after")?
+                    .map(JsonBytes::from_bytes);
+
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_transactions(search_key, order, limit.into(), after_opt)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_transactions(
+                        search_key,
+                        order,
+                        limit.into(),
+                        after_opt,
+                    )?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("get_cells_capacity", Some(m)) => {
+                let json_path: PathBuf = FilePathParser::new(true)
+                    .from_matches_opt(m, "json-path")?
+                    .expect("json-path is required");
+                let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
+                let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
+
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .get_cells_capacity(search_key)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.get_cells_capacity(search_key)?;
+                    Ok(Output::new_output(resp))
+                }
             }
             _ => Err(Self::subcommand().generate_usage()),
         }
@@ -726,7 +1238,14 @@ pub struct OptionTransactionWithStatus(pub Option<TransactionWithStatus>);
 pub struct OptionTimestamp(pub Option<Timestamp>);
 
 #[derive(Serialize, Deserialize)]
+pub struct OptionBlockEconomicState(pub Option<BlockEconomicState>);
+
+#[derive(Serialize, Deserialize)]
 pub struct OptionBlockView(pub Option<BlockView>);
+#[derive(Serialize, Deserialize)]
+pub struct OptionPackedBlockResponse(pub Option<crate::utils::rpc::PackedBlockResponse>);
+#[derive(Serialize, Deserialize)]
+pub struct OptionJsonBytes(pub Option<rpc_types::JsonBytes>);
 
 #[derive(Serialize, Deserialize)]
 pub struct OptionHeaderView(pub Option<HeaderView>);
@@ -744,16 +1263,23 @@ pub struct BannedAddrList(pub Vec<BannedAddr>);
 pub struct RawRemoteNodes(pub Vec<rpc_types::RemoteNode>);
 
 #[derive(Serialize, Deserialize)]
-pub struct RawOptionTransactionWithStatus(pub Option<rpc_types::TransactionWithStatus>);
+pub struct RawOptionTransactionWithStatusResponse(
+    pub Option<rpc_types::TransactionWithStatusResponse>,
+);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionBlockView(pub Option<rpc_types::BlockView>);
+#[derive(Serialize, Deserialize)]
+pub struct RawOptionBlockResponse(pub Option<rpc_types::BlockResponse>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionHeaderView(pub Option<rpc_types::HeaderView>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionTimestamp(pub Option<rpc_types::Timestamp>);
+
+#[derive(Serialize, Deserialize)]
+pub struct RawOptionBlockEconomicState(pub Option<rpc_types::BlockEconomicState>);
 
 #[derive(Serialize, Deserialize)]
 pub struct RawOptionEpochView(pub Option<rpc_types::EpochView>);

@@ -1,11 +1,13 @@
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-use ckb_sdk::{
-    wallet::{DerivationPath, Key, KeyStore, MasterPrivKey},
-    Address, AddressPayload, NetworkType,
-};
+use bitcoin::util::bip32::DerivationPath;
+
+use ckb_sdk::{Address, AddressPayload, NetworkType};
+use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
@@ -18,7 +20,7 @@ use crate::utils::{
         ArgParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::read_password,
+    other::{address_json, read_password},
 };
 
 pub struct AccountSubCommand<'a> {
@@ -45,6 +47,11 @@ impl<'a> AccountSubCommand<'a> {
             .long("extended-privkey-path")
             .takes_value(true)
             .about("Extended private key path (include master private key and chain code)");
+        let arg_derive_path = Arg::with_name("path")
+            .long("path")
+            .takes_value(true)
+            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
+            .about("The derivation key path");
         App::new(name)
             .about("Manage accounts")
             .subcommands(vec![
@@ -65,7 +72,7 @@ impl<'a> AccountSubCommand<'a> {
   When `source` is \"Local File System\" means the account is stored in json keystore file, the output fields are:
     * lock_arg: The blake2b160 hash of the public key.
     * lock_hash: The lock script hash of secp256k1_blake160_sighash_all lock (See [1]).
-    * has_ckb_pubkey_derivation_root_path: The ckb publick key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
+    * has_ckb_pubkey_derivation_root_path: The CKB public key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
     * address: The Mainnet/Testnet addresses of secp256k1_blake160_sighash_all lock (See [1]).
 
   When `source` is \"[plugin]: xxx_keysotre_plugin\" means the account is stored in keystore plugin (Ledger plugin like [2]). If the account metadata is imported by `ckb-cli account import-from-plugin` the output fields are just like \"Local File System\". If the account is not imported, the output fields are:
@@ -130,6 +137,10 @@ impl<'a> AccountSubCommand<'a> {
                             .required(true)
                             .about("Output extended private key path (PrivKey + ChainCode)")
                     ),
+                App::new("bitcoin-xpub")
+                    .about("Show BIP-32 Extended Public Key in Base58Check format (with xpub prefix)")
+                    .arg(lock_arg().required(true))
+                    .arg(arg_derive_path.clone().required(true)),
                 App::new("bip44-addresses")
                     .about("Extended receiving/change Addresses (see: BIP-44)")
                     .arg(
@@ -176,13 +187,7 @@ impl<'a> AccountSubCommand<'a> {
                 App::new("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(lock_arg().required(true))
-                    .arg(
-                        Arg::with_name("path")
-                            .long("path")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-                            .about("The address path")
-                    ),
+                    .arg(arg_derive_path),
                 App::new("remove")
                     .about("Print information about how to remove an account")
                     .arg(lock_arg().required(true)),
@@ -234,10 +239,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                                     "lock_arg": format!("{:#x}", lock_arg),
                                     "lock_hash": format!("{:#x}", lock_hash),
                                     "has_ckb_pubkey_derivation_root_path": has_ckb_root,
-                                    "address": {
-                                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                                    },
+                                    "address": address_json(address_payload.clone(), true),
+                                    "address(deprecated)": address_json(address_payload, false),
                                 })
                             }
                         } else {
@@ -263,16 +266,14 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
                     "lock_hash": format!("{:#x}", lock_hash),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
             ("import", Some(m)) => {
                 let secp_key: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let password = Some(read_password(false, None)?);
                 let master_privkey = if let Some(secp_key) = secp_key {
                     // Default chain code is [255u8; 32]
@@ -292,10 +293,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -313,10 +312,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -339,10 +336,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey_hash(lock_arg.clone());
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:x}", lock_arg),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address": address_json(address_payload.clone(), true),
+                    "address(deprecated)": address_json(address_payload, false),
                 });
                 Ok(Output::new_output(resp))
             }
@@ -383,11 +378,27 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let bytes = master_privkey.to_bytes();
                 let privkey = H256::from_slice(&bytes[0..32]).unwrap();
                 let chain_code = H256::from_slice(&bytes[32..64]).unwrap();
-                let mut file = fs::File::create(key_path).map_err(|err| err.to_string())?;
+
+                #[cfg(unix)]
+                let mut file = {
+                    fs::OpenOptions::new()
+                        .create_new(true)
+                        .read(true)
+                        .write(true)
+                        .append(false)
+                        .mode(0o400)
+                        .open(key_path)
+                        .map_err(|err| err.to_string())
+                }?;
+
+                #[cfg(not(unix))]
+                let mut file = fs::File::create(&key_path).map_err(|err| err.to_string())?;
+
                 file.write(format!("{:x}\n", privkey).as_bytes())
                     .map_err(|err| err.to_string())?;
                 file.write(format!("{:x}", chain_code).as_bytes())
                     .map_err(|err| err.to_string())?;
+                file.flush().map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
                     "message": format!(
                         "Success exported account as extended privkey to: \"{}\", please use this file carefully",
@@ -395,6 +406,21 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     )
                 });
                 Ok(Output::new_error(resp))
+            }
+            ("bitcoin-xpub", Some(m)) => {
+                let lock_arg: H160 =
+                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+                let password = read_password(false, None)?;
+                let path: DerivationPath =
+                    FromStrParser::<DerivationPath>::new().from_matches(m, "path")?;
+                let extended_pubkey = self
+                    .key_store
+                    .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                let resp = serde_json::json!({
+                    "bitcoin-xpub": extended_pubkey.to_string(),
+                });
+                Ok(Output::new_output(resp))
             }
             ("bip44-addresses", Some(m)) => {
                 let lock_arg: H160 =
@@ -430,7 +456,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
                             serde_json::json!({
                                 "path": path.to_string(),
-                                "address": Address::new(network, payload, false).to_string(),
+                                "address(deprecated)": Address::new(network, payload.clone(), false).to_string(),
+                                "address": Address::new(network, payload, true).to_string(),
                             })
                         })
                         .collect::<Vec<_>>()
@@ -446,7 +473,7 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let root_key_path = self.plugin_mgr.root_key_path(lock_arg.clone())?;
                 let path: DerivationPath = FromStrParser::<DerivationPath>::new()
-                    .from_matches_opt(m, "path", false)?
+                    .from_matches_opt(m, "path")?
                     .unwrap_or(root_key_path);
 
                 let password = if self.plugin_mgr.keystore_require_password() {
@@ -461,10 +488,8 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey);
                 let resp = serde_json::json!({
                     "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), false).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, false).to_string(),
-                    },
+                    "address(deprecated)": address_json(address_payload.clone(), false),
+                    "address": address_json(address_payload, true),
                 });
                 Ok(Output::new_output(resp))
             }

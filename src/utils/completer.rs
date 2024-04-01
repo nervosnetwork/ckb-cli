@@ -4,11 +4,13 @@ use std::iter;
 use std::sync::Arc;
 
 use ansi_term::Colour::{Green, Red};
-use rustyline::completion::{extract_word, Completer, Pair};
+use rustyline::completion::{extract_word, Completer, FilenameCompleter, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
-use rustyline::{CompletionType, Context, Helper};
+use rustyline::validate::{self, MatchingBracketValidator, Validator};
+use rustyline::{CompletionType, Context};
+use rustyline_derive::Helper;
 
 #[cfg(unix)]
 static DEFAULT_BREAK_CHARS: [u8; 18] = [
@@ -27,14 +29,19 @@ static DEFAULT_BREAK_CHARS: [u8; 17] = [
 #[cfg(windows)]
 static ESCAPE_CHAR: Option<char> = None;
 
+#[derive(Helper)]
 pub struct CkbCompleter<'a> {
     clap_app: Arc<clap::App<'a>>,
+    completer: FilenameCompleter,
+    validator: MatchingBracketValidator,
 }
 
 impl<'a> CkbCompleter<'a> {
     pub fn new(clap_app: clap::App<'a>) -> Self {
         CkbCompleter {
             clap_app: Arc::new(clap_app),
+            completer: FilenameCompleter::new(),
+            validator: MatchingBracketValidator::new(),
         }
     }
 
@@ -47,7 +54,7 @@ impl<'a> CkbCompleter<'a> {
                     long.map(|s| format!("--{}", s)),
                 ]
                 .into_iter()
-                .filter_map(|s| s)
+                .flatten()
                 .map(|s| {
                     let display = if required {
                         format!("{}(*)", s)
@@ -119,7 +126,7 @@ impl<'a> Completer for CkbCompleter<'a> {
         &self,
         line: &str,
         pos: usize,
-        _context: &Context,
+        ctx: &Context,
     ) -> Result<(usize, Vec<Pair>), ReadlineError> {
         let (start, word) = extract_word(line, pos, ESCAPE_CHAR, &DEFAULT_BREAK_CHARS);
         let args = shell_words::split(&line[..pos]).unwrap();
@@ -131,7 +138,7 @@ impl<'a> Completer for CkbCompleter<'a> {
         .map(|current_app| Self::get_completions(&current_app, &args))
         .unwrap_or_default();
 
-        if word_lower.is_empty() {
+        let (start, pairs) = if word_lower.is_empty() {
             let pairs = tmp_pair
                 .into_iter()
                 .map(|(display, replacement)| Pair {
@@ -139,7 +146,7 @@ impl<'a> Completer for CkbCompleter<'a> {
                     replacement,
                 })
                 .collect::<Vec<_>>();
-            Ok((start, pairs))
+            (start, pairs)
         } else {
             let pairs = tmp_pair
                 .clone()
@@ -163,7 +170,7 @@ impl<'a> Completer for CkbCompleter<'a> {
                         replacement,
                     })
                     .collect::<Vec<_>>();
-                Ok((start, pairs))
+                (start, pairs)
             } else {
                 let pairs = tmp_pair
                     .into_iter()
@@ -175,13 +182,37 @@ impl<'a> Completer for CkbCompleter<'a> {
                         replacement,
                     })
                     .collect::<Vec<_>>();
-                Ok((start, pairs))
+                (start, pairs)
             }
+        };
+        if pairs.is_empty() {
+            self.completer.complete(line, pos, ctx)
+        } else {
+            Ok((start, pairs))
         }
     }
 }
 
-impl<'a> Helper for CkbCompleter<'a> {}
+impl<'a> Hinter for CkbCompleter<'a> {
+    type Hint = String;
+
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
+        None
+    }
+}
+
+impl<'a> Validator for CkbCompleter<'a> {
+    fn validate(
+        &self,
+        ctx: &mut validate::ValidationContext,
+    ) -> rustyline::Result<validate::ValidationResult> {
+        self.validator.validate(ctx)
+    }
+
+    fn validate_while_typing(&self) -> bool {
+        self.validator.validate_while_typing()
+    }
+}
 
 impl<'a> Highlighter for CkbCompleter<'a> {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
@@ -207,12 +238,6 @@ impl<'a> Highlighter for CkbCompleter<'a> {
             .collect::<Vec<String>>()
             .join("\n");
         Owned(candidate_with_color)
-    }
-}
-
-impl<'a> Hinter for CkbCompleter<'a> {
-    fn hint(&self, _line: &str, _pos: usize, _context: &Context) -> Option<String> {
-        None
     }
 }
 

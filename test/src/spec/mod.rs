@@ -1,12 +1,16 @@
+mod account_keystore_perm;
 mod dao;
 mod plugin;
 mod rpc;
+mod udt;
 mod util;
 mod wallet;
 
+pub use account_keystore_perm::*;
 pub use dao::*;
 pub use plugin::*;
 pub use rpc::*;
+pub use udt::*;
 pub use util::*;
 pub use wallet::*;
 
@@ -20,4 +24,5 @@ pub trait Spec {
     fn modify_spec_toml(&self, _spec_toml: &mut ChainSpec) {}
 
     fn run(&self, setup: &mut Setup);
+    fn spec_name(&self) -> &'static str;
 }

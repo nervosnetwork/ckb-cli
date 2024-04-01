@@ -1,33 +1,30 @@
 pub mod account;
 pub mod api_server;
 pub mod dao;
-pub mod index;
+pub mod deploy;
 pub mod mock_tx;
 pub mod molecule;
 pub mod plugin;
 pub mod pubsub;
 pub mod rpc;
-#[cfg(unix)]
-pub mod tui;
+pub mod sudt;
 pub mod tx;
 pub mod util;
 pub mod wallet;
 
-#[cfg(unix)]
-pub use self::tui::TuiSubCommand;
-
 pub use account::AccountSubCommand;
 pub use api_server::ApiServerSubCommand;
 pub use dao::DAOSubCommand;
-pub use index::IndexSubCommand;
+pub use deploy::DeploySubCommand;
 pub use mock_tx::MockTxSubCommand;
 pub use molecule::MoleculeSubCommand;
 pub use plugin::PluginSubCommand;
 pub use pubsub::PubSubCommand;
 pub use rpc::RpcSubCommand;
+pub use sudt::SudtSubCommand;
 pub use tx::TxSubCommand;
 pub use util::UtilSubCommand;
-pub use wallet::{start_index_thread, LiveCells, TransferArgs, WalletSubCommand};
+pub use wallet::{TransferArgs, WalletSubCommand};
 
 use clap::ArgMatches;
 use serde::Serialize;

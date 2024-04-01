@@ -1,31 +1,36 @@
+use std::convert::TryFrom;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use ckb_jsonrpc_types as json_types;
-use ckb_sdk::{
-    GenesisInfo, HttpRpcClient, MockCellDep, MockInfo, MockInput, MockResourceLoader,
-    MockTransaction, MockTransactionHelper, ReprMockCellDep, ReprMockInfo, ReprMockInput,
-    ReprMockTransaction,
+use ckb_mock_tx_types::{
+    MockCellDep, MockInfo, MockInput, MockResourceLoader, MockTransaction, ReprMockCellDep,
+    ReprMockInfo, ReprMockInput, ReprMockTransaction,
 };
+use ckb_sdk::constants::SIGHASH_TYPE_HASH;
 use ckb_types::{
     bytes::Bytes,
     core::{
         capacity_bytes, Capacity, HeaderBuilder, HeaderView, ScriptHashType, TransactionBuilder,
     },
     h256,
-    packed::{self, CellDep, CellInput, CellOutput, OutPoint, Script},
+    packed::{self, Byte32, CellDep, CellInput, CellOutput, OutPoint, Script},
     prelude::*,
     H160, H256,
 };
 use clap::{App, Arg, ArgMatches};
 
-use super::{CliSubCommand, Output};
+use super::{tx::ReprTxHelper, CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
     arg::lock_arg,
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
+    genesis_info::GenesisInfo,
+    mock_tx_helper::MockTransactionHelper,
     other::{get_genesis_info, get_signer},
+    rpc::HttpRpcClient,
+    tx_helper::TxHelper,
 };
 
 pub struct MockTxSubCommand<'a> {
@@ -90,7 +95,7 @@ impl<'a> MockTxSubCommand<'a> {
                             .clone()
                             .required_unless("tx-hash")
                             .conflicts_with("tx-hash")
-                            .about("CKB transaction data file (format: json)"),
+                            .about("CKB transaction data file or `ckb-cli tx` subcommand json file (format: json)"),
                     )
                     .arg(
                         arg_output_file
@@ -155,7 +160,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                          mock_tx: &MockTransaction|
          -> Result<Option<ReprMockTransaction>, String> {
             let output_opt: Option<PathBuf> =
-                FilePathParser::new(false).from_matches_opt(m, "output-file", false)?;
+                FilePathParser::new(false).from_matches_opt(m, "output-file")?;
             let repr_mock_tx = ReprMockTransaction::from(mock_tx.clone());
             if let Some(output) = output_opt {
                 let mut out_file = fs::File::create(output).map_err(|err| err.to_string())?;
@@ -175,14 +180,13 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
         match matches.subcommand() {
             ("template", Some(m)) => {
                 let lock_arg_opt: Option<H160> =
-                    FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
-                let lock_arg = lock_arg_opt.unwrap_or_else(H160::default);
+                    FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
+                let lock_arg = lock_arg_opt.unwrap_or_default();
 
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
-                let sighash_type_hash = genesis_info.sighash_type_hash();
                 let sample_script = || {
                     Script::new_builder()
-                        .code_hash(sighash_type_hash.clone())
+                        .code_hash(SIGHASH_TYPE_HASH.pack())
                         .hash_type(ScriptHashType::Type.into())
                         .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
                         .build()
@@ -196,7 +200,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("1234"),
-                    block_hash: H256::default(),
+                    header: None,
                 };
                 let input = CellInput::new(OutPoint::new(h256!("0xff02").pack(), 0), 0);
                 let mock_input = MockInput {
@@ -206,7 +210,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         .lock(sample_script())
                         .build(),
                     data: Bytes::from("abcd"),
-                    block_hash: H256::default(),
+                    header: None,
                 };
                 let output = CellOutput::new_builder()
                     .capacity(capacity_bytes!(120).pack())
@@ -218,6 +222,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     inputs: vec![mock_input],
                     cell_deps: vec![mock_cell_dep],
                     header_deps: vec![HeaderBuilder::default().build()],
+                    extensions: vec![],
                 };
                 let tx = TransactionBuilder::default()
                     .input(input)
@@ -255,16 +260,28 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 let output_path: PathBuf =
                     FilePathParser::new(false).from_matches(m, "output-file")?;
                 let tx_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash", false)?;
+                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash")?;
                 let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(true).from_matches_opt(m, "tx-file", false)?;
+                    FilePathParser::new(true).from_matches_opt(m, "tx-file")?;
 
                 let src_tx: json_types::Transaction = if let Some(path) = tx_file_opt {
                     let mut content = String::new();
                     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
                     file.read_to_string(&mut content)
                         .map_err(|err| err.to_string())?;
-                    serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?
+                    let repr_result: Result<ReprTxHelper, String> =
+                        serde_json::from_str(content.as_str()).map_err(|err| err.to_string());
+                    if let Ok(repr) = repr_result {
+                        let helper = TxHelper::try_from(repr)?;
+                        let mut get_live_cell = |out_point: OutPoint, _with_data: bool| {
+                            load_output_and_data(self.rpc_client, out_point.into())
+                                .map(|(output, _data, _)| output.into())
+                        };
+                        let tx = helper.build_tx(&mut get_live_cell, true)?;
+                        tx.data().into()
+                    } else {
+                        serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?
+                    }
                 } else if let Some(tx_hash) = tx_hash_opt {
                     self.rpc_client
                         .get_transaction(tx_hash.clone())?
@@ -277,41 +294,6 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                 } else {
                     return Err(String::from("<tx-hash> or <tx-file> is required"));
                 };
-                fn load_output_and_data(
-                    rpc_client: &mut HttpRpcClient,
-                    out_point: json_types::OutPoint,
-                ) -> Result<(json_types::CellOutput, json_types::JsonBytes, H256), String>
-                {
-                    let tx_hash = out_point.tx_hash;
-                    let index = out_point.index.value() as usize;
-                    let (tx, block_hash) = rpc_client
-                        .get_transaction(tx_hash.clone())?
-                        .filter(|tx_with_status| tx_with_status.tx_status.block_hash.is_some())
-                        .filter(|tx_with_status| tx_with_status.transaction.is_some())
-                        .map(|tx_with_status| {
-                            let tx = json_types::Transaction::from(packed::Transaction::from(
-                                tx_with_status.transaction.unwrap().inner,
-                            ));
-                            let block_hash = tx_with_status
-                                .tx_status
-                                .block_hash
-                                .expect("block_hash exists");
-                            (tx, block_hash)
-                        })
-                        .ok_or_else(|| {
-                            format!("transaction not exists or not mined: {:x}", tx_hash)
-                        })?;
-                    let output = tx.outputs.get(index).cloned().ok_or_else(|| {
-                        format!(
-                            "can not found output tx-hash={:x}, index={}",
-                            tx_hash, index
-                        )
-                    })?;
-                    let data = tx.outputs_data.get(index).cloned().ok_or_else(|| {
-                        format!("can not found data tx-hash={:x}, index={}", tx_hash, index)
-                    })?;
-                    Ok((output, data, block_hash))
-                }
                 let mock_inputs = src_tx
                     .inputs
                     .iter()
@@ -322,7 +304,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                             input: input.clone(),
                             output,
                             data,
-                            block_hash: Some(block_hash),
+                            header: Some(block_hash),
                         })
                     })
                     .collect::<Result<Vec<_>, String>>()?;
@@ -355,7 +337,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                                         },
                                         output,
                                         data,
-                                        block_hash: Some(block_hash),
+                                        header: Some(block_hash),
                                     })
                                 })
                                 .collect::<Vec<_>>()
@@ -366,7 +348,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                             cell_dep: cell_dep.clone(),
                             output,
                             data,
-                            block_hash: Some(block_hash),
+                            header: Some(block_hash),
                         }));
                         cell_deps
                     })
@@ -387,6 +369,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                         inputs: mock_inputs,
                         cell_deps: mock_cell_deps,
                         header_deps: mock_header_deps,
+                        extensions: vec![],
                     },
                     tx: src_tx,
                 };
@@ -423,6 +406,41 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
     }
 }
 
+fn load_output_and_data(
+    rpc_client: &mut HttpRpcClient,
+    out_point: json_types::OutPoint,
+) -> Result<(json_types::CellOutput, json_types::JsonBytes, H256), String> {
+    let tx_hash = out_point.tx_hash;
+    let index = out_point.index.value() as usize;
+    let (tx, block_hash) = rpc_client
+        .get_transaction(tx_hash.clone())?
+        .filter(|tx_with_status| tx_with_status.tx_status.block_hash.is_some())
+        .filter(|tx_with_status| tx_with_status.transaction.is_some())
+        .map(|tx_with_status| {
+            let tx = json_types::Transaction::from(packed::Transaction::from(
+                tx_with_status.transaction.unwrap().inner,
+            ));
+            let block_hash = tx_with_status
+                .tx_status
+                .block_hash
+                .expect("block_hash exists");
+            (tx, block_hash)
+        })
+        .ok_or_else(|| format!("transaction not exists or not mined: {:x}", tx_hash))?;
+    let output = tx.outputs.get(index).cloned().ok_or_else(|| {
+        format!(
+            "can not found output tx-hash={:x}, index={}",
+            tx_hash, index
+        )
+    })?;
+    let data = tx
+        .outputs_data
+        .get(index)
+        .cloned()
+        .ok_or_else(|| format!("can not found data tx-hash={:x}, index={}", tx_hash, index))?;
+    Ok((output, data, block_hash))
+}
+
 struct Loader<'a> {
     rpc_client: &'a mut HttpRpcClient,
 }
@@ -437,7 +455,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     fn get_live_cell(
         &mut self,
         out_point: OutPoint,
-    ) -> Result<Option<(CellOutput, Bytes, H256)>, String> {
+    ) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
             .get_live_cell(out_point.clone(), true)
@@ -456,7 +474,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
                         .inner
                         .outputs_data
                         .get(output_index as usize)
-                        .map(|data| (output, data.clone().into_bytes(), block_hash))
+                        .map(|data| (output, data.clone().into_bytes(), Some(block_hash.pack())))
                 }))
         } else {
             Ok(None)

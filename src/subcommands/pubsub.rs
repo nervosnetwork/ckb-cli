@@ -159,6 +159,7 @@ pub async fn new_tcp_client(addr: SocketAddr) -> io::Result<Client<TcpStream>> {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 enum ListOutput {
     Header(HeaderView),
     Block(BlockView),

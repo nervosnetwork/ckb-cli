@@ -1,38 +1,42 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use ckb_hash::blake2b_256;
-use ckb_index::{LiveCellInfo, VERSION};
+use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
+use ckb_jsonrpc_types::Status;
 use ckb_sdk::{
-    calc_max_mature_number,
     constants::{MIN_SECP_CELL_CAPACITY, ONE_CKB},
-    rpc::AlertMessage,
-    wallet::{KeyStore, ScryptType},
-    Address, AddressPayload, CodeHashIndex, GenesisInfo, HttpRpcClient, NetworkType, SignerFn,
-    SECP256K1,
+    traits::LiveCell,
+    tx_builder::{BalanceTxCapacityError, TxBuilderError},
+    util::serialize_signature,
+    Address, AddressPayload, NetworkType, SECP256K1,
 };
+use ckb_signer::{KeyStore, ScryptType};
 use ckb_types::{
     bytes::Bytes,
-    core::{service::Request, BlockView, Capacity, EpochNumberWithFraction, TransactionView},
+    core::{BlockView, Capacity, TransactionView},
     h256,
-    packed::{CellOutput, OutPoint},
+    packed::{CellInput, CellOutput, OutPoint},
     prelude::*,
     H160, H256,
 };
 use clap::ArgMatches;
 use colored::Colorize;
+use plugin_protocol::{CellIndex, LiveCellInfo};
 use rpassword::prompt_password_stdout;
 
 use super::arg_parser::{
     AddressParser, ArgParser, FixedHashParser, HexParser, PrivkeyWrapper, PubkeyHexParser,
 };
-use super::index::{IndexController, IndexRequest, IndexThreadState};
+use super::rpc::{AlertMessage, HttpRpcClient};
+use super::tx_helper::SignerFn;
 use crate::plugin::{KeyStoreHandler, SignTarget};
+use crate::utils::genesis_info::GenesisInfo;
 
 pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, String> {
     let prompt = prompt.unwrap_or("Password");
@@ -51,22 +55,27 @@ pub fn read_password(repeat: bool, prompt: Option<&str>) -> Result<String, Strin
 pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
     let mut keystore_dir = ckb_cli_dir;
     keystore_dir.push("keystore");
-    fs::create_dir_all(&keystore_dir)
-        .map_err(|err| err.to_string())
-        .and_then(|_| {
-            KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
-        })
+    fs::create_dir_all(&keystore_dir).map_err(|err| err.to_string())?;
+
+    #[cfg(unix)]
+    fs::set_permissions(&keystore_dir, fs::Permissions::from_mode(0o700)).map_err(|err| {
+        format!(
+            "failed to set permission for  keystore: {:?}, err: {:?}",
+            keystore_dir,
+            err.to_string()
+        )
+    })?;
+
+    KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
 }
 
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
-    let address_opt: Option<Address> = AddressParser::default()
+    let address_opt: Option<Address> = AddressParser::new_sighash()
         .set_network_opt(network)
-        .set_short(CodeHashIndex::Sighash)
-        .from_matches_opt(m, "address", false)?;
-    let pubkey: Option<secp256k1::PublicKey> =
-        PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+        .from_matches_opt(m, "address")?;
+    let pubkey: Option<secp256k1::PublicKey> = PubkeyHexParser.from_matches_opt(m, "pubkey")?;
     let lock_arg: Option<H160> =
-        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg", false)?;
+        FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
     let address = address_opt
         .map(|address| address.payload().clone())
         .or_else(|| pubkey.map(|pubkey| AddressPayload::from_pubkey(&pubkey)))
@@ -110,6 +119,7 @@ pub fn get_signer(
 }
 
 pub fn check_alerts(rpc_client: &mut HttpRpcClient) {
+    log::debug!("checking alerts...");
     if let Some(alerts) = rpc_client
         .get_blockchain_info()
         .ok()
@@ -176,6 +186,36 @@ pub fn get_live_cell(
     out_point: OutPoint,
     with_data: bool,
 ) -> Result<(CellOutput, Bytes), String> {
+    let transaction = client
+        .get_transaction(out_point.clone().tx_hash().unpack())
+        .map_err(|err| format!("Error retrieving transaction: {}", err))?
+        .ok_or("Transaction not found")?;
+
+    match transaction.tx_status.status {
+        Status::Pending | Status::Proposed => {
+            let tx = transaction.transaction.ok_or("Transaction not found")?;
+            let id: usize = out_point.clone().index().unpack();
+            let output = tx
+                .inner
+                .outputs
+                .get(id)
+                .cloned()
+                .ok_or("Output not found")?;
+            Ok((output.into(), Bytes::new()))
+        }
+        Status::Committed => get_live_cell_internal(client, out_point, with_data),
+        Status::Unknown | Status::Rejected => Err(format!(
+            "Invalid Transaction status: {:?}",
+            transaction.tx_status.status
+        )),
+    }
+}
+
+pub fn get_live_cell_internal(
+    client: &mut HttpRpcClient,
+    out_point: OutPoint,
+    with_data: bool,
+) -> Result<(CellOutput, Bytes), String> {
     let cell = client.get_live_cell(out_point.clone(), with_data)?;
     if cell.status != "live" {
         return Err(format!(
@@ -201,55 +241,11 @@ pub fn get_live_cell(
         })
 }
 
-// Get max mature block number
-pub fn get_max_mature_number(rpc_client: &mut HttpRpcClient) -> Result<u64, String> {
-    let cellbase_maturity =
-        EpochNumberWithFraction::from_full_value(rpc_client.get_consensus()?.cellbase_maturity.0);
-    let tip_epoch = rpc_client
-        .get_tip_header()
-        .map(|header| EpochNumberWithFraction::from_full_value(header.inner.epoch.0))?;
-    let tip_epoch_number = tip_epoch.number();
-    if tip_epoch_number < cellbase_maturity.number() {
-        // No cellbase live cell is mature
-        Ok(0)
-    } else {
-        let max_mature_epoch = rpc_client
-            .get_epoch_by_number(tip_epoch_number - cellbase_maturity.number())?
-            .ok_or_else(|| "Can not get epoch less than current epoch number".to_string())?;
-        let start_number = max_mature_epoch.start_number;
-        let length = max_mature_epoch.length;
-        Ok(calc_max_mature_number(
-            tip_epoch,
-            Some((start_number, length)),
-            cellbase_maturity,
-        ))
-    }
-}
-
 pub fn get_network_type(rpc_client: &mut HttpRpcClient) -> Result<NetworkType, String> {
+    log::debug!("getting network type...");
     let chain_info = rpc_client.get_blockchain_info()?;
     NetworkType::from_raw_str(chain_info.chain.as_str())
         .ok_or_else(|| format!("Unexpected network type: {}", chain_info.chain))
-}
-
-pub fn index_dirname() -> String {
-    format!("index-v{}", VERSION)
-}
-
-pub fn sync_to_tip(index_controller: &IndexController) -> Result<(), String> {
-    // Kick index thread to start
-    Request::call(index_controller.sender(), IndexRequest::Kick);
-    loop {
-        let state = IndexThreadState::clone(&index_controller.state().read());
-        if state.is_synced() {
-            break;
-        } else if state.is_error() {
-            return Err(state.get_error().unwrap());
-        } else {
-            thread::sleep(Duration::from_millis(200));
-        }
-    }
-    Ok(())
 }
 
 pub fn check_capacity(capacity: u64, to_data_len: usize) -> Result<(), String> {
@@ -291,7 +287,7 @@ pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), Strin
 }
 
 pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
-    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data", false)?;
+    let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data")?;
     match to_data_opt {
         Some(data) => Ok(data),
         None => {
@@ -320,7 +316,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
                 } else {
                     let message = secp256k1::Message::from_slice(message.as_bytes())
                         .expect("Convert to secp256k1 message failed");
-                    let signature = SECP256K1.sign_recoverable(&message, &privkey);
+                    let signature = SECP256K1.sign_ecdsa_recoverable(&message, &privkey);
                     Ok(Some(serialize_signature(&signature)))
                 }
             } else {
@@ -330,25 +326,60 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
-pub fn serialize_signature(signature: &secp256k1::recovery::RecoverableSignature) -> [u8; 65] {
-    let (recov_id, data) = signature.serialize_compact();
-    let mut signature_bytes = [0u8; 65];
-    signature_bytes[0..64].copy_from_slice(&data[0..64]);
-    signature_bytes[64] = recov_id.to_i32() as u8;
-    signature_bytes
-}
-
-pub fn is_mature(info: &LiveCellInfo, max_mature_number: u64) -> bool {
-    // Not cellbase cell
-    info.index.tx_index > 0
-    // Live cells in genesis are all mature
-        || info.number == 0
-        || info.number <= max_mature_number
-}
-
 pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {
     matches
         .value_of(name)
         .map(|s| s.to_string())
         .ok_or_else(|| format!("<{}> is required", name))
+}
+
+pub fn to_live_cell_info(cell: &LiveCell) -> LiveCellInfo {
+    let output_index: u32 = cell.out_point.index().unpack();
+    LiveCellInfo {
+        tx_hash: cell.out_point.tx_hash().unpack(),
+        output_index,
+        data_bytes: cell.output_data.len() as u64,
+        lock_hash: cell.output.lock().calc_script_hash().unpack(),
+        type_hashes: cell.output.type_().to_opt().map(|type_script| {
+            (
+                type_script.code_hash().unpack(),
+                type_script.calc_script_hash().unpack(),
+            )
+        }),
+        capacity: cell.output.capacity().unpack(),
+        number: cell.block_number,
+        index: CellIndex {
+            tx_index: cell.tx_index,
+            output_index,
+        },
+    }
+}
+
+pub fn address_json(payload: AddressPayload, is_new: bool) -> serde_json::Value {
+    serde_json::json!({
+        "mainnet": Address::new(NetworkType::Mainnet, payload.clone(), is_new).to_string(),
+        "testnet": Address::new(NetworkType::Testnet, payload, is_new).to_string(),
+    })
+}
+
+pub fn calculate_type_id(first_cell_input: &CellInput, output_index: u64) -> [u8; 32] {
+    let mut blake2b = new_blake2b();
+    blake2b.update(first_cell_input.as_slice());
+    blake2b.update(&output_index.to_le_bytes());
+    let mut ret = [0u8; 32];
+    blake2b.finalize(&mut ret);
+    ret
+}
+
+pub(crate) fn map_tx_builder_error_2_str(no_max_tx_fee: bool, err: TxBuilderError) -> String {
+    if no_max_tx_fee {
+        if let TxBuilderError::BalanceCapacity(BalanceTxCapacityError::CapacityNotEnough(ref msg)) =
+            err
+        {
+            if msg.contains("can not create change cell") {
+                return format!("{}, {}.", err, "try to calculate capacity again or try parameter `--max-tx-fee` to make small left capacity as transaction fee");
+            }
+        }
+    }
+    err.to_string()
 }

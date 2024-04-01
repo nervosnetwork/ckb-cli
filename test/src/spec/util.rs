@@ -62,8 +62,8 @@ impl Spec for Util {
             pubkey,
             "0x0237813f0b34ddccaef22947e934fa0af384d1551ab1ad268860a8fe65a1f8f69d"
         );
-        assert_eq!(recoverable, false);
-        assert_eq!(verify_ok, true);
+        assert!(!recoverable);
+        assert!(verify_ok);
 
         let output = setup.cli(&format!(
             "util verify-signature --message {} --signature {} --privkey-path {}",
@@ -73,7 +73,7 @@ impl Spec for Util {
         ));
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         let verify_ok = value["verify-ok"].as_bool().unwrap();
-        assert_eq!(verify_ok, false);
+        assert!(!verify_ok);
 
         // Recoverable signature
         let output = setup.cli(&format!(
@@ -101,8 +101,8 @@ impl Spec for Util {
             pubkey,
             "0x0237813f0b34ddccaef22947e934fa0af384d1551ab1ad268860a8fe65a1f8f69d"
         );
-        assert_eq!(recoverable, true);
-        assert_eq!(verify_ok, true);
+        assert!(recoverable);
+        assert!(verify_ok);
 
         let output = setup.cli(&format!(
             "util verify-signature --message {} --signature {} --privkey-path {}",
@@ -113,8 +113,8 @@ impl Spec for Util {
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
         let recoverable = value["recoverable"].as_bool().unwrap();
         let verify_ok = value["verify-ok"].as_bool().unwrap();
-        assert_eq!(recoverable, true);
-        assert_eq!(verify_ok, false);
+        assert!(recoverable);
+        assert!(!verify_ok);
 
         let output = setup.cli("util address-info --address ckt1qn0wcya8hrssq4u4gyuyejh5k53rwvly54yrcwhvjhwufsw4afdjynxzuefxyp9wdghglncj77k5wt6p59sx6kukyjlwh5s467qgp8m2jyzt6r7d9jr0s9q8764qnqvze3mzrdks4p5c3j");
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();
@@ -127,5 +127,9 @@ impl Spec for Util {
         );
         assert_eq!(value["lock_script"]["hash_type"].as_str().unwrap(), "type");
         assert_eq!(value["lock_script"]["args"].as_str().unwrap(), "0x4cc2e6526204ae6a2e8fcf12f7ad472f41a1606d5b9624beebd215d780809f6a9104bd0fcd2c86f81407f6aa098182cc7621b6d0");
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "Util"
     }
 }

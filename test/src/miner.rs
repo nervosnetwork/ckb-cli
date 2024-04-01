@@ -1,12 +1,20 @@
 use crate::util::temp_dir;
 use ckb_app_config::BlockAssemblerConfig;
-use ckb_sdk::{Address, AddressPayload, HttpRpcClient, NetworkType};
-use ckb_types::packed::Block;
-use ckb_types::{H160, H256};
+use ckb_jsonrpc_types::{BlockTemplate, EpochNumberWithFraction, ProposalShortId};
+use ckb_sdk::{Address, AddressPayload, CkbRpcClient, NetworkType};
+use ckb_types::{
+    core::BlockNumber,
+    packed::{self},
+    prelude::*,
+    H160, H256,
+};
 use std::fs;
 use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 use tempfile::TempDir;
 
+pub const DEFAULT_TX_PROPOSAL_WINDOW: (BlockNumber, BlockNumber) = (2, 10);
 pub const MINER_PRIVATE_KEY: &str =
     "d00c06bfd800d27397002dca6fb0993d5ba6399b4238b2f29ee9deb97593d2bc";
 pub const MINER_BLOCK_ASSEMBLER: &str = r#"
@@ -17,7 +25,7 @@ message = "0x"
 "#;
 
 pub struct Miner {
-    rpc: Mutex<HttpRpcClient>,
+    rpc: Mutex<CkbRpcClient>,
     privkey_path: (TempDir, String),
 }
 
@@ -27,31 +35,117 @@ impl Miner {
         let privkey_path = tempdir.path().join("pk");
         fs::write(&privkey_path, MINER_PRIVATE_KEY).unwrap();
         Self {
-            rpc: Mutex::new(HttpRpcClient::new(uri)),
+            rpc: Mutex::new(CkbRpcClient::new(uri.as_str())),
             privkey_path: (tempdir, privkey_path.to_string_lossy().to_string()),
         }
     }
 
     pub fn generate_block(&self) -> H256 {
-        let template = self
+        self.rpc
+            .lock()
+            .unwrap()
+            .generate_block()
+            .expect("RPC generate_block")
+    }
+
+    pub fn generate_epochs(&self, num_epochs: u64, epoch_length: u64) -> EpochNumberWithFraction {
+        let epoch_number_with_fraction =
+            ckb_types::core::EpochNumberWithFraction::new(num_epochs, 0, epoch_length);
+        self.rpc
+            .lock()
+            .unwrap()
+            .generate_epochs(epoch_number_with_fraction.into())
+            .expect("RPC generate_epoch")
+    }
+
+    pub fn generate_blocks(&self, count: u64) {
+        log::info!("generating {} blocks...", count);
+        (0..count).for_each(|_| {
+            self.generate_block();
+            thread::sleep(Duration::from_millis(10));
+        })
+    }
+
+    pub fn mine_with_blocking<B>(&self, blocking: B) -> u64
+    where
+        B: Fn(&mut BlockTemplate) -> bool,
+    {
+        let mut count = 0;
+        let mut template = self
             .rpc
             .lock()
             .unwrap()
             .get_block_template(None, None, None)
-            .expect("RPC get_block_template");
-        let work_id = template.work_id.value();
-        let block = Into::<Block>::into(template);
+            .unwrap();
+        while blocking(&mut template) {
+            thread::sleep(Duration::from_millis(20));
+            template = self
+                .rpc
+                .lock()
+                .unwrap()
+                .get_block_template(None, None, None)
+                .unwrap();
+            count += 1;
+
+            if count > 900 {
+                panic!("mine_with_blocking timeout");
+            }
+        }
+        // uncles are not included by default,
+        // because uncles' proposals can have an impact on the assertions of some tests
+        let block = packed::Block::from(template)
+            .as_advanced_builder()
+            .set_uncles(vec![])
+            .build();
+        let number = block.number();
         self.rpc
             .lock()
             .unwrap()
-            .submit_block(work_id.to_string(), block)
-            .expect("RPC submit_block")
+            .submit_block("".to_owned(), block.data().into())
+            .unwrap();
+        number
     }
+    pub fn mine_until_transaction_confirm_with_windows(
+        &self,
+        tx_hash: &packed::Byte32,
+        closest: u64,
+    ) {
+        let target: ProposalShortId = packed::ProposalShortId::from_tx_hash(tx_hash).into();
+        let last =
+            self.mine_with_blocking(|template| !template.proposals.iter().any(|id| id == &target));
+        self.mine_with_blocking(|template| template.number.value() != (last + closest - 1));
+        self.mine_with_blocking(|template| {
+            !template
+                .transactions
+                .iter()
+                .any(|tx| tx.hash == tx_hash.unpack())
+        });
+    }
+    pub fn mine_until_transaction_confirm(&self, tx_hash: &str) {
+        log::info!("mine until tx: {}", tx_hash);
+        let tx_hash: H256 = serde_json::from_str(&format!("\"{}\"", tx_hash)).unwrap();
+        self.mine_until_transaction_confirm_with_windows(
+            &tx_hash.pack(),
+            DEFAULT_TX_PROPOSAL_WINDOW.0,
+        );
+        let mut count = 0;
+        while self
+            .rpc
+            .lock()
+            .unwrap()
+            .get_transaction_status(tx_hash.clone())
+            .unwrap()
+            .tx_status
+            .status
+            != ckb_jsonrpc_types::Status::Committed
+        {
+            count += 1;
 
-    pub fn generate_blocks(&self, count: u64) {
-        (0..count).for_each(|_| {
-            self.generate_block();
-        })
+            if count > 900 {
+                panic!("wait transaction to commited failed");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     pub fn privkey_path(&self) -> &str {

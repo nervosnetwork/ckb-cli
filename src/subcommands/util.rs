@@ -1,39 +1,43 @@
+use std::fs;
+use std::io::Read;
+use std::path::PathBuf;
+
+use bitcoin::util::bip32::{ChildNumber, DerivationPath};
 use chrono::prelude::*;
+use clap::{App, Arg, ArgMatches};
+use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
+use eaglesong::EagleSongBuilder;
+use faster_hex::hex_string;
+use secp256k1::ecdsa::{RecoverableSignature, RecoveryId, Signature};
+
 use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
-use ckb_jsonrpc_types::{self, JsonBytes};
+use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
-    rpc::ChainInfo,
-    wallet::{ChildNumber, DerivationPath},
-    Address, AddressPayload, CodeHashIndex, HttpRpcClient, NetworkType, OldAddress,
+    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
+    util::serialize_signature,
+    Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
-    core::{EpochNumberWithFraction, ScriptHashType},
+    core::{BlockView, EpochNumberWithFraction, ScriptHashType},
     packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
 };
-use clap::{App, Arg, ArgMatches};
-use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
-use eaglesong::EagleSongBuilder;
-use faster_hex::hex_string;
-use secp256k1::recovery::{RecoverableSignature, RecoveryId};
-use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
     arg,
     arg_parser::{
-        AddressParser, AddressPayloadOption, ArgParser, FilePathParser, FixedHashParser,
-        FromStrParser, HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
+        AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
+        PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
-    other::{get_address, get_network_type, read_password, serialize_signature},
+    genesis_info::GenesisInfo,
+    other::{address_json, get_address, get_network_type, read_password},
+    rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};
 
@@ -245,9 +249,8 @@ impl<'a> UtilSubCommand<'a> {
                         arg_sighash_address
                             .clone()
                             .validator(|input| {
-                                AddressParser::default()
+                                AddressParser::new_sighash()
                                     .set_network(NetworkType::Mainnet)
-                                    .set_short(CodeHashIndex::Sighash)
                                     .validate(input)
                             }))
                     .arg(
@@ -265,7 +268,7 @@ impl<'a> UtilSubCommand<'a> {
                             .long("locktime")
                             .required(true)
                             .takes_value(true)
-                            .validator(|input| DateTime::parse_from_rfc3339(&input).map(|_| ()).map_err(|err| err.to_string()))
+                            .validator(|input| DateTime::parse_from_rfc3339(input).map(|_| ()).map_err(|err| err.to_string()))
                             .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
                     ),
                 App::new("cell-meta")
@@ -291,6 +294,8 @@ impl<'a> UtilSubCommand<'a> {
                             .long("with-data")
                             .about("Get live cell with data")
                     ),
+                App::new("genesis-scripts")
+                    .about("Show genesis scripts code hash and cell_deps information, include: [sighash, multisig, dao, secp256k1_data, type_id], see RFC24 for more details."),
                 App::new("completions")
                     .about("Generates completion scripts for your shell")
                     .arg(
@@ -308,9 +313,9 @@ impl<'a> CliSubCommand for UtilSubCommand<'a> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {
                 let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                    PubkeyHexParser.from_matches_opt(m, "pubkey")?;
                 let pubkey_opt = privkey_opt
                     .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
                     .or(pubkey_opt);
@@ -342,10 +347,8 @@ message = "0x"
                     .unpack();
                 let resp = serde_json::json!({
                     "pubkey": pubkey_string_opt,
-                    "address": {
-                        "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
-                        "testnet": Address::new(NetworkType::Testnet, address_payload, true).to_string(),
-                    },
+                    "address(deprecated)": address_json(address_payload.clone(), false),
+                    "address": address_json(address_payload, true),
                     // NOTE: remove this later (after all testnet race reward received)
                     "old-testnet-address": old_address.display_with_prefix(NetworkType::Testnet),
                     "lock_arg": format!("{:#x}", lock_arg),
@@ -354,16 +357,15 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             ("sign-data", Some(m)) => {
-                let binary_opt: Option<Vec<u8>> =
-                    HexParser.from_matches_opt(m, "binary-hex", false)?;
+                let binary_opt: Option<Vec<u8>> = HexParser.from_matches_opt(m, "binary-hex")?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account", false)
+                    .from_matches_opt(m, "from-account")
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -380,11 +382,11 @@ message = "0x"
                         None
                     };
                 let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
@@ -433,12 +435,12 @@ message = "0x"
                     FixedHashParser::<H256>::default().from_matches(m, "message")?;
                 let recoverable = m.is_present("recoverable");
                 let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account", false)
+                    .from_matches_opt(m, "from-account")
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -454,12 +456,12 @@ message = "0x"
                         None
                     };
                 let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
 
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
@@ -492,14 +494,14 @@ message = "0x"
                     FixedHashParser::<H256>::default().from_matches(m, "message")?;
                 let signature: Vec<u8> = HexParser.from_matches(m, "signature")?;
                 let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey", false)?;
+                    PubkeyHexParser.from_matches_opt(m, "pubkey")?;
                 let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path", false)?;
+                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account", false)
+                    .from_matches_opt(m, "from-account")
                     .or_else(|err| {
                         let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account", false);
+                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
                                 address_opt.map(|address| {
@@ -509,7 +511,7 @@ message = "0x"
                             .map_err(|_| err)
                     })?;
                 let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address", false)?;
+                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
                 let password =
                     if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
                         Some(read_password(false, None)?)
@@ -519,7 +521,7 @@ message = "0x"
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
-                    DerivationPath::empty()
+                    DerivationPath::default()
                 };
                 let target_path = extended_address_opt
                     .and_then(|addr| from_account_opt.clone().map(|account| (addr, account)))
@@ -553,13 +555,15 @@ message = "0x"
                         .map_err(|err| err.to_string())?
                         .to_standard()
                 } else if signature.len() == 64 {
-                    secp256k1::Signature::from_compact(&signature).map_err(|err| err.to_string())?
+                    Signature::from_compact(&signature).map_err(|err| err.to_string())?
                 } else {
                     return Err(format!("Invalid signature length: {}", signature.len()));
                 };
                 let message = secp256k1::Message::from_slice(message.as_bytes())
                     .expect("Convert to message failed");
-                let verify_ok = SECP256K1.verify(&message, &signature, &pubkey).is_ok();
+                let verify_ok = SECP256K1
+                    .verify_ecdsa(&message, &signature, &pubkey)
+                    .is_ok();
                 let result = serde_json::json!({
                     "pubkey": format!("0x{}", hex_string(&pubkey.serialize()[..])),
                     "recoverable": recoverable,
@@ -576,7 +580,7 @@ message = "0x"
             }
             ("blake2b", Some(m)) => {
                 let binary: Vec<u8> = HexParser
-                    .from_matches_opt(m, "binary-hex", false)?
+                    .from_matches_opt(m, "binary-hex")?
                     .ok_or_else(String::new)
                     .or_else(|_| -> Result<_, String> {
                         let path: PathBuf = FilePathParser::new(true)
@@ -589,7 +593,7 @@ message = "0x"
                         file.read_to_end(&mut data).map_err(|err| err.to_string())?;
                         Ok(data)
                     })?;
-                let hash_data = blake2b_256(&binary);
+                let hash_data = blake2b_256(binary);
                 let slice = if m.is_present("prefix-160") {
                     &hash_data[0..20]
                 } else {
@@ -630,18 +634,34 @@ message = "0x"
             }
             ("address-info", Some(m)) => {
                 let address: Address = AddressParser::default().from_matches(m, "address")?;
-                let resp = serde_json::json!({
+                if matches!(address.network(), NetworkType::Staging | NetworkType::Dev)
+                    && address.payload().is_short_acp()
+                {
+                    return Err("only mainnet(line) and testnet(aggron) support short format anone-can-pay address".to_string());
+                }
+                let mut resp = serde_json::json!({
                     "extra": {
                         "data-encoding": if address.is_new() { "bech32m" } else { "bech32"},
                         "address-type": address.payload().ty(address.is_new()),
                     },
                     "network": address.network().to_str(),
                     "lock_script": {
-                        "code_hash": format!("{:#x}", address.payload().code_hash()),
-                        "hash_type": ckb_jsonrpc_types::ScriptHashType::from(address.payload().hash_type()),
+                        "code_hash": format!("{:#x}", address.payload().code_hash(Some(address.network()))),
+                        "hash_type": json_types::ScriptHashType::from(address.payload().hash_type()),
                         "args": format!("0x{}", hex_string(address.payload().args().as_ref())),
                     },
                 });
+                let other_format = if address.is_new() {
+                    "old-format(deprecated)"
+                } else {
+                    "new-format"
+                };
+                resp["extra"][other_format] = serde_json::json!(Address::new(
+                    address.network(),
+                    AddressPayload::from(packed::Script::from(&address)),
+                    !address.is_new(),
+                )
+                .to_string());
                 Ok(Output::new_output(resp))
             }
             ("to-genesis-multisig-addr", Some(m)) => {
@@ -656,11 +676,9 @@ message = "0x"
                 let locktime = m.value_of("locktime").unwrap();
                 let address = {
                     let input = m.value_of("sighash-address").unwrap();
-                    AddressParser::new(
-                        Some(NetworkType::Mainnet),
-                        Some(AddressPayloadOption::Short(Some(CodeHashIndex::Sighash))),
-                    )
-                    .parse(input)?
+                    AddressParser::new_sighash()
+                        .set_network(NetworkType::Mainnet)
+                        .parse(input)?
                 };
 
                 let genesis_timestamp =
@@ -676,8 +694,8 @@ message = "0x"
                 if debug {
                     eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
-                        NaiveDateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0),
-                        NaiveDateTime::from_timestamp(target_timestamp as i64 / 1000, 0),
+                        NaiveDateTime::from_timestamp_opt(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
+                        NaiveDateTime::from_timestamp_opt(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
                         elapsed / 1000,
                         epoch_fraction,
                         hex_string(multisig_addr.payload().args().as_ref()),
@@ -687,9 +705,8 @@ message = "0x"
                 Ok(Output::new_output(serde_json::json!(resp)))
             }
             ("to-multisig-addr", Some(m)) => {
-                let address: Address = AddressParser::default()
-                    .set_short(CodeHashIndex::Sighash)
-                    .from_matches(m, "sighash-address")?;
+                let address: Address =
+                    AddressParser::new_sighash().from_matches(m, "sighash-address")?;
                 let locktime_timestamp =
                     DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
                         .map(|dt| dt.timestamp_millis() as u64)
@@ -750,6 +767,52 @@ message = "0x"
                     }
                     Ok(Output::new_output(resp))
                 }
+            }
+            ("genesis-scripts", _) => {
+                let genesis_block: BlockView = self
+                    .rpc_client
+                    .get_block_by_number(0)?
+                    .expect("Can not get genesis block?")
+                    .into();
+                let genesis_info = GenesisInfo::from_block(&genesis_block)?;
+                let genesis_cellbase_tx_hash: H256 =
+                    genesis_block.transaction(0).unwrap().hash().unpack();
+                let resp = serde_json::json!({
+                    "secp256k1_blake160_sighash_all": {
+                        "script_id": {
+                            "code_hash": SIGHASH_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.sighash_dep()),
+                    },
+                    "secp256k1_blake160_multisig_all": {
+                        "script_id": {
+                            "code_hash": MULTISIG_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.multisig_dep()),
+                    },
+                    "dao": {
+                        "script_id": {
+                            "code_hash": DAO_TYPE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        },
+                        "cell_dep": json_types::CellDep::from(genesis_info.dao_dep()),
+                    },
+                    "secp256k1_data": {
+                        "out_point": {
+                            "tx_hash": genesis_cellbase_tx_hash,
+                            "index": json_types::Uint32::from(3),
+                        }
+                    },
+                    "type_id": {
+                        "script_id": {
+                            "code_hash": TYPE_ID_CODE_HASH,
+                            "hash_type": json_types::ScriptHashType::Type,
+                        }
+                    },
+                });
+                Ok(Output::new_output(resp))
             }
             ("completions", Some(m)) => {
                 let shell = m.value_of("shell").unwrap();
@@ -815,22 +878,22 @@ fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
         (Some(privkey), _, false) => {
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
             Ok(SECP256K1
-                .sign(&message, privkey)
+                .sign_ecdsa(&message, privkey)
                 .serialize_compact()
                 .to_vec())
         }
         (Some(privkey), _, true) => {
             let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
-            Ok(serialize_signature(&SECP256K1.sign_recoverable(&message, privkey)).to_vec())
+            Ok(serialize_signature(&SECP256K1.sign_ecdsa_recoverable(&message, privkey)).to_vec())
         }
         (None, Some((plugin_mgr, account)), false) => plugin_mgr
             .keystore_handler()
             .sign(account, path, message.clone(), target, password, false)
-            .map(|bytes| (&bytes[..]).to_vec()),
+            .map(|bytes| (bytes[..]).to_vec()),
         (None, Some((plugin_mgr, account)), true) => plugin_mgr
             .keystore_handler()
             .sign(account, path, message.clone(), target, password, true)
-            .map(|bytes| (&bytes[..]).to_vec()),
+            .map(|bytes| (bytes[..]).to_vec()),
         _ => Err(String::from("Both privkey and key store is missing")),
     }
 }
@@ -865,17 +928,15 @@ fn gen_multisig_addr(
 
 fn to_timestamp(input: &str) -> Result<u64, String> {
     let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|err| format!("{:?}", err))?;
-    let date = NaiveDateTime::parse_from_str(
-        &format!("{} 00:00:00", date.to_string()),
-        "%Y-%m-%d  %H:%M:%S",
-    )
-    .map_err(|err| format!("{:?}", err))?;
+    let date = NaiveDateTime::parse_from_str(&format!("{} 00:00:00", date), "%Y-%m-%d  %H:%M:%S")
+        .map_err(|err| format!("{:?}", err))?;
     Ok(date.timestamp_millis() as u64)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use ckb_sdk::CodeHashIndex;
     #[test]
     fn test_gen_multisig_addr() {
         let payload = AddressPayload::new_short(CodeHashIndex::Sighash, H160::default());

@@ -1,27 +1,27 @@
 [package]
-name = "cli-test"
-version = "0.101.0"
+name = "ckb-cli-test"
+version = "1.0.0"
 authors = ["Linfeng Qian <thewawar@gmail.com>"]
-edition = "2018"
+edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = "=3.0.0-beta.1"
+clap = { version = "=4.4.18" }
 tempfile = "3.0"
 log = "0.4"
 env_logger = "0.6"
 toml = "0.5.0"
 serde_yaml = "0.8.9"
-ckb-sdk = { path = "../ckb-sdk", version = "0.101.1" }
-ckb-types = "=0.101.0"
-ckb-app-config = "=0.101.0"
-ckb-chain-spec = "=0.101.0"
-ckb-crypto = { version = "=0.101.0", features = ["secp"] }
-ckb-hash = "=0.101.0"
+ckb-sdk = { version = "3.1.1", features = ["native-tls-vendored"] }
+serde_json = "1.0"
+ckb-types = "=0.115.0-rc2"
+ckb-jsonrpc-types = "=0.115.0-rc2"
+ckb-app-config = "=0.114.0"
+ckb-chain-spec = "=0.115.0-rc2"
 regex = "1.1.6"
-tentacle-secio = "=0.5.0"
-tentacle-multiaddr = "=0.3.0"
+faster-hex = "0.6"
 
 # Prevent this from interfering with workspaces
 [workspace]

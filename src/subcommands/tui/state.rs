@@ -7,10 +7,7 @@ use ckb_types::{core::HeaderView, packed::Script, prelude::*};
 use ckb_util::RwLock;
 
 use super::util::ts_now;
-use ckb_sdk::{
-    rpc::{BlockView, ChainInfo, LocalNode, RemoteNode, TxPoolInfo},
-    HttpRpcClient,
-};
+use crate::utils::rpc::{BlockView, ChainInfo, HttpRpcClient, LocalNode, RemoteNode, TxPoolInfo};
 
 const MAX_SAVE_BLOCKS: usize = 100;
 

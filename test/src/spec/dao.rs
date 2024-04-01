@@ -2,6 +2,7 @@ use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
 use ckb_chain_spec::ChainSpec;
+use std::{thread, time::Duration};
 
 const EPOCH_LENGTH: u64 = 32;
 const LOCK_PERIOD_EPOCHES: u64 = 180;
@@ -29,7 +30,7 @@ impl Spec for DaoPrepareOne {
 
         // Withdraw failed because of since immature
         let output = setup.cli(&format!(
-            "dao withdraw --tx-fee 0.00002 --out-point {}-{} --privkey-path {}",
+            "dao withdraw --fee-rate 1000 --out-point {}-{} --privkey-path {}",
             prepare_tx_hash, 0, privkey_path,
         ));
         assert!(!output.starts_with("0x")); // withdraw failed because of since immature
@@ -38,7 +39,7 @@ impl Spec for DaoPrepareOne {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = vec![new_out_point(prepare_tx_hash, 0)];
         let _withdraw_tx_hash = withdraw(setup, &out_points);
         assert_eq!(deposited_capacity(setup), 0);
@@ -47,7 +48,12 @@ impl Spec for DaoPrepareOne {
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.epoch_duration_target = Some(EPOCH_LENGTH * 8);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareOne"
     }
 }
 
@@ -74,7 +80,7 @@ impl Spec for DaoPrepareMultiple {
 
         // Withdraw failed because of since immature
         let output = setup.cli(&format!(
-            "dao withdraw --tx-fee 0.00002 --out-point {}-{} --privkey-path {}",
+            "dao withdraw --fee-rate 1000 --out-point {}-{} --privkey-path {}",
             prepare_tx_hash, 0, privkey_path,
         ));
         assert!(!output.starts_with("0x")); // withdraw failed because of since immature
@@ -83,7 +89,7 @@ impl Spec for DaoPrepareMultiple {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = (0..shannons.len())
             .map(|i| new_out_point(&prepare_tx_hash, i))
             .collect::<Vec<_>>();
@@ -94,7 +100,12 @@ impl Spec for DaoPrepareMultiple {
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.epoch_duration_target = Some(EPOCH_LENGTH * 8);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoPrepareMultiple"
     }
 }
 
@@ -124,7 +135,7 @@ impl Spec for DaoWithdrawMultiple {
         // Drive the chain until since mature and then withdraw
         setup
             .miner()
-            .generate_blocks(LOCK_PERIOD_EPOCHES * EPOCH_LENGTH);
+            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
         let out_points = prepare_tx_hashes
             .into_iter()
             .map(|hash| new_out_point(hash, 0))
@@ -137,7 +148,12 @@ impl Spec for DaoWithdrawMultiple {
 
     fn modify_spec_toml(&self, spec_toml: &mut ChainSpec) {
         spec_toml.params.genesis_epoch_length = Some(EPOCH_LENGTH);
+        spec_toml.params.epoch_duration_target = Some(EPOCH_LENGTH * 8);
         spec_toml.params.permanent_difficulty_in_dummy = Some(true);
+    }
+
+    fn spec_name(&self) -> &'static str {
+        "DaoWithdrawMultiple"
     }
 }
 
@@ -191,12 +207,13 @@ fn deposit(setup: &mut Setup, shannons: &[u64]) -> Vec<String> {
     let mut deposit_tx_hashes = Vec::with_capacity(shannons.len());
     for shannon in shannons {
         let deposit_tx_hash = setup.cli(&format!(
-            "dao deposit --tx-fee 0.00002 --capacity {} --privkey-path {}",
+            "dao deposit --fee-rate 1000 --capacity {} --privkey-path {}",
             shannon2ckb(*shannon),
             privkey_path,
         ));
-        assert!(deposit_tx_hash.starts_with("0x"), "{}", deposit_tx_hash);
-        setup.miner().generate_blocks(3);
+        setup
+            .miner()
+            .mine_until_transaction_confirm(&deposit_tx_hash);
         deposit_tx_hashes.push(deposit_tx_hash);
     }
     deposit_tx_hashes
@@ -206,16 +223,26 @@ fn deposit(setup: &mut Setup, shannons: &[u64]) -> Vec<String> {
 fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
     let privkey_path = setup.miner().privkey_path().to_string();
     let mut command = format!(
-        "dao prepare --tx-fee 0.00002 --privkey-path {}",
+        "dao prepare --fee-rate 1000 --privkey-path {}",
         privkey_path,
     );
     for out_point in out_points {
         command = format!("{} --out-point {}", command, out_point);
     }
 
-    let prepare_tx_hash = setup.cli(&command);
-    assert!(prepare_tx_hash.starts_with("0x"), "{}", prepare_tx_hash);
-    setup.miner().generate_blocks(3);
+    let mut prepare_tx_hash = setup.cli(&command);
+    let mut cnt = 0;
+    while !prepare_tx_hash.starts_with("0x") {
+        cnt += 1;
+        if cnt > 50 {
+            panic!("{} failed", command);
+        }
+        thread::sleep(Duration::from_millis(200));
+        prepare_tx_hash = setup.cli(&command);
+    }
+    setup
+        .miner()
+        .mine_until_transaction_confirm(&prepare_tx_hash);
     prepare_tx_hash
 }
 
@@ -223,7 +250,7 @@ fn prepare(setup: &mut Setup, out_points: &[String]) -> String {
 fn withdraw(setup: &mut Setup, out_points: &[String]) -> String {
     let privkey_path = setup.miner().privkey_path().to_string();
     let mut command = format!(
-        "dao withdraw --tx-fee 0.00002 --privkey-path {}",
+        "dao withdraw --fee-rate 1000 --privkey-path {}",
         privkey_path,
     );
     for out_point in out_points {
@@ -231,8 +258,9 @@ fn withdraw(setup: &mut Setup, out_points: &[String]) -> String {
     }
 
     let withdraw_tx_hash = setup.cli(&command);
-    setup.miner().generate_blocks(3);
-    assert!(withdraw_tx_hash.starts_with("0x"), "{}", withdraw_tx_hash);
+    setup
+        .miner()
+        .mine_until_transaction_confirm(&withdraw_tx_hash);
 
     let output = setup.cli(&format!(
         "wallet get-live-cells --address {} --limit 99999999",

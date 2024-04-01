@@ -19,8 +19,7 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, SelectableList, Text, Widget};
 use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
-use ckb_index::{with_index_db, IndexDatabase};
-use ckb_sdk::{constants::ONE_CKB, Address, GenesisInfo, HttpRpcClient, NetworkType};
+use ckb_sdk::{constants::ONE_CKB, Address, NetworkType};
 use ckb_types::{
     core::{service::Request, BlockView},
     prelude::*,
@@ -28,8 +27,9 @@ use ckb_types::{
 };
 
 use crate::utils::{
-    index::{IndexController, IndexRequest},
+    genesis_info::GenesisInfo,
     other::get_network_type,
+    rpc::HttpRpcClient,
 };
 use state::{start_rpc_thread, State, SummaryInfo};
 use util::{human_capacity, ts_now, App, Event, Events, TabsState};
@@ -145,7 +145,7 @@ impl TuiSubCommand {
                             let title = format!(
                                 "{} ({})",
                                 app.tabs.titles[app.tabs.index].trim(),
-                                self.index_controller.state().read().to_string(),
+                                self.index_controller.state().read(),
                             );
                             content_context.block =
                                 Block::default().title(&title).borders(Borders::ALL);
@@ -502,8 +502,13 @@ fn render_top_capacity<B: Backend>(
     let lines = if index.state().read().is_processing() {
         let genesis_hash: H256 = genesis_info.header().hash().unpack();
         let capacity_list_result = with_index_db(index_dir, genesis_hash, |backend, cf| {
-            let db =
-                IndexDatabase::from_db(backend, cf, network_type, genesis_info.clone(), false)?;
+            let db = IndexDatabase::from_db(
+                backend,
+                cf,
+                network_type,
+                genesis_info.header().clone(),
+                false,
+            )?;
             Ok(db.get_top_n(50))
         });
         match capacity_list_result {
@@ -532,7 +537,7 @@ fn render_top_capacity<B: Backend>(
                     ]
                 })
                 .collect::<Vec<_>>(),
-            Err(err) => vec![Text::raw(format!("Open db error: {}", err.to_string()))],
+            Err(err) => vec![Text::raw(format!("Open db error: {}", err))],
         }
     } else {
         vec![Text::raw(index.state().read().to_string())]

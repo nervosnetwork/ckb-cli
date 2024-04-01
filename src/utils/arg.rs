@@ -2,7 +2,7 @@ use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
-use ckb_types::{H160, H256};
+use ckb_types::H160;
 use clap::Arg;
 
 pub fn privkey_path<'a>() -> Arg<'a> {
@@ -29,14 +29,6 @@ pub fn address<'a>() -> Arg<'a> {
         .about(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
-}
-
-pub fn lock_hash<'a>() -> Arg<'a> {
-    Arg::with_name("lock-hash")
-        .long("lock-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("Lock hash")
 }
 
 pub fn derive_receiving_address_length<'a>() -> Arg<'a> {
@@ -136,28 +128,23 @@ pub fn capacity<'a>() -> Arg<'a> {
         .about("The capacity (unit: CKB, format: 123.335)")
 }
 
-pub fn tx_fee<'a>() -> Arg<'a> {
-    Arg::with_name("tx-fee")
-        .long("tx-fee")
+pub fn fee_rate<'a>() -> Arg<'a> {
+    Arg::with_name("fee-rate")
+        .long("fee-rate")
         .takes_value(true)
-        .validator(|input| CapacityParser.validate(input))
-        .about("The transaction fee capacity (unit: CKB, format: 0.0001)")
+        .validator(|input| FromStrParser::<u64>::default().validate(input))
+        .default_value("1000")
+        .about("The transaction fee rate (unit: shannons/KB)")
 }
 
-pub fn type_hash<'a>() -> Arg<'a> {
-    Arg::with_name("type-hash")
-        .long("type-hash")
+/// create an Arg object to receive value of force_small_change_as_fee for CapacityBalancer
+pub fn max_tx_fee<'a>() -> Arg<'a> {
+    Arg::with_name("max-tx-fee")
+        .long("max-tx-fee")
         .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("The type script hash")
-}
-
-pub fn code_hash<'a>() -> Arg<'a> {
-    Arg::with_name("code-hash")
-        .long("code-hash")
-        .takes_value(true)
-        .validator(|input| FixedHashParser::<H256>::default().validate(input))
-        .about("The type script's code hash")
+        .value_name("capacity")
+        .validator(|input|CapacityParser.validate(input))
+        .about("When there is no more inputs for create a change cell to balance the transaction capacity, force the addition capacity as fee, the value is actual maximum transaction fee(unit CKB, example:0.001)")
 }
 
 pub fn live_cells_limit<'a>() -> Arg<'a> {
@@ -182,17 +169,7 @@ pub fn to_block_number<'a>() -> Arg<'a> {
         .long("to")
         .takes_value(true)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .about("To block number (inclusive)")
-}
-
-pub fn top_n<'a>() -> Arg<'a> {
-    Arg::with_name("number")
-        .short('n')
-        .long("number")
-        .takes_value(true)
-        .validator(|input| FromStrParser::<u32>::default().validate(input))
-        .default_value("10")
-        .about("Get top n capacity addresses")
+        .about("To block number (exclusive)")
 }
 
 pub fn out_point<'a>() -> Arg<'a> {

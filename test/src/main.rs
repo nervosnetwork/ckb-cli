@@ -7,8 +7,11 @@ pub mod util;
 use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
+    AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
     DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, Plugin, RpcGetTipBlockNumber, Spec,
-    Util, WalletTimelockedAddress, WalletTransfer,
+    SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
+    SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
+    WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -22,14 +25,18 @@ fn main() {
     };
     let app = app::App::init();
     for spec in all_specs() {
+        log::info!(
+            "==================== {} ====================\n",
+            spec.spec_name()
+        );
         run_spec(spec, &app);
     }
 }
 
 fn run_spec(spec: Box<dyn Spec>, app: &App) {
-    let (_tempdir, ckb_dir) = temp_dir();
-    let rpc_port = find_available_port(8000, 8999);
-    let p2p_port = find_available_port(9000, 9999);
+    let (tempdir, ckb_dir) = temp_dir();
+    let rpc_port = find_available_port(8000, 8099);
+    let p2p_port = find_available_port(8100, 8199);
     let _stdout = run_cmd(
         app.ckb_bin(),
         vec![
@@ -54,20 +61,29 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
         app.cli_bin().to_string(),
         app.keystore_plugin_bin().to_string(),
         ckb_dir,
-        ckb_cli_dir.to_str().unwrap().to_owned(),
         rpc_port,
+        tempdir,
     );
-    let _guard = setup.ready(&*spec);
+    let _ckb_guard = setup.ready(&*spec);
     spec.run(&mut setup);
+    setup.success();
 }
 
 fn all_specs() -> Vec<Box<dyn Spec>> {
     vec![
+        Box::new(AccountKeystorePerm),
+        Box::new(AccountKeystoreExportPerm),
+        Box::new(AccountKeystoreUpdatePassword),
+        Box::new(SudtIssueToCheque),
+        Box::new(SudtIssueToAcp),
+        Box::new(SudtTransferToMultiAcp),
+        Box::new(SudtTransferToChequeForClaim),
+        Box::new(SudtTransferToChequeForWithdraw),
+        Box::new(WalletTransfer),
+        Box::new(WalletTimelockedAddress),
         Box::new(Util),
         Box::new(Plugin),
         Box::new(RpcGetTipBlockNumber),
-        Box::new(WalletTransfer),
-        Box::new(WalletTimelockedAddress),
         Box::new(DaoPrepareOne),
         Box::new(DaoPrepareMultiple),
         Box::new(DaoWithdrawMultiple),
