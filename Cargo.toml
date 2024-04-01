@@ -1,6 +1,6 @@
 [package]
 name = "ckb-cli"
-version = "1.8.0-rc1"
+version = "1.8.0"
 license = "MIT"
 authors = [
     "Linfeng Qian <thewawar@gmail.com>",
