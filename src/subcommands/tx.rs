@@ -10,7 +10,7 @@ use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
     constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
     unlock::MultisigConfig,
-    Address, AddressPayload, CodeHashIndex, HumanCapacity, NetworkType,
+    Address, AddressPayload, HumanCapacity, NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
