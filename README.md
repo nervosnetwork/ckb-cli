@@ -113,6 +113,49 @@ Prepare file searchkey.json as input parameters:
 ```
 
 ```
+ckb-cli rpc get_cells --json-path ./searchkey.json --order asc --limit 1
+```
+Response:
+
+```yaml
+last_cursor: 0x60bbad126377d45f90a8ee120da988a2d7332c78ba8fd679aab478a19d6c1334940215a27c046d5994a234629566f7e813c76a6ba9f9ec0338a11cbcc6629695ef7500000000009f78950000000100000001
+objects:
+  - block_number: 10451093
+    out_point:
+      index: 1
+      tx_hash: 0x05a29ec877603526c25744634359fda6ba8d390b48a8c4830fcc7a196fccb9c3
+    output:
+      capacity: "22381.0"
+      lock:
+        args: 0x01cc0af0af911dd40853b8c8dfee90b32f8d1ecad600
+        code_hash: 0xf329effd1c475a2978453c8600e1eaf0bc2087ee093c3ee64cc96ec6847752cb
+        hash_type: type
+      type:
+        args: 0x15a27c046d5994a234629566f7e813c76a6ba9f9ec0338a11cbcc6629695ef75
+        code_hash: 0xbbad126377d45f90a8ee120da988a2d7332c78ba8fd679aab478a19d6c133494
+        hash_type: data1
+    output_data: ~
+    tx_index: 1
+```
+
+### Example: Indexer get transactions (yaml output format)
+
+Prepare file searchkey.json as input parameters:
+
+```json
+{
+    "script": {
+        "code_hash": "0xbbad126377d45f90a8ee120da988a2d7332c78ba8fd679aab478a19d6c133494",
+        "hash_type": "data1",
+        "args": "0x"
+    },
+    "script_type": "type",
+    "script_search_mode": "prefix",
+    "with_data": false
+}
+```
+
+```
 ckb-cli rpc get_transactions --json-path ./searchkey.json --order asc --limit 3
 ```
 Response:
