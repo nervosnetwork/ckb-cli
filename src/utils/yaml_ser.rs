@@ -264,7 +264,7 @@ impl<'a> YamlEmitter<'a> {
 
     /// Emit a yaml as a hash or array value: i.e., which should appear
     /// following a ":" or "-", either after a space, or on a new line.
-    /// If `inline` is true, then the preceeding characters are distinct
+    /// If `inline` is true, then the preceding characters are distinct
     /// and short enough to respect the compact flag.
     fn emit_val(&mut self, inline: bool, val: &Yaml) -> EmitResult {
         match *val {

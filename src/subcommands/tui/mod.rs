@@ -428,7 +428,7 @@ fn render_blocks<B: Backend>(state: &State, ctx: RenderContext<B>) {
                 Style::default().modifier(Modifier::BOLD),
             ),
             Text::raw(format!(
-                "  commited={}, proposed={}, uncles={}, inputs={}, outputs={}, cellbase={}",
+                "  committed={}, proposed={}, uncles={}, inputs={}, outputs={}, cellbase={}",
                 block.commit_tx_count,
                 block.proposal_tx_count,
                 block.uncle_count,
