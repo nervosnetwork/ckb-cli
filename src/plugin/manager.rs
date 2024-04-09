@@ -963,7 +963,7 @@ impl PluginProcess {
                             Err(err) => Err(err.to_string())
                         }
                     }
-                    // Send repsonse requested by plugin to ckb-cli (ServiceProvider)
+                    // Send response requested by plugin to ckb-cli (ServiceProvider)
                     recv(service_receiver) -> msg_result => {
                         match msg_result {
                             Ok(msg) => handle_service_msgs(&mut stdin, msg),

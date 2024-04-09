@@ -19,7 +19,7 @@ The `key_store` and `indexer` role plugin can replace the default implementation
 
 The `sub_command` role plugin will add a top level sub-command in ckb-cli, the plugin will need to parse the command line argument itself.
 
-The `callback` role plugin will be called when certain event happend (send transaction for example).
+The `callback` role plugin will be called when certain event happened (send transaction for example).
 
 Here is the config return as the response of `get_config` method.
 
@@ -39,7 +39,7 @@ A plugin can define as `daemon` pluign, ckb-cli will start all actived `daemon` 
 The plugin can access rpc request by `rpc_` prefixed methods, they are just proxies of [CKB json-rpc](https://github.com/nervosnetwork/ckb/blob/develop/rpc/README.md) calls. It is useful when implement your own indexer.
 
 # RPC protocol
-The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocl` package provide a more semantic interface.
+The rpc is follow jsonrpc 2.0 protocol. For rust user, `plugin-protocol` package provide a more semantic interface.
 
 ## Get config of the plugin
 
@@ -468,7 +468,7 @@ If you want see all the debug log messages from plugin module, you can start ckb
 RUST_LOG=ckb_cli::plugin=debug ./target/debug/ckb-cli
 ```
 
-Show the detail infromation of the plugin:
+Show the detail information of the plugin:
 ``` shell
 CKB> plugin info --name demo_keystore
 daemon: true

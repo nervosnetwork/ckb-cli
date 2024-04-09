@@ -142,7 +142,7 @@ impl Miner {
             count += 1;
 
             if count > 900 {
-                panic!("wait transaction to commited failed");
+                panic!("wait transaction to committed failed");
             }
             thread::sleep(Duration::from_millis(20));
         }
