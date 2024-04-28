@@ -368,6 +368,16 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
+    pub fn test_tx_pool_accept(
+        &mut self,
+        tx: packed::Transaction,
+        outputs_validator: Option<OutputsValidator>,
+    ) -> Result<types::EntryCompleted, String> {
+        self.client
+            .test_tx_pool_accept(tx.into(), outputs_validator)
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
     pub fn clear_tx_pool(&mut self) -> Result<(), String> {
         self.client.clear_tx_pool().map_err(|err| err.to_string())
     }
