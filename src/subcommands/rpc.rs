@@ -1,24 +1,29 @@
 use ckb_jsonrpc_types::{
     self as rpc_types, Alert, BlockNumber, EpochNumber, JsonBytes, Transaction,
 };
+use ckb_types::packed::{CellOutput, OutPoint};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use super::tx::ReprTxHelper;
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
     FromStrParser, HexParser,
 };
+use crate::utils::other::get_live_cell_with_cache;
 use crate::utils::rpc::{
     parse_order, BannedAddr, BlockEconomicState, BlockView, EpochView, HeaderView, HttpRpcClient,
     RawHttpRpcClient, RemoteNode, Timestamp, TransactionProof, TransactionWithStatus,
 };
+use crate::utils::tx_helper::TxHelper;
 
 pub struct RpcSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -295,6 +300,11 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Hash of a transaction"),
                     ),
                 App::new("tx_pool_info").about("Get transaction pool information"),
+                App::new("test_tx_pool_accept")
+                .about("Test if transaction can be accepted by Tx Pool")
+                .arg(
+                    Arg::with_name("tx-file").long("tx-file").takes_value(true).required(true).about("transaction data file(format json)")
+                ),
                 App::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
                 App::new("get_raw_tx_pool")
                     .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
@@ -1061,6 +1071,41 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     Ok(Output::new_output(resp))
                 } else {
                     let resp = self.rpc_client.tx_pool_info()?;
+                    Ok(Output::new_output(resp))
+                }
+            }
+            ("test_tx_pool_accept", Some(m)) => {
+                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+
+                let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
+                    Default::default();
+                let mut get_live_cell = |out_point: OutPoint, with_data: bool| {
+                    get_live_cell_with_cache(
+                        &mut live_cell_cache,
+                        self.rpc_client,
+                        out_point,
+                        with_data,
+                    )
+                    .map(|(output, _)| output)
+                };
+
+                let file = fs::File::open(tx_file).map_err(|err| err.to_string())?;
+                let repr: ReprTxHelper =
+                    serde_json::from_reader(&file).map_err(|err| err.to_string())?;
+                let helper = TxHelper::try_from(repr)?;
+
+                let tx_view = helper.build_tx(&mut get_live_cell, true)?;
+                let tx = tx_view.data();
+
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    let resp = self
+                        .raw_rpc_client
+                        .test_tx_pool_accept(tx.into(), None)
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(resp))
+                } else {
+                    let resp = self.rpc_client.test_tx_pool_accept(tx, None)?;
                     Ok(Output::new_output(resp))
                 }
             }
