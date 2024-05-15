@@ -106,7 +106,7 @@ pub fn get_signer(
         )?;
         if data.len() != 65 {
             Err(format!(
-                "Invalid signature data lenght: {}, data: {:?}",
+                "Invalid signature data length: {}, data: {:?}",
                 data.len(),
                 data
             ))

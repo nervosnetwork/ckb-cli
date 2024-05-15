@@ -929,6 +929,24 @@ impl From<rpc_types::HardForks> for HardForks {
     }
 }
 
+/// Response type of the RPC method `test_tx_pool_accept`.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct EntryCompleted {
+    /// Cached tx cycles
+    pub cycles: Cycle,
+    /// Cached tx fee
+    pub fee: Capacity,
+}
+
+impl From<ckb_jsonrpc_types::EntryCompleted> for EntryCompleted {
+    fn from(value: ckb_jsonrpc_types::EntryCompleted) -> Self {
+        Self {
+            cycles: value.cycles.into(),
+            fee: value.fee.into(),
+        }
+    }
+}
+
 /// SoftFork information
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(untagged)]
