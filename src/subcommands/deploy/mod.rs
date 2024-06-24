@@ -791,7 +791,7 @@ fn load_cell_info(
         .index(index.pack())
         .build();
     let cell_with_status = rpc_client
-        .get_live_cell(out_point, true)
+        .get_live_cell(out_point, true, None)
         .map_err(Error::msg)?;
     if cell_with_status.status != "live" {
         return Err(anyhow!(
