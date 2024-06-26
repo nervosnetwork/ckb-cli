@@ -27,4 +27,4 @@ anyhow = "1.0.63"
 ckb-types = "=0.116.1"
 ckb-hash = "=0.116.1"
 ckb-crypto = { version = "=0.116.1", features = ["secp"] }
-ckb-sdk = {  git="https://github.com/eval-exec/ckb-sdk-rust", branch="exec/support-include-tx-pool", features = ["native-tls-vendored"] }
+ckb-sdk = {  version="3.2.1", features = ["native-tls-vendored"] }
