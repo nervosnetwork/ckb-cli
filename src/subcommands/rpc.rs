@@ -119,6 +119,11 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Output index"),
                     )
                     .arg(
+                        Arg::with_name("include-tx-pool")
+                            .long("include-tx-pool")
+                            .about("Weather to check live cell in tx-pool")
+                    )
+                    .arg(
                         Arg::with_name("with-data")
                             .long("with-data")
                             .about("Get live cell with data")
