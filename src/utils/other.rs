@@ -216,7 +216,7 @@ pub fn get_live_cell_internal(
     out_point: OutPoint,
     with_data: bool,
 ) -> Result<(CellOutput, Bytes), String> {
-    let cell = client.get_live_cell(out_point.clone(), with_data)?;
+    let cell = client.get_live_cell(out_point.clone(), with_data, None)?;
     if cell.status != "live" {
         return Err(format!(
             "Invalid cell status: {}, out_point: {}",

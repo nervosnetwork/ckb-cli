@@ -739,7 +739,7 @@ message = "0x"
                     .tx_hash(tx_hash.pack())
                     .index(index.pack())
                     .build();
-                let cell_with_status = self.rpc_client.get_live_cell(out_point, true)?;
+                let cell_with_status = self.rpc_client.get_live_cell(out_point, true, None)?;
                 if cell_with_status.status != "live" {
                     Ok(Output::new_output(cell_with_status))
                 } else {

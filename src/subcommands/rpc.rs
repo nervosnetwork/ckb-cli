@@ -645,6 +645,7 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
             }
             ("get_live_cell", Some(m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let include_tx_pool = m.is_present("include-tx-pool");
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
@@ -655,13 +656,28 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                     .index(index.pack())
                     .build();
                 if is_raw_data {
-                    let resp = self
-                        .raw_rpc_client
-                        .get_live_cell(out_point.into(), with_data)
-                        .map_err(|err| err.to_string())?;
+                    let resp = {
+                        if include_tx_pool {
+                            self.raw_rpc_client
+                                .get_live_cell_with_include_tx_pool(
+                                    out_point.into(),
+                                    with_data,
+                                    include_tx_pool,
+                                )
+                                .map_err(|err| err.to_string())?
+                        } else {
+                            self.raw_rpc_client
+                                .get_live_cell(out_point.into(), with_data)
+                                .map_err(|err| err.to_string())?
+                        }
+                    };
                     Ok(Output::new_output(resp))
                 } else {
-                    let resp = self.rpc_client.get_live_cell(out_point, with_data)?;
+                    let resp = self.rpc_client.get_live_cell(
+                        out_point,
+                        with_data,
+                        Some(include_tx_pool),
+                    )?;
                     Ok(Output::new_output(resp))
                 }
             }
