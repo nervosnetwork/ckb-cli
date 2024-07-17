@@ -353,8 +353,8 @@ impl<'a> RpcSubCommand<'a> {
                     .about("[TEST ONLY] Generate an empty block"),
                 App::new("generate_epochs")
                     .arg(
-                        Arg::with_name("num_epochs")
-                            .long("num_epochs")
+                        Arg::with_name("num-epochs")
+                            .long("num-epochs")
                             .takes_value(true)
                             .required(true)
                             .about("The number of epochs to generate.")
