@@ -31,7 +31,6 @@ jobs:
           iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
           scoop install mingw git
       - name: UnitTest
-        shell: pwsh
         run: |
           make test
           git diff
