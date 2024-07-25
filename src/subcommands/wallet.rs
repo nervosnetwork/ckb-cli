@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use bitcoin::util::bip32::DerivationPath;
+use bitcoin::bip32::DerivationPath;
 use clap::{App, Arg, ArgMatches};
 use serde::{Deserialize, Serialize};
 

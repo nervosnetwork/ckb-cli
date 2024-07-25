@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::anyhow;
-use bitcoin::util::bip32::DerivationPath;
+use bitcoin::bip32::DerivationPath;
 
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
@@ -42,7 +42,8 @@ impl Signer for PrivkeyWrapper {
                 message.len()
             )));
         }
-        let msg = secp256k1::Message::from_slice(message).expect("Convert to message failed");
+        let msg =
+            secp256k1::Message::from_digest_slice(message).expect("Convert to message failed");
         if recoverable {
             let sig = SECP256K1.sign_ecdsa_recoverable(&msg, &self.0);
             Ok(Bytes::from(serialize_signature(&sig).to_vec()))
