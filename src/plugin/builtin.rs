@@ -2,7 +2,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::thread::{self, JoinHandle};
 
-use bitcoin::util::bip32::DerivationPath;
+use bitcoin::bip32::DerivationPath;
 use crossbeam_channel::bounded;
 
 use ckb_sdk::util::serialize_signature;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::anyhow;
-use bitcoin::util::bip32::DerivationPath;
+use bitcoin::bip32::DerivationPath;
 use parking_lot::Mutex;
 
 use ckb_sdk::traits::{Signer, SignerError};

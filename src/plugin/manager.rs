@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use bitcoin::util::bip32::{ChildNumber, DerivationPath};
+use bitcoin::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};

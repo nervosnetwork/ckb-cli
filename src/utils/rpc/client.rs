@@ -150,10 +150,18 @@ impl HttpRpcClient {
         &mut self,
         out_point: packed::OutPoint,
         with_data: bool,
+        include_tx_pool: Option<bool>,
     ) -> Result<CellWithStatus, String> {
-        self.client
-            .get_live_cell(out_point.into(), with_data)
-            .map_err(|err| err.to_string())
+        match include_tx_pool {
+            Some(include_tx_pool) => self
+                .client
+                .get_live_cell_with_include_tx_pool(out_point.into(), with_data, include_tx_pool)
+                .map_err(|err| err.to_string()),
+            None => self
+                .client
+                .get_live_cell(out_point.into(), with_data)
+                .map_err(|err| err.to_string()),
+        }
     }
     pub fn get_tip_block_number(&mut self) -> Result<u64, String> {
         self.client

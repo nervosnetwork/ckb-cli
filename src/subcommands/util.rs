@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use bitcoin::util::bip32::{ChildNumber, DerivationPath};
+use bitcoin::bip32::{ChildNumber, DerivationPath};
 use chrono::prelude::*;
 use clap::{App, Arg, ArgMatches};
 use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
@@ -559,7 +559,7 @@ message = "0x"
                 } else {
                     return Err(format!("Invalid signature length: {}", signature.len()));
                 };
-                let message = secp256k1::Message::from_slice(message.as_bytes())
+                let message = secp256k1::Message::from_digest_slice(message.as_bytes())
                     .expect("Convert to message failed");
                 let verify_ok = SECP256K1
                     .verify_ecdsa(&message, &signature, &pubkey)
@@ -683,7 +683,7 @@ message = "0x"
 
                 let genesis_timestamp =
                     NaiveDateTime::parse_from_str("2019-11-16 06:00:00", "%Y-%m-%d  %H:%M:%S")
-                        .map(|dt| dt.timestamp_millis() as u64)
+                        .map(|dt| dt.and_utc().timestamp_millis() as u64)
                         .unwrap();
                 let target_timestamp = to_timestamp(locktime)?;
                 let elapsed = target_timestamp.saturating_sub(genesis_timestamp);
@@ -694,8 +694,8 @@ message = "0x"
                 if debug {
                     eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
-                        NaiveDateTime::from_timestamp_opt(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
-                        NaiveDateTime::from_timestamp_opt(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
+                        DateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
+                        DateTime::from_timestamp(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
                         elapsed / 1000,
                         epoch_fraction,
                         hex_string(multisig_addr.payload().args().as_ref()),
@@ -739,7 +739,7 @@ message = "0x"
                     .tx_hash(tx_hash.pack())
                     .index(index.pack())
                     .build();
-                let cell_with_status = self.rpc_client.get_live_cell(out_point, true)?;
+                let cell_with_status = self.rpc_client.get_live_cell(out_point, true, None)?;
                 if cell_with_status.status != "live" {
                     Ok(Output::new_output(cell_with_status))
                 } else {
@@ -876,14 +876,14 @@ fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
 ) -> Result<Vec<u8>, String> {
     match (from_privkey_opt, from_account_opt, recoverable) {
         (Some(privkey), _, false) => {
-            let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
+            let message = secp256k1::Message::from_digest_slice(message.as_bytes()).unwrap();
             Ok(SECP256K1
                 .sign_ecdsa(&message, privkey)
                 .serialize_compact()
                 .to_vec())
         }
         (Some(privkey), _, true) => {
-            let message = secp256k1::Message::from_slice(message.as_bytes()).unwrap();
+            let message = secp256k1::Message::from_digest_slice(message.as_bytes()).unwrap();
             Ok(serialize_signature(&SECP256K1.sign_ecdsa_recoverable(&message, privkey)).to_vec())
         }
         (None, Some((plugin_mgr, account)), false) => plugin_mgr
@@ -930,7 +930,7 @@ fn to_timestamp(input: &str) -> Result<u64, String> {
     let date = NaiveDate::parse_from_str(input, "%Y-%m-%d").map_err(|err| format!("{:?}", err))?;
     let date = NaiveDateTime::parse_from_str(&format!("{} 00:00:00", date), "%Y-%m-%d  %H:%M:%S")
         .map_err(|err| format!("{:?}", err))?;
-    Ok(date.timestamp_millis() as u64)
+    Ok(date.and_utc().timestamp_millis() as u64)
 }
 
 #[cfg(test)]

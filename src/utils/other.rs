@@ -216,7 +216,7 @@ pub fn get_live_cell_internal(
     out_point: OutPoint,
     with_data: bool,
 ) -> Result<(CellOutput, Bytes), String> {
-    let cell = client.get_live_cell(out_point.clone(), with_data)?;
+    let cell = client.get_live_cell(out_point.clone(), with_data, None)?;
     if cell.status != "live" {
         return Err(format!(
             "Invalid cell status: {}, out_point: {}",
@@ -314,7 +314,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
                 if message == &h256!("0x0") {
                     Ok(Some([0u8; 65]))
                 } else {
-                    let message = secp256k1::Message::from_slice(message.as_bytes())
+                    let message = secp256k1::Message::from_digest_slice(message.as_bytes())
                         .expect("Convert to secp256k1 message failed");
                     let signature = SECP256K1.sign_ecdsa_recoverable(&message, &privkey);
                     Ok(Some(serialize_signature(&signature)))

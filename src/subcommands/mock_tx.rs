@@ -458,7 +458,7 @@ impl<'a> MockResourceLoader for Loader<'a> {
     ) -> Result<Option<(CellOutput, Bytes, Option<Byte32>)>, String> {
         let output: Option<CellOutput> = self
             .rpc_client
-            .get_live_cell(out_point.clone(), true)
+            .get_live_cell(out_point.clone(), true, None)
             .map(|resp| resp.cell.map(|info| info.output.into()))?;
         if let Some(output) = output {
             Ok(self
