@@ -4,7 +4,7 @@ use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-use bitcoin::util::bip32::DerivationPath;
+use bitcoin::bip32::DerivationPath;
 
 use ckb_sdk::{Address, AddressPayload, NetworkType};
 use ckb_signer::{Key, KeyStore, MasterPrivKey};
@@ -454,8 +454,15 @@ impl<'a> CliSubCommand for AccountSubCommand<'a> {
                     set.iter()
                         .map(|(path, hash160)| {
                             let payload = AddressPayload::from_pubkey_hash(hash160.clone());
+                            let path = {
+                                if !path.to_string().starts_with("m/"){
+                                    String::new()+ "m/" + &path.to_string()
+                                }else{
+                                    path.to_string()
+                                }
+                            };
                             serde_json::json!({
-                                "path": path.to_string(),
+                                "path": path,
                                 "address(deprecated)": Address::new(network, payload.clone(), false).to_string(),
                                 "address": Address::new(network, payload, true).to_string(),
                             })

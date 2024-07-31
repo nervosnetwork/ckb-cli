@@ -454,7 +454,7 @@ mod test {
             if &lock_arg != target_lock_arg {
                 return Err(String::from("lock arg not match"));
             }
-            let message = secp256k1::Message::from_slice(tx_hash_hash.as_bytes())
+            let message = secp256k1::Message::from_digest_slice(tx_hash_hash.as_bytes())
                 .expect("Convert to secp256k1 message failed");
             let signature = SECP256K1.sign_ecdsa_recoverable(&message, &privkey);
             let (recov_id, data) = signature.serialize_compact();

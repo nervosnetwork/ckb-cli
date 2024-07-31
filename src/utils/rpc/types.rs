@@ -1530,6 +1530,18 @@ pub struct SyncState {
     pub orphan_blocks_count: Uint64,
     pub orphan_blocks_size: Uint64,
     pub inflight_blocks_count: Uint64,
+    /// Is ckb reached the assume_valid_target? If no assume_valid_target, this will be true.
+    pub assume_valid_target_reached: bool,
+    /// The assume_valid_target specified by ckb, if no assume_valid_target, this will be all zero.
+    pub assume_valid_target: Byte32,
+    /// Is ckb reached the min_chain_work?
+    pub min_chain_work_reached: bool,
+    /// This field acts as a security measure to ensure that a node only
+    /// synchronizes with other nodes that have a significant amount of
+    /// computational work invested in them, thereby preventing certain types
+    /// of attacks and ensuring network integrity. Only the mainnet uses a
+    /// hardcoded value for this field.
+    pub min_chain_work: Uint128,
     pub fast_time: Uint64,
     pub normal_time: Uint64,
     pub low_time: Uint64,
@@ -1543,6 +1555,10 @@ impl From<rpc_types::SyncState> for SyncState {
             orphan_blocks_count: json.orphan_blocks_count.value(),
             orphan_blocks_size: json.orphan_blocks_size.value(),
             inflight_blocks_count: json.inflight_blocks_count.value(),
+            assume_valid_target_reached: json.assume_valid_target_reached,
+            assume_valid_target: json.assume_valid_target,
+            min_chain_work_reached: json.min_chain_work_reached,
+            min_chain_work: json.min_chain_work,
             fast_time: json.fast_time.value(),
             normal_time: json.normal_time.value(),
             low_time: json.low_time.value(),
