@@ -1285,7 +1285,7 @@ impl From<rpc_types::DeploymentsInfo> for DeploymentsInfo {
 //  cell.rs
 // =========
 
-//// TODO: Make `cell::CellData` public
+/// TODO: Make `cell::CellData` public
 // #[derive(Debug, Serialize, Deserialize)]
 // pub struct CellWithStatus {
 //     pub cell: Option<CellInfo>,

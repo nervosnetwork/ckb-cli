@@ -236,7 +236,7 @@ impl<'a> MockTransactionHelper<'a> {
                     H160::from_slice(&lock.args().raw_data()).expect("Convert to H160 failed");
                 input_group
                     .entry(lock_arg)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(idx);
             }
         }
