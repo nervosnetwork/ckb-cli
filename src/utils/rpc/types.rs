@@ -1528,7 +1528,6 @@ pub struct SyncState {
     pub best_known_block_number: BlockNumber,
     pub best_known_block_timestamp: Timestamp,
     pub orphan_blocks_count: Uint64,
-    pub orphan_blocks_size: Uint64,
     pub inflight_blocks_count: Uint64,
     /// Is ckb reached the assume_valid_target? If no assume_valid_target, this will be true.
     pub assume_valid_target_reached: bool,
@@ -1553,7 +1552,6 @@ impl From<rpc_types::SyncState> for SyncState {
             best_known_block_number: json.best_known_block_number.into(),
             best_known_block_timestamp: json.best_known_block_timestamp.into(),
             orphan_blocks_count: json.orphan_blocks_count.value(),
-            orphan_blocks_size: json.orphan_blocks_size.value(),
             inflight_blocks_count: json.inflight_blocks_count.value(),
             assume_valid_target_reached: json.assume_valid_target_reached,
             assume_valid_target: json.assume_valid_target,
