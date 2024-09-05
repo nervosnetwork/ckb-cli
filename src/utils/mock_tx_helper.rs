@@ -313,9 +313,9 @@ impl<'a> MockTransactionHelper<'a> {
     pub fn verify<L: MockResourceLoader>(
         &mut self,
         max_cycle: Cycle,
-        loader: L,
+        mut loader: L,
     ) -> Result<Cycle, String> {
-        let resource = Resource::from_both(self.mock_tx, loader)?;
+        let resource = Resource::from_both(self.mock_tx, &mut loader)?;
         let tx = self.mock_tx.core_transaction();
         let rtx = {
             resolve_transaction(tx, &mut HashSet::new(), &resource, &resource)
