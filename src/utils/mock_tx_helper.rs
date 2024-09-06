@@ -234,10 +234,7 @@ impl<'a> MockTransactionHelper<'a> {
             {
                 let lock_arg =
                     H160::from_slice(&lock.args().raw_data()).expect("Convert to H160 failed");
-                input_group
-                    .entry(lock_arg)
-                    .or_default()
-                    .push(idx);
+                input_group.entry(lock_arg).or_default().push(idx);
             }
         }
 
