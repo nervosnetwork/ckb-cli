@@ -1,7 +1,6 @@
 use std::borrow::Cow::{self, Owned};
 use std::collections::HashSet;
 use std::iter;
-use std::sync::Arc;
 
 use ansi_term::Colour::{Green, Red};
 use rustyline::completion::{extract_word, Completer, FilenameCompleter, Pair};
@@ -31,7 +30,7 @@ static ESCAPE_CHAR: Option<char> = None;
 
 #[derive(Helper)]
 pub struct CkbCompleter<'a> {
-    clap_app: Arc<clap::App<'a>>,
+    clap_app: clap::App<'a>,
     completer: FilenameCompleter,
     validator: MatchingBracketValidator,
 }
@@ -39,13 +38,13 @@ pub struct CkbCompleter<'a> {
 impl<'a> CkbCompleter<'a> {
     pub fn new(clap_app: clap::App<'a>) -> Self {
         CkbCompleter {
-            clap_app: Arc::new(clap_app),
+            clap_app,
             completer: FilenameCompleter::new(),
             validator: MatchingBracketValidator::new(),
         }
     }
 
-    pub fn get_completions(app: &Arc<clap::App<'a>>, args: &[String]) -> Vec<(String, String)> {
+    pub fn get_completions(app: &clap::App<'a>, args: &[String]) -> Vec<(String, String)> {
         let args_set = args.iter().collect::<HashSet<&String>>();
         let switched_completions =
             |short: Option<char>, long: Option<&str>, multiple: bool, required: bool| {
@@ -95,18 +94,18 @@ impl<'a> CkbCompleter<'a> {
     }
 
     pub fn find_subcommand<'s, Iter: iter::Iterator<Item = &'s str>>(
-        app: Arc<clap::App<'a>>,
+        app: clap::App<'a>,
         mut prefix_names: iter::Peekable<Iter>,
-    ) -> Option<Arc<clap::App<'a>>> {
+    ) -> Option<clap::App<'a>> {
         if let Some(name) = prefix_names.next() {
             for inner_app in app.get_subcommands().iter() {
                 if inner_app.get_name() == name
                     || inner_app.get_all_aliases().any(|alias| alias == name)
                 {
                     return if prefix_names.peek().is_none() {
-                        Some(Arc::new(inner_app.to_owned()))
+                        Some(inner_app.to_owned())
                     } else {
-                        Self::find_subcommand(Arc::new(inner_app.to_owned()), prefix_names)
+                        Self::find_subcommand(inner_app.to_owned(), prefix_names)
                     };
                 }
             }
@@ -132,7 +131,7 @@ impl<'a> Completer for CkbCompleter<'a> {
         let args = shell_words::split(&line[..pos]).unwrap();
         let word_lower = word.to_lowercase();
         let tmp_pair = Self::find_subcommand(
-            Arc::clone(&self.clap_app),
+            self.clap_app.to_owned(),
             args.iter().map(String::as_str).peekable(),
         )
         .map(|current_app| Self::get_completions(&current_app, &args))
