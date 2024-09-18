@@ -12,18 +12,16 @@ use rustyline::{CompletionType, Context};
 use rustyline_derive::Helper;
 
 #[cfg(unix)]
-static DEFAULT_BREAK_CHARS: [u8; 18] = [
-    b' ', b'\t', b'\n', b'"', b'\\', b'\'', b'`', b'@', b'$', b'>', b'<', b'=', b';', b'|', b'&',
-    b'{', b'(', b'\0',
+static DEFAULT_BREAK_CHARS: [char; 18] = [
+    ' ', '\t', '\n', '"', '\\', '\'', '`', '@', '$', '>', '<', '=', ';', '|', '&', '{', '(', '\0',
 ];
 
 #[cfg(unix)]
 static ESCAPE_CHAR: Option<char> = Some('\\');
 // Remove \ to make file completion works on windows
 #[cfg(windows)]
-static DEFAULT_BREAK_CHARS: [u8; 17] = [
-    b' ', b'\t', b'\n', b'"', b'\'', b'`', b'@', b'$', b'>', b'<', b'=', b';', b'|', b'&', b'{',
-    b'(', b'\0',
+static DEFAULT_BREAK_CHARS: [char; 17] = [
+    ' ', '\t', '\n', '"', '\'', '`', '@', '$', '>', '<', '=', ';', '|', '&', '{', '(', '\0',
 ];
 #[cfg(windows)]
 static ESCAPE_CHAR: Option<char> = None;
@@ -127,7 +125,9 @@ impl<'a> Completer for CkbCompleter<'a> {
         pos: usize,
         ctx: &Context,
     ) -> Result<(usize, Vec<Pair>), ReadlineError> {
-        let (start, word) = extract_word(line, pos, ESCAPE_CHAR, &DEFAULT_BREAK_CHARS);
+        let (start, word) = extract_word(line, pos, ESCAPE_CHAR, |char| {
+            DEFAULT_BREAK_CHARS.contains(&char)
+        });
         let args = shell_words::split(&line[..pos]).unwrap();
         let word_lower = word.to_lowercase();
         let tmp_pair = Self::find_subcommand(
