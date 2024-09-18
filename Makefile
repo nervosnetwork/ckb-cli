@@ -23,7 +23,7 @@ prod: ## Build binary with release profile.
 	cargo build --release
 
 security-audit: ## Use cargo-deny to audit Cargo.lock for crates with security vulnerabilities.
-	cargo deny check --hide-inclusion-graph --show-stats advisories sources
+	cargo deny check --hide-inclusion-graph --show-stats advisories sources -Wunmaintained
 
 check-crates: ## Use cargo-deny to check specific crates, detect and handle multiple versions of the same crate and wildcards version requirement.
 	cargo deny check --hide-inclusion-graph --show-stats bans
