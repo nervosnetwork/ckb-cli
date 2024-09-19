@@ -71,7 +71,7 @@ jobs:
     strategy:
       matrix:
         checks:
-          - --hide-inclusion-graph --show-stats advisories sources
+          - --hide-inclusion-graph --show-stats advisories sources -Wunmaintained
           - --hide-inclusion-graph --show-stats bans
           - --hide-inclusion-graph --show-stats licenses
     steps:

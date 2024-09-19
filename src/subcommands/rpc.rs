@@ -305,6 +305,7 @@ impl<'a> RpcSubCommand<'a> {
                             .about("Hash of a transaction"),
                     ),
                 App::new("tx_pool_info").about("Get transaction pool information"),
+                App::new("clear_tx_verify_queue").about("Clear TxPool verify_queue"),
                 App::new("test_tx_pool_accept")
                 .about("Test if transaction can be accepted by Tx Pool")
                 .arg(
@@ -1093,6 +1094,18 @@ impl<'a> CliSubCommand for RpcSubCommand<'a> {
                 } else {
                     let resp = self.rpc_client.tx_pool_info()?;
                     Ok(Output::new_output(resp))
+                }
+            }
+            ("clear_tx_verify_queue", Some(m)) => {
+                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                if is_raw_data {
+                    self.raw_rpc_client
+                        .clear_tx_verify_queue()
+                        .map_err(|err| err.to_string())?;
+                    Ok(Output::new_output(()))
+                } else {
+                    let _ = self.rpc_client.clear_tx_verify_queue();
+                    Ok(Output::new_output(()))
                 }
             }
             ("test_tx_pool_accept", Some(m)) => {

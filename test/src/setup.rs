@@ -58,7 +58,7 @@ impl Setup {
         let ckb_child_process = ckb_cmd
             .env("RUST_BACKTRACE", "full")
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
             .spawn()
             .expect("Run `ckb run` failed");

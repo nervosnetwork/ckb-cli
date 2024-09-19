@@ -9,8 +9,16 @@ const LOCK_PERIOD_EPOCHES: u64 = 180;
 
 pub struct DaoPrepareOne;
 
+fn generate_lock_period_epochs(setup: &mut Setup) {
+    (0..LOCK_PERIOD_EPOCHES).for_each(|_i| {
+        setup.miner().generate_epochs(1, EPOCH_LENGTH);
+    });
+}
+
 impl Spec for DaoPrepareOne {
     fn run(&self, setup: &mut Setup) {
+        setup.miner().wait_rpc_ready();
+
         let privkey_path = setup.miner().privkey_path().to_string();
         assert_eq!(deposited_capacity(setup), 0);
         assert_eq!(prepared_capacity(setup), 0);
@@ -37,9 +45,7 @@ impl Spec for DaoPrepareOne {
         assert!(output.contains("Immature"));
 
         // Drive the chain until since mature and then withdraw
-        setup
-            .miner()
-            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
+        generate_lock_period_epochs(setup);
         let out_points = vec![new_out_point(prepare_tx_hash, 0)];
         let _withdraw_tx_hash = withdraw(setup, &out_points);
         assert_eq!(deposited_capacity(setup), 0);
@@ -61,6 +67,8 @@ pub struct DaoPrepareMultiple;
 
 impl Spec for DaoPrepareMultiple {
     fn run(&self, setup: &mut Setup) {
+        setup.miner().wait_rpc_ready();
+
         let privkey_path = setup.miner().privkey_path().to_string();
         assert_eq!(deposited_capacity(setup), 0);
         assert_eq!(prepared_capacity(setup), 0);
@@ -87,9 +95,7 @@ impl Spec for DaoPrepareMultiple {
         assert!(output.contains("Immature"));
 
         // Drive the chain until since mature and then withdraw
-        setup
-            .miner()
-            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
+        generate_lock_period_epochs(setup);
         let out_points = (0..shannons.len())
             .map(|i| new_out_point(&prepare_tx_hash, i))
             .collect::<Vec<_>>();
@@ -114,6 +120,8 @@ pub struct DaoWithdrawMultiple;
 impl Spec for DaoWithdrawMultiple {
     #[allow(clippy::needless_collect)]
     fn run(&self, setup: &mut Setup) {
+        setup.miner().wait_rpc_ready();
+
         assert_eq!(deposited_capacity(setup), 0);
         assert_eq!(prepared_capacity(setup), 0);
 
@@ -133,9 +141,7 @@ impl Spec for DaoWithdrawMultiple {
         assert_eq!(prepared_capacity(setup), 40_010_336_948_502);
 
         // Drive the chain until since mature and then withdraw
-        setup
-            .miner()
-            .generate_epochs(LOCK_PERIOD_EPOCHES, EPOCH_LENGTH);
+        generate_lock_period_epochs(setup);
         let out_points = prepare_tx_hashes
             .into_iter()
             .map(|hash| new_out_point(hash, 0))
