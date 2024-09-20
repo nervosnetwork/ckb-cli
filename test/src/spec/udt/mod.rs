@@ -33,9 +33,9 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
     let owner_key = format!("{}/owner", tmp_path);
     let account1_key = format!("{}/account1", tmp_path);
     let account2_key = format!("{}/account2", tmp_path);
-    fs::write(&owner_key, OWNER_KEY).unwrap();
-    fs::write(&account1_key, ACCOUNT1_KEY).unwrap();
-    fs::write(&account2_key, ACCOUNT2_KEY).unwrap();
+    fs::write(owner_key, OWNER_KEY).unwrap();
+    fs::write(account1_key, ACCOUNT1_KEY).unwrap();
+    fs::write(account2_key, ACCOUNT2_KEY).unwrap();
 
     let acp_bin = format!("{}/acp", tmp_path);
     let cheque_bin = format!("{}/cheque", tmp_path);
@@ -158,7 +158,7 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
     let cell_deps_path = format!("{}/cell_deps.json", tmp_path);
     fs::write(
         cell_deps_path,
-        &serde_json::to_string_pretty(&cell_deps).unwrap(),
+        serde_json::to_string_pretty(&cell_deps).unwrap(),
     )
     .unwrap();
 

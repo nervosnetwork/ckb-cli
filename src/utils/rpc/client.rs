@@ -376,6 +376,13 @@ impl HttpRpcClient {
             .map(Into::into)
             .map_err(|err| err.to_string())
     }
+    pub fn clear_tx_verify_queue(&mut self) -> Result<(), String> {
+        self.client
+            .clear_tx_verify_queue()
+            .map(Into::into)
+            .map_err(|err| err.to_string())
+    }
+
     pub fn test_tx_pool_accept(
         &mut self,
         tx: packed::Transaction,

@@ -90,7 +90,7 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    vec!["new_tip_header"].iter(),
+                    ["new_tip_header"].iter(),
                     HeaderView,
                     self.format,
                     self.color
@@ -101,7 +101,7 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    vec!["new_tip_block"].iter(),
+                    ["new_tip_block"].iter(),
                     BlockView,
                     self.format,
                     self.color
@@ -112,7 +112,7 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    vec!["new_transaction"].iter(),
+                    ["new_transaction"].iter(),
                     PoolTransactionEntry,
                     self.format,
                     self.color
@@ -123,7 +123,7 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    vec!["proposed_transaction"].iter(),
+                    ["proposed_transaction"].iter(),
                     PoolTransactionEntry,
                     self.format,
                     self.color
@@ -134,7 +134,7 @@ impl CliSubCommand for PubSubCommand {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
-                    vec!["rejected_transaction"].iter(),
+                    ["rejected_transaction"].iter(),
                     (PoolTransactionEntry, PoolTransactionReject),
                     self.format,
                     self.color

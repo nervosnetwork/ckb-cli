@@ -40,6 +40,20 @@ impl Miner {
         }
     }
 
+    pub fn wait_rpc_ready(&self) {
+        let header = self.rpc.lock().unwrap().get_tip_header();
+        let now = std::time::Instant::now();
+        while now.elapsed().as_secs() < 60 {
+            if header.is_ok() {
+                log::info!("rpc is ready");
+                return;
+            }
+            log::info!("waiting rpc ready...");
+            thread::sleep(Duration::from_secs(1));
+        }
+        panic!("rpc not ready")
+    }
+
     pub fn generate_block(&self) -> H256 {
         self.rpc
             .lock()

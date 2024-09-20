@@ -6,6 +6,7 @@ use ansi_term::Colour::Green;
 use regex::Regex;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
+use rustyline::history::FileHistory;
 use rustyline::{Cmd, CompletionType, Config, EditMode, Editor, KeyEvent};
 use serde_json::json;
 
@@ -100,19 +101,20 @@ impl InteractiveEnv {
             }
         };
 
-        let rl_mode = |rl: &mut Editor<CkbCompleter>, is_list: bool, is_emacs: bool| {
-            if is_list {
-                rl.set_completion_type(CompletionType::List)
-            } else {
-                rl.set_completion_type(CompletionType::Circular)
-            }
+        let rl_mode =
+            |rl: &mut Editor<CkbCompleter, FileHistory>, is_list: bool, is_emacs: bool| {
+                if is_list {
+                    rl.set_completion_type(CompletionType::List)
+                } else {
+                    rl.set_completion_type(CompletionType::Circular)
+                }
 
-            if is_emacs {
-                rl.set_edit_mode(EditMode::Emacs)
-            } else {
-                rl.set_edit_mode(EditMode::Vi)
-            }
-        };
+                if is_emacs {
+                    rl.set_edit_mode(EditMode::Emacs)
+                } else {
+                    rl.set_edit_mode(EditMode::Vi)
+                }
+            };
 
         let mut plugin_sub_cmds = Vec::new();
         let mut parser = self.parser.clone();
@@ -132,8 +134,9 @@ impl InteractiveEnv {
         let rl_config = Config::builder()
             .history_ignore_space(true)
             .max_history_size(1000)
+            .map_err(|err| err.to_string())?
             .build();
-        let mut rl = Editor::with_config(rl_config);
+        let mut rl = Editor::with_config(rl_config).map_err(|err| err.to_string())?;
         let helper = CkbCompleter::new(parser.clone());
         rl.set_helper(Some(helper));
         rl.bind_sequence(KeyEvent::alt('n'), Cmd::HistorySearchForward);
@@ -160,7 +163,7 @@ impl InteractiveEnv {
                             eprintln!("{}", err);
                         }
                     }
-                    rl.add_history_entry(line.as_str());
+                    let _ = rl.add_history_entry(line.as_str());
                 }
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
