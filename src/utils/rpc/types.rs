@@ -381,8 +381,14 @@ pub struct TransactionWithStatus {
     pub transaction: Option<TransactionView>,
     /// The transaction consumed cycles.
     pub cycles: Option<Cycle>,
+    /// If the transaction is in tx-pool, `time_added_to_pool` represent when it enters the tx-pool. unit: Millisecond
+    pub time_added_to_pool: Option<Uint64>,
     /// The Transaction status.
     pub tx_status: TxStatus,
+    /// The transaction fee of the transaction
+    pub fee: Option<Capacity>,
+    /// The minimal fee required to replace this transaction
+    pub min_replace_fee: Option<Capacity>,
 }
 impl TryFrom<rpc_types::TransactionWithStatusResponse> for TransactionWithStatus {
     type Error = String;
@@ -407,7 +413,12 @@ impl TryFrom<rpc_types::TransactionWithStatusResponse> for TransactionWithStatus
                 })
                 .transpose()?,
             cycles: json.cycles.map(|c| c.into()),
+            time_added_to_pool: json.time_added_to_pool.map(|time| time.into()),
             tx_status: json.tx_status,
+            fee: json.fee.map(|fee| fee.into()),
+            min_replace_fee: json
+                .min_replace_fee
+                .map(|min_replace_fee| min_replace_fee.into()),
         })
     }
 }
