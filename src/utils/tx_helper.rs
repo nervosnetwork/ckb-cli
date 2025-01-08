@@ -119,7 +119,7 @@ impl TxHelper {
                 cell_deps.insert(genesis_info.sighash_dep());
             } else if code_hash == MULTISIG_TYPE_HASH {
                 cell_deps.insert(genesis_info.multisig_dep());
-            } else {
+            } else if !skip_check {
                 panic!("Unexpected input code_hash: {:#x}", code_hash);
             }
         }
