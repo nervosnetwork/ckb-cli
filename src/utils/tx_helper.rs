@@ -112,7 +112,7 @@ impl TxHelper {
             .build();
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
-        let mut cell_deps: HashSet<CellDep> = HashSet::default();
+        let mut cell_deps: HashSet<CellDep> = self.transaction.cell_deps().into_iter().collect();
         for ((code_hash, _), _) in self.input_group(get_live_cell, skip_check)?.into_iter() {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
