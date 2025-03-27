@@ -387,6 +387,7 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
     enum CodeHashCategory {
         Sighash,
         Multisig,
+        Zero,
         Other,
     }
 
@@ -394,10 +395,13 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
     let hash_type: ScriptHashType = lock.hash_type().try_into().expect("hash_type");
     let lock_args = lock.args().raw_data();
 
+    let zero_hash = H256::default();
     let code_hash_category = if code_hash == SIGHASH_TYPE_HASH {
         CodeHashCategory::Sighash
     } else if code_hash == MULTISIG_TYPE_HASH {
         CodeHashCategory::Multisig
+    } else if code_hash == zero_hash {
+        CodeHashCategory::Zero
     } else {
         CodeHashCategory::Other
     };
@@ -412,6 +416,7 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
         (CodeHashCategory::Sighash, ScriptHashType::Type, 20) => Ok(()),
         (CodeHashCategory::Multisig, ScriptHashType::Type, 20) => Ok(()),
         (CodeHashCategory::Multisig, ScriptHashType::Type, 28) => Ok(()),
+        (CodeHashCategory::Zero, _, _) => Ok(()),
         (CodeHashCategory::Sighash, _, _) => Err(format!(
             "Invalid sighash lock script, hash_type: {}, args.length: {}",
             hash_type_str,
