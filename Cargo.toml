@@ -19,7 +19,7 @@ ckb-util = "=0.200.0"
 ckb-error = "=0.200.0"
 ckb-script = "=0.200.0"
 ckb-chain-spec = "=0.200.0"
-ckb-sdk = { version = "3.4.0", features = ["native-tls-vendored"] }
+ckb-sdk = { version = "3.7.0", features = ["native-tls-vendored"] }
 ckb-mock-tx-types = "=0.200.0"
 ckb-signer = { path = "ckb-signer", version = "0.4.1" }
 plugin-protocol = { path = "plugin-protocol", package = "ckb-cli-plugin-protocol", version = "=1.3.1" }

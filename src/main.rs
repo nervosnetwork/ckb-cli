@@ -32,7 +32,8 @@ mod subcommands;
 #[allow(clippy::mutable_key_type)]
 mod utils;
 
-fn main() -> Result<(), io::Error> {
+#[tokio::main]
+async fn main() -> Result<(), io::Error> {
     env_logger::init();
 
     #[cfg(unix)]
