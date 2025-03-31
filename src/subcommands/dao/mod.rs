@@ -197,7 +197,7 @@ impl<'a> DAOSubCommand<'a> {
         let mut query = CellQueryOptions::new_lock(lock);
         query.secondary_script = Some(dao_type_script);
         query.data_len_range = Some(ValueRangeOption::new_exact(8));
-        query.min_total_capacity = u64::max_value();
+        query.min_total_capacity = u64::MAX;
         let (cells, _) = self
             .cell_collector
             .collect_live_cells(&query, false)

@@ -862,7 +862,6 @@ impl MasterPrivKey {
             chain_code: ChainCode::from(&self.chain_code),
         };
         sk.derive_priv(&SECP256K1, path)
-            .expect("Derive sub-privkey error")
     }
 
     pub fn sign<P>(&self, message: &H256, path: &P) -> Signature

@@ -493,7 +493,7 @@ impl<'a> SudtSubCommand<'a> {
 
         let mut query = CellQueryOptions::new_lock(Script::from(&address));
         query.secondary_script = Some(type_script);
-        query.min_total_capacity = u64::max_value();
+        query.min_total_capacity = u64::MAX;
         let (cells, _) = self
             .cell_collector
             .collect_live_cells(&query, false)
@@ -672,7 +672,7 @@ impl<'a> SudtSubCommand<'a> {
 
         let mut cheque_query = CellQueryOptions::new_lock(cheque_script);
         cheque_query.secondary_script = Some(type_script.clone());
-        cheque_query.min_total_capacity = u64::max_value();
+        cheque_query.min_total_capacity = u64::MAX;
         let (cheque_cells, _) = self
             .cell_collector
             .collect_live_cells(&cheque_query, false)
@@ -802,7 +802,7 @@ impl<'a> SudtSubCommand<'a> {
 
         let mut cheque_query = CellQueryOptions::new_lock(cheque_script);
         cheque_query.secondary_script = Some(type_script);
-        cheque_query.min_total_capacity = u64::max_value();
+        cheque_query.min_total_capacity = u64::MAX;
         let (cheque_cells, _) = self
             .cell_collector
             .collect_live_cells(&cheque_query, false)

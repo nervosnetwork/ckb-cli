@@ -148,7 +148,7 @@ impl<'a> CliSubCommand for MockTxSubCommand<'a> {
                     })?;
                 }
                 if verify {
-                    helper.verify(u64::max_value(), loader)?
+                    helper.verify(u64::MAX, loader)?
                 } else {
                     0
                 }

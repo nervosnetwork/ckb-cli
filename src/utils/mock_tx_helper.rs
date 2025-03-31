@@ -457,7 +457,7 @@ mod test {
             let (recov_id, data) = signature.serialize_compact();
             let mut signature_bytes = [0u8; 65];
             signature_bytes[0..64].copy_from_slice(&data[0..64]);
-            signature_bytes[64] = recov_id.to_i32() as u8;
+            signature_bytes[64] = i32::from(recov_id) as u8;
             Ok(signature_bytes)
         };
 
@@ -496,7 +496,7 @@ mod test {
             "Witnesses not match inputs"
         );
         helper
-            .verify(u64::max_value(), Loader)
+            .verify(u64::MAX, Loader)
             .expect("Verify mock tx failed");
     }
 }
