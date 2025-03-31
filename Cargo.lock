@@ -570,6 +570,7 @@ version = "1.12.0"
 dependencies = [
  "ansi_term",
  "anyhow",
+ "async-trait",
  "atty",
  "bitcoin",
  "byteorder",
