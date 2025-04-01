@@ -17,7 +17,8 @@ use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
 use std::path::PathBuf;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env::set_var("RUST_BACKTRACE", "full");
     let _ = {
         let filter = env::var("CKB_LOG").unwrap_or_else(|_| "info".to_string());

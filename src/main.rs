@@ -32,7 +32,8 @@ mod subcommands;
 #[allow(clippy::mutable_key_type)]
 mod utils;
 
-fn main() -> Result<(), io::Error> {
+#[tokio::main]
+async fn main() -> Result<(), io::Error> {
     env_logger::init();
 
     #[cfg(unix)]
@@ -213,8 +214,6 @@ pub fn get_version() -> Version {
     };
 
     let commit_describe = option_env!("COMMIT_DESCRIBE").map(ToString::to_string);
-    #[cfg(docker)]
-    let commit_describe = commit_describe.map(|s| s.replace("-dirty", ""));
     let commit_date = option_env!("COMMIT_DATE").map(ToString::to_string);
     Version {
         code_name: None,

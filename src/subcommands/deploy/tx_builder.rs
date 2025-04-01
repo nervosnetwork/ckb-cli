@@ -164,32 +164,46 @@ struct TxDepProviderWrapper {
     offchain: OffchainTransactionDependencyProvider,
 }
 
+#[async_trait::async_trait]
 impl TransactionDependencyProvider for TxDepProviderWrapper {
-    fn get_transaction(
+    async fn get_transaction_async(
         &self,
         tx_hash: &Byte32,
     ) -> Result<TransactionView, TransactionDependencyError> {
         self.offchain
-            .get_transaction(tx_hash)
+            .get_transaction_async(tx_hash)
+            .await
             .or_else(|_| self.inner.get_transaction(tx_hash))
     }
-    fn get_cell(&self, out_point: &OutPoint) -> Result<CellOutput, TransactionDependencyError> {
+    async fn get_cell_async(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<CellOutput, TransactionDependencyError> {
         self.offchain
-            .get_cell(out_point)
+            .get_cell_async(out_point)
+            .await
             .or_else(|_| self.inner.get_cell(out_point))
     }
-    fn get_cell_data(&self, out_point: &OutPoint) -> Result<Bytes, TransactionDependencyError> {
+    async fn get_cell_data_async(
+        &self,
+        out_point: &OutPoint,
+    ) -> Result<Bytes, TransactionDependencyError> {
         self.offchain
-            .get_cell_data(out_point)
+            .get_cell_data_async(out_point)
+            .await
             .or_else(|_| self.inner.get_cell_data(out_point))
     }
-    fn get_header(&self, block_hash: &Byte32) -> Result<HeaderView, TransactionDependencyError> {
+    async fn get_header_async(
+        &self,
+        block_hash: &Byte32,
+    ) -> Result<HeaderView, TransactionDependencyError> {
         self.offchain
-            .get_header(block_hash)
+            .get_header_async(block_hash)
+            .await
             .or_else(|_| self.inner.get_header(block_hash))
     }
 
-    fn get_block_extension(
+    async fn get_block_extension_async(
         &self,
         _block_hash: &Byte32,
     ) -> std::result::Result<Option<packed::Bytes>, TransactionDependencyError> {

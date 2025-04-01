@@ -534,6 +534,7 @@ struct ServiceProvider {
     _thread: JoinHandle<()>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum ServiceRequest {
     Request {
@@ -549,6 +550,7 @@ pub enum ServiceRequest {
     RpcUrlChanged(String),
 }
 
+#[allow(dead_code)]
 pub enum ServiceResponse {
     Response(PluginResponse),
     Ok,

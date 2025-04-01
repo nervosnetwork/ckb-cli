@@ -4,6 +4,7 @@ use ckb_types::{
     packed::CellDep,
 };
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct GenesisInfo {
     pub cell_dep_resolver: DefaultCellDepResolver,

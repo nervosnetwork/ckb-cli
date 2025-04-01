@@ -431,7 +431,7 @@ impl ser::Serializer for Serializer {
 
     serde::serde_if_integer128! {
         fn serialize_i128(self, v: i128) -> Result<Yaml, Self::Error> {
-            if v <= i64::max_value() as i128 && v >= i64::min_value() as i128 {
+            if v <= i64::MAX as i128 && v >= i64::MIN as i128 {
                 self.serialize_i64(v as i64)
             } else {
                 Ok(Yaml::Real(v.to_string()))
@@ -452,7 +452,7 @@ impl ser::Serializer for Serializer {
     }
 
     fn serialize_u64(self, v: u64) -> Result<Yaml, Self::Error> {
-        if v <= i64::max_value() as u64 {
+        if v <= i64::MAX as u64 {
             self.serialize_i64(v as i64)
         } else {
             Ok(Yaml::Real(v.to_string()))
@@ -461,7 +461,7 @@ impl ser::Serializer for Serializer {
 
     serde::serde_if_integer128! {
         fn serialize_u128(self, v: u128) -> Result<Yaml, Self::Error> {
-            if v <= i64::max_value() as u128 {
+            if v <= i64::MAX as u128 {
                 self.serialize_i64(v as i64)
             } else {
                 Ok(Yaml::Real(v.to_string()))
@@ -516,18 +516,18 @@ impl ser::Serializer for Serializer {
         Ok(Yaml::String(variant.to_owned()))
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(
+    fn serialize_newtype_struct<T>(
         self,
         _name: &'static str,
         value: &T,
     ) -> Result<Yaml, Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         value.serialize(self)
     }
 
-    fn serialize_newtype_variant<T: ?Sized>(
+    fn serialize_newtype_variant<T>(
         self,
         _name: &str,
         _variant_index: u32,
@@ -535,7 +535,7 @@ impl ser::Serializer for Serializer {
         value: &T,
     ) -> Result<Yaml, Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         Ok(singleton_hash(to_yaml(variant)?, to_yaml(value)?))
     }
@@ -544,9 +544,9 @@ impl ser::Serializer for Serializer {
         self.serialize_unit()
     }
 
-    fn serialize_some<V: ?Sized>(self, value: &V) -> Result<Yaml, Self::Error>
+    fn serialize_some<V>(self, value: &V) -> Result<Yaml, Self::Error>
     where
-        V: ser::Serialize,
+        V: ser::Serialize + ?Sized,
     {
         value.serialize(self)
     }
@@ -647,9 +647,9 @@ impl ser::SerializeSeq for SerializeArray {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_element<T: ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error>
+    fn serialize_element<T>(&mut self, elem: &T) -> Result<(), Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         self.array.push(to_yaml(elem)?);
         Ok(())
@@ -664,9 +664,9 @@ impl ser::SerializeTuple for SerializeArray {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_element<T: ?Sized>(&mut self, elem: &T) -> Result<(), Self::Error>
+    fn serialize_element<T>(&mut self, elem: &T) -> Result<(), Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         ser::SerializeSeq::serialize_element(self, elem)
     }
@@ -680,9 +680,9 @@ impl ser::SerializeTupleStruct for SerializeArray {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_field<V: ?Sized>(&mut self, value: &V) -> Result<(), Self::Error>
+    fn serialize_field<V>(&mut self, value: &V) -> Result<(), Self::Error>
     where
-        V: ser::Serialize,
+        V: ser::Serialize + ?Sized,
     {
         ser::SerializeSeq::serialize_element(self, value)
     }
@@ -696,9 +696,9 @@ impl ser::SerializeTupleVariant for SerializeTupleVariant {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_field<V: ?Sized>(&mut self, v: &V) -> Result<(), Self::Error>
+    fn serialize_field<V>(&mut self, v: &V) -> Result<(), Self::Error>
     where
-        V: ser::Serialize,
+        V: ser::Serialize + ?Sized,
     {
         self.array.push(to_yaml(v)?);
         Ok(())
@@ -713,17 +713,17 @@ impl ser::SerializeMap for SerializeMap {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> Result<(), Self::Error>
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(), Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         self.next_key = Some(to_yaml(key)?);
         Ok(())
     }
 
-    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        T: ser::Serialize,
+        T: ser::Serialize + ?Sized,
     {
         match self.next_key.take() {
             Some(key) => self.hash.insert(key, to_yaml(value)?),
@@ -732,14 +732,10 @@ impl ser::SerializeMap for SerializeMap {
         Ok(())
     }
 
-    fn serialize_entry<K: ?Sized, V: ?Sized>(
-        &mut self,
-        key: &K,
-        value: &V,
-    ) -> Result<(), Self::Error>
+    fn serialize_entry<K, V>(&mut self, key: &K, value: &V) -> Result<(), Self::Error>
     where
-        K: ser::Serialize,
-        V: ser::Serialize,
+        K: ser::Serialize + ?Sized,
+        V: ser::Serialize + ?Sized,
     {
         self.hash.insert(to_yaml(key)?, to_yaml(value)?);
         Ok(())
@@ -754,13 +750,9 @@ impl ser::SerializeStruct for SerializeStruct {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_field<V: ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &V,
-    ) -> Result<(), Self::Error>
+    fn serialize_field<V>(&mut self, key: &'static str, value: &V) -> Result<(), Self::Error>
     where
-        V: ser::Serialize,
+        V: ser::Serialize + ?Sized,
     {
         self.hash.insert(to_yaml(key)?, to_yaml(value)?);
         Ok(())
@@ -775,9 +767,9 @@ impl ser::SerializeStructVariant for SerializeStructVariant {
     type Ok = yaml::Yaml;
     type Error = SerError;
 
-    fn serialize_field<V: ?Sized>(&mut self, field: &'static str, v: &V) -> Result<(), Self::Error>
+    fn serialize_field<V>(&mut self, field: &'static str, v: &V) -> Result<(), Self::Error>
     where
-        V: ser::Serialize,
+        V: ser::Serialize + ?Sized,
     {
         self.hash.insert(to_yaml(field)?, to_yaml(v)?);
         Ok(())
@@ -788,10 +780,10 @@ impl ser::SerializeStructVariant for SerializeStructVariant {
     }
 }
 
-pub fn to_writer<W, T: ?Sized>(writer: W, value: &T, color: bool) -> Result<(), String>
+pub fn to_writer<W, T>(writer: W, value: &T, color: bool) -> Result<(), String>
 where
     W: io::Write,
-    T: ser::Serialize,
+    T: ser::Serialize + ?Sized,
 {
     let doc = to_yaml(value).map_err(|err| err.to_string())?;
     let mut writer_adapter = FmtToIoWriter { writer };
@@ -801,18 +793,18 @@ where
     Ok(())
 }
 
-pub fn to_vec<T: ?Sized>(value: &T, color: bool) -> Result<Vec<u8>, String>
+pub fn to_vec<T>(value: &T, color: bool) -> Result<Vec<u8>, String>
 where
-    T: ser::Serialize,
+    T: ser::Serialize + ?Sized,
 {
     let mut vec = Vec::with_capacity(128);
     to_writer(&mut vec, value, color)?;
     Ok(vec)
 }
 
-pub fn to_string<T: ?Sized>(value: &T, color: bool) -> Result<String, String>
+pub fn to_string<T>(value: &T, color: bool) -> Result<String, String>
 where
-    T: ser::Serialize,
+    T: ser::Serialize + ?Sized,
 {
     String::from_utf8(to_vec(value, color)?).map_err(|err| err.to_string())
 }

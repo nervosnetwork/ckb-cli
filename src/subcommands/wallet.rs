@@ -477,7 +477,7 @@ impl<'a> WalletSubCommand<'a> {
         for script in lock_scripts {
             let mut query = CellQueryOptions::new_lock(script);
             query.maturity = MaturityOption::Both;
-            query.min_total_capacity = u64::max_value();
+            query.min_total_capacity = u64::MAX;
             let (cells, total_capacity) = cell_collector
                 .collect_live_cells(&query, false)
                 .map_err(|err| err.to_string())?;
@@ -513,7 +513,7 @@ impl<'a> WalletSubCommand<'a> {
 
         let mut query = CellQueryOptions::new(script, script_type);
         query.maturity = MaturityOption::Both;
-        query.min_total_capacity = u64::max_value();
+        query.min_total_capacity = u64::MAX;
         query.limit = Some(limit);
         query.block_range = Some(ValueRangeOption::new(from_number, to_number));
         let (cells, _total_capacity) = cell_collector
@@ -637,7 +637,7 @@ impl<'a> CliSubCommand for WalletSubCommand<'a> {
                     lock_script,
                     PrimaryScriptType::Lock,
                     from_number_opt.unwrap_or(0),
-                    to_number_opt.unwrap_or(u64::max_value()),
+                    to_number_opt.unwrap_or(u64::MAX),
                     limit,
                 )?;
 

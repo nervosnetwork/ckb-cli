@@ -85,15 +85,15 @@ impl<'a> DAOSubCommand<'a> {
             .subcommands(vec![
                 App::new("deposit")
                     .about("Deposit capacity into NervosDAO")
-                    .args(&TransactArgs::args())
+                    .args(TransactArgs::args())
                     .arg(arg::capacity().required(true)),
                 App::new("prepare")
                     .about("Prepare specified cells from NervosDAO")
-                    .args(&TransactArgs::args())
+                    .args(TransactArgs::args())
                     .arg(arg::out_point().required(true).multiple(true)),
                 App::new("withdraw")
                     .about("Withdraw specified cells from NervosDAO")
-                    .args(&TransactArgs::args())
+                    .args(TransactArgs::args())
                     .arg(arg::out_point().required(true).multiple(true)),
                 App::new("query-deposited-cells")
                     .about("Query NervosDAO deposited capacity by address")

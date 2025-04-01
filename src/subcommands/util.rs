@@ -549,7 +549,7 @@ message = "0x"
 
                 let recoverable = signature.len() == 65;
                 let signature = if signature.len() == 65 {
-                    let recov_id = RecoveryId::from_i32(i32::from(signature[64]))
+                    let recov_id = RecoveryId::try_from(i32::from(signature[64]))
                         .map_err(|err| err.to_string())?;
                     RecoverableSignature::from_compact(&signature[0..64], recov_id)
                         .map_err(|err| err.to_string())?
