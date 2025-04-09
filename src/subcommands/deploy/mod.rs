@@ -17,7 +17,7 @@ use ckb_sdk::{
 use ckb_types::{bytes::Bytes, packed, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 
-use super::{CliSubCommand, Output};
+use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
 use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
@@ -91,6 +91,9 @@ impl<'a> DeploySubCommand<'a> {
             .takes_value(true)
             .validator(|input| FilePathParser::new(true).validate(input))
             .about("deployment config file path (.toml)");
+        let arg_allow_zero_lock = Arg::with_name("zero-lock")
+            .long("zero-lock")
+            .about(ALLOW_ZERO_LOCK_HELP_MSG);
         App::new(name)
             .about("Deploy contract binaries")
             .subcommands(vec![
@@ -108,6 +111,7 @@ impl<'a> DeploySubCommand<'a> {
                     .arg(arg_deployment.clone())
                     .arg(arg_info_file.clone().validator(|input| FilePathParser::new(false).validate(input)))
                     .arg(arg_migration_dir.clone())
+                    .arg(arg_allow_zero_lock.clone())
                     .arg(
                         Arg::with_name("sign-now")
                             .long("sign-now")
@@ -117,6 +121,7 @@ impl<'a> DeploySubCommand<'a> {
                     .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
                     .arg(arg::from_account().required_unless(arg::privkey_path().get_name()))
                     .arg(arg_info_file.clone())
+                    .arg(arg_allow_zero_lock.clone())
                     .arg(
                         Arg::with_name("add-signatures")
                             .long("add-signatures")
@@ -129,6 +134,7 @@ impl<'a> DeploySubCommand<'a> {
                 App::new("apply-txs")
                     .arg(arg_info_file.clone())
                     .arg(arg_migration_dir)
+                    .arg(arg_allow_zero_lock)
                     .about("Send cell/dep_group transactions and write results to migration directory"),
                 App::new("init-config")
                     .arg(arg_deployment.validator(|input| FilePathParser::new(false).validate(input)))
@@ -151,6 +157,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 let migration_dir: PathBuf =
                     DirPathParser::new(true).from_matches(m, "migration-dir")?;
                 let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
+                let allow_zero_lock: bool = m.is_present("zero-lock");
 
                 if info_file.exists() {
                     return Err(format!("Output info-file already exists: {:?}", info_file));
@@ -320,7 +327,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                             }
                         },
                     );
-                    let _ = sign_info(&mut info, self.rpc_client, signer_fn, true)
+                    let _ = sign_info(&mut info, self.rpc_client, signer_fn, true, allow_zero_lock)
                         .map_err(|err| err.to_string())?;
                 }
 
@@ -423,6 +430,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                         self.rpc_client,
                         signer_fn,
                         m.is_present("add-signatures"),
+                        m.is_present("zero-lock"),
                     )
                 })
                 .map_err(|err| err.to_string())?;
@@ -450,6 +458,8 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 let info: IntermediumInfo =
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
                 let skip_check = false;
+
+                let allow_zero_lock: bool = m.is_present("zero-lock");
 
                 let (cell_tx_opt, dep_group_tx_opt) = {
                     let mut live_cell_cache: HashMap<
@@ -482,16 +492,16 @@ impl CliSubCommand for DeploySubCommand<'_> {
                         .cell_tx_helper()
                         .map_err(|err| err.to_string())?
                         .map(|helper| {
-                            let _ = helper.check_tx(&mut get_live_cell)?;
-                            helper.build_tx(&mut get_live_cell, skip_check)
+                            let _ = helper.check_tx(&mut get_live_cell, allow_zero_lock)?;
+                            helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)
                         })
                         .transpose()?;
                     let dep_group_tx_opt = info
                         .dep_group_tx_helper()
                         .map_err(|err| err.to_string())?
                         .map(|helper| {
-                            let _ = helper.check_tx(&mut get_live_cell)?;
-                            helper.build_tx(&mut get_live_cell, skip_check)
+                            let _ = helper.check_tx(&mut get_live_cell, allow_zero_lock)?;
+                            helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)
                         })
                         .transpose()?;
                     (cell_tx_opt, dep_group_tx_opt)
@@ -609,6 +619,7 @@ fn sign_info(
     rpc_client: &mut HttpRpcClient,
     mut signer_fn: SignerFn,
     add_signatures: bool,
+    allow_zero_lock: bool,
 ) -> Result<HashMap<String, HashMap<JsonBytes, JsonBytes>>> {
     let skip_check = false;
     let mut live_cell_cache: HashMap<(packed::OutPoint, bool), (packed::CellOutput, Bytes)> =
@@ -630,9 +641,16 @@ fn sign_info(
 
     let mut all_signatures: HashMap<String, HashMap<_, _>> = Default::default();
     if let Some(helper) = info.cell_tx_helper()? {
-        let _ = helper.check_tx(&mut get_live_cell).map_err(Error::msg)?;
+        let _ = helper
+            .check_tx(&mut get_live_cell, allow_zero_lock)
+            .map_err(Error::msg)?;
         let signatures: HashMap<_, _> = helper
-            .sign_inputs(&mut signer_fn, &mut get_live_cell, skip_check)
+            .sign_inputs(
+                &mut signer_fn,
+                &mut get_live_cell,
+                skip_check,
+                allow_zero_lock,
+            )
             .map_err(Error::msg)?
             .into_iter()
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
@@ -659,9 +677,16 @@ fn sign_info(
     }
 
     if let Some(helper) = info.dep_group_tx_helper()? {
-        let _ = helper.check_tx(&mut get_live_cell).map_err(Error::msg)?;
+        let _ = helper
+            .check_tx(&mut get_live_cell, allow_zero_lock)
+            .map_err(Error::msg)?;
         let signatures: HashMap<_, _> = helper
-            .sign_inputs(&mut signer_fn, &mut get_live_cell, skip_check)
+            .sign_inputs(
+                &mut signer_fn,
+                &mut get_live_cell,
+                skip_check,
+                allow_zero_lock,
+            )
             .map_err(Error::msg)?
             .into_iter()
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))

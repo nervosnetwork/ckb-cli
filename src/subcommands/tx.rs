@@ -24,7 +24,7 @@ use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{CliSubCommand, Output};
+use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
@@ -94,6 +94,9 @@ impl<'a> TxSubCommand<'a> {
         let arg_skip_check = Arg::with_name("skip-check")
             .long("skip-check")
             .about("Send transaction without any check, be cautious to use this flag");
+        let arg_allow_zero_lock = Arg::with_name("zero-lock")
+            .long("zero-lock")
+            .about(ALLOW_ZERO_LOCK_HELP_MSG);
 
         App::new(name)
             .about("Handle common sighash/multisig transaction")
@@ -138,7 +141,8 @@ impl<'a> TxSubCommand<'a> {
                     )
                     .arg(arg_since_absolute_epoch.clone())
                     .arg(arg_tx_file.clone())
-                    .arg(arg_skip_check.clone()),
+                    .arg(arg_skip_check.clone())
+                    .arg(arg_allow_zero_lock.clone()),
                 App::new("add-output")
                     .about("Add cell output")
                     .arg(
@@ -211,7 +215,8 @@ impl<'a> TxSubCommand<'a> {
                             .long("add-signatures")
                             .about("Sign and add signatures"),
                     )
-                    .arg(arg_skip_check.clone()),
+                    .arg(arg_skip_check.clone())
+                    .arg(arg_allow_zero_lock.clone()),
                 App::new("send")
                     .about("Send multisig transaction")
                     .arg(arg_tx_file.clone())
@@ -223,7 +228,8 @@ impl<'a> TxSubCommand<'a> {
                             .validator(|input| CapacityParser.validate(input))
                             .about("Max transaction fee (unit: CKB)"),
                     )
-                    .arg(arg_skip_check),
+                    .arg(arg_skip_check)
+                    .arg(arg_allow_zero_lock),
                 App::new("build-multisig-address")
                     .about(
                         "Build multisig address with multisig config and since(optional) argument",
@@ -281,6 +287,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                     FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
 
                 let skip_check: bool = m.is_present("skip-check");
+                let allow_zero_lock: bool = m.is_present("zero-lock");
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -296,6 +303,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                         get_live_cell,
                         &genesis_info,
                         skip_check,
+                        allow_zero_lock,
                     )
                 })?;
 
@@ -466,6 +474,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                     })
                     .transpose()?;
                 let skip_check: bool = m.is_present("skip-check");
+                let allow_zero_lock: bool = m.is_present("zero-lock");
 
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
@@ -494,7 +503,12 @@ impl CliSubCommand for TxSubCommand<'_> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
+                    let signatures = helper.sign_inputs(
+                        &mut signer,
+                        get_live_cell,
+                        skip_check,
+                        allow_zero_lock,
+                    )?;
                     if m.is_present("add-signatures") {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
@@ -517,6 +531,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
                 let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
                 let skip_check: bool = m.is_present("skip-check");
+                let allow_zero_lock: bool = m.is_present("zero-lock");
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -536,7 +551,8 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let helper = TxHelper::try_from(repr)?;
 
                 if !skip_check {
-                    let (input_total, output_total) = helper.check_tx(&mut get_live_cell)?;
+                    let (input_total, output_total) =
+                        helper.check_tx(&mut get_live_cell, allow_zero_lock)?;
                     let tx_fee = input_total - output_total;
                     if tx_fee > max_tx_fee {
                         return Err(format!(
@@ -546,7 +562,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                         ));
                     }
                 }
-                let tx = helper.build_tx(&mut get_live_cell, skip_check)?;
+                let tx = helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)?;
                 let rpc_tx = json_types::Transaction::from(tx.data());
                 if debug {
                     eprintln!(
