@@ -116,7 +116,7 @@ impl<'a> CkbCompleter<'a> {
     }
 }
 
-impl<'a> Completer for CkbCompleter<'a> {
+impl Completer for CkbCompleter<'_> {
     type Candidate = Pair;
 
     fn complete(
@@ -192,7 +192,7 @@ impl<'a> Completer for CkbCompleter<'a> {
     }
 }
 
-impl<'a> Hinter for CkbCompleter<'a> {
+impl Hinter for CkbCompleter<'_> {
     type Hint = String;
 
     fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
@@ -200,7 +200,7 @@ impl<'a> Hinter for CkbCompleter<'a> {
     }
 }
 
-impl<'a> Validator for CkbCompleter<'a> {
+impl Validator for CkbCompleter<'_> {
     fn validate(
         &self,
         ctx: &mut validate::ValidationContext,
@@ -213,7 +213,7 @@ impl<'a> Validator for CkbCompleter<'a> {
     }
 }
 
-impl<'a> Highlighter for CkbCompleter<'a> {
+impl Highlighter for CkbCompleter<'_> {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         Owned("\x1b[1m".to_owned() + hint + "\x1b[m")
     }

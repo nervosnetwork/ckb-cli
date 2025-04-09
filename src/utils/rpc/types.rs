@@ -1778,7 +1778,7 @@ impl From<ckb_indexer::Cell> for Cell {
     fn from(cell: ckb_indexer::Cell) -> Cell {
         Cell {
             output: cell.output.into(),
-            output_data: cell.output_data.map(Into::into),
+            output_data: cell.output_data,
             out_point: cell.out_point.into(),
             block_number: cell.block_number.into(),
             tx_index: cell.tx_index.into(),

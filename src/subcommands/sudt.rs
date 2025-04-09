@@ -869,7 +869,7 @@ impl<'a> SudtSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for SudtSubCommand<'a> {
+impl CliSubCommand for SudtSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
         match matches.subcommand() {
@@ -1251,7 +1251,7 @@ pub struct UdtTxBuilder<'a> {
     pub builder: &'a dyn TxBuilder,
 }
 
-impl<'a> UdtTxBuilder<'a> {
+impl UdtTxBuilder<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn build(
         &mut self,

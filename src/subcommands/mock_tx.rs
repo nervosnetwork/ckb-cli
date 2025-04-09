@@ -113,7 +113,7 @@ impl<'a> MockTxSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for MockTxSubCommand<'a> {
+impl CliSubCommand for MockTxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let mut complete_tx = |m: &ArgMatches,
                                complete: bool,
@@ -445,7 +445,7 @@ struct Loader<'a> {
     rpc_client: &'a mut HttpRpcClient,
 }
 
-impl<'a> MockResourceLoader for Loader<'a> {
+impl MockResourceLoader for Loader<'_> {
     fn get_header(&mut self, hash: H256) -> Result<Option<HeaderView>, String> {
         self.rpc_client
             .get_header(hash)

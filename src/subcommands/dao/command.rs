@@ -14,7 +14,7 @@ use ckb_types::{packed::Script, H160};
 use clap::{App, Arg, ArgMatches};
 use std::collections::HashSet;
 
-impl<'a> CliSubCommand for DAOSubCommand<'a> {
+impl CliSubCommand for DAOSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network_type = get_network_type(self.rpc_client)?;
         match matches.subcommand() {
@@ -78,7 +78,7 @@ impl<'a> CliSubCommand for DAOSubCommand<'a> {
     }
 }
 
-impl<'a> DAOSubCommand<'a> {
+impl DAOSubCommand<'_> {
     pub fn subcommand() -> App<'static> {
         App::new("dao")
             .about("Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils")

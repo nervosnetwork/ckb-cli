@@ -236,7 +236,7 @@ impl<'a> TxSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for TxSubCommand<'a> {
+impl CliSubCommand for TxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
 

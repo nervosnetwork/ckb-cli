@@ -62,7 +62,7 @@ impl<'a> ApiServerSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for ApiServerSubCommand<'a> {
+impl CliSubCommand for ApiServerSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let listen_addr: SocketAddr =
             FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;

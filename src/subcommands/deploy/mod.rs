@@ -137,7 +137,7 @@ impl<'a> DeploySubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for DeploySubCommand<'a> {
+impl CliSubCommand for DeploySubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("gen-txs", Some(m)) => {
