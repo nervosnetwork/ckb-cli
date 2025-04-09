@@ -10,7 +10,7 @@ pub struct PluginSubCommand<'a> {
 }
 
 impl<'a> PluginSubCommand<'a> {
-    pub fn new(plugin_mgr: &'a mut PluginManager) -> PluginSubCommand {
+    pub fn new(plugin_mgr: &'a mut PluginManager) -> PluginSubCommand<'a> {
         PluginSubCommand { plugin_mgr }
     }
 

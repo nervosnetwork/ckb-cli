@@ -172,7 +172,8 @@ impl HttpRpcClient {
     }
     pub fn get_packed_tip_header(&mut self) -> Result<types::JsonBytes, String> {
         self.client
-            .get_packed_tip_header().map_err(|err| err.to_string())
+            .get_packed_tip_header()
+            .map_err(|err| err.to_string())
     }
     pub fn get_transaction(
         &mut self,
@@ -371,7 +372,8 @@ impl HttpRpcClient {
     }
     pub fn clear_tx_verify_queue(&mut self) -> Result<(), String> {
         self.client
-            .clear_tx_verify_queue().map_err(|err| err.to_string())
+            .clear_tx_verify_queue()
+            .map_err(|err| err.to_string())
     }
 
     pub fn test_tx_pool_accept(
