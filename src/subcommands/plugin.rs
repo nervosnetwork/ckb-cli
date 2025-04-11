@@ -10,7 +10,7 @@ pub struct PluginSubCommand<'a> {
 }
 
 impl<'a> PluginSubCommand<'a> {
-    pub fn new(plugin_mgr: &'a mut PluginManager) -> PluginSubCommand {
+    pub fn new(plugin_mgr: &'a mut PluginManager) -> PluginSubCommand<'a> {
         PluginSubCommand { plugin_mgr }
     }
 
@@ -57,7 +57,7 @@ impl<'a> PluginSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for PluginSubCommand<'a> {
+impl CliSubCommand for PluginSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("active", Some(m)) => {

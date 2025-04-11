@@ -275,7 +275,7 @@ pub enum KV<'a> {
     Keys(Vec<&'a str>),
 }
 
-impl<'a> Printable for KV<'a> {
+impl Printable for KV<'_> {
     fn render(&self, format: OutputFormat, color: bool) -> String {
         match self {
             KV::Value(Some(value)) => value.render(format, color),

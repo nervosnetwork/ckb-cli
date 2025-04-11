@@ -308,7 +308,7 @@ impl<'a> UtilSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for UtilSubCommand<'a> {
+impl CliSubCommand for UtilSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("key-info", Some(m)) => {

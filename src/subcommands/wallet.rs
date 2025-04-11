@@ -535,7 +535,7 @@ impl<'a> WalletSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for WalletSubCommand<'a> {
+impl CliSubCommand for WalletSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("transfer", Some(m)) => {

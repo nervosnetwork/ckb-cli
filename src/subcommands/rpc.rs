@@ -440,7 +440,7 @@ impl<'a> RpcSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for RpcSubCommand<'a> {
+impl CliSubCommand for RpcSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let is_raw_data = matches.is_present("raw-data");
         match matches.subcommand() {

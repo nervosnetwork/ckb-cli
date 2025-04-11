@@ -121,7 +121,7 @@ fn escape_str(wr: &mut dyn fmt::Write, v: &str, color: bool) -> Result<(), fmt::
 }
 
 impl<'a> YamlEmitter<'a> {
-    pub fn new(writer: &'a mut dyn fmt::Write, color: bool) -> YamlEmitter {
+    pub fn new(writer: &'a mut dyn fmt::Write, color: bool) -> YamlEmitter<'a> {
         YamlEmitter {
             writer,
             color,

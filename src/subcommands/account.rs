@@ -195,7 +195,7 @@ impl<'a> AccountSubCommand<'a> {
     }
 }
 
-impl<'a> CliSubCommand for AccountSubCommand<'a> {
+impl CliSubCommand for AccountSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
             ("list", Some(m)) => {

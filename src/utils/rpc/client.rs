@@ -37,7 +37,6 @@ impl HttpRpcClient {
     pub fn get_packed_block(&mut self, hash: H256) -> Result<Option<types::JsonBytes>, String> {
         self.client
             .get_packed_block(hash)
-            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_block(&mut self, hash: H256) -> Result<Option<types::BlockView>, String> {
@@ -70,7 +69,6 @@ impl HttpRpcClient {
     ) -> Result<Option<types::JsonBytes>, String> {
         self.client
             .get_packed_block_by_number(BlockNumber::from(number))
-            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_block_by_number(&mut self, number: u64) -> Result<Option<types::BlockView>, String> {
@@ -100,7 +98,6 @@ impl HttpRpcClient {
     pub fn get_block_hash(&mut self, number: u64) -> Result<Option<H256>, String> {
         self.client
             .get_block_hash(BlockNumber::from(number))
-            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_current_epoch(&mut self) -> Result<types::EpochView, String> {
@@ -124,7 +121,6 @@ impl HttpRpcClient {
     pub fn get_packed_header(&mut self, hash: H256) -> Result<Option<types::JsonBytes>, String> {
         self.client
             .get_packed_header(hash)
-            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     pub fn get_header_by_number(
@@ -142,7 +138,6 @@ impl HttpRpcClient {
     ) -> Result<Option<types::JsonBytes>, String> {
         self.client
             .get_packed_header_by_number(BlockNumber::from(number))
-            .map(|opt| opt.map(Into::into))
             .map_err(|err| err.to_string())
     }
     // TODO: Make `cell::CellData` public
@@ -178,7 +173,6 @@ impl HttpRpcClient {
     pub fn get_packed_tip_header(&mut self) -> Result<types::JsonBytes, String> {
         self.client
             .get_packed_tip_header()
-            .map(Into::into)
             .map_err(|err| err.to_string())
     }
     pub fn get_transaction(
@@ -379,7 +373,6 @@ impl HttpRpcClient {
     pub fn clear_tx_verify_queue(&mut self) -> Result<(), String> {
         self.client
             .clear_tx_verify_queue()
-            .map(Into::into)
             .map_err(|err| err.to_string())
     }
 
