@@ -89,9 +89,10 @@ impl TxHelper {
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
         skip_check: bool,
+        allow_zero_lock: bool,
     ) -> Result<(), String> {
         let lock = get_live_cell(out_point.clone(), false)?.lock();
-        check_lock_script(&lock, skip_check)?;
+        check_lock_script(&lock, skip_check, allow_zero_lock)?;
 
         let since = if let Some(number) = since_absolute_epoch_opt {
             Since::new_absolute_epoch(number).value()
@@ -113,7 +114,10 @@ impl TxHelper {
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
         let mut cell_deps: HashSet<CellDep> = self.transaction.cell_deps().into_iter().collect();
-        for ((code_hash, _), _) in self.input_group(get_live_cell, skip_check)?.into_iter() {
+        for ((code_hash, _), _) in self
+            .input_group(get_live_cell, skip_check, allow_zero_lock)?
+            .into_iter()
+        {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
                 cell_deps.insert(genesis_info.sighash_dep());
@@ -172,11 +176,12 @@ impl TxHelper {
         &self,
         mut get_live_cell: F,
         skip_check: bool,
+        allow_zero_lock: bool,
     ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let lock = get_live_cell(input.previous_output(), false)?.lock();
-            check_lock_script(&lock, skip_check)
+            check_lock_script(&lock, skip_check, allow_zero_lock)
                 .map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
 
             let lock_arg = lock.args().raw_data();
@@ -212,6 +217,7 @@ impl TxHelper {
         signer: &mut SignFn,
         get_live_cell: C,
         skip_check: bool,
+        allow_zero_lock: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
@@ -234,8 +240,9 @@ impl TxHelper {
         let witnesses = self.init_witnesses();
         let input_size = self.transaction.inputs().len();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
-        for ((code_hash, lock_arg), idxs) in
-            self.input_group(get_live_cell, skip_check)?.into_iter()
+        for ((code_hash, lock_arg), idxs) in self
+            .input_group(get_live_cell, skip_check, allow_zero_lock)?
+            .into_iter()
         {
             if code_hash != SIGHASH_TYPE_HASH.pack() && code_hash != MULTISIG_TYPE_HASH.pack() {
                 continue;
@@ -273,10 +280,12 @@ impl TxHelper {
         &self,
         get_live_cell: F,
         skip_check: bool,
+        allow_zero_lock: bool,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), idxs) in
-            self.input_group(get_live_cell, skip_check)?.into_iter()
+        for ((code_hash, lock_arg), idxs) in self
+            .input_group(get_live_cell, skip_check, allow_zero_lock)?
+            .into_iter()
         {
             if skip_check && !self.signatures.contains_key(&lock_arg) {
                 continue;
@@ -345,6 +354,7 @@ impl TxHelper {
     pub fn check_tx<F: FnMut(OutPoint, bool) -> Result<CellOutput, String>>(
         &self,
         mut get_live_cell: F,
+        allow_zero_lock: bool,
     ) -> Result<(u64, u64), String> {
         // Check inputs
         let mut previous_outputs: HashSet<OutPoint> = HashSet::default();
@@ -360,7 +370,7 @@ impl TxHelper {
             let capacity: u64 = output.capacity().unpack();
             input_total += capacity;
 
-            check_lock_script(&output.lock(), false)
+            check_lock_script(&output.lock(), false, allow_zero_lock)
                 .map_err(|err| format!("Input(no.{}) {}", i + 1, err))?;
         }
 
@@ -370,7 +380,7 @@ impl TxHelper {
             let capacity: u64 = output.capacity().unpack();
             output_total += capacity;
 
-            check_lock_script(&output.lock(), false)
+            check_lock_script(&output.lock(), false, allow_zero_lock)
                 .map_err(|err| format!("Output(no.{}) {}", i + 1, err))?;
         }
 
@@ -382,13 +392,21 @@ pub type SignerFn = Box<
     dyn FnMut(&HashSet<H160>, &H256, &rpc_types::Transaction) -> Result<Option<[u8; 65]>, String>,
 >;
 
-pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> {
+pub fn check_lock_script(
+    lock: &Script,
+    skip_check: bool,
+    allow_zero_lock: bool,
+) -> Result<(), String> {
     #[derive(Eq, PartialEq)]
     enum CodeHashCategory {
         Sighash,
         Multisig,
+        Zero,
         Other,
     }
+
+    pub const ZERO_HASH: H256 =
+        h256!("0x0000000000000000000000000000000000000000000000000000000000000000");
 
     let code_hash: H256 = lock.code_hash().unpack();
     let hash_type: ScriptHashType = lock.hash_type().try_into().expect("hash_type");
@@ -398,6 +416,8 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
         CodeHashCategory::Sighash
     } else if code_hash == MULTISIG_TYPE_HASH {
         CodeHashCategory::Multisig
+    } else if code_hash == ZERO_HASH {
+        CodeHashCategory::Zero
     } else {
         CodeHashCategory::Other
     };
@@ -421,6 +441,13 @@ pub fn check_lock_script(lock: &Script, skip_check: bool) -> Result<(), String> 
             "Invalid multisig lock script, hash_type: {}, args.length: {}",
             hash_type_str,
             lock_args.len()
+        )),
+        (CodeHashCategory::Zero, _, _) if allow_zero_lock => Ok(()),
+        (CodeHashCategory::Zero, _, _) => Err(format!(
+            "Error: The code_hash is zero: {:#x}, hash_type: {}, args.length: {}. To permit a zero lock, please use the --zero-lock flag.",
+            code_hash,
+            hash_type_str,
+            lock_args.len(),
         )),
         (CodeHashCategory::Other, _, _) if skip_check => Ok(()),
         (CodeHashCategory::Other, _, _) => Err(format!(
@@ -582,7 +609,10 @@ mod tests {
             (&lock_other_data, true, true),
             (&lock_other_data, false, false),
         ] {
-            assert_eq!(check_lock_script(script, *skip_check).is_ok(), *is_ok);
+            assert_eq!(
+                check_lock_script(script, *skip_check, false).is_ok(),
+                *is_ok
+            );
         }
     }
 }
