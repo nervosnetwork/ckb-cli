@@ -82,12 +82,16 @@ pub trait CliSubCommand {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String>;
 }
 
-pub(crate) static ALLOW_ZERO_LOCK_HELP_MSG: &str = "The --zero-lock option allows users to deploy a script permanently locked with an unspendable lock script. Once activated, the script becomes immutable and irreversible, ensuring no modifications or revocations can be made post-deployment.
+pub(crate) static ALLOW_ZERO_LOCK_HELP_MSG: &str = "The --zero-lock option allows users to deploy a script permanently locked with an unspendable lock script. This lock script is defined with the following parameters:
+
+- code_hash: 0x0000000000000000000000000000000000000000000000000000000000000000
+- hash_type: data
+- args: 0x
+
+Once activated, the script becomes immutable and irreversible, ensuring no modifications or revocations can be made post-deployment.
 
 Key Considerations:
 
-Permanent Immutability: Script logic and data will be permanently fixed on-chain.
-
-No Recovery Mechanism: If vulnerabilities or defects exist in the script, there is no way to upgrade, patch, or revoke it.
-
-Use with Caution: Thoroughly audit and test the script before deployment. This option is recommended only for scenarios requiring absolute finality, where script behavior must remain tamper-proof indefinitely.";
+- Permanent Immutability: Script logic and data will be permanently fixed on-chain.
+- No Recovery Mechanism: If vulnerabilities or defects exist in the script, there is no way to upgrade, patch, or revoke it.
+- Use with Caution: Thoroughly audit and test the script before deployment. This option is recommended only for scenarios requiring absolute finality, where script behavior must remain tamper-proof indefinitely.";
