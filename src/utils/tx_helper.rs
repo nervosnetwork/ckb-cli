@@ -442,9 +442,20 @@ pub fn check_lock_script(
             hash_type_str,
             lock_args.len()
         )),
-        (CodeHashCategory::Zero, _, _) if allow_zero_lock => Ok(()),
+        (CodeHashCategory::Zero, ScriptHashType::Data, 0) => {
+            if allow_zero_lock {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Error: The code_hash is zero: {:#x}, hash_type: {}, args.length: {}. To permit a zero lock, please use the --zero-lock flag.",
+                    code_hash,
+                    hash_type_str,
+                    lock_args.len(),
+                ))
+            }
+        }
         (CodeHashCategory::Zero, _, _) => Err(format!(
-            "Error: The code_hash is zero: {:#x}, hash_type: {}, args.length: {}. To permit a zero lock, please use the --zero-lock flag.",
+            "Error: invalid lock script: The code_hash is zero: {:#x}, hash_type: {}, args.length: {}.",
             code_hash,
             hash_type_str,
             lock_args.len(),
