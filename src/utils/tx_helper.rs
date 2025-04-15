@@ -442,7 +442,11 @@ pub fn check_lock_script(
             hash_type_str,
             lock_args.len()
         )),
-        (CodeHashCategory::Zero, ScriptHashType::Data, 0) => {
+        (
+            CodeHashCategory::Zero,
+            ScriptHashType::Data | ScriptHashType::Data1 | ScriptHashType::Data2,
+            0,
+        ) => {
             if allow_zero_lock {
                 Ok(())
             } else {

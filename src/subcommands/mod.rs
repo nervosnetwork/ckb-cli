@@ -85,7 +85,7 @@ pub trait CliSubCommand {
 pub(crate) static ALLOW_ZERO_LOCK_HELP_MSG: &str = "The --zero-lock option allows users to deploy a script permanently locked with an unspendable lock script. This lock script is defined with the following parameters:
 
 - code_hash: 0x0000000000000000000000000000000000000000000000000000000000000000
-- hash_type: data
+- hash_type: data/data1/data2
 - args: 0x
 
 Once activated, the script becomes immutable and irreversible, ensuring no modifications or revocations can be made post-deployment.
