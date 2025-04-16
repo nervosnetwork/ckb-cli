@@ -264,8 +264,6 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                 let tx_file_opt: Option<PathBuf> =
                     FilePathParser::new(true).from_matches_opt(m, "tx-file")?;
 
-                let allow_zero_lock: bool = m.is_present("zero-lock");
-
                 let src_tx: json_types::Transaction = if let Some(path) = tx_file_opt {
                     let mut content = String::new();
                     let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
@@ -279,7 +277,7 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                             load_output_and_data(self.rpc_client, out_point.into())
                                 .map(|(output, _data, _)| output.into())
                         };
-                        let tx = helper.build_tx(&mut get_live_cell, true, allow_zero_lock)?;
+                        let tx = helper.build_tx(&mut get_live_cell, true)?;
                         tx.data().into()
                     } else {
                         serde_json::from_str(content.as_str()).map_err(|err| err.to_string())?

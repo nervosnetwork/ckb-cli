@@ -89,10 +89,9 @@ impl TxHelper {
         mut get_live_cell: F,
         genesis_info: &GenesisInfo,
         skip_check: bool,
-        allow_zero_lock: bool,
     ) -> Result<(), String> {
         let lock = get_live_cell(out_point.clone(), false)?.lock();
-        check_lock_script(&lock, skip_check, allow_zero_lock)?;
+        check_lock_script(&lock, skip_check, /*allow_zero_lock:*/ false)?;
 
         let since = if let Some(number) = since_absolute_epoch_opt {
             Since::new_absolute_epoch(number).value()
@@ -114,10 +113,7 @@ impl TxHelper {
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
         let mut cell_deps: HashSet<CellDep> = self.transaction.cell_deps().into_iter().collect();
-        for ((code_hash, _), _) in self
-            .input_group(get_live_cell, skip_check, allow_zero_lock)?
-            .into_iter()
-        {
+        for ((code_hash, _), _) in self.input_group(get_live_cell, skip_check)?.into_iter() {
             let code_hash: H256 = code_hash.unpack();
             if code_hash == SIGHASH_TYPE_HASH {
                 cell_deps.insert(genesis_info.sighash_dep());
@@ -176,12 +172,11 @@ impl TxHelper {
         &self,
         mut get_live_cell: F,
         skip_check: bool,
-        allow_zero_lock: bool,
     ) -> Result<HashMap<(Byte32, Bytes), Vec<usize>>, String> {
         let mut input_group: HashMap<(Byte32, Bytes), Vec<usize>> = HashMap::default();
         for (idx, input) in self.transaction.inputs().into_iter().enumerate() {
             let lock = get_live_cell(input.previous_output(), false)?.lock();
-            check_lock_script(&lock, skip_check, allow_zero_lock)
+            check_lock_script(&lock, skip_check, /*allow_zero_lock*/ false)
                 .map_err(|err| format!("Input(no.{}) {}", idx + 1, err))?;
 
             let lock_arg = lock.args().raw_data();
@@ -217,7 +212,6 @@ impl TxHelper {
         signer: &mut SignFn,
         get_live_cell: C,
         skip_check: bool,
-        allow_zero_lock: bool,
     ) -> Result<HashMap<Bytes, Bytes>, String>
     where
         C: FnMut(OutPoint, bool) -> Result<CellOutput, String>,
@@ -240,9 +234,8 @@ impl TxHelper {
         let witnesses = self.init_witnesses();
         let input_size = self.transaction.inputs().len();
         let mut signatures: HashMap<Bytes, Bytes> = Default::default();
-        for ((code_hash, lock_arg), idxs) in self
-            .input_group(get_live_cell, skip_check, allow_zero_lock)?
-            .into_iter()
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
         {
             if code_hash != SIGHASH_TYPE_HASH.pack() && code_hash != MULTISIG_TYPE_HASH.pack() {
                 continue;
@@ -280,12 +273,10 @@ impl TxHelper {
         &self,
         get_live_cell: F,
         skip_check: bool,
-        allow_zero_lock: bool,
     ) -> Result<TransactionView, String> {
         let mut witnesses = self.init_witnesses();
-        for ((code_hash, lock_arg), idxs) in self
-            .input_group(get_live_cell, skip_check, allow_zero_lock)?
-            .into_iter()
+        for ((code_hash, lock_arg), idxs) in
+            self.input_group(get_live_cell, skip_check)?.into_iter()
         {
             if skip_check && !self.signatures.contains_key(&lock_arg) {
                 continue;

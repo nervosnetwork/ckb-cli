@@ -493,7 +493,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                         .map_err(|err| err.to_string())?
                         .map(|helper| {
                             let _ = helper.check_tx(&mut get_live_cell, allow_zero_lock)?;
-                            helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)
+                            helper.build_tx(&mut get_live_cell, skip_check)
                         })
                         .transpose()?;
                     let dep_group_tx_opt = info
@@ -501,7 +501,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                         .map_err(|err| err.to_string())?
                         .map(|helper| {
                             let _ = helper.check_tx(&mut get_live_cell, allow_zero_lock)?;
-                            helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)
+                            helper.build_tx(&mut get_live_cell, skip_check)
                         })
                         .transpose()?;
                     (cell_tx_opt, dep_group_tx_opt)
@@ -645,12 +645,7 @@ fn sign_info(
             .check_tx(&mut get_live_cell, allow_zero_lock)
             .map_err(Error::msg)?;
         let signatures: HashMap<_, _> = helper
-            .sign_inputs(
-                &mut signer_fn,
-                &mut get_live_cell,
-                skip_check,
-                allow_zero_lock,
-            )
+            .sign_inputs(&mut signer_fn, &mut get_live_cell, skip_check)
             .map_err(Error::msg)?
             .into_iter()
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
@@ -681,12 +676,7 @@ fn sign_info(
             .check_tx(&mut get_live_cell, allow_zero_lock)
             .map_err(Error::msg)?;
         let signatures: HashMap<_, _> = helper
-            .sign_inputs(
-                &mut signer_fn,
-                &mut get_live_cell,
-                skip_check,
-                allow_zero_lock,
-            )
+            .sign_inputs(&mut signer_fn, &mut get_live_cell, skip_check)
             .map_err(Error::msg)?
             .into_iter()
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
