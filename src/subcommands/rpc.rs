@@ -1128,7 +1128,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
                 let helper = TxHelper::try_from(repr)?;
 
-                let tx_view = helper.build_tx(&mut get_live_cell, true, true)?;
+                let tx_view = helper.build_tx(&mut get_live_cell, true)?;
                 let tx = tx_view.data();
 
                 let is_raw_data = is_raw_data || m.is_present("raw-data");

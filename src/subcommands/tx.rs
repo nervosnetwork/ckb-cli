@@ -141,8 +141,7 @@ impl<'a> TxSubCommand<'a> {
                     )
                     .arg(arg_since_absolute_epoch.clone())
                     .arg(arg_tx_file.clone())
-                    .arg(arg_skip_check.clone())
-                    .arg(arg_allow_zero_lock.clone()),
+                    .arg(arg_skip_check.clone()),
                 App::new("add-output")
                     .about("Add cell output")
                     .arg(
@@ -215,8 +214,7 @@ impl<'a> TxSubCommand<'a> {
                             .long("add-signatures")
                             .about("Sign and add signatures"),
                     )
-                    .arg(arg_skip_check.clone())
-                    .arg(arg_allow_zero_lock.clone()),
+                    .arg(arg_skip_check.clone()),
                 App::new("send")
                     .about("Send multisig transaction")
                     .arg(arg_tx_file.clone())
@@ -287,7 +285,6 @@ impl CliSubCommand for TxSubCommand<'_> {
                     FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
 
                 let skip_check: bool = m.is_present("skip-check");
-                let allow_zero_lock: bool = m.is_present("zero-lock");
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -303,7 +300,6 @@ impl CliSubCommand for TxSubCommand<'_> {
                         get_live_cell,
                         &genesis_info,
                         skip_check,
-                        allow_zero_lock,
                     )
                 })?;
 
@@ -474,7 +470,6 @@ impl CliSubCommand for TxSubCommand<'_> {
                     })
                     .transpose()?;
                 let skip_check: bool = m.is_present("skip-check");
-                let allow_zero_lock: bool = m.is_present("zero-lock");
 
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
@@ -503,12 +498,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 };
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
-                    let signatures = helper.sign_inputs(
-                        &mut signer,
-                        get_live_cell,
-                        skip_check,
-                        allow_zero_lock,
-                    )?;
+                    let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
                     if m.is_present("add-signatures") {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
@@ -562,7 +552,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                         ));
                     }
                 }
-                let tx = helper.build_tx(&mut get_live_cell, skip_check, allow_zero_lock)?;
+                let tx = helper.build_tx(&mut get_live_cell, skip_check)?;
                 let rpc_tx = json_types::Transaction::from(tx.data());
                 if debug {
                     eprintln!(
