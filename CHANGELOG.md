@@ -1,6 +1,8 @@
-# v1.4.0
-* Update ckb deps from `v0.105.1` to `v0.106.0`
-* Update dep ckb-sdk to `v2.4.0`
+# unreleased
+
+# v1.14.0
+* Upgrade rust-toolchain to 1.85.0
+* Add --zero-lock flag for deploy subcommand to permit `[lock].code_hash` is all zero
 
 # v1.3.0
 * Add deploy subcommand, this is a more advanced version of `capsule deploy` #515
@@ -17,7 +19,7 @@
   - ckb-sdk to `v2.3.0`
   - secp256k1 to `v0.24`
   - bitcoin to `v0.27`
-* Support ckb-indexer rpc from ckb node 
+* Support ckb-indexer rpc from ckb node
 * Add `account bitcoin-xpub` subcommand
 
 # v1.1.0
