@@ -8,7 +8,7 @@ use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
-    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{MultisigScript, DAO_TYPE_HASH, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, MaturityOption, PrimaryScriptType, Signer,
@@ -169,9 +169,12 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let from_locked_address: Option<Address> = from_locked_address
             .map(|input| {
-                AddressParser::new_multisig()
+                AddressParser::new_multisig(MultisigScript::Legacy)
                     .set_network(network_type)
                     .parse(&input)
+                    .or(AddressParser::new_multisig(MultisigScript::V2)
+                        .set_network(network_type)
+                        .parse(&input))
             })
             .transpose()?;
         let to_capacity: u64 = CapacityParser.parse(&capacity)?.into();
@@ -243,11 +246,17 @@ impl<'a> WalletSubCommand<'a> {
             || (to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == SIGHASH_TYPE_HASH
                 && to_address_args_len == 20)
-            || (to_address_hash_type == ScriptHashType::Type
-                && to_address_code_hash == MULTISIG_TYPE_HASH
+            || (to_address_hash_type == MultisigScript::V2.script_id().hash_type
+                && to_address_code_hash == MultisigScript::V2.script_id().code_hash
+                && (to_address_args_len == 20 || to_address_args_len == 28))
+            || (to_address_hash_type == MultisigScript::Legacy.script_id().hash_type
+                && to_address_code_hash == MultisigScript::Legacy.script_id().code_hash
                 && (to_address_args_len == 20 || to_address_args_len == 28)))
         {
-            return Err(format!("Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address", to_address));
+            return Err(format!(
+                "Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address",
+                to_address
+            ));
         }
         check_capacity(to_capacity, to_data.len())?;
 
@@ -347,25 +356,57 @@ impl<'a> WalletSubCommand<'a> {
                 let sighash_addresses = vec![lock_arg.clone()];
                 let require_first_n = 0;
                 let threshold = 1;
-                let config =
-                    MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
-                        .map_err(|err| err.to_string())?;
-                if config.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
+
+                let mut matched_multisig_config = None;
+                for multisig_script in [MultisigScript::V2, MultisigScript::Legacy] {
+                    let config = MultisigConfig::new_with(
+                        multisig_script,
+                        sighash_addresses.clone(),
+                        require_first_n,
+                        threshold,
+                    )
+                    .map_err(|err| err.to_string())?;
+                    if config.hash160().as_bytes() == &from_locked_address.payload().args()[0..20]
+                        && config
+                            .lock_code_hash()
+                            .pack()
+                            .eq(&from_locked_address.payload().code_hash(Some(network_type)))
+                        && config
+                            .lock_hash_type()
+                            .eq(&from_locked_address.payload().hash_type().into())
+                    {
+                        matched_multisig_config = Some(config);
+                        break;
+                    }
+                }
+
+                if let Some(matched_multisig_config) = matched_multisig_config {
                     found_lock_arg = true;
                     let lock_script = Script::from(from_locked_address.payload());
-                    let placehodler_witness = config.placeholder_witness();
+                    let placeholder_witness = matched_multisig_config.placeholder_witness();
                     lock_scripts.insert(
                         0,
-                        (lock_script, placehodler_witness, SinceSource::LockArgs(20)),
+                        (lock_script, placeholder_witness, SinceSource::LockArgs(20)),
                     );
-                    let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
+                    let multisig_script_id =
+                        MultisigScript::try_from(matched_multisig_config.lock_code_hash())
+                            .unwrap_or_else(|_| {
+                                panic!(
+                                    "must get multisig script by {}",
+                                    matched_multisig_config.lock_code_hash()
+                                )
+                            })
+                            .script_id();
                     let multisig_unlocker = {
                         let signer = get_signer()?;
-                        SecpMultisigUnlocker::new(SecpMultisigScriptSigner::new(signer, config))
+                        SecpMultisigUnlocker::new(SecpMultisigScriptSigner::new(
+                            signer,
+                            matched_multisig_config,
+                        ))
                     };
                     unlockers.insert(multisig_script_id, Box::new(multisig_unlocker));
                     break;
-                }
+                };
             }
             if !found_lock_arg {
                 return Err(String::from(

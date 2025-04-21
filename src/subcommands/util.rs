@@ -14,20 +14,20 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
-    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
+    constants::{MultisigScript, DAO_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
     util::serialize_signature,
     Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
-    core::{BlockView, EpochNumberWithFraction, ScriptHashType},
+    core::{BlockView, EpochNumberWithFraction},
     packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
     H160, H256, U256,
 };
 
-use super::{CliSubCommand, Output};
+use super::{arg_get_multisig_code_hash, arg_multisig_code_hash, CliSubCommand, Output};
 use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
     arg,
@@ -262,7 +262,8 @@ impl<'a> UtilSubCommand<'a> {
                     ),
                 App::new("to-multisig-addr")
                     .about("Convert address in single signature format to multisig format")
-                    .arg(arg_sighash_address.clone())
+                .arg(arg_sighash_address.clone())
+                .arg(arg_multisig_code_hash())
                     .arg(
                         Arg::with_name("locktime")
                             .long("locktime")
@@ -688,18 +689,20 @@ message = "0x"
                 let target_timestamp = to_timestamp(locktime)?;
                 let elapsed = target_timestamp.saturating_sub(genesis_timestamp);
                 let (epoch_fraction, addr_payload) =
-                    gen_multisig_addr(address.payload(), None, elapsed);
+                    gen_multisig_addr(MultisigScript::Legacy, address.payload(), None, elapsed);
                 let multisig_addr = Address::new(NetworkType::Mainnet, addr_payload, true);
                 let resp = format!("{},{},{}", address, locktime, multisig_addr);
                 if debug {
                     eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
-                        DateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
-                        DateTime::from_timestamp(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
+                        DateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0)
+                            .expect("genesis time"),
+                        DateTime::from_timestamp(target_timestamp as i64 / 1000, 0)
+                            .ok_or_else(|| "target timestamp out of range".to_string())?,
                         elapsed / 1000,
                         epoch_fraction,
                         hex_string(multisig_addr.payload().args().as_ref()),
-                        MULTISIG_TYPE_HASH,
+                        MultisigScript::Legacy.script_id().code_hash,
                     );
                 }
                 Ok(Output::new_output(serde_json::json!(resp)))
@@ -711,6 +714,16 @@ message = "0x"
                     DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
                         .map(|dt| dt.timestamp_millis() as u64)
                         .map_err(|err| err.to_string())?;
+
+                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+
+                let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
+                    .map_err(|_err| {
+                        format!(
+                            "invalid multisig lock code hash: {}",
+                            multisig_lock_code_hash
+                        )
+                    })?;
                 let (tip_epoch, tip_timestamp) =
                     self.rpc_client.get_tip_header().map(|header_view| {
                         let header = header_view.inner;
@@ -720,7 +733,7 @@ message = "0x"
                     })?;
                 let elapsed = locktime_timestamp.saturating_sub(tip_timestamp.0);
                 let (epoch, multisig_addr) =
-                    gen_multisig_addr(address.payload(), Some(tip_epoch), elapsed);
+                    gen_multisig_addr(multisig_script, address.payload(), Some(tip_epoch), elapsed);
                 let resp = serde_json::json!({
                     "address": {
                         "mainnet": Address::new(NetworkType::Mainnet, multisig_addr.clone(), true).to_string(),
@@ -787,10 +800,10 @@ message = "0x"
                     },
                     "secp256k1_blake160_multisig_all": {
                         "script_id": {
-                            "code_hash": MULTISIG_TYPE_HASH,
-                            "hash_type": json_types::ScriptHashType::Type,
+                            "code_hash": MultisigScript::Legacy.script_id().code_hash,
+                            "hash_type": json_types::ScriptHashType::from(MultisigScript::Legacy.script_id().hash_type),
                         },
-                        "cell_dep": json_types::CellDep::from(genesis_info.multisig_dep()),
+                        "cell_dep": json_types::CellDep::from(genesis_info.multisig_dep(MultisigScript::Legacy)),
                     },
                     "dao": {
                         "script_id": {
@@ -899,6 +912,7 @@ fn sign_message<P: ?Sized + AsRef<[ChildNumber]>>(
 }
 
 fn gen_multisig_addr(
+    multisig_script: MultisigScript,
     sighash_address_payload: &AddressPayload,
     tip_epoch_opt: Option<EpochNumberWithFraction>,
     elapsed: u64,
@@ -922,7 +936,11 @@ fn gen_multisig_addr(
         data.extend_from_slice(&since.to_le_bytes()[..]);
         data.freeze()
     };
-    let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+    let payload = AddressPayload::new_full(
+        multisig_script.script_id().hash_type,
+        multisig_script.script_id().code_hash.pack(),
+        args,
+    );
     (epoch_fraction, payload)
 }
 
@@ -941,11 +959,13 @@ mod test {
     fn test_gen_multisig_addr() {
         let payload = AddressPayload::new_short(CodeHashIndex::Sighash, H160::default());
 
-        let (epoch, _) = gen_multisig_addr(&payload, None, BLOCK_PERIOD * 2000);
+        let (epoch, _) =
+            gen_multisig_addr(MultisigScript::Legacy, &payload, None, BLOCK_PERIOD * 2000);
         assert_eq!(epoch, EpochNumberWithFraction::new(1, 200, EPOCH_LENGTH));
 
         // (1+2/3) + (1+1/2) = 3+1/6
         let (epoch, _) = gen_multisig_addr(
+            MultisigScript::Legacy,
             &payload,
             Some(EpochNumberWithFraction::new(1, 400, 600)),
             BLOCK_PERIOD * 2700,

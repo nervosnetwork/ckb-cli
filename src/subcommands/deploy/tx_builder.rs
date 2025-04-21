@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{MultisigScript, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, OffchainTransactionDependencyProvider, Signer,
@@ -79,10 +79,7 @@ pub fn build_tx<T: ChangeInfo>(
         .iter()
         .filter_map(|info| info.build_cell_output(lock_script, first_cell_input))
         .unzip();
-    let mut cell_deps = vec![genesis_info.sighash_dep()];
-    if multisig_config.is_some() {
-        cell_deps.push(genesis_info.multisig_dep());
-    }
+
     let mut unlockers = HashMap::new();
     let signer = DummySigner {
         args: vec![from_address.payload().args()],
@@ -93,10 +90,22 @@ pub fn build_tx<T: ChangeInfo>(
         sighash_script_id,
         Box::new(sighash_unlocker) as Box<dyn ScriptUnlocker>,
     );
+
+    let mut cell_deps = vec![genesis_info.sighash_dep()];
     if let Some(cfg) = multisig_config {
+        let multisig_script =
+            MultisigScript::try_from(cfg.lock_code_hash()).unwrap_or_else(|_err| {
+                panic!(
+                    "Failed to get multisig script from {}",
+                    cfg.lock_code_hash(),
+                )
+            });
+
+        cell_deps.push(genesis_info.multisig_dep(multisig_script));
+
         let multisig_signer = SecpMultisigScriptSigner::new(Box::new(signer), cfg.clone());
         let multisig_unlocker = SecpMultisigUnlocker::new(multisig_signer);
-        let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
+        let multisig_script_id = multisig_script.script_id();
         unlockers.insert(
             multisig_script_id,
             Box::new(multisig_unlocker) as Box<dyn ScriptUnlocker>,

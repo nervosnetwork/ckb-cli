@@ -1,4 +1,4 @@
-use ckb_sdk::traits::DefaultCellDepResolver;
+use ckb_sdk::{constants::MultisigScript, traits::DefaultCellDepResolver};
 use ckb_types::{
     core::{BlockView, HeaderView},
     packed::CellDep,
@@ -25,8 +25,12 @@ impl GenesisInfo {
     pub fn sighash_dep(&self) -> CellDep {
         self.cell_dep_resolver.sighash_dep().unwrap().0.clone()
     }
-    pub fn multisig_dep(&self) -> CellDep {
-        self.cell_dep_resolver.multisig_dep().unwrap().0.clone()
+    pub fn multisig_dep(&self, multisig_script: MultisigScript) -> CellDep {
+        self.cell_dep_resolver
+            .multisig_dep(multisig_script)
+            .unwrap()
+            .0
+            .clone()
     }
     pub fn dao_dep(&self) -> CellDep {
         self.cell_dep_resolver.dao_dep().unwrap().0.clone()
