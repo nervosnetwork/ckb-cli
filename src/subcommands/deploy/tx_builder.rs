@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{MULTISIG_SCRIPT, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, OffchainTransactionDependencyProvider, Signer,
@@ -96,7 +96,7 @@ pub fn build_tx<T: ChangeInfo>(
     if let Some(cfg) = multisig_config {
         let multisig_signer = SecpMultisigScriptSigner::new(Box::new(signer), cfg.clone());
         let multisig_unlocker = SecpMultisigUnlocker::new(multisig_signer);
-        let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
+        let multisig_script_id = MULTISIG_SCRIPT;
         unlockers.insert(
             multisig_script_id,
             Box::new(multisig_unlocker) as Box<dyn ScriptUnlocker>,

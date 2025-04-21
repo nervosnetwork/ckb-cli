@@ -874,8 +874,7 @@ dependencies = [
 [[package]]
 name = "ckb-sdk"
 version = "3.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d855c4850d01d5d1cacf932fae8c9f56cdc56b8bf4f7f82a80ac82631f05b561"
+source = "git+https://github.com/eval-exec/ckb-sdk-rust?branch=exec%2Fupgrade-multisig#e6e85a857fe9e7c01c1aa7da2d2ddbf3fd51692f"
 dependencies = [
  "anyhow",
  "async-trait",

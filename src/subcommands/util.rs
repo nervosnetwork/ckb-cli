@@ -14,13 +14,13 @@ use ckb_crypto::secp::SECP256K1;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_sdk::{
-    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
+    constants::{DAO_TYPE_HASH, MULTISIG_SCRIPT, SIGHASH_TYPE_HASH, TYPE_ID_CODE_HASH},
     util::serialize_signature,
     Address, AddressPayload, NetworkType, OldAddress,
 };
 use ckb_types::{
     bytes::BytesMut,
-    core::{BlockView, EpochNumberWithFraction, ScriptHashType},
+    core::{BlockView, EpochNumberWithFraction},
     packed,
     prelude::*,
     utilities::{compact_to_difficulty, difficulty_to_compact},
@@ -694,12 +694,14 @@ message = "0x"
                 if debug {
                     eprintln!(
                         "[DEBUG] genesis_time: {}, target_time: {}, elapsed_in_secs: {}, target_epoch: {}, lock_arg: {}, code_hash: {:#x}",
-                        DateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0).expect("genesis time"),
-                        DateTime::from_timestamp(target_timestamp as i64 / 1000, 0).ok_or_else(|| "target timestamp out of range".to_string())?,
+                        DateTime::from_timestamp(genesis_timestamp as i64 / 1000, 0)
+                            .expect("genesis time"),
+                        DateTime::from_timestamp(target_timestamp as i64 / 1000, 0)
+                            .ok_or_else(|| "target timestamp out of range".to_string())?,
                         elapsed / 1000,
                         epoch_fraction,
                         hex_string(multisig_addr.payload().args().as_ref()),
-                        MULTISIG_TYPE_HASH,
+                        MULTISIG_SCRIPT.code_hash,
                     );
                 }
                 Ok(Output::new_output(serde_json::json!(resp)))
@@ -787,8 +789,8 @@ message = "0x"
                     },
                     "secp256k1_blake160_multisig_all": {
                         "script_id": {
-                            "code_hash": MULTISIG_TYPE_HASH,
-                            "hash_type": json_types::ScriptHashType::Type,
+                            "code_hash": MULTISIG_SCRIPT.code_hash,
+                            "hash_type": json_types::ScriptHashType::from(MULTISIG_SCRIPT.hash_type),
                         },
                         "cell_dep": json_types::CellDep::from(genesis_info.multisig_dep()),
                     },
@@ -922,7 +924,11 @@ fn gen_multisig_addr(
         data.extend_from_slice(&since.to_le_bytes()[..]);
         data.freeze()
     };
-    let payload = AddressPayload::new_full(ScriptHashType::Type, MULTISIG_TYPE_HASH.pack(), args);
+    let payload = AddressPayload::new_full(
+        MULTISIG_SCRIPT.hash_type,
+        MULTISIG_SCRIPT.code_hash.pack(),
+        args,
+    );
     (epoch_fraction, payload)
 }
 

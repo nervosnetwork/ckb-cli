@@ -12,7 +12,7 @@ use faster_hex::hex_decode;
 use url::Url;
 
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{MULTISIG_SCRIPT, SIGHASH_TYPE_HASH},
     util::zeroize_privkey,
     Address, AddressPayload, HumanCapacity, NetworkType, OldAddress, ScriptId,
 };
@@ -388,7 +388,11 @@ impl AddressParser {
         AddressParser::new(None, Some(SIGHASH_TYPE_HASH), Some(ScriptHashType::Type))
     }
     pub fn new_multisig() -> Self {
-        AddressParser::new(None, Some(MULTISIG_TYPE_HASH), Some(ScriptHashType::Type))
+        AddressParser::new(
+            None,
+            Some(MULTISIG_SCRIPT.code_hash),
+            Some(MULTISIG_SCRIPT.hash_type),
+        )
     }
 
     pub fn set_network(&mut self, network: NetworkType) -> &mut Self {
@@ -645,7 +649,7 @@ mod tests {
 
         // Old address
         assert!(AddressParser::default()
-            .parse("kt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc")
+            .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxyc")
             .is_err());
         assert!(AddressParser::default()
             .parse("ckt1q9gry5zgzkfc6rznfaequqlcmdeh4fhta4uwn4qajhqxy")

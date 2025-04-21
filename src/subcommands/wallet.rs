@@ -8,7 +8,7 @@ use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
-    constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH},
+    constants::{DAO_TYPE_HASH, MULTISIG_SCRIPT, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, MaturityOption, PrimaryScriptType, Signer,
@@ -243,11 +243,14 @@ impl<'a> WalletSubCommand<'a> {
             || (to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == SIGHASH_TYPE_HASH
                 && to_address_args_len == 20)
-            || (to_address_hash_type == ScriptHashType::Type
-                && to_address_code_hash == MULTISIG_TYPE_HASH
+            || (to_address_hash_type == MULTISIG_SCRIPT.hash_type
+                && to_address_code_hash == MULTISIG_SCRIPT.code_hash
                 && (to_address_args_len == 20 || to_address_args_len == 28)))
         {
-            return Err(format!("Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address", to_address));
+            return Err(format!(
+                "Invalid to-address: {}\n[Hint]: Add `--skip-check-to-address` flag to transfer to any address",
+                to_address
+            ));
         }
         check_capacity(to_capacity, to_data.len())?;
 
@@ -358,7 +361,7 @@ impl<'a> WalletSubCommand<'a> {
                         0,
                         (lock_script, placehodler_witness, SinceSource::LockArgs(20)),
                     );
-                    let multisig_script_id = ScriptId::new_type(MULTISIG_TYPE_HASH.clone());
+                    let multisig_script_id = MULTISIG_SCRIPT;
                     let multisig_unlocker = {
                         let signer = get_signer()?;
                         SecpMultisigUnlocker::new(SecpMultisigScriptSigner::new(signer, config))

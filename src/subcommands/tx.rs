@@ -7,10 +7,10 @@ use std::str::FromStr;
 
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
+use ckb_sdk::constants::MULTISIG_SCRIPT;
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    unlock::MultisigConfig,
-    Address, AddressPayload, HumanCapacity, NetworkType,
+    constants::SECP_SIGNATURE_SIZE, unlock::MultisigConfig, Address, AddressPayload, HumanCapacity,
+    NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -606,7 +606,8 @@ fn print_cell_info(
     type_script_empty: bool,
 ) {
     let address_payload = AddressPayload::from(lock);
-    let lock_kind = if address_payload.code_hash(Some(network)) == MULTISIG_TYPE_HASH.pack() {
+    let lock_kind = if address_payload.code_hash(Some(network)) == MULTISIG_SCRIPT.code_hash.pack()
+    {
         if address_payload.args().len() == 20 {
             "multisig without since"
         } else {
