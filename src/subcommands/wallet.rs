@@ -8,15 +8,16 @@ use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
 use ckb_hash::new_blake2b;
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
-    constants::{DAO_TYPE_HASH, MULTISIG_SCRIPT, SIGHASH_TYPE_HASH},
+    Address, AddressPayload, HumanCapacity, SECP256K1, Since, SinceType,
+    constants::{DAO_TYPE_HASH, MULTISIG_SCRIPT, MultisigScript, SIGHASH_TYPE_HASH},
     traits::{
         CellCollector, CellQueryOptions, DefaultCellCollector, DefaultHeaderDepResolver,
         DefaultTransactionDependencyProvider, MaturityOption, PrimaryScriptType, Signer,
         ValueRangeOption,
     },
     tx_builder::{
-        transfer::CapacityTransferBuilder, unlock_tx, BalanceTxCapacityError, CapacityBalancer,
-        CapacityProvider, SinceSource, TxBuilder, TxBuilderError,
+        BalanceTxCapacityError, CapacityBalancer, CapacityProvider, SinceSource, TxBuilder,
+        TxBuilderError, transfer::CapacityTransferBuilder, unlock_tx,
     },
     types::ScriptId,
     unlock::{
@@ -24,14 +25,13 @@ use ckb_sdk::{
         SecpSighashScriptSigner, SecpSighashUnlocker,
     },
     util::{get_max_mature_number, is_mature},
-    Address, AddressPayload, HumanCapacity, Since, SinceType, SECP256K1,
 };
 use ckb_types::{
+    H160, H256,
     bytes::Bytes,
     core::{Capacity, FeeRate, ScriptHashType, TransactionView},
     packed::{CellOutput, Script, WitnessArgs},
     prelude::*,
-    H160, H256,
 };
 use plugin_protocol::LiveCellInfo;
 
@@ -243,8 +243,11 @@ impl<'a> WalletSubCommand<'a> {
             || (to_address_hash_type == ScriptHashType::Type
                 && to_address_code_hash == SIGHASH_TYPE_HASH
                 && to_address_args_len == 20)
-            || (to_address_hash_type == MULTISIG_SCRIPT.hash_type
-                && to_address_code_hash == MULTISIG_SCRIPT.code_hash
+            || (to_address_hash_type == MultisigScript::Latest.script_id().hash_type
+                && to_address_code_hash == MultisigScript::Latest.script_id().code_hash
+                && (to_address_args_len == 20 || to_address_args_len == 28))
+            || (to_address_hash_type == MultisigScript::Deprecated.script_id().hash_type
+                && to_address_code_hash == MultisigScript::Deprecated.script_id().code_hash
                 && (to_address_args_len == 20 || to_address_args_len == 28)))
         {
             return Err(format!(
@@ -350,13 +353,26 @@ impl<'a> WalletSubCommand<'a> {
                 let sighash_addresses = vec![lock_arg.clone()];
                 let require_first_n = 0;
                 let threshold = 1;
-                let config =
-                    MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
-                        .map_err(|err| err.to_string())?;
-                if config.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
+
+                let mut matched_multisig_config = None;
+                for multisig_script in [MultisigScript::Latest, MultisigScript::Deprecated] {
+                    let config = MultisigConfig::new_with(
+                        multisig_script,
+                        sighash_addresses.clone(),
+                        require_first_n,
+                        threshold,
+                    )
+                    .map_err(|err| err.to_string())?;
+                    if config.hash160().as_bytes() == &from_locked_address.payload().args()[0..20] {
+                        matched_multisig_config = Some(config);
+                        break;
+                    }
+                }
+
+                if let Some(matched_multisig_config) = matched_multisig_config {
                     found_lock_arg = true;
                     let lock_script = Script::from(from_locked_address.payload());
-                    let placehodler_witness = config.placeholder_witness();
+                    let placehodler_witness = matched_multisig_config.placeholder_witness();
                     lock_scripts.insert(
                         0,
                         (lock_script, placehodler_witness, SinceSource::LockArgs(20)),
@@ -364,11 +380,14 @@ impl<'a> WalletSubCommand<'a> {
                     let multisig_script_id = MULTISIG_SCRIPT;
                     let multisig_unlocker = {
                         let signer = get_signer()?;
-                        SecpMultisigUnlocker::new(SecpMultisigScriptSigner::new(signer, config))
+                        SecpMultisigUnlocker::new(SecpMultisigScriptSigner::new(
+                            signer,
+                            matched_multisig_config,
+                        ))
                     };
                     unlockers.insert(multisig_script_id, Box::new(multisig_unlocker));
                     break;
-                }
+                };
             }
             if !found_lock_arg {
                 return Err(String::from(
