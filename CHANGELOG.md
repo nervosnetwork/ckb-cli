@@ -31,8 +31,8 @@
 
 # v1.8.0
 * Update ckb dependencies to `v0.115.0`
-* Fix sign-txs multisig support for full address
-* Support force redeploy cells
+* Fix `sign-txs` multisig support for full address
+* Support `force redeploy cells`
 
 # v1.7.0
 * Update ckb dependencies to `v0.114.0`
@@ -65,7 +65,7 @@
 * Security fixes and dependency upgrades
 
 # v1.4.0
-* Update ckb deps from `v0.105.1` to `v0.106.0`
+* Update ckb dependencies from `v0.105.1` to `v0.106.0`
 * Update dep ckb-sdk to `v2.4.0`
 
 # v1.3.0
