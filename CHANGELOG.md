@@ -1,3 +1,6 @@
+# v1.15.0
+* [Breaking Change] Add `--multisig-code-hash` flag to specify `MultisigScript::V2` or `MultisigScript::Legacy` #631
+
 # v1.14.0
 * Upgrade rust-toolchain to 1.85.0
 * Add --zero-lock flag for deploy subcommand to permit `[lock].code_hash` is all zero
