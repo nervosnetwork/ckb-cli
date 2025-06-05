@@ -218,7 +218,7 @@ impl Spec for WalletTimelockedAddress {
 
         // Generate a timelocked address (a past time)
         let output = setup.cli(&format!(
-            r#"util to-multisig-addr --sighash-address {} --locktime "2020-01-02T21:00:00+08:00""#,
+            r#"util to-multisig-addr --sighash-address {} --locktime "2020-01-02T21:00:00+08:00" --multisig-code-hash legacy"#,
             ACCOUNT2_ADDRESS,
         ));
         let value: serde_yaml::Value = serde_yaml::from_str(&output).unwrap();

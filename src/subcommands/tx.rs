@@ -7,10 +7,10 @@ use std::str::FromStr;
 
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
+use ckb_sdk::constants::MultisigScript;
 use ckb_sdk::{
-    constants::{MULTISIG_TYPE_HASH, SECP_SIGNATURE_SIZE},
-    unlock::MultisigConfig,
-    Address, AddressPayload, HumanCapacity, NetworkType,
+    constants::SECP_SIGNATURE_SIZE, unlock::MultisigConfig, Address, AddressPayload, HumanCapacity,
+    NetworkType,
 };
 use ckb_types::{
     bytes::Bytes,
@@ -24,7 +24,10 @@ use clap::{App, Arg, ArgMatches};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
+use super::{
+    arg_get_multisig_code_hash, arg_multisig_code_hash, CliSubCommand, Output,
+    ALLOW_ZERO_LOCK_HELP_MSG,
+};
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg,
@@ -107,6 +110,7 @@ impl<'a> TxSubCommand<'a> {
                 App::new("add-multisig-config")
                     .about("Add multisig config")
                     .arg(arg_sighash_address.clone())
+                    .arg(arg_multisig_code_hash().required(true))
                     .arg(arg_require_first_n.clone())
                     .arg(arg_threshold.clone())
                     .arg(arg_tx_file.clone()),
@@ -160,14 +164,25 @@ impl<'a> TxSubCommand<'a> {
                             .long("to-short-multisig-address")
                             .conflicts_with("to-long-multisig-address")
                             .takes_value(true)
-                            .validator(|input| AddressParser::new_multisig().validate(input))
-                            .about("To short multisig address"),
+                            .validator(|input| {
+                                AddressParser::new_multisig(MultisigScript::Legacy)
+                                    .validate(input)
+                                    .or(AddressParser::new_multisig(MultisigScript::V2)
+                                        .validate(input))
+                            })
+                            .about("To short multisig address(encode with legacy multisig script)"),
                     )
                     .arg(
                         Arg::with_name("to-long-multisig-address")
                             .long("to-long-multisig-address")
                             .takes_value(true)
-                            .validator(|input| AddressParser::new_multisig().validate(input))
+                            .requires("multisig-code-hash")
+                            .validator(|input| {
+                                AddressParser::new_multisig(MultisigScript::Legacy)
+                                    .validate(input)
+                                    .or(AddressParser::new_multisig(MultisigScript::V2)
+                                        .validate(input))
+                            })
                             .about("To long multisig address (special case, include since)"),
                     )
                     .arg(arg::capacity().required(true))
@@ -234,6 +249,7 @@ impl<'a> TxSubCommand<'a> {
                     )
                     .arg(arg_sighash_address.clone())
                     .arg(arg_require_first_n.clone())
+                    .arg(arg_multisig_code_hash().required(true))
                     .arg(arg_threshold.clone())
                     .arg(arg_since_absolute_epoch.clone()),
             ])
@@ -308,13 +324,22 @@ impl CliSubCommand for TxSubCommand<'_> {
             ("add-output", Some(m)) => {
                 let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+
                 let to_sighash_address_opt: Option<Address> =
                     AddressParser::new_sighash().from_matches_opt(m, "to-sighash-address")?;
-                let to_short_multisig_address_opt: Option<Address> = AddressParser::new_multisig()
-                    .from_matches_opt(m, "to-short-multisig-address")?;
-                let to_long_multisig_address_opt: Option<Address> =
-                    AddressParser::new_multisig()
-                        .from_matches_opt(m, "to-long-multisig-address")?;
+                let to_short_multisig_address_opt: Option<Address> =
+                    AddressParser::new_multisig(MultisigScript::Legacy)
+                        .from_matches_opt(m, "to-short-multisig-address")
+                        .or_else(|_| {
+                            AddressParser::new_multisig(MultisigScript::V2)
+                                .from_matches_opt(m, "to-short-multisig-address")
+                        })?;
+                let to_long_multisig_address_opt: Option<Address> = {
+                    AddressParser::new_multisig(MultisigScript::Legacy)
+                        .from_matches_opt(m, "to-long-multisig-address")
+                        .or(AddressParser::new_multisig(MultisigScript::V2)
+                            .from_matches_opt(m, "to-long-multisig-address"))?
+                };
 
                 let to_data = get_to_data(m)?;
                 check_capacity(capacity, to_data.len())?;
@@ -355,6 +380,15 @@ impl CliSubCommand for TxSubCommand<'_> {
                 Ok(Output::new_success())
             }
             ("add-multisig-config", Some(m)) => {
+                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+                let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
+                    .map_err(|_err| {
+                        format!(
+                            "invalid multisig lock code hash: {}",
+                            multisig_lock_code_hash
+                        )
+                    })?;
+
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
                 let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
                     .set_network(network)
@@ -367,8 +401,13 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .into_iter()
                     .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
                     .collect::<Vec<_>>();
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
-                    .map_err(|err| err.to_string())?;
+                let cfg = MultisigConfig::new_with(
+                    multisig_script,
+                    sighash_addresses,
+                    require_first_n,
+                    threshold,
+                )
+                .map_err(|err| err.to_string())?;
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_multisig_config(cfg);
                     Ok(())
@@ -567,6 +606,15 @@ impl CliSubCommand for TxSubCommand<'_> {
                 Ok(Output::new_output(resp))
             }
             ("build-multisig-address", Some(m)) => {
+                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+                let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
+                    .map_err(|_err| {
+                        format!(
+                            "invalid multisig lock code hash: {}",
+                            multisig_lock_code_hash
+                        )
+                    })?;
+
                 let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches_vec(m, "sighash-address")?;
@@ -580,9 +628,15 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .into_iter()
                     .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
                     .collect::<Vec<_>>();
-                let cfg = MultisigConfig::new_with(sighash_addresses, require_first_n, threshold)
-                    .map_err(|err| err.to_string())?;
-                let address_payload = cfg.to_address_payload(since_absolute_epoch_opt);
+                let cfg = MultisigConfig::new_with(
+                    multisig_script,
+                    sighash_addresses,
+                    require_first_n,
+                    threshold,
+                )
+                .map_err(|err| err.to_string())?;
+                let address_payload =
+                    cfg.to_address_payload(multisig_script, since_absolute_epoch_opt);
                 let lock_script = Script::from(&address_payload);
                 let resp = serde_json::json!({
                     "mainnet": Address::new(NetworkType::Mainnet, address_payload.clone(), true).to_string(),
@@ -606,7 +660,12 @@ fn print_cell_info(
     type_script_empty: bool,
 ) {
     let address_payload = AddressPayload::from(lock);
-    let lock_kind = if address_payload.code_hash(Some(network)) == MULTISIG_TYPE_HASH.pack() {
+    let lock_kind = if [
+        MultisigScript::Legacy.script_id().code_hash.pack(),
+        MultisigScript::V2.script_id().code_hash.pack(),
+    ]
+    .contains(&address_payload.code_hash(Some(network)))
+    {
         if address_payload.args().len() == 20 {
             "multisig without since"
         } else {
@@ -787,9 +846,16 @@ impl TryFrom<ReprTxHelper> for TxHelper {
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct ReprMultisigConfig {
+    #[serde(default = "compatibility_lock_code_hash")]
+    pub lock_code_hash: H256,
     pub sighash_addresses: Vec<String>,
     pub require_first_n: u8,
     pub threshold: u8,
+}
+
+// for compatibility
+fn compatibility_lock_code_hash() -> H256 {
+    MultisigScript::Legacy.script_id().code_hash
 }
 
 impl ReprMultisigConfig {
@@ -803,6 +869,7 @@ impl ReprMultisigConfig {
             })
             .collect();
         ReprMultisigConfig {
+            lock_code_hash: cfg.lock_code_hash(),
             sighash_addresses,
             require_first_n: cfg.require_first_n(),
             threshold: cfg.threshold(),
@@ -822,7 +889,14 @@ impl TryFrom<ReprMultisigConfig> for MultisigConfig {
                     .map_err(|err| format!("invalid address: {address_string} error: {err:?}"))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        MultisigConfig::new_with(sighash_addresses, repr.require_first_n, repr.threshold)
-            .map_err(|err| err.to_string())
+        let multisig_script = MultisigScript::try_from(repr.lock_code_hash.clone())
+            .map_err(|_err| format!("invalid lock_code_hash {}", repr.lock_code_hash))?;
+        MultisigConfig::new_with(
+            multisig_script,
+            sighash_addresses,
+            repr.require_first_n,
+            repr.threshold,
+        )
+        .map_err(|err| err.to_string())
     }
 }

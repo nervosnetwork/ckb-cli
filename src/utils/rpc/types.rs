@@ -10,7 +10,7 @@ use ckb_types::{core, packed, prelude::*, H256, U256};
 
 use super::primitive::{Capacity, EpochNumberWithFraction, Since, Timestamp};
 use crate::utils::rpc::json_rpc;
-use ckb_sdk::constants::{DAO_TYPE_HASH, MULTISIG_TYPE_HASH, SIGHASH_TYPE_HASH};
+use ckb_sdk::constants::{MultisigScript, DAO_TYPE_HASH, SIGHASH_TYPE_HASH};
 use ckb_sdk::rpc::ckb_indexer::{self, CellType, Order};
 
 type Version = u32;
@@ -92,19 +92,25 @@ impl Serialize for Script {
         S: Serializer,
     {
         let mut rgb = serializer.serialize_struct("Script", 3)?;
-        let code_hash_suffix = if self.hash_type == ScriptHashType::Type {
-            if self.code_hash == SIGHASH_TYPE_HASH {
-                String::from(" (sighash)")
-            } else if self.code_hash == MULTISIG_TYPE_HASH {
-                String::from(" (multisig)")
-            } else if self.code_hash == DAO_TYPE_HASH {
-                String::from(" (dao)")
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
+
+        let code_hash_suffix = match self.hash_type {
+            ScriptHashType::Type => match &self.code_hash {
+                hash if hash == &SIGHASH_TYPE_HASH => String::from(" (sighash)"),
+                hash if hash == &MultisigScript::Legacy.script_id().code_hash => {
+                    String::from(" (multisig_legacy)")
+                }
+                hash if hash == &DAO_TYPE_HASH => String::from(" (dao)"),
+                _ => String::new(),
+            },
+            ScriptHashType::Data1 => match &self.code_hash {
+                hash if hash == &MultisigScript::V2.script_id().code_hash => {
+                    String::from(" (multisig_v2)")
+                }
+                _ => String::new(),
+            },
+            _ => String::new(),
         };
+
         let code_hash_string = format!("{:#x}{}", self.code_hash, code_hash_suffix);
         rgb.serialize_field("code_hash", &code_hash_string)?;
         rgb.serialize_field("args", &self.args)?;
