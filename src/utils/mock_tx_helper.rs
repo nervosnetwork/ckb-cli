@@ -328,15 +328,15 @@ impl<'a> MockTransactionHelper<'a> {
         let tip = HeaderBuilder::default().number(0.pack()).build();
         let tx_verify_env = TxVerifyEnv::new_submit(&tip);
 
-        let mut verifier = TransactionScriptsVerifier::new(
+        let verifier = TransactionScriptsVerifier::new_with_debug_printer(
             Arc::new(rtx),
             resource,
             Arc::new(consensus),
             Arc::new(tx_verify_env),
+            Arc::new(|script_hash, message| {
+                println!("script: {:x}, debug: {}", script_hash, message);
+            }),
         );
-        verifier.set_debug_printer(|script_hash, message| {
-            println!("script: {:x}, debug: {}", script_hash, message);
-        });
         verifier
             .verify(max_cycle)
             .map_err(|err| format!("Verify script error: {:?}", err))
@@ -363,7 +363,7 @@ mod test {
     fn random_privkey() -> secp256k1::SecretKey {
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
-            let privkey_bytes: [u8; 32] = rng.gen();
+            let privkey_bytes: [u8; 32] = rng.r#gen();
             if let Ok(privkey) = secp256k1::SecretKey::from_slice(&privkey_bytes) {
                 return privkey;
             }
