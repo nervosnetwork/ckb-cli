@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::miner::Miner;
 use crate::setup::Setup;
 use crate::spec::Spec;
@@ -116,7 +117,7 @@ threshold = 1
         // Use non-interactive mode to get clean JSON output
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output = setup.cli_command(
+        let (output,_stderr) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -154,7 +155,7 @@ threshold = 1
         setup.miner().mine_until_transaction_confirm(&dep_group_tx_hash);
         
         // Verify dep_group does NOT have TypeID
-        let tx_output = setup.cli_command(
+        let ( tx_output, _stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -258,7 +259,7 @@ threshold = 1
         // Apply transactions (non-interactive for clean JSON)
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output = setup.cli_command(
+        let ( output,  _stderr) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -293,7 +294,7 @@ threshold = 1
         setup.miner().mine_until_transaction_confirm(&dep_group_tx_hash);
         
         // Verify dep_group has TypeID
-        let tx_output = setup.cli_command(
+        let ( tx_output, _stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -419,7 +420,7 @@ threshold = 1
         // Apply (non-interactive JSON)
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output1 = setup.cli_command(
+        let ( output1,_stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -450,7 +451,7 @@ threshold = 1
         setup.miner().mine_until_transaction_confirm(&dep_group_tx_hash1);
         
         // Get TypeID from first deployment
-        let tx_output1 = setup.cli_command(
+        let ( tx_output1,_stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -510,7 +511,7 @@ threshold = 1
         // Apply (non-interactive JSON)
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output2 = setup.cli_command(
+        let ( output2, _stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -628,7 +629,7 @@ threshold = 1
         // Apply (non-interactive JSON)
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output1 = setup.cli_command(
+        let ( output1, _stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -659,7 +660,7 @@ threshold = 1
         setup.miner().mine_until_transaction_confirm(&dep_group_tx_hash1);
         
         // Verify no TypeID initially
-        let tx_output1 = setup.cli_command(
+        let ( tx_output1,_stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",
@@ -710,13 +711,14 @@ threshold = 1
         fs::write(&config_path, deployment_config_v2).unwrap();
         
         // Second deployment (with TypeID enabled)
-        setup.cli(&format!(
+        let deploy_gen_txs_output = setup.cli(&format!(
             "deploy gen-txs --deployment-config {} --info-file {} --migration-dir {} --from-address {} --fee-rate 1000",
             config_path.display(),
             info_file.display(), 
             migration_dir.display(),
             Miner::address()
         ));
+        println!("DEBUG: deploy gen-txs: {}", deploy_gen_txs_output);
         // Sign
         let privkey_path = setup.miner().privkey_path().to_string();
         setup.cli(&format!(
@@ -727,7 +729,7 @@ threshold = 1
         // Apply (non-interactive JSON)
         let info_str = info_file.display().to_string();
         let mig_str = migration_dir.display().to_string();
-        let output2 = setup.cli_command(
+        let ( output2,_stderr ) = setup.cli_command(
             &[
                 "--output-format",
                 "json",

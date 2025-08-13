@@ -12,7 +12,7 @@ const CLI_PASSWORD: &str = "abc123456";
 
 impl Spec for AccountKeystorePerm {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let ( output, _stderr ) = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -61,7 +61,7 @@ pub struct AccountKeystoreExportPerm;
 
 impl Spec for AccountKeystoreExportPerm {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let ( output, _stderr ) = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -79,7 +79,7 @@ impl Spec for AccountKeystoreExportPerm {
 
         assert!(export_file.is_absolute());
 
-        let output = setup.cli_command(
+        let ( output,_stderr ) = setup.cli_command(
             &[
                 "account",
                 "export",
@@ -111,7 +111,7 @@ pub struct AccountKeystoreUpdatePassword;
 
 impl Spec for AccountKeystoreUpdatePassword {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let ( output, _stderr ) = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -128,7 +128,7 @@ impl Spec for AccountKeystoreUpdatePassword {
         let keystore_path = PathBuf::from(ckb_cli_home).join("keystore");
 
         const NEW_CLI_PASSWORD: &str = "new_1234567a";
-        let output = setup.cli_command(
+        let ( output,_stderr ) = setup.cli_command(
             &["account", "update", "--lock-arg", lock_arg],
             &[CLI_PASSWORD, NEW_CLI_PASSWORD, NEW_CLI_PASSWORD],
         );

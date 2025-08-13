@@ -2,8 +2,8 @@ use crate::miner::Miner;
 use crate::spec::Spec;
 use crate::util::ProcessGuard;
 use ckb_app_config::CKBAppConfig;
-use ckb_chain_spec::consensus::Consensus;
 use ckb_chain_spec::ChainSpec;
+use ckb_chain_spec::consensus::Consensus;
 use log::info;
 use std::fs;
 use std::io::Write;
@@ -90,7 +90,7 @@ impl Setup {
     }
 
     pub fn cli(&self, command: &str) -> String {
-        log::info!("[Execute]: {}", command);
+        log::info!("[Executing]: {}", command);
         loop {
             let mut child = Command::new(&self.cli_bin)
                 .env("RUST_BACKTRACE", "full")
@@ -111,14 +111,16 @@ impl Setup {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let output = extract_output(stdout.to_string());
             if !output.trim().is_empty() {
+                info!("Executed: {:?}, got\nstdout: {}", command, stdout);
                 return output;
             } else if !stderr.trim().is_empty() {
+                info!("Executed: {:?}, got\nstderr: {}", command, stderr);
                 return stderr.to_string();
             }
         }
     }
 
-    pub fn cli_command(&self, command: &[&str], inputs: &[&str]) -> String {
+    pub fn cli_command(&self, command: &[&str], inputs: &[&str]) -> (String, String) {
         info!("Execute: {:?}, with stdin: {:?}", command, inputs);
         let rpc_url = self.rpc_url();
         let mut args = vec!["--url", &rpc_url];
@@ -151,7 +153,12 @@ impl Setup {
 
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout.to_string() + &stderr
+
+        info!(
+            "Executed: {:?}, with stdin: {:?}, got\nstdout: {}\nstderr: {}",
+            command, inputs, stdout, stderr
+        );
+        (stdout.to_string(), stderr.to_string())
     }
 
     fn modify_ckb_toml(&self, spec: &dyn Spec) {
