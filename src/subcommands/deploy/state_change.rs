@@ -318,15 +318,21 @@ impl ChangeInfo for DepGroupChange {
     }
 
     fn occupied_capacity(&self, lock_script: &packed::Script) -> u64 {
-        let data = match self {
+        let (data, config) = match self {
             StateChange::Removed { .. } => return 0,
-            StateChange::Changed { data, .. } => data,
-            StateChange::Unchanged { data, .. } => data,
             StateChange::Reference { .. } => return 0,
-            StateChange::NewAdded { data, .. } => data,
+            StateChange::Changed { data, config, .. } => (data, config),
+            StateChange::Unchanged { data, config, .. } => (data, config),
+            StateChange::NewAdded { data, config, .. } => (data, config),
         };
         let data_size = data.len() as u64;
-        lock_script.occupied_capacity().expect("capacity").as_u64() + (data_size + 8) * ONE_CKB
+        let type_script_size: u64 = if config.enable_type_id {
+            32 + 1 + 32
+        } else {
+            0
+        };
+        lock_script.occupied_capacity().expect("capacity").as_u64()
+            + (type_script_size + data_size + 8) * ONE_CKB
     }
 
     fn build_input(&self) -> Option<(packed::CellInput, u64)> {
@@ -343,19 +349,51 @@ impl ChangeInfo for DepGroupChange {
     fn build_cell_output(
         &self,
         lock_script: &packed::Script,
-        _first_cell_input: &packed::CellInput,
+        first_cell_input: &packed::CellInput,
     ) -> Option<(packed::CellOutput, Bytes)> {
-        let data = match self {
+        let (data, config, output_index, old_type_id_args) = match self {
             StateChange::Removed { .. } => return None,
             StateChange::Unchanged { .. } => return None,
             StateChange::Reference { .. } => return None,
-            StateChange::Changed { data, .. } => data,
-            StateChange::NewAdded { data, .. } => data,
+            StateChange::Changed {
+                data,
+                config,
+                old_type_id_args,
+                output_index,
+                ..
+            } => (data, config, *output_index, old_type_id_args.clone()),
+            StateChange::NewAdded {
+                data,
+                config,
+                output_index,
+                ..
+            } => (data, config, *output_index, None),
+        };
+        let type_id_args = if config.enable_type_id {
+            old_type_id_args.or_else(|| {
+                Some(Bytes::from(
+                    calculate_type_id(first_cell_input, output_index).to_vec(),
+                ))
+            })
+        } else {
+            None
         };
         let occupied_capacity = self.occupied_capacity(lock_script);
+        let type_script_opt = type_id_args.map(|type_id_args| {
+            packed::Script::new_builder()
+                .code_hash(TYPE_ID_CODE_HASH.pack())
+                .hash_type(ScriptHashType::Type.into())
+                .args(Bytes::from(type_id_args.to_vec()).pack())
+                .build()
+        });
         let output = packed::CellOutput::new_builder()
             .capacity(Capacity::shannons(occupied_capacity).pack())
             .lock(lock_script.clone())
+            .type_(
+                packed::ScriptOpt::new_builder()
+                    .set(type_script_opt)
+                    .build(),
+            )
             .build();
         Some((output, data.clone()))
     }
@@ -366,33 +404,74 @@ impl DepGroupChange {
         &self,
         lock_script: &packed::Script,
         new_tx_hash: H256,
+        first_cell_input: Option<&packed::CellInput>,
     ) -> Option<DepGroupRecipe> {
-        let (tx_hash, index, data_hash) = match self {
+        let (tx_hash, index, data_hash, config, old_type_id_args) = match self {
             StateChange::Removed { .. } => {
                 return None;
             }
             StateChange::Changed {
                 data_hash,
+                config,
+                old_type_id_args,
                 output_index,
                 ..
-            } => (new_tx_hash, *output_index as u32, data_hash.clone()),
+            } => (
+                new_tx_hash,
+                *output_index as u32,
+                data_hash.clone(),
+                config,
+                old_type_id_args.clone(),
+            ),
             StateChange::Unchanged {
                 data_hash,
+                config,
                 old_recipe,
+                old_type_id_args,
                 ..
             } => (
                 old_recipe.tx_hash.clone(),
                 old_recipe.index,
                 data_hash.clone(),
+                config,
+                old_type_id_args.clone(),
             ),
             StateChange::Reference { .. } => {
                 return None;
             }
             StateChange::NewAdded {
                 data_hash,
+                config,
                 output_index,
                 ..
-            } => (new_tx_hash, *output_index as u32, data_hash.clone()),
+            } => (
+                new_tx_hash,
+                *output_index as u32,
+                data_hash.clone(),
+                config,
+                None,
+            ),
+        };
+        let type_id = if config.enable_type_id {
+            let args = if let Some(existing_args) = old_type_id_args {
+                existing_args
+            } else {
+                let input = first_cell_input.unwrap_or_else(|| {
+                    panic!(
+                        "TypeID requested for dep_group '{}' but no first input available",
+                        config.name
+                    )
+                });
+                Bytes::from(calculate_type_id(input, index as u64).to_vec())
+            };
+            let type_script = packed::Script::new_builder()
+                .code_hash(TYPE_ID_CODE_HASH.pack())
+                .hash_type(ScriptHashType::Type.into())
+                .args(Bytes::from(args.to_vec()).pack())
+                .build();
+            Some(type_script.calc_script_hash().unpack())
+        } else {
+            None
         };
         Some(DepGroupRecipe {
             name: self.name().clone(),
@@ -401,6 +480,7 @@ impl DepGroupChange {
             index,
             data_hash,
             occupied_capacity: self.occupied_capacity(lock_script),
+            type_id,
         })
     }
 }
