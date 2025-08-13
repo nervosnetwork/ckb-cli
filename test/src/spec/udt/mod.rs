@@ -18,9 +18,9 @@ use ckb_types::{
     H256,
 };
 
-const SUDT_BIN: &[u8] = include_bytes!("../../script-bins/simple_udt");
-const ACP_BIN: &[u8] = include_bytes!("../../script-bins/anyone_can_pay");
-const CHEQUE_BIN: &[u8] = include_bytes!("../../script-bins/ckb-cheque-script");
+pub const SUDT_BIN: &[u8] = include_bytes!("../../script-bins/simple_udt");
+pub const ACP_BIN: &[u8] = include_bytes!("../../script-bins/anyone_can_pay");
+pub const CHEQUE_BIN: &[u8] = include_bytes!("../../script-bins/ckb-cheque-script");
 
 const OWNER_KEY: &str = "8fdf1d6df54c6c9c0167a657c0f68a9bb3bf4304942ce487880e86ce6099191c";
 pub const OWNER_ADDR: &str = "ckt1qyq86vaa6e8tsruv5ngcd5tp7lcvcewxy7cquuksvj";

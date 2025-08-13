@@ -16,6 +16,7 @@ toml = "0.5.0"
 serde_yaml = "0.8.9"
 ckb-sdk = { git="https://github.com/eval-exec/ckb-sdk-rust.git", branch="exec-cookies", features = ["native-tls-vendored"] }
 serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
 ckb-types = "=0.202.0"
 ckb-jsonrpc-types = "=0.202.0"
 ckb-app-config = "=0.114.0"

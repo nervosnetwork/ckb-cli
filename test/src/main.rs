@@ -8,10 +8,11 @@ use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
     AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
-    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, Plugin, RpcGetTipBlockNumber, Spec,
-    SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
-    SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
-    WalletTransfer,
+    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, DeployDepGroupWithoutTypeId,
+    DeployDepGroupWithTypeId, DeployDepGroupTypeIdTracking, DeployDepGroupEnableTypeIdLater,
+    Plugin, RpcGetTipBlockNumber, Spec, SudtIssueToAcp, SudtIssueToCheque, 
+    SudtTransferToChequeForClaim, SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, 
+    Util, WalletTimelockedAddress, WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -119,5 +120,10 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(DaoPrepareOne),
         Box::new(DaoPrepareMultiple),
         Box::new(DaoWithdrawMultiple),
+        // Deploy TypeID tests
+        Box::new(DeployDepGroupWithoutTypeId),
+        Box::new(DeployDepGroupWithTypeId),
+        Box::new(DeployDepGroupTypeIdTracking),
+        Box::new(DeployDepGroupEnableTypeIdLater),
     ]
 }
