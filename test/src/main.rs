@@ -8,11 +8,11 @@ use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
     AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
-    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, DeployDepGroupWithoutTypeId,
-    DeployDepGroupWithTypeId, DeployDepGroupTypeIdTracking, DeployDepGroupEnableTypeIdLater,
-    Plugin, RpcGetTipBlockNumber, Spec, SudtIssueToAcp, SudtIssueToCheque, 
-    SudtTransferToChequeForClaim, SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, 
-    Util, WalletTimelockedAddress, WalletTransfer,
+    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, DeployDepGroupEnableTypeIdLater,
+    DeployDepGroupTypeIdTracking, DeployDepGroupWithTypeId, DeployDepGroupWithoutTypeId, Plugin,
+    RpcGetTipBlockNumber, Spec, SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
+    SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
+    WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -26,21 +26,21 @@ async fn main() {
         env_logger::builder().parse_filters(&filter).try_init()
     };
     let app = app::App::init();
-    
+
     // Get spec filter from app (command line) or environment variable
-    let spec_filter = app.spec_filter()
+    let spec_filter = app
+        .spec_filter()
         .map(|s| s.to_string())
         .or_else(|| env::var("SPEC_FILTER").ok());
-    
-    let specs: Vec<_> = all_specs().into_iter()
-        .filter(|spec| {
-            match &spec_filter {
-                Some(filter) => spec.spec_name().contains(filter),
-                None => true,
-            }
+
+    let specs: Vec<_> = all_specs()
+        .into_iter()
+        .filter(|spec| match &spec_filter {
+            Some(filter) => spec.spec_name().contains(filter),
+            None => true,
         })
         .collect();
-    
+
     if specs.is_empty() {
         if let Some(filter) = &spec_filter {
             eprintln!("No specs matching filter '{}' found", filter);
@@ -51,12 +51,12 @@ async fn main() {
             std::process::exit(1);
         }
     }
-    
+
     eprintln!("Running {} spec(s)", specs.len());
     if let Some(filter) = &spec_filter {
         eprintln!("Filter: {}", filter);
     }
-    
+
     for spec in specs {
         log::info!(
             "==================== {} ====================\n",
