@@ -35,6 +35,13 @@ struct TestDepGroupRecipe {
 }
 
 #[derive(Deserialize)]
+struct TestDeploymentResult {
+        cell_tx: H256,
+        dep_group_tx: H256,
+}
+
+
+#[derive(Deserialize)]
 struct TestDeploymentRecipe {
     cell_recipes: Vec<TestCellRecipe>,
     dep_group_recipes: Vec<TestDepGroupRecipe>,
