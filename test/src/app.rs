@@ -5,6 +5,7 @@ pub struct App {
     ckb_bin: String,
     cli_bin: String,
     keystore_plugin_bin: String,
+    spec_filter: Option<String>,
 }
 
 impl App {
@@ -16,6 +17,7 @@ impl App {
             .get_one::<String>("keystore-plugin")
             .unwrap()
             .to_owned();
+        let spec_filter = matches.get_one::<String>("spec").cloned();
         assert!(
             Path::new(&ckb_bin).exists(),
             "ckb-bin binary not exists: {}",
@@ -35,6 +37,7 @@ impl App {
             ckb_bin,
             cli_bin,
             keystore_plugin_bin,
+            spec_filter,
         }
     }
 
@@ -48,6 +51,10 @@ impl App {
 
     pub fn keystore_plugin_bin(&self) -> &str {
         &self.keystore_plugin_bin
+    }
+
+    pub fn spec_filter(&self) -> Option<&str> {
+        self.spec_filter.as_deref()
     }
 
     fn matches() -> clap::ArgMatches {
@@ -72,6 +79,12 @@ impl App {
                     .required(true)
                     .value_name("PATH")
                     .help("Path to keystore plugin executable"),
+            )
+            .arg(
+                clap::Arg::new("spec")
+                    .long("spec")
+                    .value_name("PATTERN")
+                    .help("Filter specs by name pattern"),
             )
             .get_matches()
     }

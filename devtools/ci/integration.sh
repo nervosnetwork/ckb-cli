@@ -54,4 +54,5 @@ export RUST_LOG=ckb_cli=info,cli_test=info
 cd test && cargo run -- \
                  --ckb-bin "${CKB_BIN}" \
                  --cli-bin "${CKB_CLI_DIR}/target/release/ckb-cli" \
-                 --keystore-plugin "${CKB_CLI_DIR}/target/debug/examples/keystore_no_password"
+                 --keystore-plugin "${CKB_CLI_DIR}/target/debug/examples/keystore_no_password" \
+                 "${@:2}"

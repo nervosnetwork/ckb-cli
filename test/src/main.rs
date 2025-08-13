@@ -25,7 +25,38 @@ async fn main() {
         env_logger::builder().parse_filters(&filter).try_init()
     };
     let app = app::App::init();
-    for spec in all_specs() {
+    
+    // Get spec filter from app (command line) or environment variable
+    let spec_filter = app.spec_filter()
+        .map(|s| s.to_string())
+        .or_else(|| env::var("SPEC_FILTER").ok());
+    
+    let specs: Vec<_> = all_specs().into_iter()
+        .filter(|spec| {
+            match &spec_filter {
+                Some(filter) => spec.spec_name().contains(filter),
+                None => true,
+            }
+        })
+        .collect();
+    
+    if specs.is_empty() {
+        if let Some(filter) = &spec_filter {
+            eprintln!("No specs matching filter '{}' found", filter);
+            eprintln!("Available specs:");
+            for spec in all_specs() {
+                eprintln!("  - {}", spec.spec_name());
+            }
+            std::process::exit(1);
+        }
+    }
+    
+    eprintln!("Running {} spec(s)", specs.len());
+    if let Some(filter) = &spec_filter {
+        eprintln!("Filter: {}", filter);
+    }
+    
+    for spec in specs {
         log::info!(
             "==================== {} ====================\n",
             spec.spec_name()
