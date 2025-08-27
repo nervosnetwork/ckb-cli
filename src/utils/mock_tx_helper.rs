@@ -1,4 +1,5 @@
 use ckb_chain_spec::consensus::ConsensusBuilder;
+use ckb_script::types::DebugPrinter;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::sync::Arc;
@@ -9,14 +10,14 @@ use ckb_jsonrpc_types as rpc_types;
 use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
-use ckb_types::core::hardfork::{HardForks, CKB2021, CKB2023};
 use ckb_types::core::HeaderBuilder;
+use ckb_types::core::hardfork::{CKB2021, CKB2023, HardForks};
 use ckb_types::{
+    H160, H256,
     bytes::Bytes,
-    core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
+    core::{Capacity, Cycle, ScriptHashType, cell::resolve_transaction},
     packed::{Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
-    H160, H256,
 };
 
 use crate::utils::genesis_info::GenesisInfo;
@@ -328,15 +329,17 @@ impl<'a> MockTransactionHelper<'a> {
         let tip = HeaderBuilder::default().number(0.pack()).build();
         let tx_verify_env = TxVerifyEnv::new_submit(&tip);
 
-        let mut verifier = TransactionScriptsVerifier::new(
+        let debug_printer: DebugPrinter = Arc::new(|script_hash: &Byte32, message: &str| {
+            println!("script: {:x}, debug: {}", script_hash, message);
+        });
+
+        let verifier = TransactionScriptsVerifier::new_with_debug_printer(
             Arc::new(rtx),
             resource,
             Arc::new(consensus),
             Arc::new(tx_verify_env),
+            debug_printer,
         );
-        verifier.set_debug_printer(|script_hash, message| {
-            println!("script: {:x}, debug: {}", script_hash, message);
-        });
         verifier
             .verify(max_cycle)
             .map_err(|err| format!("Verify script error: {:?}", err))
@@ -351,7 +354,7 @@ mod test {
     use ckb_jsonrpc_types as json_types;
     use ckb_mock_tx_types::{MockCellDep, MockInput};
     use ckb_types::{
-        core::{capacity_bytes, BlockView, Capacity, HeaderView},
+        core::{BlockView, Capacity, HeaderView, capacity_bytes},
         h256,
         packed::CellDep,
     };
@@ -363,7 +366,7 @@ mod test {
     fn random_privkey() -> secp256k1::SecretKey {
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
-            let privkey_bytes: [u8; 32] = rng.gen();
+            let privkey_bytes: [u8; 32] = rng.r#gen();
             if let Ok(privkey) = secp256k1::SecretKey::from_slice(&privkey_bytes) {
                 return privkey;
             }
