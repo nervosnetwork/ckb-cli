@@ -10,14 +10,14 @@ use ckb_jsonrpc_types as rpc_types;
 use ckb_mock_tx_types::{MockResourceLoader, MockTransaction, Resource};
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_sdk::constants::{MIN_SECP_CELL_CAPACITY, SIGHASH_TYPE_HASH};
+use ckb_types::core::hardfork::{HardForks, CKB2021, CKB2023};
 use ckb_types::core::HeaderBuilder;
-use ckb_types::core::hardfork::{CKB2021, CKB2023, HardForks};
 use ckb_types::{
-    H160, H256,
     bytes::Bytes,
-    core::{Capacity, Cycle, ScriptHashType, cell::resolve_transaction},
+    core::{cell::resolve_transaction, Capacity, Cycle, ScriptHashType},
     packed::{Byte32, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
     prelude::*,
+    H160, H256,
 };
 
 use crate::utils::genesis_info::GenesisInfo;
@@ -354,7 +354,7 @@ mod test {
     use ckb_jsonrpc_types as json_types;
     use ckb_mock_tx_types::{MockCellDep, MockInput};
     use ckb_types::{
-        core::{BlockView, Capacity, HeaderView, capacity_bytes},
+        core::{capacity_bytes, BlockView, Capacity, HeaderView},
         h256,
         packed::CellDep,
     };
