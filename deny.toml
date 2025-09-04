@@ -99,6 +99,7 @@ allow = [
     "MIT",
     "MITNFA",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
     "BSL-1.0",
     "MPL-2.0"
     #"MIT",
