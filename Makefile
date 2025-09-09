@@ -20,7 +20,7 @@ integration:
 	bash devtools/ci/integration.sh v0.200.0
 
 prod: ## Build binary with release profile.
-	cargo build --release
+	cargo build --locked --release
 
 security-audit: ## Use cargo-deny to audit Cargo.lock for crates with security vulnerabilities.
 	cargo deny check --hide-inclusion-graph --show-stats advisories sources -Wunmaintained

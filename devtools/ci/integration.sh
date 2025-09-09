@@ -46,7 +46,7 @@ fi
 cd $CKB_CLI_DIR
 
 # Build keystore_no_password plugin
-cd plugin-protocol && cargo build --example keystore_no_password && cd ..
+cd plugin-protocol && cargo build --locked --example keystore_no_password && cd ..
 
 rm -rf test/target && ln -snf "${CKB_CLI_DIR}/target" test/target
 export RUST_LOG=ckb_cli=info,cli_test=info
