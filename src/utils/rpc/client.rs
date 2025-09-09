@@ -20,7 +20,7 @@ pub struct HttpRpcClient {
 
 impl HttpRpcClient {
     pub fn new(url: String) -> HttpRpcClient {
-        let client = RawHttpRpcClient::new(url.as_str());
+        let client = RawHttpRpcClient::new_with_cookie(url.as_str());
         HttpRpcClient { url, client }
     }
 

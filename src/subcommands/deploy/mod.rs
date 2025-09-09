@@ -105,7 +105,7 @@ impl<'a> DeploySubCommand<'a> {
                             .required(true)
                             .takes_value(true)
                             .validator(|input| AddressParser::new_sighash().validate(input))
-                            .about("Collect cells from this address (short sighash address)")
+                            .about("Collect cells from this address (sighash address)")
                     )
                     .arg(arg::fee_rate().required(true))
                     .arg(arg_deployment.clone())
