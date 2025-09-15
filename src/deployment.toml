@@ -12,6 +12,7 @@ location = { tx_hash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # Dep group cells
 [[dep_groups]]
 name = "my_dep_group"
+enable_type_id = false
 cells = [
   "my_cell",
   "genesis_cell"

@@ -17,7 +17,15 @@ ci: fmt clippy test security-audit check-crates check-licenses
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh v0.200.0
+	bash devtools/ci/integration.sh v0.200.0 $(ARGS)
+
+integration-spec:
+	@if [ -z "$(SPEC)" ]; then \
+		echo "Usage: make integration-spec SPEC=pattern"; \
+		echo "Example: make integration-spec SPEC=deploy_type_id"; \
+		exit 1; \
+	fi
+	bash devtools/ci/integration.sh v0.200.0 --spec=$(SPEC)
 
 prod: ## Build binary with release profile.
 	cargo build --locked --release
@@ -31,4 +39,15 @@ check-crates: ## Use cargo-deny to check specific crates, detect and handle mult
 check-licenses: ## Use cargo-deny to check licenses for all dependencies.
 	cargo deny check --hide-inclusion-graph --show-stats licenses
 
-.PHONY: test clippy fmt integration ci prod security-audit check-crates check-licenses
+integration-help: ## Show usage examples for integration tests
+	@echo "Integration test usage examples:"
+	@echo "  make integration                           # Run all integration tests"
+	@echo "  make integration ARGS='--spec=deploy'      # Run tests containing 'deploy'"
+	@echo "  make integration-spec SPEC=deploy_type_id  # Run tests containing 'deploy_type_id'"
+	@echo "  make integration-spec SPEC=deploy          # Run tests containing 'deploy'"
+	@echo ""
+	@echo "Environment variable usage:"
+	@echo "  SPEC_FILTER=deploy make integration        # Run tests containing 'deploy'"
+	@echo ""
+
+.PHONY: test clippy fmt integration integration-spec integration-help ci prod security-audit check-crates check-licenses

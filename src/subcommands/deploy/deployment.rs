@@ -35,6 +35,7 @@ pub struct Cell {
 pub struct DepGroup {
     pub name: String,
     pub cells: Vec<String>,
+    pub enable_type_id: bool,
 }
 
 // Recipe
@@ -56,6 +57,7 @@ pub struct DepGroupRecipe {
     #[serde(default)]
     pub data_hash: H256,
     pub occupied_capacity: u64,
+    pub type_id: Option<H256>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

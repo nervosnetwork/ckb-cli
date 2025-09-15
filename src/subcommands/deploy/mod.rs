@@ -252,11 +252,29 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 }
 
                 // * Build new dep_group recipes
+                // Only get first input if any dep_group needs TypeID
+                let needs_type_id = dep_group_changes.iter().any(|change| match change {
+                    StateChange::NewAdded { config, .. } | StateChange::Changed { config, .. } => {
+                        config.enable_type_id
+                    }
+                    _ => false,
+                });
+
+                let first_dep_group_input_opt = if needs_type_id {
+                    dep_group_tx_opt
+                        .as_ref()
+                        .and_then(|dep_group_tx| dep_group_tx.raw().inputs().get(0))
+                } else {
+                    None
+                };
+
                 let new_dep_group_recipes = build_new_dep_group_recipes(
                     &lock_script,
                     dep_group_tx_opt.as_ref(),
                     &dep_group_changes,
-                );
+                    first_dep_group_input_opt.as_ref(),
+                )
+                .map_err(|err| err.to_string())?;
 
                 // * Explain transactions
                 let repr_cell_changes: Vec<_> = cell_changes
@@ -887,40 +905,43 @@ fn load_dep_groups(
         let data = out_points_vec.as_bytes();
         let data_hash = H256::from(blake2b_256(data.as_ref()));
         let config = (*dep_group).clone();
-        let change = if let Some((old_recipe, removed)) =
-            dep_group_recipes_map.get_mut(&dep_group.name)
-        {
-            let old_recipe = old_recipe.clone();
-            *removed = false;
-            let (old_data_hash, _, old_output) =
-                load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
-            let old_lock_script = packed::Script::from(old_output.lock);
-            if data_hash == old_data_hash && lock_script.as_slice() == old_lock_script.as_slice() {
-                StateChange::Unchanged {
-                    data,
-                    data_hash,
-                    config,
-                    old_recipe,
-                    old_type_id_args: None,
+        let change =
+            if let Some((old_recipe, removed)) = dep_group_recipes_map.get_mut(&dep_group.name) {
+                let old_recipe = old_recipe.clone();
+                *removed = false;
+                let (old_data_hash, _, old_output) =
+                    load_cell_info(rpc_client, &old_recipe.tx_hash, old_recipe.index)?;
+                let old_lock_script = packed::Script::from(old_output.lock);
+                let old_type_id_args = old_output.type_.map(|script| script.args.into_bytes());
+                let data_unchanged = data_hash == old_data_hash;
+                let lock_script_unchanged = lock_script.as_slice() == old_lock_script.as_slice();
+                let type_id_unchanged = old_recipe.type_id.is_some() == config.enable_type_id;
+                if data_unchanged && lock_script_unchanged && type_id_unchanged {
+                    StateChange::Unchanged {
+                        data,
+                        data_hash,
+                        config,
+                        old_recipe,
+                        old_type_id_args,
+                    }
+                } else {
+                    StateChange::Changed {
+                        data,
+                        data_hash,
+                        config,
+                        old_recipe,
+                        output_index,
+                        old_type_id_args,
+                    }
                 }
             } else {
-                StateChange::Changed {
+                StateChange::NewAdded {
                     data,
                     data_hash,
                     config,
-                    old_recipe,
                     output_index,
-                    old_type_id_args: None,
                 }
-            }
-        } else {
-            StateChange::NewAdded {
-                data,
-                data_hash,
-                config,
-                output_index,
-            }
-        };
+            };
         if change.has_new_output() {
             output_index += 1;
         }
@@ -970,18 +991,22 @@ fn build_new_dep_group_recipes(
     lock_script: &packed::Script,
     dep_group_tx_opt: Option<&packed::Transaction>,
     dep_group_changes: &[DepGroupChange],
-) -> Vec<DepGroupRecipe> {
+    first_dep_group_input_opt: Option<&packed::CellInput>,
+) -> Result<Vec<DepGroupRecipe>> {
     let new_tx_hash: H256 = dep_group_tx_opt
         .map(|dep_group_tx| dep_group_tx.calc_tx_hash().unpack())
         .unwrap_or_default();
-    dep_group_changes
+
+    let recipes: Result<Vec<_>, _> = dep_group_changes
         .iter()
         .filter(|info| info.has_new_recipe())
         .map(|info| {
-            info.build_new_recipe(lock_script, new_tx_hash.clone())
-                .expect("to new dep_group recipe")
+            info.build_new_recipe(lock_script, new_tx_hash.clone(), first_dep_group_input_opt)
+                .ok_or_else(|| anyhow!("Failed to build dep_group recipe for '{}'", info.name()))
         })
-        .collect()
+        .collect();
+
+    recipes
 }
 
 fn explain_txs(info: &IntermediumInfo) -> Result<()> {

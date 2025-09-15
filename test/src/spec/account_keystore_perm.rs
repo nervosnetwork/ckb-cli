@@ -12,7 +12,8 @@ const CLI_PASSWORD: &str = "abc123456";
 
 impl Spec for AccountKeystorePerm {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let (output, _stderr) =
+            setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -61,7 +62,8 @@ pub struct AccountKeystoreExportPerm;
 
 impl Spec for AccountKeystoreExportPerm {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let (output, _stderr) =
+            setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -79,7 +81,7 @@ impl Spec for AccountKeystoreExportPerm {
 
         assert!(export_file.is_absolute());
 
-        let output = setup.cli_command(
+        let (_output, stderr) = setup.cli_command(
             &[
                 "account",
                 "export",
@@ -90,7 +92,7 @@ impl Spec for AccountKeystoreExportPerm {
             ],
             &[CLI_PASSWORD],
         );
-        assert!(output.contains("Success exported account as extended privkey to"));
+        assert!(stderr.contains("Success exported account as extended privkey to"));
 
         info!(
             "export.privkey : 0o{:o}",
@@ -111,7 +113,8 @@ pub struct AccountKeystoreUpdatePassword;
 
 impl Spec for AccountKeystoreUpdatePassword {
     fn run(&self, setup: &mut Setup) {
-        let output = setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
+        let (output, _stderr) =
+            setup.cli_command(&["account", "new"], &[CLI_PASSWORD, CLI_PASSWORD]);
         info!("output = {}", output);
         assert!(output.contains("lock_arg: "));
         assert!(output.contains("lock_hash: "));
@@ -128,13 +131,13 @@ impl Spec for AccountKeystoreUpdatePassword {
         let keystore_path = PathBuf::from(ckb_cli_home).join("keystore");
 
         const NEW_CLI_PASSWORD: &str = "new_1234567a";
-        let output = setup.cli_command(
+        let (output, stderr) = setup.cli_command(
             &["account", "update", "--lock-arg", lock_arg],
             &[CLI_PASSWORD, NEW_CLI_PASSWORD, NEW_CLI_PASSWORD],
         );
         info!("output = {}", output);
 
-        assert!(output.contains("status: success"));
+        assert!(stderr.contains("status: success"));
 
         // iterator files under keystore_path
         fs::read_dir(keystore_path).unwrap().for_each(|file| {

@@ -879,8 +879,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-sdk"
-version = "4.1.0"
-source = "git+https://github.com/eval-exec/ckb-sdk-rust.git?branch=exec-cookies#33c8e5e9d826936e1874af24152b1655f4d31d84"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2aa26b27162a44e53bbacad96bb7a822579b9457e65d9fcb43876bd0bb2600e1"
 dependencies = [
  "anyhow",
  "async-iterator",

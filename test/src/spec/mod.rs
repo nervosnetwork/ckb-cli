@@ -1,5 +1,6 @@
 mod account_keystore_perm;
 mod dao;
+mod deploy_type_id;
 mod plugin;
 mod rpc;
 mod udt;
@@ -8,6 +9,7 @@ mod wallet;
 
 pub use account_keystore_perm::*;
 pub use dao::*;
+pub use deploy_type_id::*;
 pub use plugin::*;
 pub use rpc::*;
 pub use udt::*;
