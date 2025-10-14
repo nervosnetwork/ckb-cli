@@ -26,6 +26,7 @@ pub enum CellLocation {
 pub struct Cell {
     pub name: String,
     pub location: CellLocation,
+    #[serde(default)]
     pub enable_type_id: bool,
     #[serde(default)]
     pub force_redeploy: bool,
@@ -35,6 +36,7 @@ pub struct Cell {
 pub struct DepGroup {
     pub name: String,
     pub cells: Vec<String>,
+    #[serde(default)]
     pub enable_type_id: bool,
 }
 
