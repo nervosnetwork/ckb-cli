@@ -12,9 +12,10 @@ use std::thread::{self, JoinHandle};
 use bitcoin::bip32::{ChildNumber, DerivationPath};
 use crossbeam_channel::{bounded, select, Sender};
 
+use ckb_channel::Request;
 use ckb_jsonrpc_types::{BlockNumber, HeaderView, JsonBytes, Script};
 use ckb_signer::{DerivedKeySet, MasterPrivKey, CKB_ROOT_PATH};
-use ckb_types::{bytes::Bytes, core::service::Request, H160, H256};
+use ckb_types::{bytes::Bytes, H160, H256};
 
 use super::builtin::{DefaultIndexer, DefaultKeyStore, ERROR_KEYSTORE_REQUIRE_PASSWORD};
 use crate::utils::other::read_password;

@@ -187,7 +187,7 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                 let sample_script = || {
                     Script::new_builder()
                         .code_hash(SIGHASH_TYPE_HASH.pack())
-                        .hash_type(ScriptHashType::Type.into())
+                        .hash_type(ScriptHashType::Type)
                         .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
                         .build()
                 };
@@ -227,7 +227,7 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                 let tx = TransactionBuilder::default()
                     .input(input)
                     .output(output)
-                    .output_data(Default::default())
+                    .output_data(ckb_types::packed::Bytes::default())
                     .witness(Bytes::from("abc").pack())
                     .build()
                     .data();

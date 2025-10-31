@@ -5,9 +5,9 @@ use std::thread::{self, JoinHandle};
 use bitcoin::bip32::DerivationPath;
 use crossbeam_channel::bounded;
 
+use ckb_channel::Request;
 use ckb_sdk::util::serialize_signature;
 use ckb_signer::{DerivedKeySet, Key, KeyStore, MasterPrivKey};
-use ckb_types::core::service::Request;
 use plugin_protocol::{JsonrpcError, KeyStoreRequest, PluginRequest, PluginResponse};
 
 use super::manager::PluginHandler;

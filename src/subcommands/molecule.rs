@@ -352,8 +352,8 @@ impl From<packed::CellbaseWitness> for CellbaseWitness {
 impl From<CellbaseWitness> for packed::CellbaseWitness {
     fn from(json: CellbaseWitness) -> Self {
         packed::CellbaseWitness::new_builder()
-            .lock(json.lock.into())
-            .message(json.message.into())
+            .lock(json.lock)
+            .message(json.message)
             .build()
     }
 }
@@ -390,11 +390,26 @@ impl From<RawTransaction> for packed::RawTransaction {
     fn from(json: RawTransaction) -> Self {
         packed::RawTransaction::new_builder()
             .version(json.version.pack())
-            .cell_deps(json.cell_deps.into_iter().map(Into::into).pack())
-            .header_deps(json.header_deps.iter().map(Pack::pack).pack())
-            .inputs(json.inputs.into_iter().map(Into::into).pack())
-            .outputs(json.outputs.into_iter().map(Into::into).pack())
-            .outputs_data(json.outputs_data.into_iter().map(Into::into).pack())
+            .cell_deps(
+                json.cell_deps
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+            )
+            .header_deps(
+                json.header_deps
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+            )
+            .inputs(json.inputs.into_iter().map(Into::into).collect::<Vec<_>>())
+            .outputs(json.outputs.into_iter().map(Into::into).collect::<Vec<_>>())
+            .outputs_data(
+                json.outputs_data
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<_>>(),
+            )
             .build()
     }
 }
@@ -443,7 +458,7 @@ impl From<RawHeader> for packed::RawHeader {
             .proposals_hash(json.proposals_hash.pack())
             .compact_target(json.compact_target.pack())
             .extra_hash(json.extra_hash.pack())
-            .dao(json.dao.into())
+            .dao(json.dao)
             .build()
     }
 }

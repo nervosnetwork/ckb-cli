@@ -114,7 +114,7 @@ impl TxHelper {
 
         let input = CellInput::new_builder()
             .previous_output(out_point)
-            .since(since.pack())
+            .since(since)
             .build();
 
         self.transaction = self.transaction.as_advanced_builder().input(input).build();
@@ -305,7 +305,7 @@ impl TxHelper {
             let signatures = self.signatures.get(&lock_arg).ok_or_else(|| {
                 let lock_script = rpc_types::Script::from(
                     Script::new_builder()
-                        .hash_type(ScriptHashType::Type.into())
+                        .hash_type(ScriptHashType::Type)
                         .code_hash(code_hash.clone())
                         .args(lock_arg.pack())
                         .build(),
@@ -446,6 +446,8 @@ pub fn check_lock_script(
         ScriptHashType::Data => "data",
         ScriptHashType::Data1 => "data1",
         ScriptHashType::Data2 => "data2",
+        // other data types are not supported in current ckb edition
+        _ => return Err(format!("Invalid hash_type: {:?}", hash_type)),
     };
 
     match (code_hash_category, hash_type, lock_args.len()) {
@@ -573,12 +575,12 @@ mod tests {
         let lock_sighash_ok = packed::Script::new_builder()
             .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
             .code_hash(SIGHASH_TYPE_HASH.pack())
-            .hash_type(ScriptHashType::Type.into())
+            .hash_type(ScriptHashType::Type)
             .build();
         let lock_sighash_bad_hash_type = lock_sighash_ok
             .clone()
             .as_builder()
-            .hash_type(ScriptHashType::Data.into())
+            .hash_type(ScriptHashType::Data)
             .build();
         let lock_sighash_bad_args_1 = lock_sighash_ok
             .clone()
@@ -594,7 +596,7 @@ mod tests {
         let lock_multisig_ok = packed::Script::new_builder()
             .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
             .code_hash(MultisigScript::Legacy.script_id().code_hash.pack())
-            .hash_type(MultisigScript::Legacy.script_id().hash_type.into())
+            .hash_type(MultisigScript::Legacy.script_id().hash_type)
             .build();
         let lock_multisig_ok_args_28 = lock_multisig_ok
             .clone()
@@ -604,7 +606,7 @@ mod tests {
         let lock_multisig_bad_hash_type = lock_multisig_ok
             .clone()
             .as_builder()
-            .hash_type(ScriptHashType::Data2.into())
+            .hash_type(ScriptHashType::Data2)
             .build();
         let lock_multisig_bad_args_1 = lock_multisig_ok
             .clone()
@@ -620,12 +622,12 @@ mod tests {
         let lock_other_type = packed::Script::new_builder()
             .args(Bytes::from(h160!("0x33").as_bytes().to_vec()).pack())
             .code_hash(h256!("0xdeadbeef").pack())
-            .hash_type(ScriptHashType::Type.into())
+            .hash_type(ScriptHashType::Type)
             .build();
         let lock_other_data = packed::Script::new_builder()
             .args(Bytes::from(h256!("0x33").as_bytes().to_vec()).pack())
             .code_hash(h256!("0xdeadbeef").pack())
-            .hash_type(ScriptHashType::Data.into())
+            .hash_type(ScriptHashType::Data)
             .build();
 
         for (script, is_ok, skip_check) in &[

@@ -430,7 +430,7 @@ impl<'a> WalletSubCommand<'a> {
             Some(
                 Script::new_builder()
                     .code_hash(TYPE_ID_CODE_HASH.pack())
-                    .hash_type(ScriptHashType::Type.into())
+                    .hash_type(ScriptHashType::Type)
                     .args(Bytes::from(vec![0u8; 32]).pack())
                     .build(),
             )
@@ -439,7 +439,7 @@ impl<'a> WalletSubCommand<'a> {
         };
         let to_output = CellOutput::new_builder()
             .capacity(Capacity::shannons(to_capacity).pack())
-            .lock(to_address.payload().into())
+            .lock(to_address.payload())
             .type_(placeholder_type_script.pack())
             .build();
         let builder = CapacityTransferBuilder::new(vec![(to_output, to_data)]);
@@ -479,7 +479,7 @@ impl<'a> WalletSubCommand<'a> {
             blake2b.finalize(&mut ret);
             let type_script = Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(Bytes::from(ret.to_vec()).pack())
                 .build();
             let mut outputs = tx.outputs().into_iter().collect::<Vec<_>>();

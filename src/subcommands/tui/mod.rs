@@ -21,10 +21,11 @@ use tui::{Frame, Terminal};
 // use chrono::{Local, DateTime, TimeZone};
 use ckb_sdk::{constants::ONE_CKB, Address, NetworkType};
 use ckb_types::{
-    core::{service::Request, BlockView},
+    core::BlockView,
     prelude::*,
     H256,
 };
+use ckb_channel::Request;
 
 use crate::utils::{
     genesis_info::GenesisInfo,

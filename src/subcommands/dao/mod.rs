@@ -192,7 +192,7 @@ impl<'a> DAOSubCommand<'a> {
     ) -> Result<Vec<LiveCellInfo>, String> {
         let dao_type_script = Script::new_builder()
             .code_hash(DAO_TYPE_HASH.pack())
-            .hash_type(ScriptHashType::Type.into())
+            .hash_type(ScriptHashType::Type)
             .build();
         let mut query = CellQueryOptions::new_lock(lock);
         query.secondary_script = Some(dao_type_script);

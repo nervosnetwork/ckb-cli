@@ -304,7 +304,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
-                    .index(index.pack())
+                    .index(index)
                     .build();
                 let get_live_cell = |out_point, with_data| {
                     get_live_cell(self.rpc_client, out_point, with_data).map(|(output, _)| output)

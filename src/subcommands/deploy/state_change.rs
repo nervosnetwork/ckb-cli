@@ -187,7 +187,7 @@ impl ChangeInfo for CellChange {
         let type_script_opt = type_id_args.map(|type_id_args| {
             packed::Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(Bytes::from(type_id_args.to_vec()).pack())
                 .build()
         });
@@ -259,7 +259,7 @@ impl CellChange {
             });
             let type_script = packed::Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(Bytes::from(args.to_vec()).pack())
                 .build();
             Some(type_script.calc_script_hash().unpack())
@@ -382,7 +382,7 @@ impl ChangeInfo for DepGroupChange {
         let type_script_opt = type_id_args.map(|type_id_args| {
             packed::Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(Bytes::from(type_id_args.to_vec()).pack())
                 .build()
         });
@@ -466,7 +466,7 @@ impl DepGroupChange {
             };
             let type_script = packed::Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(Bytes::from(args.to_vec()).pack())
                 .build();
             Some(type_script.calc_script_hash().unpack())

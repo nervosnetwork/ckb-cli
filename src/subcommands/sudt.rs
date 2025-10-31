@@ -259,7 +259,7 @@ impl<'a> SudtSubCommand<'a> {
                     script_args[20..40].copy_from_slice(&owner_script_hash.as_slice()[0..20]);
                     let script = Script::new_builder()
                         .code_hash(script_id.code_hash.pack())
-                        .hash_type(script_id.hash_type.into())
+                        .hash_type(script_id.hash_type)
                         .args(Bytes::from(script_args).pack())
                         .build();
                     (TransferAction::Create, script)
@@ -373,7 +373,7 @@ impl<'a> SudtSubCommand<'a> {
         let type_script = udt_type.build_script(&udt_script_id, &owner_script_hash);
         let cheque_sender_script_hash = Script::new_builder()
             .code_hash(SIGHASH_TYPE_HASH.pack())
-            .hash_type(ScriptHashType::Type.into())
+            .hash_type(ScriptHashType::Type)
             .args(Bytes::from(sender_account.as_bytes().to_vec()).pack())
             .build()
             .calc_script_hash();
@@ -389,7 +389,7 @@ impl<'a> SudtSubCommand<'a> {
                         .copy_from_slice(&cheque_sender_script_hash.as_slice()[0..20]);
                     let script = Script::new_builder()
                         .code_hash(script_id.code_hash.pack())
-                        .hash_type(script_id.hash_type.into())
+                        .hash_type(script_id.hash_type)
                         .args(Bytes::from(script_args).pack())
                         .build();
                     (TransferAction::Create, script)
@@ -553,7 +553,7 @@ impl<'a> SudtSubCommand<'a> {
             H160::from_slice(capacity_provider.payload().args().as_ref()).unwrap();
         let acp_lock = Script::new_builder()
             .code_hash(acp_script_id.code_hash.pack())
-            .hash_type(acp_script_id.hash_type.into())
+            .hash_type(acp_script_id.hash_type)
             .args(to.payload().args().pack())
             .build();
         let acp_address = {
@@ -575,10 +575,7 @@ impl<'a> SudtSubCommand<'a> {
             .occupied_capacity(Capacity::bytes(output_data.len()).unwrap())
             .unwrap()
             .as_u64();
-        let output = base_output
-            .as_builder()
-            .capacity(occupied_capacity.pack())
-            .build();
+        let output = base_output.as_builder().capacity(occupied_capacity).build();
         let builder = CapacityTransferBuilder::new(vec![(output, output_data)]);
         let mut udt_builder = UdtTxBuilder {
             plugin_mgr: self.plugin_mgr,
@@ -655,18 +652,18 @@ impl<'a> SudtSubCommand<'a> {
                 .copy_from_slice(&sender_script.calc_script_hash().as_slice()[0..20]);
             Script::new_builder()
                 .code_hash(cheque_script_id.code_hash.pack())
-                .hash_type(cheque_script_id.hash_type.into())
+                .hash_type(cheque_script_id.hash_type)
                 .args(Bytes::from(script_args).pack())
                 .build()
         };
         let receiver_acp_script = Script::new_builder()
             .code_hash(acp_script_id.code_hash.pack())
-            .hash_type(acp_script_id.hash_type.into())
+            .hash_type(acp_script_id.hash_type)
             .args(receiver_script.args())
             .build();
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
-            .hash_type(udt_script_id.hash_type.into())
+            .hash_type(udt_script_id.hash_type)
             .args(owner_script.calc_script_hash().as_bytes().pack())
             .build();
 
@@ -790,13 +787,13 @@ impl<'a> SudtSubCommand<'a> {
                 .copy_from_slice(&sender_script.calc_script_hash().as_slice()[0..20]);
             Script::new_builder()
                 .code_hash(cheque_script_id.code_hash.pack())
-                .hash_type(cheque_script_id.hash_type.into())
+                .hash_type(cheque_script_id.hash_type)
                 .args(Bytes::from(script_args).pack())
                 .build()
         };
         let type_script = Script::new_builder()
             .code_hash(udt_script_id.code_hash.pack())
-            .hash_type(udt_script_id.hash_type.into())
+            .hash_type(udt_script_id.hash_type)
             .args(owner_script.calc_script_hash().as_bytes().pack())
             .build();
 
@@ -1093,7 +1090,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                 let acp_script_id = get_script_id(&cell_deps, CellDepName::Acp)?;
                 let acp_script = Script::new_builder()
                     .code_hash(acp_script_id.code_hash.pack())
-                    .hash_type(acp_script_id.hash_type.into())
+                    .hash_type(acp_script_id.hash_type)
                     .args(sighash_addr.payload().args().pack())
                     .build();
                 let acp_payload = AddressPayload::from(acp_script);
@@ -1117,7 +1114,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                 script_args[20..40].copy_from_slice(&sender_script_hash.as_slice()[0..20]);
                 let cheque_script = Script::new_builder()
                     .code_hash(cheque_script_id.code_hash.pack())
-                    .hash_type(cheque_script_id.hash_type.into())
+                    .hash_type(cheque_script_id.hash_type)
                     .args(Bytes::from(script_args).pack())
                     .build();
                 let cheque_payload = AddressPayload::from(cheque_script);

@@ -821,7 +821,7 @@ fn load_cell_info(
 ) -> Result<(H256, Bytes, json_types::CellOutput)> {
     let out_point = packed::OutPoint::new_builder()
         .tx_hash(tx_hash.pack())
-        .index(index.pack())
+        .index(index)
         .build();
     let cell_with_status = rpc_client
         .get_live_cell(out_point, true, None)
@@ -869,7 +869,7 @@ fn load_dep_groups(
             } => {
                 let out_point = packed::OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
-                    .index(index.pack())
+                    .index(index)
                     .build();
                 Some((&config.name, out_point))
             }
@@ -888,7 +888,7 @@ fn load_dep_groups(
                     .map(|cell_recipe| {
                         packed::OutPoint::new_builder()
                             .tx_hash(cell_recipe.tx_hash.pack())
-                            .index(cell_recipe.index.pack())
+                            .index(cell_recipe.index)
                             .build()
                     })
                     .or_else(|| refs_map.get(cell_name).cloned())

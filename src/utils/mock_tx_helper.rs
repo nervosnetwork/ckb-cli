@@ -157,14 +157,6 @@ impl<'a> MockTransactionHelper<'a> {
             .collect::<HashMap<_, _>>();
         let mut insert_dep = |hash_type, code_hash: &Byte32| -> Result<(), String> {
             match (hash_type, code_hash) {
-                (ScriptHashType::Data, data_hash)
-                | (ScriptHashType::Data1, data_hash)
-                | (ScriptHashType::Data2, data_hash) => {
-                    let dep = data_deps.get(data_hash).cloned().ok_or_else(|| {
-                        format!("Can not find data hash in mock deps: {}", data_hash)
-                    })?;
-                    cell_deps.insert(dep);
-                }
                 (ScriptHashType::Type, code_hash)
                     if code_hash.as_slice() == SIGHASH_TYPE_HASH.as_bytes() =>
                 {
@@ -173,6 +165,12 @@ impl<'a> MockTransactionHelper<'a> {
                 (ScriptHashType::Type, type_hash) => {
                     let dep = type_deps.get(type_hash).cloned().ok_or_else(|| {
                         format!("Can not find type hash in mock deps: {}", type_hash)
+                    })?;
+                    cell_deps.insert(dep);
+                }
+                (_, data_hash) => {
+                    let dep = data_deps.get(data_hash).cloned().ok_or_else(|| {
+                        format!("Can not find data hash in mock deps: {}", data_hash)
                     })?;
                     cell_deps.insert(dep);
                 }
@@ -326,7 +324,7 @@ impl<'a> MockTransactionHelper<'a> {
                 ckb2023: CKB2023::new_dev_default(),
             })
             .build();
-        let tip = HeaderBuilder::default().number(0.pack()).build();
+        let tip = HeaderBuilder::default().number(0).build();
         let tx_verify_env = TxVerifyEnv::new_submit(&tip);
 
         let debug_printer: DebugPrinter = Arc::new(|script_hash: &Byte32, message: &str| {
@@ -386,7 +384,7 @@ mod test {
             .expect("Generate hash(H160) from pubkey failed");
         let lock_script = Script::new_builder()
             .code_hash(SIGHASH_TYPE_HASH.pack())
-            .hash_type(ScriptHashType::Type.into())
+            .hash_type(ScriptHashType::Type)
             .args(Bytes::from(lock_arg.as_bytes().to_vec()).pack())
             .build();
 
@@ -446,7 +444,7 @@ mod test {
             .as_advanced_builder()
             .input(input)
             .output(output)
-            .output_data(Default::default())
+            .output_data(ckb_types::packed::Bytes::default())
             .build()
             .data();
 
