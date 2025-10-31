@@ -17,7 +17,7 @@ ci: fmt clippy test security-audit check-crates check-licenses
 	git diff --exit-code Cargo.lock
 
 integration:
-	bash devtools/ci/integration.sh v0.200.0 $(ARGS)
+	bash devtools/ci/integration.sh v0.203.0 $(ARGS)
 
 integration-spec:
 	@if [ -z "$(SPEC)" ]; then \
@@ -25,7 +25,7 @@ integration-spec:
 		echo "Example: make integration-spec SPEC=deploy_type_id"; \
 		exit 1; \
 	fi
-	bash devtools/ci/integration.sh v0.200.0 --spec=$(SPEC)
+	bash devtools/ci/integration.sh v0.203.0 --spec=$(SPEC)
 
 prod: ## Build binary with release profile.
 	cargo build --locked --release
