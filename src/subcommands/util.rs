@@ -750,7 +750,7 @@ message = "0x"
                 let with_data = m.is_present("with-data");
                 let out_point = packed::OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
-                    .index(index.pack())
+                    .index(index)
                     .build();
                 let cell_with_status = self.rpc_client.get_live_cell(out_point, true, None)?;
                 if cell_with_status.status != "live" {

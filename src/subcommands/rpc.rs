@@ -659,7 +659,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
 
                 let out_point = packed::OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
-                    .index(index.pack())
+                    .index(index)
                     .build();
                 if is_raw_data {
                     let resp = {

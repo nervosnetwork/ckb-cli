@@ -83,7 +83,7 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
         let index = out_point_value["index"].as_u64().unwrap() as u32;
         OutPoint::new_builder()
             .tx_hash(tx_hash.pack())
-            .index(index.pack())
+            .index(index)
             .build()
     };
 
@@ -92,7 +92,7 @@ pub fn prepare(setup: &mut Setup, tmp_path: &str) {
     for (tx_hash, _) in &tx_hashes[0..2] {
         let script_out_point = OutPoint::new_builder()
             .tx_hash(H256::from_str(&tx_hash[2..]).unwrap().pack())
-            .index(0u32.pack())
+            .index(0u32)
             .build();
         let out_point_vec: OutPointVec = vec![secp_data_out_point.clone(), script_out_point].pack();
         let data_hex = faster_hex::hex_string(out_point_vec.as_slice());

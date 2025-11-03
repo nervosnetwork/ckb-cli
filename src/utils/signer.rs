@@ -86,7 +86,7 @@ impl PrivkeySigner {
         if self.privkeys.contains_key(&account) {
             let script_hash = Script::new_builder()
                 .code_hash(script_id.code_hash.pack())
-                .hash_type(script_id.hash_type.into())
+                .hash_type(script_id.hash_type)
                 .args(Bytes::from(account.as_bytes().to_vec()).pack())
                 .build()
                 .calc_script_hash();
@@ -161,7 +161,7 @@ impl KeyStoreHandlerSigner {
         {
             let script_hash = Script::new_builder()
                 .code_hash(script_id.code_hash.pack())
-                .hash_type(script_id.hash_type.into())
+                .hash_type(script_id.hash_type)
                 .args(Bytes::from(account.as_bytes().to_vec()).pack())
                 .build()
                 .calc_script_hash();
