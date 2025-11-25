@@ -112,9 +112,13 @@ pub fn build_tx<T: ChangeInfo>(
         );
     }
 
-    let placeholder_witness = packed::WitnessArgs::new_builder()
-        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-        .build();
+    let placeholder_witness = if let Some(cfg) = multisig_config {
+        cfg.placeholder_witness()
+    } else {
+        packed::WitnessArgs::new_builder()
+            .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+            .build()
+    };
     let balancer = CapacityBalancer::new_simple(from_script, placeholder_witness, fee_rate);
 
     let header_dep_resolver = DefaultHeaderDepResolver::new(ckb_rpc);
