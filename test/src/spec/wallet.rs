@@ -10,10 +10,10 @@ use std::{fs, str::FromStr, thread, time::Duration};
 // Random private key just for tests
 pub const ACCOUNT1_PRIVKEY: &str =
     "0x3b5ca3bd98b6a57f36b3f6fa138c4004e92a37dee39069606ee65c742e5f9170";
-pub const ACCOUNT1_ADDRESS: &str = "ckt1qyqp76jus2sst4qy57nnphuqgsmlmzkv2l7s8ksggy";
+pub const ACCOUNT1_ADDRESS: &str = "ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqgldfwg9gg96sz20fesm7qygdla3tx90lg6t6j7h";
 pub const ACCOUNT2_PRIVKEY: &str =
     "0x11e86559b6d71abcf9fe2d6dd4f5e6d2fb8a1ef79db0d4b535244ceb13add189";
-pub const ACCOUNT2_ADDRESS: &str = "ckt1qyq2em03yml8thgy6wthjfvfgepds9e63pxs0zc6k7";
+pub const ACCOUNT2_ADDRESS: &str = "ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqdvahcjdln4m5zd89meyky5vskczuagsngggd0uw";
 
 fn get_capacity(setup: &mut Setup, address: &str, target: &str) -> String {
     let cli = format!("wallet get-capacity --address {}", address);
