@@ -21,6 +21,7 @@ ckb-types = "1.0"
 ckb-jsonrpc-types = "1.0"
 ckb-app-config = "1.0"
 ckb-chain-spec = "1.0"
+ckb-system-scripts-v0_6_0 = { package = "ckb-system-scripts", version = "0.6.0" }
 regex = "1.1.6"
 faster-hex = "0.6"
 tokio = { version = "1", features = ["net", "io-util", "rt"] }

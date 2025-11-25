@@ -4,9 +4,10 @@ use crate::setup::Setup;
 use crate::spec::udt::{ACP_BIN, CHEQUE_BIN, SUDT_BIN};
 use crate::spec::Spec;
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
-use ckb_jsonrpc_types::JsonBytes;
+use ckb_jsonrpc_types::{JsonBytes, ScriptHashType as JsonScriptHashType};
 use ckb_types::{core::ScriptHashType, packed, prelude::*, H256};
 use serde::Deserialize;
+use serde_yaml::Value as YamlValue;
 use std::fs;
 use tempfile::tempdir;
 
@@ -341,13 +342,9 @@ threshold = 1
 
         let code_hash: H256 = serde_json::from_str(&format!("\"{}\"", code_hash_str)).unwrap();
         let args: JsonBytes = serde_json::from_str(&format!("\"{}\"", args_str)).unwrap();
-        let sht = match hash_type_str {
-            "type" => ScriptHashType::Type,
-            "data" => ScriptHashType::Data,
-            "data1" => ScriptHashType::Data1,
-            "data2" => ScriptHashType::Data2,
-            _ => panic!("unknown hash_type: {}", hash_type_str),
-        };
+        let json_hash_type: JsonScriptHashType =
+            serde_json::from_str(&format!("\"{}\"", hash_type_str)).unwrap();
+        let sht: ScriptHashType = json_hash_type.into();
         let script = packed::Script::new_builder()
             .code_hash(code_hash.pack())
             .hash_type(packed::Byte::new(sht.into()))
@@ -466,13 +463,9 @@ threshold = 1
         let args_str = type_script1["args"].as_str().unwrap();
         let code_hash: H256 = serde_json::from_str(&format!("\"{}\"", code_hash_str)).unwrap();
         let args: JsonBytes = serde_json::from_str(&format!("\"{}\"", args_str)).unwrap();
-        let sht = match hash_type_str {
-            "type" => ScriptHashType::Type,
-            "data" => ScriptHashType::Data,
-            "data1" => ScriptHashType::Data1,
-            "data2" => ScriptHashType::Data2,
-            _ => panic!("unknown hash_type: {}", hash_type_str),
-        };
+        let json_hash_type: JsonScriptHashType =
+            serde_json::from_str(&format!("\"{}\"", hash_type_str)).unwrap();
+        let sht: ScriptHashType = json_hash_type.into();
         let script1 = packed::Script::new_builder()
             .code_hash(code_hash.pack())
             .hash_type(packed::Byte::new(sht.into()))
