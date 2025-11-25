@@ -18,6 +18,7 @@ pub struct Setup {
     pub keystore_plugin_bin: String,
     ckb_dir: String,
     rpc_port: u16,
+    rpc_override: Option<String>,
     miner: Option<Miner>,
     success: bool,
     tempdir: PathBuf,
@@ -32,6 +33,7 @@ impl Setup {
         keystore_plugin_bin: String,
         ckb_dir: String,
         rpc_port: u16,
+        rpc_override: Option<String>,
         tempdir: tempfile::TempDir,
     ) -> Self {
         Self {
@@ -40,6 +42,7 @@ impl Setup {
             keystore_plugin_bin,
             ckb_dir,
             rpc_port,
+            rpc_override,
             miner: None,
             success: false,
             tempdir: tempdir.into_path(),
@@ -47,6 +50,10 @@ impl Setup {
     }
 
     pub fn ready(&mut self, spec: &dyn Spec) -> ProcessGuard {
+        if self.rpc_override.is_some() {
+            // External RPC: nothing to boot locally.
+            return ProcessGuard(None);
+        }
         self.modify_ckb_toml(spec);
         self.modify_spec_toml(spec);
 
@@ -64,10 +71,13 @@ impl Setup {
             .expect("Run `ckb run` failed");
 
         sleep(Duration::from_secs(3)); // Wait for ckb starting RPC thread
-        ProcessGuard(ckb_child_process)
+        ProcessGuard(Some(ckb_child_process))
     }
 
     pub fn miner(&mut self) -> &Miner {
+        if self.rpc_override.is_some() {
+            panic!("miner is unavailable when using an external rpc url");
+        }
         if self.miner.is_none() {
             self.miner = Some(Miner::init(self.rpc_url()));
         }
@@ -79,7 +89,10 @@ impl Setup {
     }
 
     pub fn rpc_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.rpc_port)
+        match &self.rpc_override {
+            Some(url) => url.clone(),
+            None => format!("http://127.0.0.1:{}", self.rpc_port),
+        }
     }
 
     pub fn consensus(&self) -> Consensus {

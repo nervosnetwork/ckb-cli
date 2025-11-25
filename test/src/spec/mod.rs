@@ -27,6 +27,10 @@ pub trait Spec {
 
     fn modify_spec_toml(&self, _spec_toml: &mut ChainSpec) {}
 
+    fn rpc_override(&self) -> Option<String> {
+        None
+    }
+
     fn run(&self, setup: &mut Setup);
     fn spec_name(&self) -> &'static str;
 }

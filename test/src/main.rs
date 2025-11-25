@@ -9,8 +9,9 @@ use crate::setup::Setup;
 use crate::spec::{
     AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
     DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, DeployMultisigV2Upgrade,
-    DeployDepGroupEnableTypeIdLater, DeployDepGroupTypeIdTracking, DeployDepGroupWithTypeId,
-    DeployDepGroupWithoutTypeId, Plugin, RpcGetTipBlockNumber, Spec, SudtIssueToAcp,
+    DeployMultisigV2UpgradeTestnet, DeployDepGroupEnableTypeIdLater,
+    DeployDepGroupTypeIdTracking, DeployDepGroupWithTypeId, DeployDepGroupWithoutTypeId, Plugin,
+    RpcGetTipBlockNumber, Spec, SudtIssueToAcp,
     SudtIssueToCheque, SudtTransferToChequeForClaim, SudtTransferToChequeForWithdraw,
     SudtTransferToMultiAcp, Util, WalletTimelockedAddress, WalletTransfer,
 };
@@ -33,13 +34,28 @@ async fn main() {
         .map(|s| s.to_string())
         .or_else(|| env::var("SPEC_FILTER").ok());
 
-    let specs: Vec<_> = all_specs()
-        .into_iter()
-        .filter(|spec| match &spec_filter {
-            Some(filter) => spec.spec_name().contains(filter),
-            None => true,
-        })
-        .collect();
+    let available_specs = all_specs();
+    let specs: Vec<_> = match &spec_filter {
+        Some(filter) => {
+            let has_exact = available_specs
+                .iter()
+                .any(|spec| spec.spec_name() == filter.as_str());
+            available_specs
+                .into_iter()
+                .filter(|spec| {
+                    if has_exact {
+                        spec.spec_name() == filter
+                    } else {
+                        spec.spec_name().contains(filter)
+                    }
+                })
+                .collect()
+        }
+        None => available_specs
+            .into_iter()
+            .filter(|spec| !spec.spec_name().to_lowercase().contains("testnet"))
+            .collect(),
+    };
 
     if specs.is_empty() {
         if let Some(filter) = &spec_filter {
@@ -68,22 +84,31 @@ async fn main() {
 
 fn run_spec(spec: Box<dyn Spec>, app: &App) {
     let (tempdir, ckb_dir) = temp_dir();
-    let rpc_port = find_available_port(8000, 8099);
-    let p2p_port = find_available_port(8100, 8199);
-    let _stdout = run_cmd(
-        app.ckb_bin(),
-        vec![
-            "-C",
-            ckb_dir.as_str(),
-            "init",
-            "--chain",
-            "dev",
-            "--rpc-port",
-            &rpc_port.to_string(),
-            "--p2p-port",
-            &p2p_port.to_string(),
-        ],
-    );
+    let rpc_override = spec.rpc_override();
+    let (rpc_port, p2p_port) = if rpc_override.is_none() {
+        (
+            find_available_port(8000, 8099),
+            find_available_port(8100, 8199),
+        )
+    } else {
+        (0, 0)
+    };
+    if rpc_override.is_none() {
+        let _stdout = run_cmd(
+            app.ckb_bin(),
+            vec![
+                "-C",
+                ckb_dir.as_str(),
+                "init",
+                "--chain",
+                "dev",
+                "--rpc-port",
+                &rpc_port.to_string(),
+                "--p2p-port",
+                &p2p_port.to_string(),
+            ],
+        );
+    }
 
     let mut ckb_cli_dir = PathBuf::from(ckb_dir.as_str());
     ckb_cli_dir.push("ckb-cli");
@@ -95,6 +120,7 @@ fn run_spec(spec: Box<dyn Spec>, app: &App) {
         app.keystore_plugin_bin().to_string(),
         ckb_dir,
         rpc_port,
+        rpc_override,
         tempdir,
     );
     let _ckb_guard = setup.ready(&*spec);
@@ -126,5 +152,6 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(DeployDepGroupTypeIdTracking),
         Box::new(DeployDepGroupEnableTypeIdLater),
         Box::new(DeployMultisigV2Upgrade),
+        Box::new(DeployMultisigV2UpgradeTestnet),
     ]
 }

@@ -2,15 +2,17 @@ use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
 use tempfile::{tempdir, TempDir};
 
-pub struct ProcessGuard(pub Child);
+pub struct ProcessGuard(pub Option<Child>);
 
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
-        match self.0.kill() {
-            Err(e) => log::error!("Could not kill ckb process: {}", e),
-            Ok(_) => log::debug!("Successfully killed ckb process"),
+        if let Some(child) = self.0.as_mut() {
+            match child.kill() {
+                Err(e) => log::error!("Could not kill ckb process: {}", e),
+                Ok(_) => log::debug!("Successfully killed ckb process"),
+            }
+            let _ = child.wait();
         }
-        let _ = self.0.wait();
     }
 }
 
