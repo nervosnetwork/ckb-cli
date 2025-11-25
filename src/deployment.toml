@@ -19,6 +19,18 @@ cells = [
 ]
 
 # The lock script set to output cells
+# Note, some well known locks:
+# - SigHash:
+#     code_hash: 0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8, hash_type: type
+#     url: https://explorer.nervos.org/script/0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8/type  
+#
+# - Multisig Legacy:
+#     code_hash: 0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8, hash_type: type 
+#     url: https://explorer.nervos.org/script/0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8/type
+#
+# - Multisig V2:
+#     code_hash: 0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29, hash_type: data1 
+#     url: https://explorer.nervos.org/script/0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29/data1
 [lock]
 code_hash = "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8"
 args = "0x0000000000000000000000000000000000000000"
@@ -26,6 +38,8 @@ hash_type = "type"
 
 # For unlocking inputs with multisig lock script
 [multisig_config]
+# if lock_code_hash is not specified, it fallback to Multisig Legacy
+lock_code_hash = "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8"
 sighash_addresses = [
   "ckt1qyq111111111111111111111111111111111111111",
   "ckt1qyq222222222222222222222222222222222222222",
