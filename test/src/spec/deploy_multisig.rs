@@ -1,6 +1,5 @@
 use crate::miner::Miner;
 use crate::setup::Setup;
-use crate::spec::udt::{ACP_BIN, CHEQUE_BIN};
 use crate::spec::wallet::{ACCOUNT1_ADDRESS, ACCOUNT1_PRIVKEY, ACCOUNT2_ADDRESS, ACCOUNT2_PRIVKEY};
 use crate::spec::Spec;
 use ckb_jsonrpc_types::ScriptHashType as JsonScriptHashType;
@@ -11,6 +10,9 @@ use faster_hex::hex_string;
 use serde_yaml::Value as YamlValue;
 use std::{env, fs, path::Path, str::FromStr};
 use tempfile::tempdir;
+
+const ALWAYS_SUCCESS_BAK_BIN: &[u8] = include_bytes!("../script-bins/bak-always-success");
+const ALWAYS_SUCCESS_BIN: &[u8] = include_bytes!("../script-bins/always-success");
 
 pub struct DeployMultisigV2Upgrade;
 
@@ -66,14 +68,15 @@ impl Spec for DeployMultisigV2Upgrade {
         let lock_code_hash = format!("{:#x}", multisig_config.lock_code_hash());
         let lock_hash_type = script_hash_type_to_str(multisig_config.lock_hash_type());
 
-        // Initial version of the deployed binary
-        let cell_path = temp_dir.path().join("multisig-cell.bin");
-        fs::write(&cell_path, ACP_BIN).unwrap();
+        // Initial version of the deployed binary (bak)
+        let cell_path_v1 = temp_dir.path().join("multisig-cell-bak.bin");
+        let cell_path_v2 = temp_dir.path().join("multisig-cell.bin");
+        fs::write(&cell_path_v1, ALWAYS_SUCCESS_BAK_BIN).unwrap();
 
-        let deployment_config = format!(
+        let deployment_config_v1 = format!(
             r#"
 [[cells]]
-name = "multisig-cell"
+name = "bak-always-success"
 enable_type_id = false
 location = {{ file = "{cell_path}" }}
 
@@ -85,16 +88,17 @@ hash_type = "{hash_type}"
 [multisig_config]
 lock_code_hash = "{code_hash}"
 sighash_addresses = ["{addr1}", "{addr2}"]
-require_first_n = 0
-threshold = 2
+            require_first_n = 0
+            threshold = 2
 "#,
-            cell_path = cell_path.display(),
+            cell_path = cell_path_v1.display(),
             code_hash = lock_code_hash,
             hash_type = lock_hash_type,
             addr1 = ACCOUNT1_ADDRESS,
             addr2 = ACCOUNT2_ADDRESS,
         );
-        fs::write(&config_path, deployment_config).unwrap();
+        fs::write(&config_path, &deployment_config_v1).unwrap();
+        println!("deployment.toml (v1):\n{}", deployment_config_v1);
 
         // === First deployment ===
         setup.cli(&format!(
@@ -130,7 +134,7 @@ threshold = 2
             .to_string();
         setup.miner().mine_until_transaction_confirm(&first_cell_tx);
 
-        // The updated binary is larger (cheque), so add extra capacity before building the upgrade.
+        // The updated binary is larger, so add extra capacity before building the upgrade.
         transfer_and_confirm(
             setup,
             &format!(
@@ -140,7 +144,33 @@ threshold = 2
         );
 
         // === Prepare update that consumes the multisig output ===
-        fs::write(&cell_path, CHEQUE_BIN).unwrap();
+        fs::write(&cell_path_v2, ALWAYS_SUCCESS_BIN).unwrap();
+        let deployment_config_v2 = format!(
+            r#"
+[[cells]]
+name = "always-success"
+enable_type_id = false
+location = {{ file = "{cell_path}" }}
+
+[lock]
+code_hash = "{code_hash}"
+args = "{lock_args}"
+hash_type = "{hash_type}"
+
+[multisig_config]
+lock_code_hash = "{code_hash}"
+sighash_addresses = ["{addr1}", "{addr2}"]
+require_first_n = 0
+threshold = 2
+"#,
+            cell_path = cell_path_v2.display(),
+            code_hash = lock_code_hash,
+            hash_type = lock_hash_type,
+            addr1 = ACCOUNT1_ADDRESS,
+            addr2 = ACCOUNT2_ADDRESS,
+        );
+        fs::write(&config_path, &deployment_config_v2).unwrap();
+        println!("deployment.toml (v2):\n{}", deployment_config_v2);
         setup.cli(&format!(
             "deploy gen-txs --deployment-config {} --info-file {} --migration-dir {} --from-address {} --fee-rate 1000",
             config_path.display(),
