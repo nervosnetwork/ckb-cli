@@ -80,43 +80,7 @@ pub fn build_tx<T: ChangeInfo>(
         .filter_map(|info| info.build_cell_output(lock_script, first_cell_input))
         .unzip();
 
-    let mut unlockers = HashMap::new();
-    let signer = DummySigner {
-        args: vec![from_address.payload().args()],
-    };
-    let sighash_unlocker = SecpSighashUnlocker::from(Box::new(signer.clone()) as Box<_>);
-    let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
-    unlockers.insert(
-        sighash_script_id,
-        Box::new(sighash_unlocker) as Box<dyn ScriptUnlocker>,
-    );
-
-    let mut cell_deps = vec![genesis_info.sighash_dep()];
-    if let Some(cfg) = multisig_config {
-        let multisig_script =
-            MultisigScript::try_from(cfg.lock_code_hash()).unwrap_or_else(|_err| {
-                panic!(
-                    "Failed to get multisig script from {}",
-                    cfg.lock_code_hash(),
-                )
-            });
-
-        cell_deps.push(genesis_info.multisig_dep(multisig_script));
-
-        let multisig_signer = SecpMultisigScriptSigner::new(Box::new(signer), cfg.clone());
-        let multisig_unlocker = SecpMultisigUnlocker::new(multisig_signer);
-        let multisig_script_id = multisig_script.script_id();
-        unlockers.insert(
-            multisig_script_id,
-            Box::new(multisig_unlocker) as Box<dyn ScriptUnlocker>,
-        );
-    }
-
-    let placeholder_witness = packed::WitnessArgs::new_builder()
-        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
-        .build();
-    let balancer = CapacityBalancer::new_simple(from_script, placeholder_witness, fee_rate);
-
+    // Create tx_dep_provider first, so we can use it to inspect input cells
     let header_dep_resolver = DefaultHeaderDepResolver::new(ckb_rpc);
     let tx_dep_provider = {
         let inner = DefaultTransactionDependencyProvider::new(ckb_rpc, 0);
@@ -134,6 +98,55 @@ pub fn build_tx<T: ChangeInfo>(
         }
         TxDepProviderWrapper { inner, offchain }
     };
+
+    let mut unlockers = HashMap::new();
+    let signer = DummySigner {
+        args: vec![from_address.payload().args()],
+    };
+    let sighash_unlocker = SecpSighashUnlocker::from(Box::new(signer.clone()) as Box<_>);
+    let sighash_script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
+    unlockers.insert(
+        sighash_script_id,
+        Box::new(sighash_unlocker) as Box<dyn ScriptUnlocker>,
+    );
+
+    let mut cell_deps = vec![genesis_info.sighash_dep()];
+
+    // Detect multisig script types from input cells and add cell_deps/unlockers
+    // In upgrade scenarios, we need to check the actual input cell locks, not the deployment config
+    if let Some(cfg) = multisig_config {
+        for input in inputs.iter() {
+            let out_point = input.previous_output();
+            let cell_output = tx_dep_provider.get_cell(&out_point)?;
+            let lock_script_id = ScriptId::from(&cell_output.lock());
+
+            // Check if this is a multisig lock and we haven't added it yet
+            let multisig_script = if lock_script_id == MultisigScript::Legacy.script_id() {
+                Some(MultisigScript::Legacy)
+            } else if lock_script_id == MultisigScript::V2.script_id() {
+                Some(MultisigScript::V2)
+            } else {
+                None
+            };
+
+            // Add cell_dep and unlocker if this is a new multisig type
+            if let Some(multisig_script) = multisig_script {
+                unlockers.entry(lock_script_id).or_insert_with(|| {
+                    cell_deps.push(genesis_info.multisig_dep(multisig_script));
+
+                    let multisig_signer =
+                        SecpMultisigScriptSigner::new(Box::new(signer.clone()), cfg.clone());
+                    let multisig_unlocker = SecpMultisigUnlocker::new(multisig_signer);
+                    Box::new(multisig_unlocker) as Box<dyn ScriptUnlocker>
+                });
+            }
+        }
+    }
+
+    let placeholder_witness = packed::WitnessArgs::new_builder()
+        .lock(Some(Bytes::from(vec![0u8; 65])).pack())
+        .build();
+    let balancer = CapacityBalancer::new_simple(from_script, placeholder_witness, fee_rate);
 
     let base_tx = TransactionBuilder::default()
         .cell_deps(cell_deps)
