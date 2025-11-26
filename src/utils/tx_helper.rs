@@ -20,6 +20,9 @@ use crate::utils::genesis_info::GenesisInfo;
 
 // TODO: Add dao support
 
+pub const ZERO_HASH: H256 =
+    h256!("0x0000000000000000000000000000000000000000000000000000000000000000");
+
 /// A transaction helper handle input/output with secp256k1(sighash/multisg) lock
 ///  1. Sign transaction
 ///  2. Inspect transaction information
@@ -422,9 +425,6 @@ pub fn check_lock_script(
         Zero,
         Other,
     }
-
-    pub const ZERO_HASH: H256 =
-        h256!("0x0000000000000000000000000000000000000000000000000000000000000000");
 
     let code_hash: H256 = lock.code_hash().unpack();
     let hash_type: ScriptHashType = lock.hash_type().try_into().expect("hash_type");

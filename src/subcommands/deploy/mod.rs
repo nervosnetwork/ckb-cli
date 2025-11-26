@@ -10,11 +10,12 @@ use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types as json_types;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
+    constants::{MultisigScript, SIGHASH_TYPE_HASH},
     traits::{DefaultTransactionDependencyProvider, Signer},
     unlock::MultisigConfig,
     Address, HumanCapacity,
 };
-use ckb_types::{bytes::Bytes, packed, prelude::*, H160, H256};
+use ckb_types::{bytes::Bytes, core::ScriptHashType, packed, prelude::*, H160, H256};
 use clap::{App, Arg, ArgMatches};
 
 use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
@@ -29,7 +30,7 @@ use crate::utils::{
     other::{get_live_cell_with_cache, get_network_type, read_password},
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
-    tx_helper::SignerFn,
+    tx_helper::{SignerFn, ZERO_HASH},
 };
 
 mod deployment;
@@ -167,6 +168,9 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 let deployment =
                     load_deployment(&deployment_config).map_err(|err| err.to_string())?;
                 let lock_script = packed::Script::from(deployment.lock.clone());
+
+                // * Validate lock script against known system scripts
+                validate_lock_script(&lock_script);
 
                 // * Load last receipt
                 let last_recipe =
@@ -594,6 +598,36 @@ fn load_deployment(file_path: &Path) -> Result<Deployment> {
     file.read_to_end(&mut buf)?;
     let deployment = toml::from_slice(&buf)?;
     Ok(deployment)
+}
+
+fn validate_lock_script(lock_script: &packed::Script) {
+    let code_hash: H256 = lock_script.code_hash().unpack();
+    let hash_type: ScriptHashType = lock_script
+        .hash_type()
+        .try_into()
+        .unwrap_or(ScriptHashType::Data);
+
+    // Check if it matches known system scripts
+    let is_known =
+        // Sighash
+        (code_hash == SIGHASH_TYPE_HASH && hash_type == ScriptHashType::Type)
+        // Multisig Legacy
+        || (code_hash == MultisigScript::Legacy.script_id().code_hash
+            && hash_type == MultisigScript::Legacy.script_id().hash_type)
+        // Multisig V2
+        || (code_hash == MultisigScript::V2.script_id().code_hash
+            && hash_type == MultisigScript::V2.script_id().hash_type)
+        // Zero lock
+        || code_hash == ZERO_HASH;
+
+    if !is_known {
+        eprintln!(
+            "Warning: The lock script does not match well known scripts (sighash, multisig[legacy, v2], or zero lock)."
+        );
+        eprintln!("    code_hash: {:#x}", code_hash);
+        eprintln!("    hash_type: {:?}", hash_type);
+        eprintln!("    Please verify this is the correct lock script for your deployment.");
+    }
 }
 
 fn load_snapshot(migration_dir: &Path, snapshot_name: String) -> Result<DeploymentRecipe> {
