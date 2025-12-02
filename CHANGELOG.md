@@ -1,3 +1,17 @@
+# v2.1.0
+* Fix: detect multisig type from input cells in deploy #652
+* Warn user if lock script is not well-known during deploy #653
+
+# v2.0.0
+* Update ckb crates to 1.0 #645
+* Update ckb-sdk to 5.0 #646
+
+# v1.16.0
+* Add `enable_type_id` for deploy DepGroup #640
+* Fix `enable_type_id` to default false for serde for Cell and DepGroup #643
+* Improve deploy gen-txs --from-address help documentation #642
+* Let ckb deploy use RPC client with cookies #641
+
 # v1.15.0
 * [Breaking Change] Add `--multisig-code-hash` flag to specify `MultisigScript::V2` or `MultisigScript::Legacy` #631
 
