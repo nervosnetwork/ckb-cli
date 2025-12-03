@@ -1,8 +1,6 @@
-# v2.1.0
+# v2.0.0
 * Fix: detect multisig type from input cells in deploy #652
 * Warn user if lock script is not well-known during deploy #653
-
-# v2.0.0
 * Update ckb crates to 1.0 #645
 * Update ckb-sdk to 5.0 #646
 
