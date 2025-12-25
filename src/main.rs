@@ -112,12 +112,8 @@ async fn main() -> Result<(), io::Error> {
     if let Some(format) = matches.value_of("output-format") {
         output_format = OutputFormat::from_str(format).unwrap();
     }
-    let mut key_store = get_key_store(ckb_cli_dir.clone()).map_err(|err| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Open file based key store error: {}", err),
-        )
-    })?;
+    let mut key_store = get_key_store(ckb_cli_dir.clone())
+        .map_err(|err| io::Error::other(format!("Open file based key store error: {}", err)))?;
     let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url).unwrap();
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
