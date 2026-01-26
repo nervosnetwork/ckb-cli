@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 
 use anyhow::{Error, Result};
@@ -19,13 +20,41 @@ pub struct IntermediumInfo {
     pub last_recipe: Option<DeploymentRecipe>,
     pub new_recipe: DeploymentRecipe,
     // For offline sign (should verify the tx hash)
-    pub used_input_txs: HashMap<H256, json_types::Transaction>,
+    pub used_input_txs: BTreeMap<H256, json_types::Transaction>,
     pub cell_tx: Option<json_types::Transaction>,
-    pub cell_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+    pub cell_tx_signatures: BTreeMap<OrderedJsonBytes, Vec<JsonBytes>>,
     pub cell_changes: Vec<ReprStateChange>,
     pub dep_group_tx: Option<json_types::Transaction>,
-    pub dep_group_tx_signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+    pub dep_group_tx_signatures: BTreeMap<OrderedJsonBytes, Vec<JsonBytes>>,
     pub dep_group_changes: Vec<ReprStateChange>,
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(transparent)]
+pub struct OrderedJsonBytes(pub JsonBytes);
+
+impl Ord for OrderedJsonBytes {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.as_bytes().cmp(other.0.as_bytes())
+    }
+}
+
+impl PartialOrd for OrderedJsonBytes {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl From<JsonBytes> for OrderedJsonBytes {
+    fn from(value: JsonBytes) -> Self {
+        OrderedJsonBytes(value)
+    }
+}
+
+impl From<OrderedJsonBytes> for JsonBytes {
+    fn from(value: OrderedJsonBytes) -> Self {
+        value.0
+    }
 }
 
 impl IntermediumInfo {
@@ -46,7 +75,11 @@ impl IntermediumInfo {
             let repr = ReprTxHelper {
                 transaction: cell_tx.clone(),
                 multisig_configs: self.multisig_configs()?,
-                signatures: self.cell_tx_signatures.clone(),
+                signatures: self
+                    .cell_tx_signatures
+                    .iter()
+                    .map(|(lock_arg, sigs)| (lock_arg.clone().into(), sigs.clone()))
+                    .collect(),
             };
             let helper = TxHelper::try_from(repr).map_err(Error::msg)?;
             Ok(Some(helper))
@@ -60,7 +93,11 @@ impl IntermediumInfo {
             let repr = ReprTxHelper {
                 transaction: dep_group_tx.clone(),
                 multisig_configs: self.multisig_configs()?,
-                signatures: self.dep_group_tx_signatures.clone(),
+                signatures: self
+                    .dep_group_tx_signatures
+                    .iter()
+                    .map(|(lock_arg, sigs)| (lock_arg.clone().into(), sigs.clone()))
+                    .collect(),
             };
             let helper = TxHelper::try_from(repr).map_err(Error::msg)?;
             Ok(Some(helper))

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::convert::TryFrom;
 use std::fs;
 use std::io::{Read, Write};
@@ -41,7 +41,7 @@ mod tx_builder;
 use deployment::{
     Cell, CellLocation, CellRecipe, DepGroup, DepGroupRecipe, Deployment, DeploymentRecipe,
 };
-use intermedium_info::IntermediumInfo;
+use intermedium_info::{IntermediumInfo, OrderedJsonBytes};
 use state_change::{CellChange, ChangeInfo, DepGroupChange, ReprStateChange, StateChange};
 use tx_builder::build_tx;
 
@@ -243,7 +243,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 }
 
                 // * Load input transactions
-                let mut used_input_txs = HashMap::default();
+                let mut used_input_txs = BTreeMap::default();
                 if let Some(tx) = cell_tx_opt.as_ref() {
                     load_input_txs(&mut used_input_txs, self.rpc_client, tx)
                         .map_err(|err| err.to_string())?;
@@ -299,10 +299,10 @@ impl CliSubCommand for DeploySubCommand<'_> {
                     new_recipe,
                     used_input_txs,
                     cell_tx: cell_tx_opt.map(Into::into),
-                    cell_tx_signatures: HashMap::default(),
+                    cell_tx_signatures: BTreeMap::default(),
                     cell_changes: repr_cell_changes,
                     dep_group_tx: dep_group_tx_opt.map(Into::into),
-                    dep_group_tx_signatures: HashMap::default(),
+                    dep_group_tx_signatures: BTreeMap::default(),
                     dep_group_changes: repr_dep_group_changes,
                 };
                 explain_txs(&info).map_err(|err| err.to_string())?;
@@ -703,7 +703,7 @@ fn sign_info(
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
             .collect();
         if add_signatures {
-            let mut cell_tx_signatures: HashMap<JsonBytes, HashSet<JsonBytes>> = info
+            let mut cell_tx_signatures: BTreeMap<OrderedJsonBytes, HashSet<JsonBytes>> = info
                 .cell_tx_signatures
                 .clone()
                 .into_iter()
@@ -711,7 +711,7 @@ fn sign_info(
                 .collect();
             for (lock_arg, signature) in signatures.clone() {
                 cell_tx_signatures
-                    .entry(lock_arg)
+                    .entry(OrderedJsonBytes::from(lock_arg))
                     .or_default()
                     .insert(signature);
             }
@@ -734,7 +734,7 @@ fn sign_info(
             .map(|(k, v)| (JsonBytes::from_bytes(k), JsonBytes::from_bytes(v)))
             .collect();
         if add_signatures {
-            let mut dep_group_tx_signatures: HashMap<JsonBytes, HashSet<JsonBytes>> = info
+            let mut dep_group_tx_signatures: BTreeMap<OrderedJsonBytes, HashSet<JsonBytes>> = info
                 .dep_group_tx_signatures
                 .clone()
                 .into_iter()
@@ -742,7 +742,7 @@ fn sign_info(
                 .collect();
             for (lock_arg, signature) in signatures.clone() {
                 dep_group_tx_signatures
-                    .entry(lock_arg)
+                    .entry(OrderedJsonBytes::from(lock_arg))
                     .or_default()
                     .insert(signature);
             }
@@ -1071,7 +1071,7 @@ fn explain_txs(info: &IntermediumInfo) -> Result<()> {
     }
     fn print_tx_fee(
         tx: &json_types::Transaction,
-        used_input_txs: &HashMap<H256, json_types::Transaction>,
+        used_input_txs: &BTreeMap<H256, json_types::Transaction>,
     ) -> Result<()> {
         // DAO withdraw is not considered
         let input_capacities: Vec<_> = tx
@@ -1141,7 +1141,7 @@ fn explain_txs(info: &IntermediumInfo) -> Result<()> {
 }
 
 fn load_input_txs(
-    input_txs: &mut HashMap<H256, json_types::Transaction>,
+    input_txs: &mut BTreeMap<H256, json_types::Transaction>,
     rpc_client: &mut HttpRpcClient,
     tx: &packed::Transaction,
 ) -> Result<()> {
