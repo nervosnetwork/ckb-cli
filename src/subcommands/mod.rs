@@ -120,6 +120,7 @@ fn arg_multisig_code_hash() -> Arg {
     arg_multisig_code_hash
 }
 
+#[allow(dead_code)]
 fn arg_get_multisig_code_hash(m: &ArgMatches) -> Result<H256, String> {
     match m.value_of("multisig-code-hash").unwrap() {
         "legacy" => Ok(MultisigScript::Legacy.script_id().code_hash),

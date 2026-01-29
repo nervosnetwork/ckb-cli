@@ -44,6 +44,7 @@ pub trait ArgParser<T> {
         self.parse(input).map(|_| ())
     }
 
+    #[allow(dead_code)]
     fn from_matches<R: From<T>>(&self, matches: &ArgMatches, name: &str) -> Result<R, String> {
         self.from_matches_option(matches, name, true)
             .map(Option::unwrap)
@@ -425,6 +426,7 @@ impl AddressParser {
         self
     }
 
+    #[allow(dead_code)]
     pub fn set_network_opt(&mut self, network: Option<NetworkType>) -> &mut Self {
         self.network = network;
         self

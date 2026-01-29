@@ -70,6 +70,7 @@ pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
     KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
 }
 
+#[allow(dead_code)]
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
     let address_opt: Option<Address> = AddressParser::new_sighash()
         .set_network_opt(network)
