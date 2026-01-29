@@ -6,13 +6,83 @@ use std::path::PathBuf;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{Arg, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use crate::utils::arg_parser::ArgMatchesExt;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{ArgParser, FilePathParser, HexFilePathParser, HexParser};
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_hex_file_path(input: &str) -> Result<String, String> {
+    HexFilePathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_file_path_exists(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_file_path_optional(input: &str) -> Result<String, String> {
+    FilePathParser::new(false)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "molecule", about = "Molecule encode/decode utilities")]
+pub struct MoleculeCmd {
+    #[command(subcommand)]
+    pub command: MoleculeSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MoleculeSubcommands {
+    /// Decode molecule type from binary
+    Decode(MoleculeDecodeArgs),
+    /// Encode molecule type from json to binary
+    Encode(MoleculeEncodeArgs),
+    /// Print default json structure of certain molecule type
+    Default(MoleculeDefaultArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct MoleculeDecodeArgs {
+    /// The molecule type name defined in blockchain.mol (and extra OutPointVec)
+    #[arg(long)]
+    pub r#type: String,
+    /// Binary data hex format
+    #[arg(long, required_unless_present = "hex-binary-path", value_parser = parse_hex)]
+    pub binary_hex: Option<String>,
+    /// The hex binary file path of molecule data
+    #[arg(long, required_unless_present = "binary-hex", value_parser = parse_hex_file_path)]
+    pub hex_binary_path: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct MoleculeEncodeArgs {
+    /// The molecule type name defined in blockchain.mol (and extra OutPointVec)
+    #[arg(long)]
+    pub r#type: String,
+    #[arg(long, value_parser = parse_file_path_exists)]
+    pub json_path: String,
+    /// Serialize output type
+    #[arg(long, default_value = "binary", value_parser = ["binary", "hash"])]
+    pub output_type: String,
+}
+
+#[derive(Args, Debug)]
+pub struct MoleculeDefaultArgs {
+    /// The molecule type name defined in blockchain.mol (and extra OutPointVec)
+    #[arg(long)]
+    pub r#type: String,
+    #[arg(long, value_parser = parse_file_path_optional)]
+    pub json_path: Option<String>,
+}
 
 pub struct MoleculeSubCommand {}
 
@@ -22,59 +92,7 @@ impl MoleculeSubCommand {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        let arg_type = Arg::new("type")
-            .long("type")
-            .num_args(1)
-            .required(true)
-            .help("The molecule type name defined in blockchain.mol (and extra OutPointVec)");
-        let arg_binary_hex = Arg::new("binary-hex")
-            .long("binary-hex")
-            .required_unless_present("hex-binary-path")
-            .num_args(1)
-            .validator(|input| HexParser.validate(input))
-            .help("Binary data hex format");
-        let arg_hex_binary_path = Arg::new("hex-binary-path")
-            .long("hex-binary-path")
-            .required_unless_present("binary-hex")
-            .num_args(1)
-            .validator(|input| HexFilePathParser.validate(input))
-            .help("The hex binary file path of molecule data");
-
-        let arg_json_path = Arg::new("json-path")
-            .long("json-path")
-            .num_args(1)
-            .required(true)
-            .validator(|input| FilePathParser::new(true).validate(input));
-        let arg_serialize_output_type = Arg::new("output-type")
-            .long("output-type")
-            .num_args(1)
-            .default_value("binary")
-            .value_parser(["binary", "hash"])
-            .help("Serialize output type");
-
-        Command::new(name)
-            .about("Molecule encode/decode utilities")
-            .subcommands(vec![
-                Command::new("decode")
-                    .about("Decode molecule type from binary")
-                    .arg(arg_type.clone())
-                    .arg(arg_binary_hex)
-                    .arg(arg_hex_binary_path),
-                Command::new("encode")
-                    .about("Encode molecule type from json to binary")
-                    .arg(arg_type.clone())
-                    .arg(arg_json_path.clone())
-                    .arg(arg_serialize_output_type),
-                Command::new("default")
-                    .about("Print default json structure of certain molecule type")
-                    .arg(arg_type.clone())
-                    .arg(
-                        arg_json_path
-                            .clone()
-                            .required(false)
-                            .validator(|input| FilePathParser::new(false).validate(input)),
-                    ),
-            ])
+        MoleculeCmd::command().name(name)
     }
 }
 
