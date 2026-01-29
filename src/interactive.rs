@@ -19,6 +19,7 @@ use crate::subcommands::{
     UtilSubCommand, WalletSubCommand,
 };
 use crate::utils::{
+    arg_parser::ArgMatchesExt,
     completer::CkbCompleter,
     config::GlobalConfig,
     genesis_info::GenesisInfo,
@@ -34,7 +35,7 @@ pub struct InteractiveEnv {
     config: GlobalConfig,
     config_file: PathBuf,
     history_file: PathBuf,
-    parser: clap::App<'static>,
+    parser: clap::Command,
     plugin_mgr: PluginManager,
     key_store: KeyStore,
     rpc_client: HttpRpcClient,
@@ -126,8 +127,8 @@ impl InteractiveEnv {
         }
         for (cmd_name, description) in &plugin_sub_cmds {
             parser = parser.subcommand(
-                // FIXME: when clap updated add `clap::AppSettings::DisableHelpFlags` back
-                clap::App::new(cmd_name.as_str()).about(description.as_str()),
+                // FIXME: when clap updated add `clap::CommandSettings::DisableHelpFlags` back
+                clap::Command::new(cmd_name.clone()).about(description.clone()),
             );
         }
 
@@ -218,7 +219,7 @@ impl InteractiveEnv {
 
     fn handle_command(
         &mut self,
-        parser: &clap::App,
+        parser: &clap::Command,
         line: &str,
         env_regex: &Regex,
     ) -> Result<bool, String> {
@@ -251,7 +252,7 @@ impl InteractiveEnv {
 
         match parser.clone().try_get_matches_from(args) {
             Ok(matches) => match matches.subcommand() {
-                ("config", Some(m)) => {
+                Some(("config", m)) => {
                     if let Some(url) = m.value_of("url") {
                         self.config.set_url(url.to_string());
                         self.rpc_client = HttpRpcClient::new(self.config.get_url().to_string());
@@ -288,35 +289,35 @@ impl InteractiveEnv {
                         .map_err(|err| format!("save config file failed: {:?}", err))?;
                     Ok(())
                 }
-                ("set", Some(m)) => {
+                Some(("set", m)) => {
                     let key = m.value_of("key").unwrap().to_owned();
                     let value = m.value_of("value").unwrap().to_owned();
                     self.config.set(key, serde_json::Value::String(value));
                     Ok(())
                 }
-                ("get", Some(m)) => {
+                Some(("get", m)) => {
                     let key = m.value_of("key");
                     println!("{}", self.config.get(key).render(format, color));
                     Ok(())
                 }
-                ("info", _) => {
+                Some(("info", _)) => {
                     self.config.print(false);
                     Ok(())
                 }
-                ("rpc", Some(sub_matches)) => {
+                Some(("rpc", sub_matches)) => {
                     check_alerts(&mut self.rpc_client);
                     let output = RpcSubCommand::new(&mut self.rpc_client, &mut self.raw_rpc_client)
                         .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
-                ("account", Some(sub_matches)) => {
+                Some(("account", sub_matches)) => {
                     let output = AccountSubCommand::new(&mut self.plugin_mgr, &mut self.key_store)
                         .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
-                ("mock-tx", Some(sub_matches)) => {
+                Some(("mock-tx", sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output = MockTxSubCommand::new(
                         &mut self.rpc_client,
@@ -327,7 +328,7 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("tx", Some(sub_matches)) => {
+                Some(("tx", sub_matches)) => {
                     let genesis_info = self.genesis_info().ok();
                     let output =
                         TxSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr, genesis_info)
@@ -335,24 +336,24 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("util", Some(sub_matches)) => {
+                Some(("util", sub_matches)) => {
                     let output = UtilSubCommand::new(&mut self.rpc_client, &mut self.plugin_mgr)
                         .process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
-                ("plugin", Some(sub_matches)) => {
+                Some(("plugin", sub_matches)) => {
                     let output =
                         PluginSubCommand::new(&mut self.plugin_mgr).process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
-                ("molecule", Some(sub_matches)) => {
+                Some(("molecule", sub_matches)) => {
                     let output = MoleculeSubCommand::new().process(sub_matches, debug)?;
                     output.print(format, color);
                     Ok(())
                 }
-                ("wallet", Some(sub_matches)) => {
+                Some(("wallet", sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = WalletSubCommand::new(
                         &mut self.rpc_client,
@@ -363,7 +364,7 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("dao", Some(sub_matches)) => {
+                Some(("dao", sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = DAOSubCommand::new(
                         &mut self.rpc_client,
@@ -374,7 +375,7 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("sudt", Some(sub_matches)) => {
+                Some(("sudt", sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = SudtSubCommand::new(
                         &mut self.rpc_client,
@@ -385,7 +386,7 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("deploy", Some(sub_matches)) => {
+                Some(("deploy", sub_matches)) => {
                     let genesis_info = self.genesis_info()?;
                     let output = DeploySubCommand::new(
                         &mut self.rpc_client,
@@ -396,7 +397,7 @@ impl InteractiveEnv {
                     output.print(format, color);
                     Ok(())
                 }
-                ("exit", _) => {
+                Some(("exit", _)) => {
                     return Ok(true);
                 }
                 _ => Ok(()),

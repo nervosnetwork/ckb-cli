@@ -9,7 +9,9 @@ use bitcoin::bip32::DerivationPath;
 use ckb_sdk::{Address, AddressPayload, NetworkType};
 use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 use faster_hex::hex_string;
 
 use super::{CliSubCommand, Output};
@@ -39,32 +41,32 @@ impl<'a> AccountSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_privkey_path = Arg::with_name("privkey-path")
+    pub fn subcommand(name: &'static str) -> Command {
+        let arg_privkey_path = Arg::new("privkey-path")
             .long("privkey-path")
-            .takes_value(true);
-        let arg_extended_privkey_path = Arg::with_name("extended-privkey-path")
+            .num_args(1);
+        let arg_extended_privkey_path = Arg::new("extended-privkey-path")
             .long("extended-privkey-path")
-            .takes_value(true)
-            .about("Extended private key path (include master private key and chain code)");
-        let arg_derive_path = Arg::with_name("path")
+            .num_args(1)
+            .help("Extended private key path (include master private key and chain code)");
+        let arg_derive_path = Arg::new("path")
             .long("path")
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-            .about("The derivation key path");
-        App::new(name)
+            .help("The derivation key path");
+        Command::new(name)
             .about("Manage accounts")
             .subcommands(vec![
-                App::new("list")
+                Command::new("list")
                     .arg(
-                        Arg::with_name("only-mainnet-address")
+                        Arg::new("only-mainnet-address")
                             .long("only-mainnet-address")
-                            .about("Only show CKB mainnet address")
+                            .help("Only show CKB mainnet address")
                     )
                     .arg(
-                        Arg::with_name("only-testnet-address")
+                        Arg::new("only-testnet-address")
                             .long("only-testnet-address")
-                            .about("Only show CKB testnet address")
+                            .help("Only show CKB testnet address")
                     )
                     .about("List all accounts")
                     .long_about("List all accounts. There are two kinds of account item indicated by `source` field:
@@ -80,27 +82,27 @@ impl<'a> AccountSubCommand<'a> {
 
 [1]: https://github.com/nervosnetwork/ckb-system-scripts/blob/master/c/secp256k1_blake160_sighash_all.c
 [2]: https://github.com/obsidiansystems/ckb-plugin-ledger"),
-                App::new("new").about("Create a new account and print related information."),
-                App::new("import")
+                Command::new("new").about("Create a new account and print related information."),
+                Command::new("import")
                     .about("Import an unencrypted private key from <privkey-path> and create a new account.")
                     .arg(
                         arg_privkey_path
                             .clone()
-                            .required_unless("extended-privkey-path")
+                            .required_unless_present("extended-privkey-path")
                             .validator(|input| PrivkeyPathParser.validate(input))
-                            .about("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
+                            .help("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
                     )
                     .arg(arg_extended_privkey_path
                          .clone()
-                         .required_unless("privkey-path")
+                         .required_unless_present("privkey-path")
                          .validator(|input| ExtendedPrivkeyPathParser.validate(input))
                     ),
-                App::new("import-from-plugin")
+                Command::new("import-from-plugin")
                     .about("Import an account from keystore plugin")
                     .arg(
-                        Arg::with_name("account-id")
+                        Arg::new("account-id")
                             .long("account-id")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| {
                                 let hex = HexParser.parse(input)?;
@@ -110,85 +112,85 @@ impl<'a> AccountSubCommand<'a> {
                                     Ok(())
                                 }
                             })
-                            .about("The account id (hex format, can be found in account list)")
+                            .help("The account id (hex format, can be found in account list)")
                     ),
-                App::new("import-keystore")
+                Command::new("import-keystore")
                     .about("Import key from encrypted keystore json file and create a new account.")
                     .arg(
-                        Arg::with_name("path")
+                        Arg::new("path")
                             .long("path")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("The keystore file path (json format)")
+                            .help("The keystore file path (json format)")
                     ),
-                App::new("update")
+                Command::new("update")
                     .about("Update password of an account")
                     .arg(lock_arg().required(true)),
-                App::new("upgrade")
+                Command::new("upgrade")
                     .about("Upgrade an account to latest json format")
                     .arg(lock_arg().required(true)),
-                App::new("export")
+                Command::new("export")
                     .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
                     .arg(lock_arg().required(true))
                     .arg(
                         arg_extended_privkey_path
                             .clone()
                             .required(true)
-                            .about("Output extended private key path (PrivKey + ChainCode)")
+                            .help("Output extended private key path (PrivKey + ChainCode)")
                     ),
-                App::new("bitcoin-xpub")
+                Command::new("bitcoin-xpub")
                     .about("Show BIP-32 Extended Public Key in Base58Check format (with xpub prefix)")
                     .arg(lock_arg().required(true))
                     .arg(arg_derive_path.clone().required(true)),
-                App::new("bip44-addresses")
+                Command::new("bip44-addresses")
                     .about("Extended receiving/change Addresses (see: BIP-44)")
                     .arg(
-                        Arg::with_name("from-receiving-index")
+                        Arg::new("from-receiving-index")
                             .long("from-receiving-index")
-                            .takes_value(true)
+                            .num_args(1)
                             .default_value("0")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .about("Start from receiving path index")
+                            .help("Start from receiving path index")
                     )
                     .arg(
-                        Arg::with_name("receiving-length")
+                        Arg::new("receiving-length")
                             .long("receiving-length")
-                            .takes_value(true)
+                            .num_args(1)
                             .default_value("20")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .about("Receiving addresses length")
+                            .help("Receiving addresses length")
                     )
                     .arg(
-                        Arg::with_name("from-change-index")
+                        Arg::new("from-change-index")
                             .long("from-change-index")
-                            .takes_value(true)
+                            .num_args(1)
                             .default_value("0")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .about("Start from change path index")
+                            .help("Start from change path index")
                     )
                     .arg(
-                        Arg::with_name("change-length")
+                        Arg::new("change-length")
                             .long("change-length")
-                            .takes_value(true)
+                            .num_args(1)
                             .default_value("10")
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .about("Change addresses length")
+                            .help("Change addresses length")
                     )
                     .arg(
-                        Arg::with_name("network")
+                        Arg::new("network")
                             .long("network")
-                            .takes_value(true)
+                            .num_args(1)
                             .default_value("mainnet")
-                            .possible_values(&["mainnet", "testnet"])
-                            .about("The network type")
+                            .value_parser(["mainnet", "testnet"])
+                            .help("The network type")
                     )
                     .arg(lock_arg().required(true)),
-                App::new("extended-address")
+                Command::new("extended-address")
                     .about("Extended address (see: BIP-44)")
                     .arg(lock_arg().required(true))
                     .arg(arg_derive_path),
-                App::new("remove")
+                Command::new("remove")
                     .about("Print information about how to remove an account")
                     .arg(lock_arg().required(true)),
             ])
@@ -198,7 +200,7 @@ impl<'a> AccountSubCommand<'a> {
 impl CliSubCommand for AccountSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("list", Some(m)) => {
+            Some(("list", m)) => {
                 let mut accounts = self.plugin_mgr.keystore_handler().list_account()?;
                 // Sort by file path name
                 accounts.sort_by(|a, b| a.1.cmp(&b.1));
@@ -254,7 +256,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            ("new", _) => {
+            Some(("new", _)) => {
                 eprintln!("Your new account is locked with a password. Please give a password. Do not forget this password.");
                 let password = read_password(true, None)?;
                 let lock_arg = self
@@ -271,7 +273,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("import", Some(m)) => {
+            Some(("import", m)) => {
                 let secp_key: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
                 let password = Some(read_password(false, None)?);
@@ -298,7 +300,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("import-from-plugin", Some(m)) => {
+            Some(("import-from-plugin", m)) => {
                 let account_id: Vec<u8> = HexParser.from_matches(m, "account-id")?;
                 let password = if self.plugin_mgr.keystore_require_password() {
                     Some(read_password(false, None)?)
@@ -317,7 +319,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("import-keystore", Some(m)) => {
+            Some(("import-keystore", m)) => {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "path")?;
 
                 let old_password = read_password(false, Some("Decrypt password"))?;
@@ -341,7 +343,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("update", Some(m)) => {
+            Some(("update", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let old_password = read_password(false, Some("Old password"))?;
@@ -353,7 +355,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 )?;
                 Ok(Output::new_success())
             }
-            ("upgrade", Some(m)) => {
+            Some(("upgrade", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let password = read_password(false, None)?;
@@ -362,7 +364,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            ("export", Some(m)) => {
+            Some(("export", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let key_path = m.value_of("extended-privkey-path").unwrap();
@@ -407,7 +409,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_error(resp))
             }
-            ("bitcoin-xpub", Some(m)) => {
+            Some(("bitcoin-xpub", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let password = read_password(false, None)?;
@@ -422,7 +424,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("bip44-addresses", Some(m)) => {
+            Some(("bip44-addresses", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let from_receiving_index: u32 =
@@ -475,7 +477,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("extended-address", Some(m)) => {
+            Some(("extended-address", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let root_key_path = self.plugin_mgr.root_key_path(lock_arg.clone())?;
@@ -500,7 +502,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("remove", Some(m)) => {
+            Some(("remove", m)) => {
                 let lock_arg: H160 =
                     FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
                 let filepath = self
@@ -513,7 +515,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand("account").generate_usage()),
+            _ => Err(Self::subcommand("account").render_usage().to_string()),
         }
     }
 }

@@ -7,7 +7,7 @@ use std::process;
 
 use ckb_build_info::Version;
 use clap::crate_version;
-use clap::{App, AppSettings, Arg};
+use clap::{Arg, ColorChoice, Command};
 
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
@@ -17,8 +17,9 @@ use subcommands::{
     SudtSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
 use utils::other::get_genesis_info;
+use utils::arg::ArgValidatorExt;
 use utils::{
-    arg_parser::{ArgParser, UrlParser},
+    arg_parser::{ArgMatchesExt, ArgParser, UrlParser},
     config::GlobalConfig,
     other::{check_alerts, get_key_store, get_network_type},
     printer::{ColorWhen, OutputFormat},
@@ -116,51 +117,51 @@ async fn main() -> Result<(), io::Error> {
         .map_err(|err| io::Error::other(format!("Open file based key store error: {}", err)))?;
     let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url).unwrap();
     let result = match matches.subcommand() {
-        ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
-            ("subscribe", Some(sub_sub_matches)) => {
+        Some(("rpc", sub_matches)) => match sub_matches.subcommand() {
+            Some(("subscribe", sub_sub_matches)) => {
                 PubSubCommand::new(output_format, color).process(sub_sub_matches, debug)
             }
             _ => {
                 RpcSubCommand::new(&mut rpc_client, &mut raw_rpc_client).process(sub_matches, debug)
             }
         },
-        ("account", Some(sub_matches)) => {
+        Some(("account", sub_matches)) => {
             AccountSubCommand::new(&mut plugin_mgr, &mut key_store).process(sub_matches, debug)
         }
-        ("mock-tx", Some(sub_matches)) => {
+        Some(("mock-tx", sub_matches)) => {
             MockTxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None)
                 .process(sub_matches, debug)
         }
-        ("tx", Some(sub_matches)) => {
+        Some(("tx", sub_matches)) => {
             TxSubCommand::new(&mut rpc_client, &mut plugin_mgr, None).process(sub_matches, debug)
         }
-        ("util", Some(sub_matches)) => {
+        Some(("util", sub_matches)) => {
             UtilSubCommand::new(&mut rpc_client, &mut plugin_mgr).process(sub_matches, debug)
         }
-        ("server", Some(sub_matches)) => {
+        Some(("server", sub_matches)) => {
             ApiServerSubCommand::new(&mut rpc_client, plugin_mgr, None).process(sub_matches, debug)
         }
-        ("plugin", Some(sub_matches)) => {
+        Some(("plugin", sub_matches)) => {
             PluginSubCommand::new(&mut plugin_mgr).process(sub_matches, debug)
         }
-        ("molecule", Some(sub_matches)) => MoleculeSubCommand::new().process(sub_matches, debug),
-        ("wallet", Some(sub_matches)) => {
+        Some(("molecule", sub_matches)) => MoleculeSubCommand::new().process(sub_matches, debug),
+        Some(("wallet", sub_matches)) => {
             WalletSubCommand::new(&mut rpc_client, &mut plugin_mgr, None)
                 .process(sub_matches, debug)
         }
-        ("dao", Some(sub_matches)) => {
+        Some(("dao", sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 DAOSubCommand::new(&mut rpc_client, &mut plugin_mgr, genesis_info)
                     .process(sub_matches, debug)
             })
         }
-        ("sudt", Some(sub_matches)) => {
+        Some(("sudt", sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 SudtSubCommand::new(&mut rpc_client, &mut plugin_mgr, genesis_info)
                     .process(sub_matches, debug)
             })
         }
-        ("deploy", Some(sub_matches)) => {
+        Some(("deploy", sub_matches)) => {
             get_genesis_info(&None, &mut rpc_client).and_then(|genesis_info| {
                 DeploySubCommand::new(&mut rpc_client, &mut plugin_mgr, genesis_info)
                     .process(sub_matches, debug)
@@ -222,12 +223,13 @@ pub fn get_version() -> Version {
     }
 }
 
-pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
-    App::new("ckb-cli")
+pub fn build_cli(version_short: &str, version_long: &str) -> Command {
+    let version_short: &'static str = Box::leak(version_short.to_owned().into_boxed_str());
+    let version_long: &'static str = Box::leak(version_long.to_owned().into_boxed_str());
+    Command::new("ckb-cli")
         .version(version_short)
         .long_version(version_long)
-        .global_setting(AppSettings::ColoredHelp)
-        .global_setting(AppSettings::DeriveDisplayOrder)
+        .color(ColorChoice::Auto)
         .subcommand(RpcSubCommand::subcommand().subcommand(PubSubCommand::subcommand()))
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
@@ -242,98 +244,97 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(DeploySubCommand::subcommand("deploy"))
         .arg(
 
-            Arg::with_name("url")
+            Arg::new("url")
                 .long("url")
-                .takes_value(true)
+                .num_args(1)
                 .validator(|input| UrlParser.validate(input))
-                .about(
+                .help(
                     r#"CKB RPC server url.
 The default value is http://127.0.0.1:8114
 You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                 ),
         )
         .arg(
-            Arg::with_name("output-format")
+            Arg::new("output-format")
                 .long("output-format")
-                .takes_value(true)
-                .possible_values(&["yaml", "json"])
+                .num_args(1)
+                .value_parser(["yaml", "json"])
                 .default_value("yaml")
                 .global(true)
-                .about("Select output format"),
+                .help("Select output format"),
         )
         .arg(
-            Arg::with_name("no-color")
+            Arg::new("no-color")
                 .long("no-color")
                 .global(true)
-                .about("Do not highlight(color) output json"),
+                .help("Do not highlight(color) output json"),
         )
         .arg(
-            Arg::with_name("debug")
+            Arg::new("debug")
                 .long("debug")
                 .global(true)
-                .about("Display request parameters"),
+                .help("Display request parameters"),
         )
         .arg(
-            Arg::with_name("local-only")
+            Arg::new("local-only")
                 .long("local-only")
                 .global(true)
-                .about("This is a local only subcommand, do not check alerts and get network type"),
+                .help("This is a local only subcommand, do not check alerts and get network type"),
         )
 }
 
-pub fn build_interactive() -> App<'static> {
-    App::new("interactive")
+pub fn build_interactive() -> Command {
+    Command::new("interactive")
         .version(crate_version!())
-        .global_setting(AppSettings::NoBinaryName)
-        .global_setting(AppSettings::ColoredHelp)
-        .global_setting(AppSettings::DeriveDisplayOrder)
-        .global_setting(AppSettings::DisableVersion)
+        .no_binary_name(true)
+        .color(ColorChoice::Auto)
+        .disable_version_flag(true)
         .subcommand(
-            App::new("config")
+            Command::new("config")
                 .about("Config environment")
                 .arg(
-                    Arg::with_name("url")
+                    Arg::new("url")
                         .long("url")
                         .validator(|input| UrlParser.validate(input))
-                        .takes_value(true)
-                        .about(
+                        .num_args(1)
+                        .help(
                             r#"CKB RPC server url.
 The default value is http://127.0.0.1:8114
 You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
                         ),
                 )
                 .arg(
-                    Arg::with_name("color")
+                    Arg::new("color")
                         .long("color")
-                        .about("Switch color for rpc interface"),
+                        .help("Switch color for rpc interface"),
                 )
                 .arg(
-                    Arg::with_name("debug")
+                    Arg::new("debug")
                         .long("debug")
-                        .about("Switch debug mode"),
+                        .help("Switch debug mode"),
                 )
                 .arg(
-                    Arg::with_name("output-format")
+                    Arg::new("output-format")
                         .long("output-format")
-                        .takes_value(true)
-                        .possible_values(&["yaml", "json"])
+                        .num_args(1)
+                        .value_parser(["yaml", "json"])
                         .default_value("yaml")
-                        .about("Select output format"),
+                        .help("Select output format"),
                 )
                 .arg(
-                    Arg::with_name("completion_style")
+                    Arg::new("completion_style")
                         .long("completion_style")
-                        .about("Switch completion style"),
+                        .help("Switch completion style"),
                 )
                 .arg(
-                    Arg::with_name("edit_style")
+                    Arg::new("edit_style")
                         .long("edit_style")
-                        .about("Switch edit style"),
+                        .help("Switch edit style"),
                 ),
         )
-        .subcommand(App::new("info").about("Display global variables"))
+        .subcommand(Command::new("info").about("Display global variables"))
         .subcommand(
-            App::new("exit")
+            Command::new("exit")
                 .visible_alias("quit")
                 .about("Exit the interactive interface"),
         )

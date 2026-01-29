@@ -1,7 +1,8 @@
 use std::{collections::HashMap, str::FromStr};
 
 use bitcoin::bip32::DerivationPath;
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
+use crate::utils::arg_parser::ArgMatchesExt;
 use serde::{Deserialize, Serialize};
 
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
@@ -79,17 +80,17 @@ impl<'a> WalletSubCommand<'a> {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    pub fn subcommand() -> App<'static> {
-        App::new("wallet")
+    pub fn subcommand() -> Command {
+        Command::new("wallet")
             .about("Transfer / query balance (with local index) / key utils")
             .subcommands(vec![
-                App::new("transfer")
+                Command::new("transfer")
                     .about("Transfer capacity to an address (can have data)")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
+                    .arg(arg::privkey_path().required_unless_present("from-account"))
                     .arg(
                         arg::from_account()
-                            .required_unless(arg::privkey_path().get_name())
-                            .conflicts_with(arg::privkey_path().get_name()),
+                            .required_unless_present("privkey-path")
+                            .conflicts_with("privkey-path"),
                     )
                     .arg(arg::from_locked_address())
                     .arg(arg::to_address().required(true))
@@ -100,18 +101,18 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::max_tx_fee())
                     .arg(arg::derive_receiving_address_length())
                     .arg(
-                        arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
+                        arg::derive_change_address().conflicts_with("privkey-path"),
                     )
                     .arg(
-                        Arg::with_name("skip-check-to-address")
+                        Arg::new("skip-check-to-address")
                             .long("skip-check-to-address")
-                            .about("Skip check <to-address> (default only allow sighash/multisig address), be cautious to use this flag"))
+                            .help("Skip check <to-address> (default only allow sighash/multisig address), be cautious to use this flag"))
                     .arg(
-                        Arg::with_name("type-id")
+                        Arg::new("type-id")
                             .long("type-id")
-                            .about("Add type id type script to target output cell"),
+                            .help("Add type id type script to target output cell"),
                     ),
-                App::new("get-capacity")
+                Command::new("get-capacity")
                     .about("Get capacity address or lock arg or pubkey")
                     .arg(arg::address())
                     .arg(arg::pubkey())
@@ -119,7 +120,7 @@ impl<'a> WalletSubCommand<'a> {
                     .arg(arg::derive_receiving_address_length())
                     .arg(arg::derive_change_address_length())
                     .arg(arg::derived()),
-                App::new("get-live-cells")
+                Command::new("get-live-cells")
                     .about("Get live cells by address")
                     .arg(arg::address())
                     .arg(arg::live_cells_limit())
@@ -579,7 +580,7 @@ impl<'a> WalletSubCommand<'a> {
 impl CliSubCommand for WalletSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("transfer", Some(m)) => {
+            Some(("transfer", m)) => {
                 let to_data = get_to_data(m)?;
                 let args = TransferArgs {
                     privkey_path: m.value_of("privkey-path").map(|s| s.to_string()),
@@ -610,7 +611,7 @@ impl CliSubCommand for WalletSubCommand<'_> {
                     Ok(Output::new_output(tx_hash))
                 }
             }
-            ("get-capacity", Some(m)) => {
+            Some(("get-capacity", m)) => {
                 let network_type = get_network_type(self.rpc_client)?;
 
                 let receiving_address_length: u32 = FromStrParser::<u32>::default()
@@ -662,7 +663,7 @@ impl CliSubCommand for WalletSubCommand<'_> {
                 }
                 Ok(Output::new_output(resp))
             }
-            ("get-live-cells", Some(m)) => {
+            Some(("get-live-cells", m)) => {
                 let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
                 let from_number_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "from")?;
@@ -697,7 +698,7 @@ impl CliSubCommand for WalletSubCommand<'_> {
 
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand().generate_usage()),
+            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

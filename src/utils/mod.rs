@@ -1,5 +1,6 @@
 pub mod arg;
 pub mod arg_parser;
+pub mod command;
 pub mod cell_dep;
 pub mod completer;
 pub mod config;

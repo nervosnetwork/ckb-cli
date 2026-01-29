@@ -11,20 +11,20 @@ use crate::utils::{
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{packed::Script, H160};
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashSet;
 
 impl CliSubCommand for DAOSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network_type = get_network_type(self.rpc_client)?;
         match matches.subcommand() {
-            ("deposit", Some(m)) => {
+            Some(("deposit", m)) => {
                 let args = TransactArgs::from_matches(m, network_type)?;
                 let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
                 let transaction = self.deposit(&args, capacity)?;
                 send_transaction(self.rpc_client, transaction, debug)
             }
-            ("prepare", Some(m)) => {
+            Some(("prepare", m)) => {
                 let args = TransactArgs::from_matches(m, network_type)?;
                 let out_points = OutPointParser.from_matches_vec(m, "out-point")?;
                 if out_points.len() != out_points.iter().collect::<HashSet<_>>().len() {
@@ -33,7 +33,7 @@ impl CliSubCommand for DAOSubCommand<'_> {
                 let transaction = self.prepare(&args, out_points)?;
                 send_transaction(self.rpc_client, transaction, debug)
             }
-            ("withdraw", Some(m)) => {
+            Some(("withdraw", m)) => {
                 let args = TransactArgs::from_matches(m, network_type)?;
                 let out_points = OutPointParser.from_matches_vec(m, "out-point")?;
                 if out_points.len() != out_points.iter().collect::<HashSet<_>>().len() {
@@ -42,7 +42,7 @@ impl CliSubCommand for DAOSubCommand<'_> {
                 let transaction = self.withdraw(&args, out_points)?;
                 send_transaction(self.rpc_client, transaction, debug)
             }
-            ("query-deposited-cells", Some(m)) => {
+            Some(("query-deposited-cells", m)) => {
                 let address_payload = get_address(Some(network_type), m)?;
                 let cells = self.query_deposit_cells(Script::from(&address_payload))?;
                 let total_capacity = cells.iter().map(|live| live.capacity).sum::<u64>();
@@ -54,7 +54,7 @@ impl CliSubCommand for DAOSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("query-prepared-cells", Some(m)) => {
+            Some(("query-prepared-cells", m)) => {
                 let address_payload = get_address(Some(network_type), m)?;
                 let cells = self.query_prepare_cells(Script::from(&address_payload))?;
                 let maximum_withdraws: Vec<_> = cells
@@ -73,32 +73,32 @@ impl CliSubCommand for DAOSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand().generate_usage()),
+            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }
 
 impl DAOSubCommand<'_> {
-    pub fn subcommand() -> App<'static> {
-        App::new("dao")
+    pub fn subcommand() -> Command {
+        Command::new("dao")
             .about("Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils")
             .subcommands(vec![
-                App::new("deposit")
+                Command::new("deposit")
                     .about("Deposit capacity into NervosDAO")
                     .args(TransactArgs::args())
                     .arg(arg::capacity().required(true)),
-                App::new("prepare")
+                Command::new("prepare")
                     .about("Prepare specified cells from NervosDAO")
                     .args(TransactArgs::args())
-                    .arg(arg::out_point().required(true).multiple(true)),
-                App::new("withdraw")
+                    .arg(arg::out_point().required(true).action(ArgAction::Append).num_args(1..)),
+                Command::new("withdraw")
                     .about("Withdraw specified cells from NervosDAO")
                     .args(TransactArgs::args())
-                    .arg(arg::out_point().required(true).multiple(true)),
-                App::new("query-deposited-cells")
+                    .arg(arg::out_point().required(true).action(ArgAction::Append).num_args(1..)),
+                Command::new("query-deposited-cells")
                     .about("Query NervosDAO deposited capacity by address")
                     .arg(arg::address()),
-                App::new("query-prepared-cells")
+                Command::new("query-prepared-cells")
                     .about("Query NervosDAO prepared capacity by address")
                     .arg(arg::address())
             ])
@@ -154,10 +154,10 @@ impl TransactArgs {
         })
     }
 
-    fn args<'a>() -> Vec<Arg<'a>> {
+    fn args() -> Vec<Arg> {
         vec![
-            arg::privkey_path().required_unless(arg::from_account().get_name()),
-            arg::from_account().required_unless(arg::privkey_path().get_name()),
+            arg::privkey_path().required_unless_present("from-account"),
+            arg::from_account().required_unless_present("privkey-path"),
             arg::fee_rate(),
             arg::max_tx_fee(),
         ]

@@ -6,7 +6,9 @@ use std::time::Duration;
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{Server, ServerBuilder};
@@ -43,21 +45,21 @@ impl<'a> ApiServerSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        App::new(name)
+    pub fn subcommand(name: &'static str) -> Command {
+        Command::new(name)
             .about("Start advanced API server")
             .arg(
-                Arg::with_name("listen")
+                Arg::new("listen")
                     .long("listen")
-                    .takes_value(true)
+                    .num_args(1)
                     .required(true)
                     .default_value("127.0.0.1:3000")
                     .validator(|input| FromStrParser::<SocketAddr>::new().validate(input))
-                    .about("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
+                    .help("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
             )
             .arg(
                 arg::privkey_path()
-                 .about("Private key file path (only read first line)")
+                 .help("Private key file path (only read first line)")
             )
     }
 }

@@ -27,14 +27,14 @@ static DEFAULT_BREAK_CHARS: [char; 17] = [
 static ESCAPE_CHAR: Option<char> = None;
 
 #[derive(Helper)]
-pub struct CkbCompleter<'a> {
-    clap_app: clap::App<'a>,
+pub struct CkbCompleter {
+    clap_app: clap::Command,
     completer: FilenameCompleter,
     validator: MatchingBracketValidator,
 }
 
-impl<'a> CkbCompleter<'a> {
-    pub fn new(clap_app: clap::App<'a>) -> Self {
+impl CkbCompleter {
+    pub fn new(clap_app: clap::Command) -> Self {
         CkbCompleter {
             clap_app,
             completer: FilenameCompleter::new(),
@@ -42,7 +42,7 @@ impl<'a> CkbCompleter<'a> {
         }
     }
 
-    pub fn get_completions(app: &clap::App<'a>, args: &[String]) -> Vec<(String, String)> {
+    pub fn get_completions(app: &clap::Command, args: &[String]) -> Vec<(String, String)> {
         let args_set = args.iter().collect::<HashSet<&String>>();
         let switched_completions =
             |short: Option<char>, long: Option<&str>, multiple: bool, required: bool| {
@@ -69,7 +69,6 @@ impl<'a> CkbCompleter<'a> {
                 }
             };
         app.get_subcommands()
-            .iter()
             .map(|app| {
                 [
                     vec![(app.get_name().to_owned(), app.get_name().to_owned())],
@@ -79,12 +78,12 @@ impl<'a> CkbCompleter<'a> {
                 ]
                 .concat()
             })
-            .chain(app.get_arguments().iter().map(|a| {
+            .chain(app.get_arguments().map(|a| {
                 switched_completions(
                     a.get_short(),
                     a.get_long(),
-                    a.is_set(clap::ArgSettings::MultipleValues),
-                    a.is_set(clap::ArgSettings::Required),
+                    a.get_num_args().map(|r| r.max_values() > 1).unwrap_or(false),
+                    a.is_required_set(),
                 )
             }))
             .collect::<Vec<Vec<(String, String)>>>()
@@ -92,11 +91,11 @@ impl<'a> CkbCompleter<'a> {
     }
 
     pub fn find_subcommand<'s, Iter: iter::Iterator<Item = &'s str>>(
-        app: clap::App<'a>,
+        app: clap::Command,
         mut prefix_names: iter::Peekable<Iter>,
-    ) -> Option<clap::App<'a>> {
+    ) -> Option<clap::Command> {
         if let Some(name) = prefix_names.next() {
-            for inner_app in app.get_subcommands().iter() {
+            for inner_app in app.get_subcommands() {
                 if inner_app.get_name() == name
                     || inner_app.get_all_aliases().any(|alias| alias == name)
                 {
@@ -108,7 +107,7 @@ impl<'a> CkbCompleter<'a> {
                 }
             }
         }
-        if prefix_names.peek().is_none() || app.get_subcommands().is_empty() {
+        if prefix_names.peek().is_none() || app.get_subcommands().next().is_none() {
             Some(app)
         } else {
             None
@@ -116,7 +115,7 @@ impl<'a> CkbCompleter<'a> {
     }
 }
 
-impl Completer for CkbCompleter<'_> {
+impl Completer for CkbCompleter {
     type Candidate = Pair;
 
     fn complete(
@@ -192,7 +191,7 @@ impl Completer for CkbCompleter<'_> {
     }
 }
 
-impl Hinter for CkbCompleter<'_> {
+impl Hinter for CkbCompleter {
     type Hint = String;
 
     fn hint(&self, _line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<String> {
@@ -200,7 +199,7 @@ impl Hinter for CkbCompleter<'_> {
     }
 }
 
-impl Validator for CkbCompleter<'_> {
+impl Validator for CkbCompleter {
     fn validate(
         &self,
         ctx: &mut validate::ValidationContext,
@@ -213,7 +212,7 @@ impl Validator for CkbCompleter<'_> {
     }
 }
 
-impl Highlighter for CkbCompleter<'_> {
+impl Highlighter for CkbCompleter {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         Owned("\x1b[1m".to_owned() + hint + "\x1b[m")
     }

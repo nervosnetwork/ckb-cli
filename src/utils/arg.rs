@@ -3,78 +3,96 @@ use crate::utils::arg_parser::{
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
 };
 use ckb_types::H160;
+use clap::builder::ValueParser;
 use clap::Arg;
 
-pub fn privkey_path<'a>() -> Arg<'a> {
-    Arg::with_name("privkey-path")
+pub trait ArgValidatorExt {
+    fn validator<F>(self, validator: F) -> Self
+    where
+        F: Fn(&str) -> Result<(), String> + Clone + Send + Sync + 'static;
+}
+
+impl ArgValidatorExt for Arg {
+    fn validator<F>(self, validator: F) -> Self
+    where
+        F: Fn(&str) -> Result<(), String> + Clone + Send + Sync + 'static,
+    {
+        self.value_parser(ValueParser::new(move |input: &str| {
+            validator(input).map(|_| input.to_string())
+        }))
+    }
+}
+
+pub fn privkey_path() -> Arg {
+    Arg::new("privkey-path")
         .long("privkey-path")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| PrivkeyPathParser.validate(input))
-        .about("Private key file path (only read first line)")
+        .help("Private key file path (only read first line)")
 }
 
-pub fn pubkey<'a>() -> Arg<'a> {
-    Arg::with_name("pubkey")
+pub fn pubkey() -> Arg {
+    Arg::new("pubkey")
         .long("pubkey")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| PubkeyHexParser.validate(input))
-        .about("Public key (hex string, compressed format)")
+        .help("Public key (hex string, compressed format)")
 }
 
-pub fn address<'a>() -> Arg<'a> {
-    Arg::with_name("address")
+pub fn address() -> Arg {
+    Arg::new("address")
         .long("address")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| AddressParser::default().validate(input))
-        .about(
+        .help(
             "Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)",
         )
 }
 
-pub fn derive_receiving_address_length<'a>() -> Arg<'a> {
-    Arg::with_name("derive-receiving-address-length")
+pub fn derive_receiving_address_length() -> Arg {
+    Arg::new("derive-receiving-address-length")
         .long("derive-receiving-address-length")
-        .takes_value(true)
+        .num_args(1)
         .default_value("1000")
         .validator(|input| FromStrParser::<u32>::default().validate(input))
-        .about("Search derived receiving address length")
+        .help("Search derived receiving address length")
 }
 
-pub fn derive_change_address_length<'a>() -> Arg<'a> {
-    Arg::with_name("derive-change-address-length")
+pub fn derive_change_address_length() -> Arg {
+    Arg::new("derive-change-address-length")
         .long("derive-change-address-length")
-        .takes_value(true)
+        .num_args(1)
         .default_value("1000")
         .validator(|input| FromStrParser::<u32>::default().validate(input))
-        .about("Search derived change address length")
+        .help("Search derived change address length")
 }
 
-pub fn derive_change_address<'a>() -> Arg<'a> {
-    Arg::with_name("derive-change-address")
+pub fn derive_change_address() -> Arg {
+    Arg::new("derive-change-address")
         .long("derive-change-address")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| AddressParser::default().validate(input))
-        .about("Manually specify the last change address (search 10000 addresses max, required keystore password, see: BIP-44)")
+        .help("Manually specify the last change address (search 10000 addresses max, required keystore password, see: BIP-44)")
 }
 
-pub fn derived<'a>() -> Arg<'a> {
-    Arg::with_name("derived")
+pub fn derived() -> Arg {
+    Arg::new("derived")
         .long("derived")
-        .about("Search derived address space (search 10000 addresses(change/receiving) max, required keystore password, see: BIP-44)")
+        .help("Search derived address space (search 10000 addresses(change/receiving) max, required keystore password, see: BIP-44)")
 }
 
-pub fn lock_arg<'a>() -> Arg<'a> {
-    Arg::with_name("lock-arg")
+pub fn lock_arg() -> Arg {
+    Arg::new("lock-arg")
         .long("lock-arg")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FixedHashParser::<H160>::default().validate(input))
-        .about("Lock argument (account identifier, blake2b(pubkey)[0..20])")
+        .help("Lock argument (account identifier, blake2b(pubkey)[0..20])")
 }
 
-pub fn from_account<'a>() -> Arg<'a> {
-    Arg::with_name("from-account")
+pub fn from_account() -> Arg {
+    Arg::new("from-account")
         .long("from-account")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| {
             FixedHashParser::<H160>::default()
                 .validate(input)
@@ -85,97 +103,97 @@ pub fn from_account<'a>() -> Arg<'a> {
                         .map_err(|_| err)
                 })
         })
-        .about("The account's lock-arg or sighash address (transfer from this account)")
+        .help("The account's lock-arg or sighash address (transfer from this account)")
 }
 
-pub fn from_locked_address<'a>() -> Arg<'a> {
-    Arg::with_name("from-locked-address")
+pub fn from_locked_address() -> Arg {
+    Arg::new("from-locked-address")
         .long("from-locked-address")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| AddressParser::default().validate(input))
-        .about("The time locked multisig address to search live cells (which S=0,R=0,M=1,N=1 and have since value)")
+        .help("The time locked multisig address to search live cells (which S=0,R=0,M=1,N=1 and have since value)")
 }
 
-pub fn to_address<'a>() -> Arg<'a> {
-    Arg::with_name("to-address")
+pub fn to_address() -> Arg {
+    Arg::new("to-address")
         .long("to-address")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| AddressParser::default().validate(input))
-        .about("Target address")
+        .help("Target address")
 }
 
-pub fn to_data<'a>() -> Arg<'a> {
-    Arg::with_name("to-data")
+pub fn to_data() -> Arg {
+    Arg::new("to-data")
         .long("to-data")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| HexParser.validate(input))
-        .about("Hex data store in target cell (optional)")
+        .help("Hex data store in target cell (optional)")
 }
 
-pub fn to_data_path<'a>() -> Arg<'a> {
-    Arg::with_name("to-data-path")
+pub fn to_data_path() -> Arg {
+    Arg::new("to-data-path")
         .long("to-data-path")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FilePathParser::new(true).validate(input))
-        .about("Data binary file path store in target cell (optional)")
+        .help("Data binary file path store in target cell (optional)")
 }
 
-pub fn capacity<'a>() -> Arg<'a> {
-    Arg::with_name("capacity")
+pub fn capacity() -> Arg {
+    Arg::new("capacity")
         .long("capacity")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| CapacityParser.validate(input))
-        .about("The capacity (unit: CKB, format: 123.335)")
+        .help("The capacity (unit: CKB, format: 123.335)")
 }
 
-pub fn fee_rate<'a>() -> Arg<'a> {
-    Arg::with_name("fee-rate")
+pub fn fee_rate() -> Arg {
+    Arg::new("fee-rate")
         .long("fee-rate")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
         .default_value("1000")
-        .about("The transaction fee rate (unit: shannons/KB)")
+        .help("The transaction fee rate (unit: shannons/KB)")
 }
 
 /// create an Arg object to receive value of force_small_change_as_fee for CapacityBalancer
-pub fn max_tx_fee<'a>() -> Arg<'a> {
-    Arg::with_name("max-tx-fee")
+pub fn max_tx_fee() -> Arg {
+    Arg::new("max-tx-fee")
         .long("max-tx-fee")
-        .takes_value(true)
+        .num_args(1)
         .value_name("capacity")
-        .validator(|input|CapacityParser.validate(input))
-        .about("When there is no more inputs for create a change cell to balance the transaction capacity, force the addition capacity as fee, the value is actual maximum transaction fee(unit CKB, example:0.001)")
+        .validator(|input| CapacityParser.validate(input))
+        .help("When there is no more inputs for create a change cell to balance the transaction capacity, force the addition capacity as fee, the value is actual maximum transaction fee(unit CKB, example:0.001)")
 }
 
-pub fn live_cells_limit<'a>() -> Arg<'a> {
-    Arg::with_name("limit")
+pub fn live_cells_limit() -> Arg {
+    Arg::new("limit")
         .long("limit")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FromStrParser::<usize>::default().validate(input))
         .default_value("15")
-        .about("Get live cells <= limit")
+        .help("Get live cells <= limit")
 }
 
-pub fn from_block_number<'a>() -> Arg<'a> {
-    Arg::with_name("from")
+pub fn from_block_number() -> Arg {
+    Arg::new("from")
         .long("from")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .about("From block number (inclusive)")
+        .help("From block number (inclusive)")
 }
 
-pub fn to_block_number<'a>() -> Arg<'a> {
-    Arg::with_name("to")
+pub fn to_block_number() -> Arg {
+    Arg::new("to")
         .long("to")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| FromStrParser::<u64>::default().validate(input))
-        .about("To block number (exclusive)")
+        .help("To block number (exclusive)")
 }
 
-pub fn out_point<'a>() -> Arg<'a> {
-    Arg::with_name("out-point")
+pub fn out_point() -> Arg {
+    Arg::new("out-point")
         .long("out-point")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| { OutPointParser.validate(input) })
-        .about("out-point to specify a cell. Example: 0xd56ed5d4e8984701714de9744a533413f79604b3b91461e2265614829d2005d1-1")
+        .help("out-point to specify a cell. Example: 0xd56ed5d4e8984701714de9744a533413f79604b3b91461e2265614829d2005d1-1")
 }

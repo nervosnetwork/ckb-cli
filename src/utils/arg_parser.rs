@@ -21,6 +21,21 @@ use ckb_types::{core::ScriptHashType, packed::OutPoint, prelude::*, H160, H256};
 
 use crate::utils::cell_dep::CellDeps;
 
+pub trait ArgMatchesExt {
+    fn value_of(&self, name: &str) -> Option<&str>;
+    fn is_present(&self, name: &str) -> bool;
+}
+
+impl ArgMatchesExt for ArgMatches {
+    fn value_of(&self, name: &str) -> Option<&str> {
+        self.get_one::<String>(name).map(|value| value.as_str())
+    }
+
+    fn is_present(&self, name: &str) -> bool {
+        self.contains_id(name)
+    }
+}
+
 #[allow(clippy::wrong_self_convention)]
 pub trait ArgParser<T> {
     fn parse(&self, input: &str) -> Result<T, String>;
@@ -48,11 +63,11 @@ pub trait ArgParser<T> {
         name: &str,
         required: bool,
     ) -> Result<Option<R>, String> {
-        if required && !matches.is_present(name) {
+        if required && !matches.contains_id(name) {
             return Err(format!("<{}> is required", name));
         }
         matches
-            .value_of(name)
+            .get_one::<String>(name)
             .map(|input| self.parse(input).map(Into::into))
             .transpose()
     }
@@ -63,11 +78,13 @@ pub trait ArgParser<T> {
         name: &str,
     ) -> Result<Vec<R>, String> {
         matches
-            .values_of_lossy(name)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|input| self.parse(&input).map(Into::into))
-            .collect()
+            .get_many::<String>(name)
+            .map(|values| {
+                values
+                    .map(|input| self.parse(input).map(Into::into))
+                    .collect()
+            })
+            .unwrap_or_else(|| Ok(Vec::new()))
     }
 }
 

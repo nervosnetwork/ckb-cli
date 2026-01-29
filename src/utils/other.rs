@@ -26,6 +26,7 @@ use ckb_types::{
     H160, H256,
 };
 use clap::ArgMatches;
+use crate::utils::arg_parser::ArgMatchesExt;
 use colored::Colorize;
 use plugin_protocol::{CellIndex, LiveCellInfo};
 use rpassword::prompt_password_stdout;

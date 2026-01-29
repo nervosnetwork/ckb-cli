@@ -1,6 +1,8 @@
 use ckb_jsonrpc_types::{BlockView, HeaderView, PoolTransactionEntry, PoolTransactionReject};
 use ckb_sdk::pubsub::Client;
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use crate::utils::command::CommandHelpExt;
+use crate::utils::arg::ArgValidatorExt;
 use futures::StreamExt;
 use std::io;
 use std::net::SocketAddr;
@@ -36,47 +38,47 @@ impl PubSubCommand {
         PubSubCommand { format, color }
     }
 
-    pub fn subcommand() -> App<'static> {
-        let arg = Arg::with_name("tcp")
+    pub fn subcommand() -> Command {
+        let arg = Arg::new("tcp")
             .long("tcp")
-            .takes_value(true)
+            .num_args(1)
             .required(true)
             .validator(|input| SocketParser.validate(input))
-            .about("RPC pubsub server socket, like \"127.0.0.1:18114\"");
+            .help("RPC pubsub server socket, like \"127.0.0.1:18114\"");
 
-        let multi_arg = Arg::with_name("topics")
+        let multi_arg = Arg::new("topics")
             .short('t')
-            .takes_value(true)
+            .num_args(1)
             .required(true)
-            .possible_values(&[
+            .value_parser([
                 "new_tip_header",
                 "new_tip_block",
                 "new_transaction",
                 "proposed_transaction",
                 "rejected_transaction",
             ])
-            .multiple(true)
-            .about("Optional multiple topic subscriptions ");
+            .action(ArgAction::Append).num_args(1..)
+            .help("Optional multiple topic subscriptions ");
 
-        App::new("subscribe")
+        Command::new("subscribe")
             .about("Subscribe to TCP interface of node")
             .subcommands(vec![
-                App::new("new_tip_header")
+                Command::new("new_tip_header")
                     .arg(arg.clone())
-                    .about("Subscribe to new block header notification"),
-                App::new("new_tip_block")
+                    .help("Subscribe to new block header notification"),
+                Command::new("new_tip_block")
                     .arg(arg.clone())
-                    .about("Subscribe to new block notification"),
-                App::new("new_transaction")
+                    .help("Subscribe to new block notification"),
+                Command::new("new_transaction")
                     .arg(arg.clone())
-                    .about("Subscribe to new transaction notification"),
-                App::new("proposed_transaction")
+                    .help("Subscribe to new transaction notification"),
+                Command::new("proposed_transaction")
                     .arg(arg.clone())
-                    .about("Subscribe to new proposed transaction notification"),
-                App::new("rejected_transaction")
+                    .help("Subscribe to new proposed transaction notification"),
+                Command::new("rejected_transaction")
                     .arg(arg.clone())
-                    .about("Subscribe to rejected transaction notification"),
-                App::new("list")
+                    .help("Subscribe to rejected transaction notification"),
+                Command::new("list")
                     .args(vec![arg, multi_arg])
                     .about("Subscribe topic list"),
             ])
@@ -86,7 +88,7 @@ impl PubSubCommand {
 impl CliSubCommand for PubSubCommand {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("new_tip_header", Some(m)) => {
+            Some(("new_tip_header", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
@@ -97,7 +99,7 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            ("new_tip_block", Some(m)) => {
+            Some(("new_tip_block", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
@@ -108,7 +110,7 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            ("new_transaction", Some(m)) => {
+            Some(("new_transaction", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
@@ -119,7 +121,7 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            ("proposed_transaction", Some(m)) => {
+            Some(("proposed_transaction", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
@@ -130,7 +132,7 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            ("rejected_transaction", Some(m)) => {
+            Some(("rejected_transaction", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
                 let ret = block_on!(
                     tcp,
@@ -141,13 +143,18 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            ("list", Some(m)) => {
+            Some(("list", m)) => {
                 let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                let list: Vec<_> = m.values_of("topics").unwrap().collect();
+                let list: Vec<_> = m
+                    .get_many::<String>("topics")
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str)
+                    .collect();
                 let ret = block_on!(tcp, list.iter(), ListOutput, self.format, self.color);
                 ret.map_err(|e| e.to_string())
             }
-            _ => Err(Self::subcommand().generate_usage()),
+            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

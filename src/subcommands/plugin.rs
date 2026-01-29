@@ -1,4 +1,6 @@
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
@@ -14,43 +16,43 @@ impl<'a> PluginSubCommand<'a> {
         PluginSubCommand { plugin_mgr }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_plugin_name = Arg::with_name("name")
+    pub fn subcommand(name: &'static str) -> Command {
+        let arg_plugin_name = Arg::new("name")
             .long("name")
             .required(true)
-            .takes_value(true)
-            .about("Plugin name");
-        App::new(name)
+            .num_args(1)
+            .help("Plugin name");
+        Command::new(name)
             .about("ckb-cli plugin management")
             .subcommands(vec![
-                App::new("active")
+                Command::new("active")
                     .about(
                         "Active a plugin (at most one keystore/indexer role plugin can be actived)",
                     )
                     .arg(arg_plugin_name.clone()),
-                App::new("deactive")
+                Command::new("deactive")
                     .about("Deactive a plugin")
                     .arg(arg_plugin_name.clone()),
-                App::new("list").about("List all plugins"),
-                App::new("info")
+                Command::new("list").about("List all plugins"),
+                Command::new("info")
                     .about("Show the detail information of a plugin")
                     .arg(arg_plugin_name.clone()),
-                App::new("install")
+                Command::new("install")
                     .about("Install a plugin, will active it immediately by default")
                     .arg(
-                        Arg::with_name("binary-path")
+                        Arg::new("binary-path")
                             .long("binary-path")
                             .required(true)
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("The binary file path of the plugin"),
+                            .help("The binary file path of the plugin"),
                     )
                     .arg(
-                        Arg::with_name("inactive")
+                        Arg::new("inactive")
                             .long("inactive")
-                            .about("Install the plugin but not active it"),
+                            .help("Install the plugin but not active it"),
                     ),
-                App::new("uninstall")
+                Command::new("uninstall")
                     .about("Uninstall a plugin, deactive it then remove the binary file")
                     .arg(arg_plugin_name.clone()),
             ])
@@ -60,7 +62,7 @@ impl<'a> PluginSubCommand<'a> {
 impl CliSubCommand for PluginSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("active", Some(m)) => {
+            Some(("active", m)) => {
                 let name = m.value_of("name").unwrap();
                 self.plugin_mgr.active(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
@@ -68,7 +70,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     name
                 ))))
             }
-            ("deactive", Some(m)) => {
+            Some(("deactive", m)) => {
                 let name = m.value_of("name").unwrap();
                 self.plugin_mgr.deactive(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
@@ -76,7 +78,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     name
                 ))))
             }
-            ("list", Some(_)) => {
+            Some(("list", _)) => {
                 let resp = self
                     .plugin_mgr
                     .plugins()
@@ -91,7 +93,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            ("info", Some(m)) => {
+            Some(("info", m)) => {
                 let name = m.value_of("name").unwrap();
                 if let Some((plugin, config)) = self.plugin_mgr.plugins().get(name) {
                     let resp = serde_json::json!({
@@ -106,7 +108,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     Err(format!("Plugin {} not found", name))
                 }
             }
-            ("install", Some(m)) => {
+            Some(("install", m)) => {
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "binary-path")?;
                 let active = !m.is_present("inactive");
                 let config = self.plugin_mgr.install(path, active)?;
@@ -117,7 +119,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("uninstall", Some(m)) => {
+            Some(("uninstall", m)) => {
                 let name = m.value_of("name").unwrap();
                 self.plugin_mgr.uninstall(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
@@ -125,7 +127,7 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     name
                 ))))
             }
-            _ => Err(Self::subcommand("plugin").generate_usage()),
+            _ => Err(Self::subcommand("plugin").render_usage().to_string()),
         }
     }
 }

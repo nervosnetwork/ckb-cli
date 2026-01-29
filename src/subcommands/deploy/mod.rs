@@ -16,7 +16,10 @@ use ckb_sdk::{
     Address, HumanCapacity,
 };
 use ckb_types::{bytes::Bytes, core::ScriptHashType, packed, prelude::*, H160, H256};
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
+use crate::utils::command::CommandHelpExt;
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 
 use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
 use crate::plugin::PluginManager;
@@ -73,40 +76,40 @@ impl<'a> DeploySubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_info_file = Arg::with_name("info-file")
+    pub fn subcommand(name: &'static str) -> Command {
+        let arg_info_file = Arg::new("info-file")
             .long("info-file")
             .required(true)
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .about("File path for saving deploy cell/dep_group transactions and metadata (format: json)");
-        let arg_migration_dir = Arg::with_name("migration-dir")
+            .help("File path for saving deploy cell/dep_group transactions and metadata (format: json)");
+        let arg_migration_dir = Arg::new("migration-dir")
             .long("migration-dir")
             .required(true)
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| DirPathParser::new(true).validate(input))
-            .about("Migration directory for saving json format migration files");
-        let arg_deployment = Arg::with_name("deployment-config")
+            .help("Migration directory for saving json format migration files");
+        let arg_deployment = Arg::new("deployment-config")
             .long("deployment-config")
             .required(true)
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| FilePathParser::new(true).validate(input))
-            .about("deployment config file path (.toml)");
-        let arg_allow_zero_lock = Arg::with_name("zero-lock")
+            .help("deployment config file path (.toml)");
+        let arg_allow_zero_lock = Arg::new("zero-lock")
             .long("zero-lock")
-            .about(ALLOW_ZERO_LOCK_HELP_MSG);
-        App::new(name)
+            .help(ALLOW_ZERO_LOCK_HELP_MSG);
+        Command::new(name)
             .about("Deploy contract binaries")
             .subcommands(vec![
-                App::new("gen-txs")
+                Command::new("gen-txs")
                     .about("Generate cell/dep_group deploy transaction, then use `ckb-cli tx` sub-command to sign mutlsig inputs and send the transaction")
                     .arg(
-                        Arg::with_name("from-address")
+                        Arg::new("from-address")
                             .long("from-address")
                             .required(true)
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| AddressParser::new_sighash().validate(input))
-                            .about("Collect cells from this address (sighash address)")
+                            .help("Collect cells from this address (sighash address)")
                     )
                     .arg(arg::fee_rate().required(true))
                     .arg(arg_deployment.clone())
@@ -114,32 +117,32 @@ impl<'a> DeploySubCommand<'a> {
                     .arg(arg_migration_dir.clone())
                     .arg(arg_allow_zero_lock.clone())
                     .arg(
-                        Arg::with_name("sign-now")
+                        Arg::new("sign-now")
                             .long("sign-now")
-                            .about("Sign the cell/dep_group transaction add signatures to info-file now"),
+                            .help("Sign the cell/dep_group transaction add signatures to info-file now"),
                     ),
-                App::new("sign-txs")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
-                    .arg(arg::from_account().required_unless(arg::privkey_path().get_name()))
+                Command::new("sign-txs")
+                    .arg(arg::privkey_path().required_unless_present("from-account"))
+                    .arg(arg::from_account().required_unless_present("privkey-path"))
                     .arg(arg_info_file.clone())
                     .arg(arg_allow_zero_lock.clone())
                     .arg(
-                        Arg::with_name("add-signatures")
+                        Arg::new("add-signatures")
                             .long("add-signatures")
-                            .about("Sign and add signatures"),
+                            .help("Sign and add signatures"),
                     )
-                    .about("Sign cell/dep_group transactions (support offline sign)"),
-                App::new("explain-txs")
+                    .help("Sign cell/dep_group transactions (support offline sign)"),
+                Command::new("explain-txs")
                     .arg(arg_info_file.clone())
-                    .about("Explain cell transaction and dep_group transaction"),
-                App::new("apply-txs")
+                    .help("Explain cell transaction and dep_group transaction"),
+                Command::new("apply-txs")
                     .arg(arg_info_file.clone())
                     .arg(arg_migration_dir)
                     .arg(arg_allow_zero_lock)
-                    .about("Send cell/dep_group transactions and write results to migration directory"),
-                App::new("init-config")
+                    .help("Send cell/dep_group transactions and write results to migration directory"),
+                Command::new("init-config")
                     .arg(arg_deployment.validator(|input| FilePathParser::new(false).validate(input)))
-                    .about("Initialize default deployment config (format: toml)")
+                    .help("Initialize default deployment config (format: toml)")
             ])
     }
 }
@@ -147,7 +150,7 @@ impl<'a> DeploySubCommand<'a> {
 impl CliSubCommand for DeploySubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         match matches.subcommand() {
-            ("gen-txs", Some(m)) => {
+            Some(("gen-txs", m)) => {
                 let network = get_network_type(self.rpc_client)?;
                 let from_address: Address = AddressParser::new_sighash()
                     .set_network(network)
@@ -359,7 +362,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            ("sign-txs", Some(m)) => {
+            Some(("sign-txs", m)) => {
                 let info_file: PathBuf = FilePathParser::new(true).from_matches(m, "info-file")?;
                 let privkey_opt: Option<PrivkeyWrapper> =
                     PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
@@ -458,7 +461,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 .map_err(|err| err.to_string())?;
                 Ok(Output::new_output(all_signatures))
             }
-            ("explain-txs", Some(m)) => {
+            Some(("explain-txs", m)) => {
                 // * Report cell transaction summary
                 // * Report dep_group transaction summary
                 let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
@@ -471,7 +474,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            ("apply-txs", Some(m)) => {
+            Some(("apply-txs", m)) => {
                 let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
                 let migration_dir: PathBuf =
                     DirPathParser::new(true).from_matches(m, "migration-dir")?;
@@ -569,7 +572,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("init-config", Some(m)) => {
+            Some(("init-config", m)) => {
                 let deployment_config: PathBuf =
                     FilePathParser::new(false).from_matches(m, "deployment-config")?;
 
@@ -587,7 +590,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            _ => Err(Self::subcommand("deploy").generate_usage()),
+            _ => Err(Self::subcommand("deploy").render_usage().to_string()),
         }
     }
 }

@@ -3,7 +3,10 @@ use ckb_jsonrpc_types::{
 };
 use ckb_types::packed::{CellOutput, OutPoint};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use crate::utils::command::CommandHelpExt;
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
@@ -41,401 +44,401 @@ impl<'a> RpcSubCommand<'a> {
         }
     }
 
-    pub fn subcommand() -> App<'static> {
-        let arg_hash = Arg::with_name("hash")
+    pub fn subcommand() -> Command {
+        let arg_hash = Arg::new("hash")
             .long("hash")
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| FixedHashParser::<H256>::default().validate(input))
             .required(true);
-        let arg_number = Arg::with_name("number")
+        let arg_number = Arg::new("number")
             .long("number")
-            .takes_value(true)
+            .num_args(1)
             .validator(|input| FromStrParser::<u64>::default().validate(input))
             .required(true)
-            .about("Block number");
-        let arg_peer_id = Arg::with_name("peer-id")
+            .help("Block number");
+        let arg_peer_id = Arg::new("peer-id")
             .long("peer-id")
-            .takes_value(true)
+            .num_args(1)
             .required(true)
-            .about("Node's peer id");
-        let with_cycles = Arg::with_name("with-cycles")
+            .help("Node's peer id");
+        let with_cycles = Arg::new("with-cycles")
             .long("with-cycles")
-            .about("get block info with cycles");
-        let packed = Arg::with_name("packed")
+            .help("get block info with cycles");
+        let packed = Arg::new("packed")
             .long("packed")
-            .about("returns a 0x-prefixed hex string");
+            .help("returns a 0x-prefixed hex string");
 
-        App::new("rpc")
+        Command::new("rpc")
             .about("Invoke RPC call to node")
             .arg(
-                Arg::with_name("raw-data")
+                Arg::new("raw-data")
                     .long("raw-data")
                     .global(true)
-                    .about("Output raw jsonrpc data")
+                    .help("Output raw jsonrpc data")
             )
             .subcommands(vec![
                 // [Chain]
-                App::new("get_block")
+                Command::new("get_block")
                     .about("Get block content by hash")
-                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(arg_hash.clone().help("Block hash"))
                     .arg(with_cycles.clone())
                     .arg(packed.clone()),
-                App::new("get_block_by_number")
+                Command::new("get_block_by_number")
                     .about("Get block content by block number")
                     .arg(arg_number.clone())
                     .arg(with_cycles.clone())
                     .arg(packed.clone()),
-                App::new("get_block_hash")
+                Command::new("get_block_hash")
                     .about("Get block hash by block number")
                     .arg(arg_number.clone()),
-                App::new("get_current_epoch").about("Get current epoch information"),
-                App::new("get_epoch_by_number")
+                Command::new("get_current_epoch").about("Get current epoch information"),
+                Command::new("get_epoch_by_number")
                     .about("Get epoch information by epoch number")
-                    .arg(arg_number.clone().about("Epoch number")),
-                App::new("get_header")
+                    .arg(arg_number.clone().help("Epoch number")),
+                Command::new("get_header")
                     .about("Get block header content by hash")
-                    .arg(arg_hash.clone().about("Block hash"))
+                    .arg(arg_hash.clone().help("Block hash"))
                     .arg(packed.clone()),
-                App::new("get_header_by_number")
+                Command::new("get_header_by_number")
                     .about("Get block header by block number")
                     .arg(arg_number.clone())
                     .arg(packed.clone()),
-                App::new("get_live_cell")
+                Command::new("get_live_cell")
                     .about("Get live cell (live means unspent)")
                     .arg(
-                        Arg::with_name("tx-hash")
+                        Arg::new("tx-hash")
                             .long("tx-hash")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
-                            .about("Tx hash"),
+                            .help("Tx hash"),
                     )
                     .arg(
-                        Arg::with_name("index")
+                        Arg::new("index")
                             .long("index")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<u32>::default().validate(input))
                             .required(true)
-                            .about("Output index"),
+                            .help("Output index"),
                     )
                     .arg(
-                        Arg::with_name("include-tx-pool")
+                        Arg::new("include-tx-pool")
                             .long("include-tx-pool")
-                            .about("Weather to check live cell in tx-pool")
+                            .help("Weather to check live cell in tx-pool")
                     )
                     .arg(
-                        Arg::with_name("with-data")
+                        Arg::new("with-data")
                             .long("with-data")
-                            .about("Get live cell with data")
+                            .help("Get live cell with data")
                     ),
-                App::new("get_tip_block_number").about("Get tip block number"),
-                App::new("get_tip_header").about("Get tip header")
+                Command::new("get_tip_block_number").about("Get tip block number"),
+                Command::new("get_tip_header").about("Get tip header")
                 .arg(packed.clone()),
-                App::new("get_transaction")
+                Command::new("get_transaction")
                     .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().about("Tx hash"))
+                    .arg(arg_hash.clone().help("Tx hash"))
                     .arg(packed.clone()),
-                App::new("get_transaction_proof")
+                Command::new("get_transaction_proof")
                     .about("Returns a Merkle proof that transactions are included in a block")
                     .arg(
-                        Arg::with_name("tx-hash")
+                        Arg::new("tx-hash")
                             .long("tx-hash")
-                            .takes_value(true)
-                            .multiple(true)
+                            .num_args(1)
+                            .action(ArgAction::Append).num_args(1..)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .about("Transaction hashes, all transactions must be in the same block")
+                            .help("Transaction hashes, all transactions must be in the same block")
                     )
                     .arg(
-                        Arg::with_name("block-hash")
+                        Arg::new("block-hash")
                             .long("block-hash")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .about("Looks for transactions in the block with this hash")
+                            .help("Looks for transactions in the block with this hash")
                     ),
-                App::new("verify_transaction_proof")
+                Command::new("verify_transaction_proof")
                     .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to")
                     .arg(
-                        Arg::with_name("tx-proof-path")
+                        Arg::new("tx-proof-path")
                             .long("tx-proof-path")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("File path of proof generated by `get_transaction_proof` (JSON format)")
+                            .help("File path of proof generated by `get_transaction_proof` (JSON format)")
                     ),
-                App::new("get_fork_block")
+                Command::new("get_fork_block")
                     .about("Returns the information about a fork block by hash")
-                    .arg(arg_hash.clone().about("The fork block hash"))
+                    .arg(arg_hash.clone().help("The fork block hash"))
                     .arg(packed.clone()),
-                App::new("get_consensus")
+                Command::new("get_consensus")
                     .about("Return various consensus parameters"),
-                App::new("get_block_median_time")
+                Command::new("get_block_median_time")
                     .about("Returns the past median time by block hash")
-                    .arg(arg_hash.clone().about("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
-                App::new("get_block_economic_state")
+                    .arg(arg_hash.clone().help("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
+                Command::new("get_block_economic_state")
                     .about("Returns increased issuance, miner reward, and the total transaction fee of a block")
-                    .arg(arg_hash.clone().about("Specifies the block hash which rewards should be analyzed")),
-                App::new("estimate_cycles")
+                    .arg(arg_hash.clone().help("Specifies the block hash which rewards should be analyzed")),
+                Command::new("estimate_cycles")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                         .long("json-path")
-                        .takes_value(true)
+                        .num_args(1)
                         .required(true)
                         .validator(|input| FilePathParser::new(true).validate(input))
-                        .about("Transaction content (json format, see rpc estimate_cycles)")
+                        .help("Transaction content (json format, see rpc estimate_cycles)")
                     )
-                    .about("estimate_cycles run a transaction and return the execution consumed cycles."),
-                App::new("get_fee_rate_statics")
+                    .help("estimate_cycles run a transaction and return the execution consumed cycles."),
+                Command::new("get_fee_rate_statics")
                     .arg(
-                        Arg::with_name("target")
+                        Arg::new("target")
                             .long("target")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .about("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                            .help("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
-                    .about("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
-                App::new("get_fee_rate_statistics")
+                    .help("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
+                Command::new("get_fee_rate_statistics")
                     .arg(
-                        Arg::with_name("target")
+                        Arg::new("target")
                             .long("target")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .about("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
+                            .help("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
                     )
-                    .about("Returns the fee_rate statistics of confirmed blocks on the chain."),
-                App::new("get_deployments_info").about("Returns the information about all deployments"),
-                App::new("get_transaction_and_witness_proof")
+                    .help("Returns the fee_rate statistics of confirmed blocks on the chain."),
+                Command::new("get_deployments_info").about("Returns the information about all deployments"),
+                Command::new("get_transaction_and_witness_proof")
                     .arg(
-                        Arg::with_name("tx-hash")
+                        Arg::new("tx-hash")
                             .long("tx-hash")
-                            .takes_value(true)
-                            .multiple(true)
+                            .num_args(1)
+                            .action(ArgAction::Append).num_args(1..)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .about("Transaction hashes")
+                            .help("Transaction hashes")
                     )
                     .arg(
-                        Arg::with_name("block-hash")
+                        Arg::new("block-hash")
                             .long("block-hash")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .about("Looks for transactions in the block with this hash")
-                    ).about("Returns a Merkle proof that transactions and witnesses are included in a block"),
-                App::new("verify_transaction_and_witness_proof")
+                            .help("Looks for transactions in the block with this hash")
+                    ).help("Returns a Merkle proof that transactions and witnesses are included in a block"),
+                Command::new("verify_transaction_and_witness_proof")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                             .long("json-path")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
+                            .help("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
                     )
-                    .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
+                    .help("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
                 // [Net]
-                App::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
-                App::new("get_peers").about("Get connected peers"),
-                App::new("local_node_info").about("Get local node information"),
-                App::new("set_ban")
+                Command::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
+                Command::new("get_peers").about("Get connected peers"),
+                Command::new("local_node_info").about("Get local node information"),
+                Command::new("set_ban")
                     .arg(
-                        Arg::with_name("address")
+                        Arg::new("address")
                             .long("address")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<IpNetwork>::new().validate(input))
                             .required(true)
-                            .about("The IP/Subnet with an optional netmask (default is /32 = single IP)")
+                            .help("The IP/Subnet with an optional netmask (default is /32 = single IP)")
                     )
                     .arg(
-                        Arg::with_name("command")
+                        Arg::new("command")
                             .long("command")
-                            .takes_value(true)
-                            .possible_values(&["insert", "delete"])
+                            .num_args(1)
+                            .value_parser(["insert", "delete"])
                             .required(true)
-                            .about("`insert` to insert an IP/Subnet to the list, `delete` to delete an IP/Subnet from the list")
+                            .help("`insert` to insert an IP/Subnet to the list, `delete` to delete an IP/Subnet from the list")
                     )
                     .arg(
-                        Arg::with_name("ban_time")
+                        Arg::new("ban_time")
                             .long("ban_time")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| DurationParser.validate(input))
                             .required(true)
                             .default_value("24h")
-                            .about("How long the IP is banned")
+                            .help("How long the IP is banned")
                     )
                     .arg(
-                        Arg::with_name("reason")
+                        Arg::new("reason")
                             .long("reason")
-                            .takes_value(true)
-                            .about("Ban reason, optional parameter")
+                            .num_args(1)
+                            .help("Ban reason, optional parameter")
                     )
-                    .about("Insert or delete an IP/Subnet from the banned list"),
-                App::new("sync_state").about("Returns sync state of this node"),
-                App::new("set_network_active")
+                    .help("Insert or delete an IP/Subnet from the banned list"),
+                Command::new("sync_state").about("Returns sync state of this node"),
+                Command::new("set_network_active")
                     .arg(
-                        Arg::with_name("state")
+                        Arg::new("state")
                             .long("state")
-                            .takes_value(true)
-                            .possible_values(&["enable", "disable"])
+                            .num_args(1)
+                            .value_parser(["enable", "disable"])
                             .required(true)
-                            .about("The network state to set")
+                            .help("The network state to set")
                     )
-                    .about("Disable/enable all p2p network activity"),
-                App::new("add_node")
+                    .help("Disable/enable all p2p network activity"),
+                Command::new("add_node")
                     .arg(arg_peer_id.clone())
                     .arg(
-                        Arg::with_name("address")
+                        Arg::new("address")
                             .long("address")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<Multiaddr>::new().validate(input))
                             .required(true)
-                            .about("Target node's address (multiaddr)")
+                            .help("Target node's address (multiaddr)")
                     )
-                    .about("Connect to a node"),
-                App::new("remove_node")
+                    .help("Connect to a node"),
+                Command::new("remove_node")
                     .arg(arg_peer_id.clone())
-                    .about("Disconnect a node"),
-                App::new("clear_banned_addresses").about("Clears all banned IPs/Subnets"),
-                App::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
+                    .help("Disconnect a node"),
+                Command::new("clear_banned_addresses").about("Clears all banned IPs/Subnets"),
+                Command::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
                 // [Pool]
-                App::new("remove_transaction")
+                Command::new("remove_transaction")
                     .about("Removes a transaction and all transactions which depends on it from tx pool if it exists")
                     .arg(
-                        Arg::with_name("tx-hash")
+                        Arg::new("tx-hash")
                             .long("tx-hash")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
-                            .about("Hash of a transaction"),
+                            .help("Hash of a transaction"),
                     ),
-                App::new("tx_pool_info").about("Get transaction pool information"),
-                App::new("clear_tx_verify_queue").about("Clear TxPool verify_queue"),
-                App::new("test_tx_pool_accept")
+                Command::new("tx_pool_info").about("Get transaction pool information"),
+                Command::new("clear_tx_verify_queue").about("Clear TxPool verify_queue"),
+                Command::new("test_tx_pool_accept")
                 .about("Test if transaction can be accepted by Tx Pool")
                 .arg(
-                    Arg::with_name("tx-file").long("tx-file").takes_value(true).required(true).about("transaction data file(format json)")
+                    Arg::new("tx-file").long("tx-file").num_args(1).required(true).help("transaction data file(format json)")
                 ),
-                App::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
-                App::new("get_raw_tx_pool")
+                Command::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
+                Command::new("get_raw_tx_pool")
                     .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
-                    .arg(Arg::with_name("verbose").long("verbose").about("True for a json object, false for array of transaction ids")),
-                App::new("tx_pool_ready").about("Returns whether tx-pool service is started, ready for request"),
+                    .arg(Arg::new("verbose").long("verbose").help("True for a json object, false for array of transaction ids")),
+                Command::new("tx_pool_ready").about("Returns whether tx-pool service is started, ready for request"),
                 // [`Stats`]
-                App::new("get_blockchain_info").about("Get chain information"),
+                Command::new("get_blockchain_info").about("Get chain information"),
                 // [Alert]
-                App::new("send_alert")
+                Command::new("send_alert")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                             .long("json-path")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("The alert message (json format)")
+                            .help("The alert message (json format)")
                     )
-                    .about("Sends an alert"),
+                    .help("Sends an alert"),
                 // [`IntegrationTest`]
-                App::new("notify_transaction")
+                Command::new("notify_transaction")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                          .long("json-path")
-                         .takes_value(true)
+                         .num_args(1)
                          .required(true)
                          .validator(|input| FilePathParser::new(true).validate(input))
-                         .about("[TEST ONLY] Transaction content (json format, see rpc send_transaction)")
+                         .help("[TEST ONLY] Transaction content (json format, see rpc send_transaction)")
                     )
-                    .about("[TEST ONLY] Notify transaction"),
-                App::new("truncate")
+                    .help("[TEST ONLY] Notify transaction"),
+                Command::new("truncate")
                     .arg(
-                        Arg::with_name("tip-hash")
+                        Arg::new("tip-hash")
                             .long("tip-hash")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FixedHashParser::<H256>::default().validate(input))
                             .required(true)
-                            .about("Target tip block hash")
+                            .help("Target tip block hash")
                     )
-                    .about("[TEST ONLY] Truncate blocks to target tip block"),
-                App::new("generate_block")
+                    .help("[TEST ONLY] Truncate blocks to target tip block"),
+                Command::new("generate_block")
                     .about("[TEST ONLY] Generate an empty block"),
-                App::new("generate_epochs")
+                Command::new("generate_epochs")
                     .arg(
-                        Arg::with_name("num-epochs")
+                        Arg::new("num-epochs")
                             .long("num-epochs")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
-                            .about("The number of epochs to generate.")
+                            .help("The number of epochs to generate.")
                     )
-                    .about("[TEST ONLY] Generate epochs"),
+                    .help("[TEST ONLY] Generate epochs"),
                 // [`Indexer`]
-                App::new("get_indexer_tip").about("Returns the indexed tip"),
-                App::new("get_cells")
+                Command::new("get_indexer_tip").about("Returns the indexed tip"),
+                Command::new("get_cells")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                         .long("json-path")
-                        .takes_value(true)
+                        .num_args(1)
                         .validator(|input| FilePathParser::new(true).validate(input))
                         .required(true)
-                        .about("Indexer search key"))
+                        .help("Indexer search key"))
                     .arg(
-                        Arg::with_name("order")
+                        Arg::new("order")
                             .long("order")
-                            .takes_value(true)
-                            .possible_values(&["asc", "desc"])
+                            .num_args(1)
+                            .value_parser(["asc", "desc"])
                             .required(true)
-                            .about("Indexer search order")
+                            .help("Indexer search order")
                     )
                     .arg(
-                        Arg::with_name("limit")
+                        Arg::new("limit")
                             .long("limit")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
-                            .about("Limit the number of results")
+                            .help("Limit the number of results")
                     )
                     .arg(
-                        Arg::with_name("after")
+                        Arg::new("after")
                             .long("after")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| HexParser.validate(input))
-                            .about("Pagination parameter")
+                            .help("Pagination parameter")
                     )
-                    .about("Returns the live cells collection by the lock or type script"),
-                App::new("get_transactions")
+                    .help("Returns the live cells collection by the lock or type script"),
+                Command::new("get_transactions")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                         .long("json-path")
-                        .takes_value(true)
+                        .num_args(1)
                         .validator(|input| FilePathParser::new(true).validate(input))
                         .required(true)
-                        .about("Indexer search key"))
+                        .help("Indexer search key"))
                     .arg(
-                        Arg::with_name("order")
+                        Arg::new("order")
                             .long("order")
-                            .takes_value(true)
-                            .possible_values(&["asc", "desc"])
+                            .num_args(1)
+                            .value_parser(["asc", "desc"])
                             .required(true)
-                            .about("Indexer search order")
+                            .help("Indexer search order")
                     )
                     .arg(
-                        Arg::with_name("limit")
+                        Arg::new("limit")
                             .long("limit")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| FromStrParser::<u64>::default().validate(input))
                             .required(true)
-                            .about("Limit the number of results")
+                            .help("Limit the number of results")
                     )
                     .arg(
-                        Arg::with_name("after")
+                        Arg::new("after")
                             .long("after")
-                            .takes_value(true)
+                            .num_args(1)
                             .validator(|input| HexParser.validate(input))
-                            .about("Pagination parameter")
+                            .help("Pagination parameter")
                     )
-                    .about("Returns the transactions collection by the lock or type script"),
-                App::new("get_cells_capacity")
+                    .help("Returns the transactions collection by the lock or type script"),
+                Command::new("get_cells_capacity")
                     .arg(
-                        Arg::with_name("json-path")
+                        Arg::new("json-path")
                         .long("json-path")
-                        .takes_value(true)
+                        .num_args(1)
                         .validator(|input| FilePathParser::new(true).validate(input))
                         .required(true)
-                        .about("Indexer search key"))
-                    .about("Returns the live cells capacity by the lock or type script"),
+                        .help("Indexer search key"))
+                    .help("Returns the live cells capacity by the lock or type script"),
             ])
     }
 }
@@ -445,7 +448,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
         let is_raw_data = matches.is_present("raw-data");
         match matches.subcommand() {
             // [Chain]
-            ("get_block", Some(m)) => {
+            Some(("get_block", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let with_cycles = m.is_present("with-cycles");
                 let packed = m.is_present("packed");
@@ -493,7 +496,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     }
                 }
             }
-            ("get_block_by_number", Some(m)) => {
+            Some(("get_block_by_number", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let with_cycles = m.is_present("with-cycles");
                 let packed = m.is_present("packed");
@@ -544,13 +547,13 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     }
                 }
             }
-            ("get_block_hash", Some(m)) => {
+            Some(("get_block_hash", m)) => {
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
                 let resp = self.rpc_client.get_block_hash(number).map(OptionH256)?;
                 Ok(Output::new_output(resp))
             }
-            ("get_current_epoch", Some(m)) => {
+            Some(("get_current_epoch", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -563,7 +566,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_epoch_by_number", Some(m)) => {
+            Some(("get_epoch_by_number", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
 
@@ -582,7 +585,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_header", Some(m)) => {
+            Some(("get_header", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -614,7 +617,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_header_by_number", Some(m)) => {
+            Some(("get_header_by_number", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let packed = m.is_present("packed");
                 let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
@@ -649,7 +652,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_live_cell", Some(m)) => {
+            Some(("get_live_cell", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let include_tx_pool = m.is_present("include-tx-pool");
                 let tx_hash: H256 =
@@ -687,7 +690,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_tip_block_number", Some(m)) => {
+            Some(("get_tip_block_number", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -703,7 +706,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_tip_header", Some(m)) => {
+            Some(("get_tip_header", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let packed = m.is_present("packed");
                 if is_raw_data {
@@ -730,7 +733,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_transaction", Some(m)) => {
+            Some(("get_transaction", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -757,7 +760,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_transaction_proof", Some(m)) => {
+            Some(("get_transaction_proof", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let tx_hashes: Vec<H256> =
                     FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
@@ -777,7 +780,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("verify_transaction_proof", Some(m)) => {
+            Some(("verify_transaction_proof", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-proof-path")?;
                 let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
@@ -797,7 +800,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_fork_block", Some(m)) => {
+            Some(("get_fork_block", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let packed = m.is_present("packed");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
@@ -823,7 +826,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_consensus", Some(m)) => {
+            Some(("get_consensus", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -836,7 +839,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_block_median_time", Some(m)) => {
+            Some(("get_block_median_time", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
@@ -855,7 +858,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_block_economic_state", Some(m)) => {
+            Some(("get_block_economic_state", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
 
@@ -874,7 +877,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("estimate_cycles", Some(m)) => {
+            Some(("estimate_cycles", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
@@ -891,7 +894,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_fee_rate_statics", Some(m)) => {
+            Some(("get_fee_rate_statics", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let target: Option<u64> =
                     FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
@@ -907,7 +910,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_fee_rate_statistics", Some(m)) => {
+            Some(("get_fee_rate_statistics", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let target: Option<u64> =
                     FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
@@ -923,7 +926,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_deployments_info", Some(m)) => {
+            Some(("get_deployments_info", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
 
                 if is_raw_data {
@@ -937,7 +940,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_transaction_and_witness_proof", Some(m)) => {
+            Some(("get_transaction_and_witness_proof", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let tx_hashes: Vec<H256> =
                     FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
@@ -957,7 +960,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("verify_transaction_and_witness_proof", Some(m)) => {
+            Some(("verify_transaction_and_witness_proof", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
 
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
@@ -979,7 +982,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Net]
-            ("get_banned_addresses", Some(m)) => {
+            Some(("get_banned_addresses", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -993,7 +996,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_peers", Some(m)) => {
+            Some(("get_peers", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1007,7 +1010,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("local_node_info", Some(m)) => {
+            Some(("local_node_info", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1020,7 +1023,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("set_ban", Some(m)) => {
+            Some(("set_ban", m)) => {
                 let address: IpNetwork =
                     FromStrParser::<IpNetwork>::new().from_matches(m, "address")?;
                 let ban_time: Duration = DurationParser.from_matches(m, "ban_time")?;
@@ -1038,7 +1041,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 )?;
                 Ok(Output::new_success())
             }
-            ("sync_state", Some(m)) => {
+            Some(("sync_state", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1051,39 +1054,39 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("set_network_active", Some(m)) => {
+            Some(("set_network_active", m)) => {
                 let state = m.value_of("state").unwrap() == "enable";
                 self.rpc_client.set_network_active(state)?;
                 Ok(Output::new_success())
             }
-            ("add_node", Some(m)) => {
+            Some(("add_node", m)) => {
                 let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
                 let address: Multiaddr =
                     FromStrParser::<Multiaddr>::new().from_matches(m, "address")?;
                 self.rpc_client.add_node(peer_id, address.to_string())?;
                 Ok(Output::new_success())
             }
-            ("remove_node", Some(m)) => {
+            Some(("remove_node", m)) => {
                 let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
                 self.rpc_client.remove_node(peer_id)?;
                 Ok(Output::new_success())
             }
-            ("clear_banned_addresses", _) => {
+            Some(("clear_banned_addresses", _)) => {
                 self.rpc_client.clear_banned_addresses()?;
                 Ok(Output::new_success())
             }
-            ("ping_peers", _) => {
+            Some(("ping_peers", _)) => {
                 self.rpc_client.ping_peers()?;
                 Ok(Output::new_success())
             }
             // [Pool]
-            ("remove_transaction", Some(m)) => {
+            Some(("remove_transaction", m)) => {
                 let tx_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
                 let resp = self.rpc_client.remove_transaction(tx_hash)?;
                 Ok(Output::new_output(resp))
             }
-            ("tx_pool_info", Some(m)) => {
+            Some(("tx_pool_info", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1096,7 +1099,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("clear_tx_verify_queue", Some(m)) => {
+            Some(("clear_tx_verify_queue", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     self.raw_rpc_client
@@ -1108,7 +1111,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(()))
                 }
             }
-            ("test_tx_pool_accept", Some(m)) => {
+            Some(("test_tx_pool_accept", m)) => {
                 let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
@@ -1143,15 +1146,15 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("clear_tx_pool", _) => {
+            Some(("clear_tx_pool", _)) => {
                 self.rpc_client.clear_tx_pool()?;
                 Ok(Output::new_success())
             }
-            ("tx_pool_ready", _) => {
+            Some(("tx_pool_ready", _)) => {
                 let resp = self.rpc_client.tx_pool_ready()?;
                 Ok(Output::new_output(resp))
             }
-            ("get_raw_tx_pool", Some(m)) => {
+            Some(("get_raw_tx_pool", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 let verbose = m.is_present("verbose");
                 if is_raw_data {
@@ -1166,7 +1169,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Stats]
-            ("get_blockchain_info", Some(m)) => {
+            Some(("get_blockchain_info", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1180,7 +1183,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Alert]
-            ("send_alert", Some(m)) => {
+            Some(("send_alert", m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let alert: Alert = serde_json::from_str(&content).map_err(|err| err.to_string())?;
@@ -1188,7 +1191,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 Ok(Output::new_success())
             }
             // [IntegrationTest]
-            ("notify_transaction", Some(m)) => {
+            Some(("notify_transaction", m)) => {
                 let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
@@ -1196,24 +1199,24 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 let resp = self.rpc_client.notify_transaction(tx.into())?;
                 Ok(Output::new_output(resp))
             }
-            ("truncate", Some(m)) => {
+            Some(("truncate", m)) => {
                 let target_tip_hash: H256 =
                     FixedHashParser::<H256>::default().from_matches(m, "tip-hash")?;
                 self.rpc_client.truncate(target_tip_hash)?;
                 Ok(Output::new_success())
             }
-            ("generate_block", Some(_m)) => {
+            Some(("generate_block", _m)) => {
                 let resp = self.rpc_client.generate_block()?;
                 Ok(Output::new_output(resp))
             }
-            ("generate_epochs", Some(m)) => {
+            Some(("generate_epochs", m)) => {
                 let num_epochs: u64 =
                     FromStrParser::<u64>::default().from_matches(m, "num-epochs")?;
                 let resp = self.rpc_client.generate_epochs(num_epochs)?;
                 Ok(Output::new_output(resp))
             }
             // [Indexer]
-            ("get_indexer_tip", Some(m)) => {
+            Some(("get_indexer_tip", m)) => {
                 let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
@@ -1226,7 +1229,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_cells", Some(m)) => {
+            Some(("get_cells", m)) => {
                 let json_path: PathBuf = FilePathParser::new(true)
                     .from_matches_opt(m, "json-path")?
                     .expect("json-path is required");
@@ -1253,7 +1256,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_transactions", Some(m)) => {
+            Some(("get_transactions", m)) => {
                 let json_path: PathBuf = FilePathParser::new(true)
                     .from_matches_opt(m, "json-path")?
                     .expect("json-path is required");
@@ -1283,7 +1286,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            ("get_cells_capacity", Some(m)) => {
+            Some(("get_cells_capacity", m)) => {
                 let json_path: PathBuf = FilePathParser::new(true)
                     .from_matches_opt(m, "json-path")?
                     .expect("json-path is required");
@@ -1302,7 +1305,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            _ => Err(Self::subcommand().generate_usage()),
+            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use clap::{App, Arg, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use crate::utils::arg::ArgValidatorExt;
+use crate::utils::arg_parser::ArgMatchesExt;
 
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{
@@ -87,128 +89,128 @@ impl<'a> SudtSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_udt_to = Arg::with_name("udt-to")
+    pub fn subcommand(name: &'static str) -> Command {
+        let arg_udt_to = Arg::new("udt-to")
             .long("udt-to")
-            .takes_value(true)
-            .multiple(true)
+            .num_args(1)
+            .action(ArgAction::Append).num_args(1..)
             .required(true)
             .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input));
-        let arg_to_cheque_address = Arg::with_name("to-cheque-address").long("to-cheque-address");
-        let arg_receiver = Arg::with_name("receiver")
+        let arg_to_cheque_address = Arg::new("to-cheque-address").long("to-cheque-address");
+        let arg_receiver = Arg::new("receiver")
             .long("receiver")
-            .takes_value(true)
+            .num_args(1)
             .required(true)
             .validator(|input| AddressParser::new_sighash().validate(input));
 
-        App::new(name)
+        Command::new(name)
             .about("SUDT issue/transfer operations (currently only support sudt)")
             .subcommands(vec![
-                App::new("issue")
+                Command::new("issue")
                     .about("Issue SUDT to multiple addresses")
                     .arg(arg_owner())
                     .arg(
                         arg_udt_to.clone()
-                            .about("The issue target, format: {address}:{amount}, the address type can be: [acp, sighash]")
+                            .help("The issue target, format: {address}:{amount}, the address type can be: [acp, sighash]")
                     )
                     .arg(arg_cell_deps())
                     .arg(arg_to_acp_address())
                     .arg(
                         arg_to_cheque_address
                             .clone()
-                            .about("Treat all addresses in <udt-to> as cheque receiver (sighash address, and the cheque sender is the <owner>), otherwise the address will be used as the lock script of the SUDT cell")
+                            .help("Treat all addresses in <udt-to> as cheque receiver (sighash address, and the cheque sender is the <owner>), otherwise the address will be used as the lock script of the SUDT cell")
                     )
-                    .arg(arg::privkey_path().multiple(true))
+                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
                     .arg(arg::fee_rate())
                     .arg(arg::max_tx_fee()),
-                App::new("transfer")
+                Command::new("transfer")
                     .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
                     .arg(arg_owner())
-                    .arg(arg_sender().about("SUDT sender address, the address type can be: [acp, sighash], when address type is `acp` this address will be used to build a sighash lock script for build cheque address or provide capacity, if <capacity-provider> is not given <sender> will also use as capacity provider."))
+                    .arg(arg_sender().help("SUDT sender address, the address type can be: [acp, sighash], when address type is `acp` this address will be used to build a sighash lock script for build cheque address or provide capacity, if <capacity-provider> is not given <sender> will also use as capacity provider."))
                     .arg(
                         arg_udt_to
-                         .about("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
+                         .help("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
                     )
                     .arg(arg_cell_deps())
                     .arg(arg_to_acp_address())
                     .arg(
                         arg_to_cheque_address
                             .clone()
-                            .about("Treat all addresses in <udt-to> as cheque receiver (sighash address), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
+                            .help("Treat all addresses in <udt-to> as cheque receiver (sighash address), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
                     )
                     .arg(arg_capacity_provider())
-                    .arg(arg::privkey_path().multiple(true))
+                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
                     .arg(arg::fee_rate())
                     .arg(arg::max_tx_fee()),
-                App::new("get-amount")
+                Command::new("get-amount")
                     .about("Get SUDT total amount of an address")
                     .arg(arg_owner())
                     .arg(arg_cell_deps())
                     .arg(
-                        Arg::with_name("address")
+                        Arg::new("address")
                             .long("address")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| AddressParser::default().validate(input))
-                            .about("The target address of those SUDT cells"),
+                            .help("The target address of those SUDT cells"),
                     ),
-                App::new("new-empty-acp")
+                Command::new("new-empty-acp")
                     .about("Create a SUDT cell with 0 amount and an acp lock script")
                     .arg(arg_owner())
                     .arg(arg_capacity_provider())
                     .arg(
-                        Arg::with_name("to")
+                        Arg::new("to")
                             .long("to")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| AddressParser::new_sighash().validate(input))
-                            .about("The target address (sighash), used to create anyone-can-pay address, if <capacity-provider> is not given <to> will also use as capacity provider"),
+                            .help("The target address (sighash), used to create anyone-can-pay address, if <capacity-provider> is not given <to> will also use as capacity provider"),
                     )
                     .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().multiple(true))
+                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
                     .arg(arg::fee_rate())
                     .arg(arg::max_tx_fee()),
-                App::new("cheque-claim")
+                Command::new("cheque-claim")
                     .about("Claim all cheque cells identified by given lock script and type script")
                     .arg(arg_owner())
-                    .arg(arg_sender().about("The cheque sender address (sighash)"))
+                    .arg(arg_sender().help("The cheque sender address (sighash)"))
                     .arg(
                         arg_receiver
                             .clone()
-                            .about("The cheque receiver address (sighash), for searching an input to save the claimed amount, this address will be used to build anyone-can-pay address, if <capacity-provider> not given <receiver> will also be used as capacity provider")
+                            .help("The cheque receiver address (sighash), for searching an input to save the claimed amount, this address will be used to build anyone-can-pay address, if <capacity-provider> not given <receiver> will also be used as capacity provider")
                     )
                     .arg(arg_capacity_provider())
                     .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().multiple(true))
+                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
                     .arg(arg::fee_rate())
                     .arg(arg::max_tx_fee()),
-                App::new("cheque-withdraw")
+                Command::new("cheque-withdraw")
                     .about("Withdraw all cheque cells identified by given lock script and type script")
                     .arg(arg_owner())
-                    .arg(arg_sender().about("The cheque sender address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
-                    .arg(arg_receiver.clone().about("The cheque receiver address (sighash)"))
+                    .arg(arg_sender().help("The cheque sender address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
+                    .arg(arg_receiver.clone().help("The cheque receiver address (sighash)"))
                     .arg(arg_capacity_provider())
-                    .arg(arg_to_acp_address().about("Withdraw to anyone-can-pay address, will use <sender> to build the anyone-can-pay address, the cell must be already exists"))
+                    .arg(arg_to_acp_address().help("Withdraw to anyone-can-pay address, will use <sender> to build the anyone-can-pay address, the cell must be already exists"))
                     .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().multiple(true))
+                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
                     .arg(arg::fee_rate())
                     .arg(arg::max_tx_fee()),
                 // TODO: move this subcommand to `util`
-                App::new("build-acp-address")
+                Command::new("build-acp-address")
                     .about("Build an anyone-can-pay address by sighash address and anyone-can-pay script id.")
                     .arg(arg_cell_deps())
                     .arg(
-                        Arg::with_name("sighash-address")
+                        Arg::new("sighash-address")
                             .long("sighash-address")
-                            .takes_value(true)
+                            .num_args(1)
                             .required(true)
                             .validator(|input| AddressParser::new_sighash().validate(input))
-                            .about("The sighash address")
+                            .help("The sighash address")
                     ),
-                App::new("build-cheque-address")
+                Command::new("build-cheque-address")
                     .about("Build a cheque address by cheque script id and receiver+sender address")
                     .arg(arg_cell_deps())
-                    .arg(arg_receiver.about("The receiver address"))
+                    .arg(arg_receiver.help("The receiver address"))
                     .arg(arg_sender()),
             ])
     }
@@ -866,11 +868,11 @@ impl<'a> SudtSubCommand<'a> {
     }
 }
 
-impl CliSubCommand for SudtSubCommand<'_> {
+impl<'a> CliSubCommand for SudtSubCommand<'a> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
         match matches.subcommand() {
-            ("issue", Some(m)) => {
+            Some(("issue", m)) => {
                 let owner: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -913,7 +915,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     network,
                 )
             }
-            ("transfer", Some(m)) => {
+            Some(("transfer", m)) => {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -964,7 +966,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     network,
                 )
             }
-            ("get-amount", Some(m)) => {
+            Some(("get-amount", m)) => {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -974,7 +976,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     .from_matches(m, "address")?;
                 self.get_amount(owner, address, cell_deps)
             }
-            ("new-empty-acp", Some(m)) => {
+            Some(("new-empty-acp", m)) => {
                 let owner: Address = AddressParser::default()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -1006,7 +1008,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     network,
                 )
             }
-            ("cheque-claim", Some(m)) => {
+            Some(("cheque-claim", m)) => {
                 let owner: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -1045,7 +1047,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     },
                 )
             }
-            ("cheque-withdraw", Some(m)) => {
+            Some(("cheque-withdraw", m)) => {
                 let owner: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "owner")?;
@@ -1082,7 +1084,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                     },
                 )
             }
-            ("build-acp-address", Some(m)) => {
+            Some(("build-acp-address", m)) => {
                 let sighash_addr: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "sighash-address")?;
@@ -1097,7 +1099,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                 let acp_addr = Address::new(network, acp_payload, true);
                 Ok(Output::new_output(acp_addr.to_string()))
             }
-            ("build-cheque-address", Some(m)) => {
+            Some(("build-cheque-address", m)) => {
                 let sender: Address = AddressParser::new_sighash()
                     .set_network(network)
                     .from_matches(m, "sender")?;
@@ -1121,7 +1123,7 @@ impl CliSubCommand for SudtSubCommand<'_> {
                 let cheque_addr = Address::new(network, cheque_payload, true);
                 Ok(Output::new_output(cheque_addr.to_string()))
             }
-            _ => Err(Self::subcommand("sudt").generate_usage()),
+            _ => Err(Self::subcommand("sudt").render_usage().to_string()),
         }
     }
 }
@@ -1201,41 +1203,41 @@ struct WithdrawArgs {
     to_acp_address: bool,
 }
 
-pub fn arg_owner<'a>() -> Arg<'a> {
-    Arg::with_name("owner")
+pub fn arg_owner() -> Arg {
+    Arg::new("owner")
         .long("owner")
-        .takes_value(true)
+        .num_args(1)
         .required(true)
         .validator(|input| AddressParser::new_sighash().validate(input))
-        .about("The owner address of the SUDT cell (the admin address, only sighash address is supported)")
+        .help("The owner address of the SUDT cell (the admin address, only sighash address is supported)")
 }
-pub fn arg_sender<'a>() -> Arg<'a> {
-    Arg::with_name("sender")
+pub fn arg_sender() -> Arg {
+    Arg::new("sender")
         .long("sender")
-        .takes_value(true)
+        .num_args(1)
         .required(true)
         .validator(|input| AddressParser::default().validate(input))
-        .about("Sender address")
+        .help("Sender address")
 }
-pub fn arg_capacity_provider<'a>() -> Arg<'a> {
-    Arg::with_name("capacity-provider")
+pub fn arg_capacity_provider() -> Arg {
+    Arg::new("capacity-provider")
         .long("capacity-provider")
-        .takes_value(true)
+        .num_args(1)
         .validator(|input| AddressParser::new_sighash().validate(input))
-        .about("Capacity provider address (provide transaction fee or needed capacity)")
+        .help("Capacity provider address (provide transaction fee or needed capacity)")
 }
-pub fn arg_to_acp_address<'a>() -> Arg<'a> {
-    Arg::with_name("to-acp-address")
+pub fn arg_to_acp_address() -> Arg {
+    Arg::new("to-acp-address")
         .long("to-acp-address")
-        .about("Treat all addresses in <udt-to> as anyone-can-pay address")
+        .help("Treat all addresses in <udt-to> as anyone-can-pay address")
 }
-pub fn arg_cell_deps<'a>() -> Arg<'a> {
-    Arg::with_name("cell-deps")
+pub fn arg_cell_deps() -> Arg {
+    Arg::new("cell-deps")
         .long("cell-deps")
-        .takes_value(true)
+        .num_args(1)
         .required(true)
         .validator(|input| CellDepsParser.validate(input))
-        .about("The cell deps information (for resolve cell_dep by script id or build lock/type script)")
+        .help("The cell deps information (for resolve cell_dep by script id or build lock/type script)")
 }
 
 pub struct UdtTxBuilder<'a> {
@@ -1248,7 +1250,7 @@ pub struct UdtTxBuilder<'a> {
     pub builder: &'a dyn TxBuilder,
 }
 
-impl UdtTxBuilder<'_> {
+impl<'a> UdtTxBuilder<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn build(
         &mut self,
