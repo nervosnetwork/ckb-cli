@@ -1,8 +1,6 @@
 use ckb_jsonrpc_types::{BlockView, HeaderView, PoolTransactionEntry, PoolTransactionReject};
 use ckb_sdk::pubsub::Client;
-use clap::{Arg, ArgAction, ArgMatches, Command};
-use crate::utils::command::CommandHelpExt;
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use futures::StreamExt;
 use std::io;
 use std::net::SocketAddr;
@@ -11,6 +9,57 @@ use tokio::net::TcpStream;
 use super::{CliSubCommand, Output};
 use crate::utils::arg_parser::{ArgParser, SocketParser};
 use crate::OutputFormat;
+
+fn parse_socket(input: &str) -> Result<String, String> {
+    SocketParser.validate(input).map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "subscribe", about = "Subscribe to TCP interface of node")]
+pub struct PubSubCmd {
+    #[command(subcommand)]
+    pub command: PubSubSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PubSubSubcommands {
+    /// Subscribe to new block header notification
+    NewTipHeader(PubSubTcpArgs),
+    /// Subscribe to new block notification
+    NewTipBlock(PubSubTcpArgs),
+    /// Subscribe to new transaction notification
+    NewTransaction(PubSubTcpArgs),
+    /// Subscribe to new proposed transaction notification
+    ProposedTransaction(PubSubTcpArgs),
+    /// Subscribe to rejected transaction notification
+    RejectedTransaction(PubSubTcpArgs),
+    /// Subscribe topic list
+    List(PubSubListArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct PubSubTcpArgs {
+    #[arg(long, value_parser = parse_socket)]
+    pub tcp: String,
+}
+
+#[derive(Args, Debug)]
+pub struct PubSubListArgs {
+    #[arg(long, value_parser = parse_socket)]
+    pub tcp: String,
+    #[arg(
+        short = 't',
+        value_parser = [
+            "new_tip_header",
+            "new_tip_block",
+            "new_transaction",
+            "proposed_transaction",
+            "rejected_transaction",
+        ],
+        action = ArgAction::Append
+    )]
+    pub topics: Vec<String>,
+}
 
 macro_rules! block_on {
     ($addr:ident, $topic:expr, $output:ty, $format:expr, $color:expr) => {{
@@ -39,49 +88,7 @@ impl PubSubCommand {
     }
 
     pub fn subcommand() -> Command {
-        let arg = Arg::new("tcp")
-            .long("tcp")
-            .num_args(1)
-            .required(true)
-            .validator(|input| SocketParser.validate(input))
-            .help("RPC pubsub server socket, like \"127.0.0.1:18114\"");
-
-        let multi_arg = Arg::new("topics")
-            .short('t')
-            .num_args(1)
-            .required(true)
-            .value_parser([
-                "new_tip_header",
-                "new_tip_block",
-                "new_transaction",
-                "proposed_transaction",
-                "rejected_transaction",
-            ])
-            .action(ArgAction::Append).num_args(1..)
-            .help("Optional multiple topic subscriptions ");
-
-        Command::new("subscribe")
-            .about("Subscribe to TCP interface of node")
-            .subcommands(vec![
-                Command::new("new_tip_header")
-                    .arg(arg.clone())
-                    .help("Subscribe to new block header notification"),
-                Command::new("new_tip_block")
-                    .arg(arg.clone())
-                    .help("Subscribe to new block notification"),
-                Command::new("new_transaction")
-                    .arg(arg.clone())
-                    .help("Subscribe to new transaction notification"),
-                Command::new("proposed_transaction")
-                    .arg(arg.clone())
-                    .help("Subscribe to new proposed transaction notification"),
-                Command::new("rejected_transaction")
-                    .arg(arg.clone())
-                    .help("Subscribe to rejected transaction notification"),
-                Command::new("list")
-                    .args(vec![arg, multi_arg])
-                    .about("Subscribe topic list"),
-            ])
+        PubSubCmd::command()
     }
 }
 
