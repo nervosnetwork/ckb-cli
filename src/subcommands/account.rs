@@ -9,8 +9,7 @@ use bitcoin::bip32::DerivationPath;
 use ckb_sdk::{Address, AddressPayload, NetworkType};
 use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use faster_hex::hex_string;
 
 use super::{CliSubCommand, Output};
@@ -195,13 +194,14 @@ impl<'a> AccountSubCommand<'a> {
 
 impl CliSubCommand for AccountSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("list", m)) => {
+        let cmd = AccountCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            AccountSubcommands::List(args) => {
                 let mut accounts = self.plugin_mgr.keystore_handler().list_account()?;
                 // Sort by file path name
                 accounts.sort_by(|a, b| a.1.cmp(&b.1));
-                let only_mainnet_address = m.is_present("only-mainnet-address");
-                let only_testnet_address = m.is_present("only-testnet-address");
+                let only_mainnet_address = args.only_mainnet_address;
+                let only_testnet_address = args.only_testnet_address;
                 let partial_fields = only_mainnet_address || only_testnet_address;
                 self.key_store
                     .refresh_dir()
@@ -252,7 +252,7 @@ impl CliSubCommand for AccountSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            Some(("new", _)) => {
+            AccountSubcommands::New => {
                 eprintln!("Your new account is locked with a password. Please give a password. Do not forget this password.");
                 let password = read_password(true, None)?;
                 let lock_arg = self
@@ -269,9 +269,11 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("import", m)) => {
-                let secp_key: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
+            AccountSubcommands::Import(args) => {
+                let secp_key: Option<PrivkeyWrapper> = match args.privkey_path.as_ref() {
+                    Some(path) => Some(PrivkeyPathParser.parse(path)?),
+                    None => None,
+                };
                 let password = Some(read_password(false, None)?);
                 let master_privkey = if let Some(secp_key) = secp_key {
                     // Default chain code is [255u8; 32]
@@ -279,9 +281,11 @@ impl CliSubCommand for AccountSubCommand<'_> {
                     data[0..32].copy_from_slice(&secp_key[..]);
                     MasterPrivKey::from_bytes(data).map_err(|err| err.to_string())?
                 } else {
-                    let master_privkey: MasterPrivKey =
-                        ExtendedPrivkeyPathParser.from_matches(m, "extended-privkey-path")?;
-                    master_privkey
+                    let extended_privkey_path = args
+                        .extended_privkey_path
+                        .as_ref()
+                        .ok_or_else(|| "<extended-privkey-path> is required".to_string())?;
+                    ExtendedPrivkeyPathParser.parse(extended_privkey_path)?
                 };
 
                 let lock_arg = self
@@ -296,8 +300,8 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("import-from-plugin", m)) => {
-                let account_id: Vec<u8> = HexParser.from_matches(m, "account-id")?;
+            AccountSubcommands::ImportFromPlugin(args) => {
+                let account_id: Vec<u8> = HexParser.parse(&args.account_id)?;
                 let password = if self.plugin_mgr.keystore_require_password() {
                     Some(read_password(false, None)?)
                 } else {
@@ -315,8 +319,8 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("import-keystore", m)) => {
-                let path: PathBuf = FilePathParser::new(true).from_matches(m, "path")?;
+            AccountSubcommands::ImportKeystore(args) => {
+                let path: PathBuf = FilePathParser::new(true).parse(&args.path)?;
 
                 let old_password = read_password(false, Some("Decrypt password"))?;
                 let new_password = Some(read_password(false, None)?);
@@ -339,9 +343,8 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("update", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+            AccountSubcommands::Update(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
                 let old_password = read_password(false, Some("Old password"))?;
                 let new_passsword = read_password(true, Some("New password"))?;
                 self.plugin_mgr.keystore_handler().update_password(
@@ -351,19 +354,17 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 )?;
                 Ok(Output::new_success())
             }
-            Some(("upgrade", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+            AccountSubcommands::Upgrade(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
                 let password = read_password(false, None)?;
                 self.key_store
                     .upgrade(&lock_arg, password.as_bytes())
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            Some(("export", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let key_path = m.value_of("extended-privkey-path").unwrap();
+            AccountSubcommands::Export(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
+                let key_path = args.extended_privkey_path.as_str();
                 let password = Some(read_password(false, None)?);
 
                 if Path::new(key_path).exists() {
@@ -405,12 +406,11 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_error(resp))
             }
-            Some(("bitcoin-xpub", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+            AccountSubcommands::BitcoinXpub(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
                 let password = read_password(false, None)?;
                 let path: DerivationPath =
-                    FromStrParser::<DerivationPath>::new().from_matches(m, "path")?;
+                    FromStrParser::<DerivationPath>::new().parse(&args.path)?;
                 let extended_pubkey = self
                     .key_store
                     .extended_pubkey_with_password(&lock_arg, &path, password.as_bytes())
@@ -420,18 +420,13 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("bip44-addresses", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let from_receiving_index: u32 =
-                    FromStrParser::<u32>::default().from_matches(m, "from-receiving-index")?;
-                let receiving_length: u32 =
-                    FromStrParser::<u32>::default().from_matches(m, "receiving-length")?;
-                let from_change_index: u32 =
-                    FromStrParser::<u32>::default().from_matches(m, "from-change-index")?;
-                let change_length: u32 =
-                    FromStrParser::<u32>::default().from_matches(m, "change-length")?;
-                let network = match m.value_of("network").expect("network argument") {
+            AccountSubcommands::Bip44Addresses(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
+                let from_receiving_index = args.from_receiving_index;
+                let receiving_length = args.receiving_length;
+                let from_change_index = args.from_change_index;
+                let change_length = args.change_length;
+                let network = match args.network.as_str() {
                     "mainnet" => NetworkType::Mainnet,
                     "testnet" => NetworkType::Testnet,
                     _ => unreachable!(),
@@ -473,13 +468,10 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("extended-address", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
-                let root_key_path = self.plugin_mgr.root_key_path(lock_arg.clone())?;
-                let path: DerivationPath = FromStrParser::<DerivationPath>::new()
-                    .from_matches_opt(m, "path")?
-                    .unwrap_or(root_key_path);
+            AccountSubcommands::ExtendedAddress(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
+                let path: DerivationPath =
+                    FromStrParser::<DerivationPath>::new().parse(&args.path)?;
 
                 let password = if self.plugin_mgr.keystore_require_password() {
                     Some(read_password(false, None)?)
@@ -498,9 +490,8 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("remove", m)) => {
-                let lock_arg: H160 =
-                    FixedHashParser::<H160>::default().from_matches(m, "lock-arg")?;
+            AccountSubcommands::Remove(args) => {
+                let lock_arg: H160 = FixedHashParser::<H160>::default().parse(&args.lock_arg)?;
                 let filepath = self
                     .key_store
                     .get_filepath(&lock_arg)
@@ -511,7 +502,6 @@ impl CliSubCommand for AccountSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand("account").render_usage().to_string()),
         }
     }
 }
