@@ -9,15 +9,13 @@ use bitcoin::bip32::DerivationPath;
 use ckb_sdk::{Address, AddressPayload, NetworkType};
 use ckb_signer::{Key, KeyStore, MasterPrivKey};
 use ckb_types::{packed::Script, prelude::*, H160, H256};
-use clap::{Arg, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use crate::utils::arg_parser::ArgMatchesExt;
 use faster_hex::hex_string;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg::lock_arg,
     arg_parser::{
         ArgParser, ExtendedPrivkeyPathParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
@@ -28,6 +26,155 @@ use crate::utils::{
 pub struct AccountSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
     key_store: &'a mut KeyStore,
+}
+
+const ACCOUNT_LIST_LONG_ABOUT: &str = "List all accounts. There are two kinds of account item indicated by `source` field:\n\n  When `source` is \"Local File System\" means the account is stored in json keystore file, the output fields are:\n    * lock_arg: The blake2b160 hash of the public key.\n    * lock_hash: The lock script hash of secp256k1_blake160_sighash_all lock (See [1]).\n    * has_ckb_pubkey_derivation_root_path: The CKB public key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.\n    * address: The Mainnet/Testnet addresses of secp256k1_blake160_sighash_all lock (See [1]).\n\n  When `source` is \"[plugin]: xxx_keysotre_plugin\" means the account is stored in keystore plugin (Ledger plugin like [2]). If the account metadata is imported by `ckb-cli account import-from-plugin` the output fields are just like \"Local File System\". If the account is not imported, the output fields are:\n    * account-id: The account id used to import the account metadata from plugin.\n\n[1]: https://github.com/nervosnetwork/ckb-system-scripts/blob/master/c/secp256k1_blake160_sighash_all.c\n[2]: https://github.com/obsidiansystems/ckb-plugin-ledger";
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_extended_privkey_path(input: &str) -> Result<String, String> {
+    ExtendedPrivkeyPathParser
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_derivation_path(input: &str) -> Result<String, String> {
+    FromStrParser::<DerivationPath>::new()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_account_id(input: &str) -> Result<String, String> {
+    let hex = HexParser.parse(input)?;
+    if hex.is_empty() {
+        Err("empty account id is not allowed".to_string())
+    } else {
+        Ok(input.to_string())
+    }
+}
+
+fn parse_file_path_exists(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_lock_arg(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "account", about = "Manage accounts")]
+pub struct AccountCmd {
+    #[command(subcommand)]
+    pub command: AccountSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AccountSubcommands {
+    /// List all accounts
+    #[command(long_about = ACCOUNT_LIST_LONG_ABOUT)]
+    List(AccountListArgs),
+    /// Create a new account and print related information.
+    New,
+    /// Import an unencrypted private key from <privkey-path> and create a new account.
+    Import(AccountImportArgs),
+    /// Import an account from keystore plugin
+    ImportFromPlugin(AccountImportFromPluginArgs),
+    /// Import key from encrypted keystore json file and create a new account.
+    ImportKeystore(AccountImportKeystoreArgs),
+    /// Update password of an account
+    Update(AccountLockArgArgs),
+    /// Upgrade an account to latest json format
+    Upgrade(AccountLockArgArgs),
+    /// Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)
+    Export(AccountExportArgs),
+    /// Show BIP-32 Extended Public Key in Base58Check format (with xpub prefix)
+    BitcoinXpub(AccountDeriveArgs),
+    /// Extended receiving/change Addresses (see: BIP-44)
+    Bip44Addresses(AccountBip44Args),
+    /// Extended address (see: BIP-44)
+    ExtendedAddress(AccountDeriveArgs),
+    /// Print information about how to remove an account
+    Remove(AccountLockArgArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct AccountListArgs {
+    /// Only show CKB mainnet address
+    #[arg(long = "only-mainnet-address", id = "only-mainnet-address")]
+    pub only_mainnet_address: bool,
+    /// Only show CKB testnet address
+    #[arg(long = "only-testnet-address", id = "only-testnet-address")]
+    pub only_testnet_address: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountImportArgs {
+    /// The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "extended-privkey-path", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    /// Extended private key path (include master private key and chain code)
+    #[arg(long = "extended-privkey-path", id = "extended-privkey-path", required_unless_present = "privkey-path", value_parser = parse_extended_privkey_path)]
+    pub extended_privkey_path: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountImportFromPluginArgs {
+    /// The account id (hex format, can be found in account list)
+    #[arg(long = "account-id", id = "account-id", value_parser = parse_account_id)]
+    pub account_id: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountImportKeystoreArgs {
+    /// The keystore file path (json format)
+    #[arg(long, value_parser = parse_file_path_exists)]
+    pub path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountLockArgArgs {
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountExportArgs {
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: String,
+    /// Output extended private key path (PrivKey + ChainCode)
+    #[arg(long = "extended-privkey-path", id = "extended-privkey-path", value_parser = parse_extended_privkey_path)]
+    pub extended_privkey_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountDeriveArgs {
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: String,
+    /// The derivation key path
+    #[arg(long = "path", id = "path", value_parser = parse_derivation_path)]
+    pub path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct AccountBip44Args {
+    #[arg(long = "from-receiving-index", id = "from-receiving-index", default_value = "0")]
+    pub from_receiving_index: u32,
+    #[arg(long = "receiving-length", id = "receiving-length", default_value = "20")]
+    pub receiving_length: u32,
+    #[arg(long = "from-change-index", id = "from-change-index", default_value = "0")]
+    pub from_change_index: u32,
+    #[arg(long = "change-length", id = "change-length", default_value = "10")]
+    pub change_length: u32,
+    #[arg(long, default_value = "mainnet", value_parser = ["mainnet", "testnet"])]
+    pub network: String,
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: String,
 }
 
 impl<'a> AccountSubCommand<'a> {
@@ -42,158 +189,7 @@ impl<'a> AccountSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        let arg_privkey_path = Arg::new("privkey-path")
-            .long("privkey-path")
-            .num_args(1);
-        let arg_extended_privkey_path = Arg::new("extended-privkey-path")
-            .long("extended-privkey-path")
-            .num_args(1)
-            .help("Extended private key path (include master private key and chain code)");
-        let arg_derive_path = Arg::new("path")
-            .long("path")
-            .num_args(1)
-            .validator(|input| FromStrParser::<DerivationPath>::new().validate(input))
-            .help("The derivation key path");
-        Command::new(name)
-            .about("Manage accounts")
-            .subcommands(vec![
-                Command::new("list")
-                    .arg(
-                        Arg::new("only-mainnet-address")
-                            .long("only-mainnet-address")
-                            .help("Only show CKB mainnet address")
-                    )
-                    .arg(
-                        Arg::new("only-testnet-address")
-                            .long("only-testnet-address")
-                            .help("Only show CKB testnet address")
-                    )
-                    .about("List all accounts")
-                    .long_about("List all accounts. There are two kinds of account item indicated by `source` field:
-
-  When `source` is \"Local File System\" means the account is stored in json keystore file, the output fields are:
-    * lock_arg: The blake2b160 hash of the public key.
-    * lock_hash: The lock script hash of secp256k1_blake160_sighash_all lock (See [1]).
-    * has_ckb_pubkey_derivation_root_path: The CKB public key derivation root path (m/44'/309'/0') is stored so that password is not required to do public key derivation.
-    * address: The Mainnet/Testnet addresses of secp256k1_blake160_sighash_all lock (See [1]).
-
-  When `source` is \"[plugin]: xxx_keysotre_plugin\" means the account is stored in keystore plugin (Ledger plugin like [2]). If the account metadata is imported by `ckb-cli account import-from-plugin` the output fields are just like \"Local File System\". If the account is not imported, the output fields are:
-    * account-id: The account id used to import the account metadata from plugin.
-
-[1]: https://github.com/nervosnetwork/ckb-system-scripts/blob/master/c/secp256k1_blake160_sighash_all.c
-[2]: https://github.com/obsidiansystems/ckb-plugin-ledger"),
-                Command::new("new").about("Create a new account and print related information."),
-                Command::new("import")
-                    .about("Import an unencrypted private key from <privkey-path> and create a new account.")
-                    .arg(
-                        arg_privkey_path
-                            .clone()
-                            .required_unless_present("extended-privkey-path")
-                            .validator(|input| PrivkeyPathParser.validate(input))
-                            .help("The privkey is assumed to contain an unencrypted private key in hexadecimal format. (only read first line)")
-                    )
-                    .arg(arg_extended_privkey_path
-                         .clone()
-                         .required_unless_present("privkey-path")
-                         .validator(|input| ExtendedPrivkeyPathParser.validate(input))
-                    ),
-                Command::new("import-from-plugin")
-                    .about("Import an account from keystore plugin")
-                    .arg(
-                        Arg::new("account-id")
-                            .long("account-id")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| {
-                                let hex = HexParser.parse(input)?;
-                                if hex.is_empty() {
-                                    Err("empty account id is not allowed".to_string())
-                                } else {
-                                    Ok(())
-                                }
-                            })
-                            .help("The account id (hex format, can be found in account list)")
-                    ),
-                Command::new("import-keystore")
-                    .about("Import key from encrypted keystore json file and create a new account.")
-                    .arg(
-                        Arg::new("path")
-                            .long("path")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("The keystore file path (json format)")
-                    ),
-                Command::new("update")
-                    .about("Update password of an account")
-                    .arg(lock_arg().required(true)),
-                Command::new("upgrade")
-                    .about("Upgrade an account to latest json format")
-                    .arg(lock_arg().required(true)),
-                Command::new("export")
-                    .about("Export master private key and chain code as hex plain text (USE WITH YOUR OWN RISK)")
-                    .arg(lock_arg().required(true))
-                    .arg(
-                        arg_extended_privkey_path
-                            .clone()
-                            .required(true)
-                            .help("Output extended private key path (PrivKey + ChainCode)")
-                    ),
-                Command::new("bitcoin-xpub")
-                    .about("Show BIP-32 Extended Public Key in Base58Check format (with xpub prefix)")
-                    .arg(lock_arg().required(true))
-                    .arg(arg_derive_path.clone().required(true)),
-                Command::new("bip44-addresses")
-                    .about("Extended receiving/change Addresses (see: BIP-44)")
-                    .arg(
-                        Arg::new("from-receiving-index")
-                            .long("from-receiving-index")
-                            .num_args(1)
-                            .default_value("0")
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Start from receiving path index")
-                    )
-                    .arg(
-                        Arg::new("receiving-length")
-                            .long("receiving-length")
-                            .num_args(1)
-                            .default_value("20")
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Receiving addresses length")
-                    )
-                    .arg(
-                        Arg::new("from-change-index")
-                            .long("from-change-index")
-                            .num_args(1)
-                            .default_value("0")
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Start from change path index")
-                    )
-                    .arg(
-                        Arg::new("change-length")
-                            .long("change-length")
-                            .num_args(1)
-                            .default_value("10")
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .help("Change addresses length")
-                    )
-                    .arg(
-                        Arg::new("network")
-                            .long("network")
-                            .num_args(1)
-                            .default_value("mainnet")
-                            .value_parser(["mainnet", "testnet"])
-                            .help("The network type")
-                    )
-                    .arg(lock_arg().required(true)),
-                Command::new("extended-address")
-                    .about("Extended address (see: BIP-44)")
-                    .arg(lock_arg().required(true))
-                    .arg(arg_derive_path),
-                Command::new("remove")
-                    .about("Print information about how to remove an account")
-                    .arg(lock_arg().required(true)),
-            ])
+        AccountCmd::command().name(name)
     }
 }
 
