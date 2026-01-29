@@ -56,10 +56,10 @@ pub struct MoleculeDecodeArgs {
     #[arg(long)]
     pub r#type: String,
     /// Binary data hex format
-    #[arg(long, required_unless_present = "hex-binary-path", value_parser = parse_hex)]
+    #[arg(long = "binary-hex", id = "binary-hex", required_unless_present = "hex-binary-path", value_parser = parse_hex)]
     pub binary_hex: Option<String>,
     /// The hex binary file path of molecule data
-    #[arg(long, required_unless_present = "binary-hex", value_parser = parse_hex_file_path)]
+    #[arg(long = "hex-binary-path", id = "hex-binary-path", required_unless_present = "binary-hex", value_parser = parse_hex_file_path)]
     pub hex_binary_path: Option<String>,
 }
 
@@ -68,10 +68,10 @@ pub struct MoleculeEncodeArgs {
     /// The molecule type name defined in blockchain.mol (and extra OutPointVec)
     #[arg(long)]
     pub r#type: String,
-    #[arg(long, value_parser = parse_file_path_exists)]
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path_exists)]
     pub json_path: String,
     /// Serialize output type
-    #[arg(long, default_value = "binary", value_parser = ["binary", "hash"])]
+    #[arg(long = "output-type", id = "output-type", default_value = "binary", value_parser = ["binary", "hash"])]
     pub output_type: String,
 }
 
@@ -80,7 +80,7 @@ pub struct MoleculeDefaultArgs {
     /// The molecule type name defined in blockchain.mol (and extra OutPointVec)
     #[arg(long)]
     pub r#type: String,
-    #[arg(long, value_parser = parse_file_path_optional)]
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path_optional)]
     pub json_path: Option<String>,
 }
 

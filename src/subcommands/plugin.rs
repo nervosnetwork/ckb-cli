@@ -43,7 +43,7 @@ pub struct PluginNameArg {
 #[derive(Args, Debug)]
 pub struct PluginInstallArgs {
     /// The binary file path of the plugin
-    #[arg(long, value_parser = parse_plugin_binary_path)]
+    #[arg(long = "binary-path", id = "binary-path", value_parser = parse_plugin_binary_path)]
     pub binary_path: PathBuf,
     /// Install the plugin but not active it
     #[arg(long)]

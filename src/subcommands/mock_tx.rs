@@ -19,13 +19,11 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{Arg, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 
 use super::{tx::ReprTxHelper, CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg::lock_arg,
     arg_parser::{ArgParser, FilePathParser, FixedHashParser},
     genesis_info::GenesisInfo,
     mock_tx_helper::MockTransactionHelper,
@@ -33,6 +31,83 @@ use crate::utils::{
     rpc::HttpRpcClient,
     tx_helper::TxHelper,
 };
+
+fn parse_file_path_exists(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_file_path_optional(input: &str) -> Result<String, String> {
+    FilePathParser::new(false)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_tx_hash(input: &str) -> Result<String, String> {
+    FixedHashParser::<H256>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_lock_arg(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "mock-tx", about = "Handle mock transactions (verify/send)")]
+pub struct MockTxCmd {
+    #[command(subcommand)]
+    pub command: MockTxSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum MockTxSubcommands {
+    /// Print mock transaction template
+    Template(MockTxTemplateArgs),
+    /// Complete the mock transaction
+    Complete(MockTxCompleteArgs),
+    /// Dump all on-chain data(inputs/cell_deps/header_deps) into mock_info
+    Dump(MockTxDumpArgs),
+    /// Verify a mock transaction in local
+    Verify(MockTxFileArgs),
+    /// Complete then send a transaction
+    Send(MockTxFileArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct MockTxTemplateArgs {
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: Option<String>,
+    #[arg(long = "output-file", id = "output-file", value_parser = parse_file_path_optional)]
+    pub output_file: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct MockTxCompleteArgs {
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_file_path_exists)]
+    pub tx_file: String,
+    #[arg(long = "output-file", id = "output-file", value_parser = parse_file_path_optional)]
+    pub output_file: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct MockTxFileArgs {
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_file_path_exists)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct MockTxDumpArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", value_parser = parse_tx_hash, required_unless_present = "tx-file", conflicts_with = "tx-file")]
+    pub tx_hash: Option<String>,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_file_path_exists, required_unless_present = "tx-hash", conflicts_with = "tx-hash")]
+    pub tx_file: Option<String>,
+    #[arg(long = "output-file", id = "output-file", value_parser = parse_file_path_optional)]
+    pub output_file: String,
+}
 
 pub struct MockTxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -54,63 +129,7 @@ impl<'a> MockTxSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        let arg_tx_file = Arg::new("tx-file")
-            .long("tx-file")
-            .num_args(1)
-            .required(true)
-            .validator(|input| FilePathParser::new(true).validate(input))
-            .help("Mock transaction data file (format: json)");
-        let arg_output_file = Arg::new("output-file")
-            .long("output-file")
-            .num_args(1)
-            .validator(|input| FilePathParser::new(false).validate(input))
-            .help("Completed mock transaction data file (format: json)");
-        Command::new(name)
-            .about("Handle mock transactions (verify/send)")
-            .subcommands(vec![
-                Command::new("template")
-                    .about("Print mock transaction template")
-                    .arg(lock_arg().required(true).clone().required(false))
-                    .arg(arg_output_file.clone().help("Save to a output file")),
-                Command::new("complete")
-                    .about("Complete the mock transaction")
-                    .arg(arg_tx_file.clone())
-                    .arg(
-                        arg_output_file
-                            .clone()
-                            .help("Completed mock transaction data file (format: json)"),
-                    ),
-                Command::new("dump")
-                    .about("Dump all on-chain data(inputs/cell_deps/header_deps) into mock_info")
-                    .arg(
-                        Arg::new("tx-hash")
-                            .long("tx-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required_unless_present("tx-file")
-                            .conflicts_with("tx-file")
-                            .help("The hash of transaction which is on the chain"),
-                    )
-                    .arg(
-                        arg_tx_file
-                            .clone()
-                            .required_unless_present("tx-hash")
-                            .conflicts_with("tx-hash")
-                            .help("CKB transaction data file or `ckb-cli tx` subcommand json file (format: json)"),
-                    )
-                    .arg(
-                        arg_output_file
-                            .clone()
-                            .required(true)
-                            .help("Dumped mock transaction data file (format: json)"),
-                    ),
-                Command::new("verify")
-                    .about("Verify a mock transaction in local")
-                    .arg(arg_tx_file.clone()),
-                Command::new("send")
-                    .about("Complete then send a transaction")
-                    .arg(arg_tx_file.clone()),
-            ])
+        MockTxCmd::command().name(name)
     }
 }
 

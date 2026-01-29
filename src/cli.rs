@@ -17,11 +17,11 @@ pub struct CliArgs {
     pub url: Option<String>,
 
     /// Select output format
-    #[arg(long, value_parser = ["yaml", "json"], default_value = "yaml", global = true)]
+    #[arg(long = "output-format", id = "output-format", value_parser = ["yaml", "json"], default_value = "yaml", global = true)]
     pub output_format: String,
 
     /// Do not highlight(color) output json
-    #[arg(long, global = true)]
+    #[arg(long = "no-color", id = "no-color", global = true)]
     pub no_color: bool,
 
     /// Display request parameters
@@ -29,6 +29,6 @@ pub struct CliArgs {
     pub debug: bool,
 
     /// This is a local only subcommand, do not check alerts and get network type
-    #[arg(long, global = true)]
+    #[arg(long = "local-only", id = "local-only", global = true)]
     pub local_only: bool,
 }
