@@ -6,8 +6,7 @@ use std::time::Duration;
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
-use clap::{Arg, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgMatches, Command, CommandFactory, Parser};
 use crate::utils::arg_parser::ArgMatchesExt;
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
@@ -19,12 +18,32 @@ use serde::{Deserialize, Serialize};
 use super::{CliSubCommand, Output, TransferArgs, WalletSubCommand};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg,
     arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
     genesis_info::GenesisInfo,
     other::{get_genesis_info, get_network_type},
     rpc::HttpRpcClient,
 };
+
+fn parse_listen_addr(input: &str) -> Result<String, String> {
+    FromStrParser::<SocketAddr>::new()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "server", about = "Start advanced API server")]
+pub struct ApiServerCmd {
+    /// Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)
+    #[arg(long, default_value = "127.0.0.1:3000", value_parser = parse_listen_addr)]
+    pub listen: String,
+    /// Private key file path (only read first line)
+    #[arg(long = "privkey-path", id = "privkey-path", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+}
 
 pub struct ApiServerSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -46,21 +65,7 @@ impl<'a> ApiServerSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        Command::new(name)
-            .about("Start advanced API server")
-            .arg(
-                Arg::new("listen")
-                    .long("listen")
-                    .num_args(1)
-                    .required(true)
-                    .default_value("127.0.0.1:3000")
-                    .validator(|input| FromStrParser::<SocketAddr>::new().validate(input))
-                    .help("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
-            )
-            .arg(
-                arg::privkey_path()
-                 .help("Private key file path (only read first line)")
-            )
+        ApiServerCmd::command().name(name)
     }
 }
 
