@@ -82,7 +82,9 @@ impl CkbCompleter {
                 switched_completions(
                     a.get_short(),
                     a.get_long(),
-                    a.get_num_args().map(|r| r.max_values() > 1).unwrap_or(false),
+                    a.get_num_args()
+                        .map(|r| r.max_values() > 1)
+                        .unwrap_or(false),
                     a.is_required_set(),
                 )
             }))

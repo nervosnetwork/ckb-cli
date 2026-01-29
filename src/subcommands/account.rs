@@ -162,11 +162,23 @@ pub struct AccountDeriveArgs {
 
 #[derive(Args, Debug)]
 pub struct AccountBip44Args {
-    #[arg(long = "from-receiving-index", id = "from-receiving-index", default_value = "0")]
+    #[arg(
+        long = "from-receiving-index",
+        id = "from-receiving-index",
+        default_value = "0"
+    )]
     pub from_receiving_index: u32,
-    #[arg(long = "receiving-length", id = "receiving-length", default_value = "20")]
+    #[arg(
+        long = "receiving-length",
+        id = "receiving-length",
+        default_value = "20"
+    )]
     pub receiving_length: u32,
-    #[arg(long = "from-change-index", id = "from-change-index", default_value = "0")]
+    #[arg(
+        long = "from-change-index",
+        id = "from-change-index",
+        default_value = "0"
+    )]
     pub from_change_index: u32,
     #[arg(long = "change-length", id = "change-length", default_value = "10")]
     pub change_length: u32,

@@ -3,7 +3,9 @@ use ckb_jsonrpc_types::{
 };
 use ckb_types::packed::{CellOutput, OutPoint};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
@@ -1153,8 +1155,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 Ok(Output::new_output(resp))
             }
             RpcSubcommands::GenerateEpochs(args) => {
-                let num_epochs: u64 =
-                    FromStrParser::<u64>::default().parse(&args.num_epochs)?;
+                let num_epochs: u64 = FromStrParser::<u64>::default().parse(&args.num_epochs)?;
                 let resp = self.rpc_client.generate_epochs(num_epochs)?;
                 Ok(Output::new_output(resp))
             }
@@ -1180,7 +1181,12 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 let after_opt: Option<JsonBytes> = args
                     .after
                     .as_ref()
-                    .map(|value| HexParser.parse(value).map(Bytes::from).map(JsonBytes::from_bytes))
+                    .map(|value| {
+                        HexParser
+                            .parse(value)
+                            .map(Bytes::from)
+                            .map(JsonBytes::from_bytes)
+                    })
                     .transpose()?;
                 if is_raw_data {
                     let resp = self
@@ -1204,7 +1210,12 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 let after_opt: Option<JsonBytes> = args
                     .after
                     .as_ref()
-                    .map(|value| HexParser.parse(value).map(Bytes::from).map(JsonBytes::from_bytes))
+                    .map(|value| {
+                        HexParser
+                            .parse(value)
+                            .map(Bytes::from)
+                            .map(JsonBytes::from_bytes)
+                    })
                     .transpose()?;
                 if is_raw_data {
                     let resp = self

@@ -55,7 +55,9 @@ fn parse_pubkey_hex(input: &str) -> Result<String, String> {
 }
 
 fn parse_address(input: &str) -> Result<String, String> {
-    AddressParser::default().validate(input).map(|_| input.to_string())
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
 }
 
 fn parse_sighash_address(input: &str) -> Result<String, String> {
@@ -181,7 +183,12 @@ pub struct UtilKeyInfoArgs {
 pub struct UtilSignDataArgs {
     #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
     pub privkey_path: Option<String>,
-    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path", conflicts_with = "privkey-path")]
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path",
+        conflicts_with = "privkey-path"
+    )]
     pub from_account: Option<String>,
     #[arg(long)]
     pub recoverable: bool,
@@ -191,7 +198,12 @@ pub struct UtilSignDataArgs {
     pub binary_hex: Option<String>,
     #[arg(long = "no-magic-bytes", id = "no-magic-bytes")]
     pub no_magic_bytes: bool,
-    #[arg(long = "utf8-string", id = "utf8-string", required_unless_present = "binary-hex", conflicts_with = "binary-hex")]
+    #[arg(
+        long = "utf8-string",
+        id = "utf8-string",
+        required_unless_present = "binary-hex",
+        conflicts_with = "binary-hex"
+    )]
     pub utf8_string: Option<String>,
 }
 
@@ -199,7 +211,12 @@ pub struct UtilSignDataArgs {
 pub struct UtilSignMessageArgs {
     #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
     pub privkey_path: Option<String>,
-    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path", conflicts_with = "privkey-path")]
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path",
+        conflicts_with = "privkey-path"
+    )]
     pub from_account: Option<String>,
     #[arg(long)]
     pub recoverable: bool,
@@ -482,8 +499,7 @@ message = "0x"
                 Ok(Output::new_output(result))
             }
             UtilSubcommands::SignMessage(args) => {
-                let message: H256 =
-                    FixedHashParser::<H256>::default().parse(&args.message)?;
+                let message: H256 = FixedHashParser::<H256>::default().parse(&args.message)?;
                 let recoverable = args.recoverable;
                 let from_privkey_opt: Option<PrivkeyWrapper> = args
                     .privkey_path
@@ -551,8 +567,7 @@ message = "0x"
                 Ok(Output::new_output(result))
             }
             UtilSubcommands::VerifySignature(args) => {
-                let message: H256 =
-                    FixedHashParser::<H256>::default().parse(&args.message)?;
+                let message: H256 = FixedHashParser::<H256>::default().parse(&args.message)?;
                 let signature: Vec<u8> = HexParser.parse(&args.signature)?;
                 let pubkey_opt: Option<secp256k1::PublicKey> = args
                     .pubkey
@@ -676,8 +691,9 @@ message = "0x"
                 Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
             UtilSubcommands::CompactToDifficulty(args) => {
-                let compact_target: u32 =
-                    FromStrParser::<u32>::default().parse(&args.compact_target).or_else(|_| {
+                let compact_target: u32 = FromStrParser::<u32>::default()
+                    .parse(&args.compact_target)
+                    .or_else(|_| {
                         let input = if args.compact_target.starts_with("0x")
                             || args.compact_target.starts_with("0X")
                         {
@@ -693,13 +709,12 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             UtilSubcommands::DifficultyToCompact(args) => {
-                let input = if args.difficulty.starts_with("0x")
-                    || args.difficulty.starts_with("0X")
-                {
-                    &args.difficulty[2..]
-                } else {
-                    args.difficulty.as_str()
-                };
+                let input =
+                    if args.difficulty.starts_with("0x") || args.difficulty.starts_with("0X") {
+                        &args.difficulty[2..]
+                    } else {
+                        args.difficulty.as_str()
+                    };
                 let difficulty = U256::from_hex_str(input).map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
                     "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
@@ -780,8 +795,7 @@ message = "0x"
                 Ok(Output::new_output(serde_json::json!(resp)))
             }
             UtilSubcommands::ToMultisigAddr(args) => {
-                let address: Address =
-                    AddressParser::new_sighash().parse(&args.sighash_address)?;
+                let address: Address = AddressParser::new_sighash().parse(&args.sighash_address)?;
                 let locktime_timestamp = DateTime::parse_from_rfc3339(&args.locktime)
                     .map(|dt| dt.timestamp_millis() as u64)
                     .map_err(|err| err.to_string())?;
@@ -816,8 +830,7 @@ message = "0x"
                 Ok(Output::new_output(resp))
             }
             UtilSubcommands::CellMeta(args) => {
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
                 let index: u32 = FromStrParser::<u32>::default().parse(&args.index)?;
                 let with_data = args.with_data;
                 let out_point = packed::OutPoint::new_builder()

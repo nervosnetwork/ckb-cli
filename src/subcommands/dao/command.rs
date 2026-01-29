@@ -10,7 +10,9 @@ use crate::utils::{
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{packed::Script, H160};
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use std::collections::HashSet;
 
 fn parse_privkey_path(input: &str) -> Result<String, String> {
@@ -18,7 +20,9 @@ fn parse_privkey_path(input: &str) -> Result<String, String> {
 }
 
 fn parse_address(input: &str) -> Result<String, String> {
-    AddressParser::default().validate(input).map(|_| input.to_string())
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
 }
 
 fn parse_capacity(input: &str) -> Result<String, String> {
@@ -57,7 +61,11 @@ pub enum DaoSubcommands {
 pub struct DaoTransactArgs {
     #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
     pub privkey_path: Option<String>,
-    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path")]
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path"
+    )]
     pub from_account: Option<String>,
     #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000")]
     pub fee_rate: String,
@@ -201,7 +209,9 @@ impl TransactArgs {
                             .map_err(|_| format!("Invalid value for '--from-account': {}", err))
                     })?
             } else {
-                return Err(String::from("<privkey-path> or <from-account> is required!"));
+                return Err(String::from(
+                    "<privkey-path> or <from-account> is required!",
+                ));
             };
             let payload = AddressPayload::from_pubkey_hash(account);
             Address::new(network_type, payload, false)
@@ -223,5 +233,4 @@ impl TransactArgs {
             force_small_change_as_fee,
         })
     }
-
 }

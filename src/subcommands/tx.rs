@@ -20,13 +20,13 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{
-    CliSubCommand, Output,
-};
+use super::{CliSubCommand, Output};
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
     arg_parser::{
@@ -474,7 +474,11 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let sighash_addresses: Vec<Address> = args
                     .sighash_address
                     .iter()
-                    .map(|value| AddressParser::new_sighash().set_network(network).parse(value))
+                    .map(|value| {
+                        AddressParser::new_sighash()
+                            .set_network(network)
+                            .parse(value)
+                    })
                     .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
                     FromStrParser::<u8>::default().parse(&args.require_first_n)?;
@@ -584,8 +588,9 @@ impl CliSubCommand for TxSubCommand<'_> {
                         FixedHashParser::<H160>::default()
                             .parse(input)
                             .or_else(|err| {
-                                let result: Result<Address, String> =
-                                    AddressParser::new_sighash().set_network(network).parse(input);
+                                let result: Result<Address, String> = AddressParser::new_sighash()
+                                    .set_network(network)
+                                    .parse(input);
                                 result
                                     .map(|address| {
                                         H160::from_slice(&address.payload().args()).unwrap()
@@ -705,7 +710,11 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let sighash_addresses: Vec<Address> = args
                     .sighash_address
                     .iter()
-                    .map(|value| AddressParser::new_sighash().set_network(network).parse(value))
+                    .map(|value| {
+                        AddressParser::new_sighash()
+                            .set_network(network)
+                            .parse(value)
+                    })
                     .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
                     FromStrParser::<u8>::default().parse(&args.require_first_n)?;

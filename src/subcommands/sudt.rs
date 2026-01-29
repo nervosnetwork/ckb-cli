@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 
 use ckb_jsonrpc_types as json_types;
 use ckb_sdk::{

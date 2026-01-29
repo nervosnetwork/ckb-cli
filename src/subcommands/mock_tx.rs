@@ -135,8 +135,10 @@ impl<'a> MockTxSubCommand<'a> {
 
 impl CliSubCommand for MockTxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        let mut complete_tx =
-            |tx_file: &str, complete: bool, verify: bool| -> Result<(MockTransaction, u64), String> {
+        let mut complete_tx = |tx_file: &str,
+                               complete: bool,
+                               verify: bool|
+         -> Result<(MockTransaction, u64), String> {
             let path: PathBuf = FilePathParser::new(true).parse(tx_file)?;
             let mut content = String::new();
             let mut file = fs::File::open(path).map_err(|err| err.to_string())?;

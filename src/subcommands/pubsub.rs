@@ -1,6 +1,8 @@
 use ckb_jsonrpc_types::{BlockView, HeaderView, PoolTransactionEntry, PoolTransactionReject};
 use ckb_sdk::pubsub::Client;
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use futures::StreamExt;
 use std::io;
 use std::net::SocketAddr;

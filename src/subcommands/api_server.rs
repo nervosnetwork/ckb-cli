@@ -71,8 +71,7 @@ impl<'a> ApiServerSubCommand<'a> {
 impl CliSubCommand for ApiServerSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
         let cmd = ApiServerCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
-        let listen_addr: SocketAddr =
-            FromStrParser::<SocketAddr>::new().parse(&cmd.listen)?;
+        let listen_addr: SocketAddr = FromStrParser::<SocketAddr>::new().parse(&cmd.listen)?;
         let privkey_path = cmd.privkey_path;
 
         let network_result = get_network_type(self.rpc_client);

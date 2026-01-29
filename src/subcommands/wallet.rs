@@ -56,7 +56,9 @@ fn parse_privkey_path(input: &str) -> Result<String, String> {
 }
 
 fn parse_address(input: &str) -> Result<String, String> {
-    AddressParser::default().validate(input).map(|_| input.to_string())
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
 }
 
 fn parse_lock_arg(input: &str) -> Result<String, String> {
@@ -110,7 +112,10 @@ fn parse_usize(input: &str) -> Result<String, String> {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "wallet", about = "Transfer / query balance (with local index) / key utils")]
+#[command(
+    name = "wallet",
+    about = "Transfer / query balance (with local index) / key utils"
+)]
 pub struct WalletCmd {
     #[command(subcommand)]
     pub command: WalletSubcommands,
@@ -719,8 +724,7 @@ impl CliSubCommand for WalletSubCommand<'_> {
                     let pubkey = PubkeyHexParser.parse(pubkey_str)?;
                     AddressPayload::from_pubkey(&pubkey)
                 } else if let Some(lock_arg_str) = args.lock_arg.as_ref() {
-                    let lock_arg: H160 =
-                        FixedHashParser::<H160>::default().parse(lock_arg_str)?;
+                    let lock_arg: H160 = FixedHashParser::<H160>::default().parse(lock_arg_str)?;
                     AddressPayload::from_pubkey_hash(lock_arg)
                 } else {
                     return Err("Please give one argument".to_string());

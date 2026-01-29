@@ -104,18 +104,17 @@ Key Considerations:
 #[allow(dead_code)]
 fn arg_multisig_code_hash() -> Arg {
     let arg_multisig_code_hash = Arg::new("multisig-code-hash")
-            .long("multisig-code-hash")
-            .num_args(1)
-            
-            .required(true)
-            .value_parser([
-                // legacy code hash
-                "legacy",
-                "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
-                // V2 code hash
-                "v2",
-                "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
-            ])
+        .long("multisig-code-hash")
+        .num_args(1)
+        .required(true)
+        .value_parser([
+            // legacy code hash
+            "legacy",
+            "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+            // V2 code hash
+            "v2",
+            "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
+        ])
         .help("Specifies the multisig code hash to use:\n    - v2(default): `0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29`. \n    - legacy(deprecated): `0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8` is NOT recommended for use.\n\n");
     arg_multisig_code_hash
 }

@@ -16,8 +16,8 @@ use subcommands::{
     MockTxSubCommand, MoleculeSubCommand, PluginSubCommand, PubSubCommand, RpcSubCommand,
     SudtSubCommand, TxSubCommand, UtilSubCommand, WalletSubCommand,
 };
-use utils::other::get_genesis_info;
 use utils::arg::ArgValidatorExt;
+use utils::other::get_genesis_info;
 use utils::{
     arg_parser::{ArgMatchesExt, ArgParser, UrlParser},
     config::GlobalConfig,
@@ -232,8 +232,7 @@ pub fn build_cli(version_short: &str, version_long: &str) -> Command {
         .version(version_short)
         .long_version(version_long)
         .color(ColorChoice::Auto);
-    cmd
-        .subcommand(RpcSubCommand::subcommand().subcommand(PubSubCommand::subcommand()))
+    cmd.subcommand(RpcSubCommand::subcommand().subcommand(PubSubCommand::subcommand()))
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
         .subcommand(TxSubCommand::subcommand("tx"))

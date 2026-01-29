@@ -138,7 +138,11 @@ pub struct DeployGenTxsArgs {
 pub struct DeploySignTxsArgs {
     #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
     pub privkey_path: Option<String>,
-    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path")]
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path"
+    )]
     pub from_account: Option<String>,
     #[arg(long = "info-file", id = "info-file", value_parser = parse_file_path_exists)]
     pub info_file: String,
@@ -201,8 +205,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 let fee_rate: u64 = FromStrParser::<u64>::default().parse(&args.fee_rate)?;
                 let deployment_config: PathBuf =
                     FilePathParser::new(true).parse(&args.deployment_config)?;
-                let migration_dir: PathBuf =
-                    DirPathParser::new(true).parse(&args.migration_dir)?;
+                let migration_dir: PathBuf = DirPathParser::new(true).parse(&args.migration_dir)?;
                 let info_file: PathBuf = FilePathParser::new(false).parse(&args.info_file)?;
                 let allow_zero_lock: bool = args.zero_lock;
 

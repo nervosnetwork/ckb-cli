@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::utils::arg_parser::ArgMatchesExt;
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_jsonrpc_types::Status;
@@ -26,7 +27,6 @@ use ckb_types::{
     H160, H256,
 };
 use clap::ArgMatches;
-use crate::utils::arg_parser::ArgMatchesExt;
 use colored::Colorize;
 use plugin_protocol::{CellIndex, LiveCellInfo};
 use rpassword::prompt_password_stdout;
