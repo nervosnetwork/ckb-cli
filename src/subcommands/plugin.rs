@@ -1,11 +1,54 @@
-use clap::{Arg, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use crate::utils::arg_parser::ArgMatchesExt;
 use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::arg_parser::{ArgParser, FilePathParser};
+
+fn parse_plugin_binary_path(input: &str) -> Result<PathBuf, String> {
+    FilePathParser::new(true).parse(input)
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "plugin", about = "ckb-cli plugin management")]
+pub struct PluginCmd {
+    #[command(subcommand)]
+    pub command: PluginSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum PluginSubcommands {
+    /// Active a plugin (at most one keystore/indexer role plugin can be actived)
+    Active(PluginNameArg),
+    /// Deactive a plugin
+    Deactive(PluginNameArg),
+    /// List all plugins
+    List,
+    /// Show the detail information of a plugin
+    Info(PluginNameArg),
+    /// Install a plugin, will active it immediately by default
+    Install(PluginInstallArgs),
+    /// Uninstall a plugin, deactive it then remove the binary file
+    Uninstall(PluginNameArg),
+}
+
+#[derive(Args, Debug)]
+pub struct PluginNameArg {
+    /// Plugin name
+    #[arg(long)]
+    pub name: String,
+}
+
+#[derive(Args, Debug)]
+pub struct PluginInstallArgs {
+    /// The binary file path of the plugin
+    #[arg(long, value_parser = parse_plugin_binary_path)]
+    pub binary_path: PathBuf,
+    /// Install the plugin but not active it
+    #[arg(long)]
+    pub inactive: bool,
+}
 
 pub struct PluginSubCommand<'a> {
     plugin_mgr: &'a mut PluginManager,
@@ -17,45 +60,7 @@ impl<'a> PluginSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        let arg_plugin_name = Arg::new("name")
-            .long("name")
-            .required(true)
-            .num_args(1)
-            .help("Plugin name");
-        Command::new(name)
-            .about("ckb-cli plugin management")
-            .subcommands(vec![
-                Command::new("active")
-                    .about(
-                        "Active a plugin (at most one keystore/indexer role plugin can be actived)",
-                    )
-                    .arg(arg_plugin_name.clone()),
-                Command::new("deactive")
-                    .about("Deactive a plugin")
-                    .arg(arg_plugin_name.clone()),
-                Command::new("list").about("List all plugins"),
-                Command::new("info")
-                    .about("Show the detail information of a plugin")
-                    .arg(arg_plugin_name.clone()),
-                Command::new("install")
-                    .about("Install a plugin, will active it immediately by default")
-                    .arg(
-                        Arg::new("binary-path")
-                            .long("binary-path")
-                            .required(true)
-                            .num_args(1)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("The binary file path of the plugin"),
-                    )
-                    .arg(
-                        Arg::new("inactive")
-                            .long("inactive")
-                            .help("Install the plugin but not active it"),
-                    ),
-                Command::new("uninstall")
-                    .about("Uninstall a plugin, deactive it then remove the binary file")
-                    .arg(arg_plugin_name.clone()),
-            ])
+        PluginCmd::command().name(name)
     }
 }
 
