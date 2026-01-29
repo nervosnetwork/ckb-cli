@@ -3,10 +3,7 @@ use ckb_jsonrpc_types::{
 };
 use ckb_types::packed::{CellOutput, OutPoint};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{Arg, ArgAction, ArgMatches, Command};
-use crate::utils::command::CommandHelpExt;
-use crate::utils::arg::ArgValidatorExt;
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
@@ -33,6 +30,364 @@ pub struct RpcSubCommand<'a> {
     raw_rpc_client: &'a mut RawHttpRpcClient,
 }
 
+fn parse_h256(input: &str) -> Result<String, String> {
+    FixedHashParser::<H256>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u64(input: &str) -> Result<String, String> {
+    FromStrParser::<u64>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u32(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_ip_network(input: &str) -> Result<String, String> {
+    FromStrParser::<IpNetwork>::new()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_multiaddr(input: &str) -> Result<String, String> {
+    FromStrParser::<Multiaddr>::new()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_duration(input: &str) -> Result<String, String> {
+    DurationParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_file_path(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_fee_rate_target(input: &str) -> Result<String, String> {
+    FeeRateStatisticsTargetParser {}
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "rpc", about = "Invoke RPC call to node")]
+pub struct RpcCmd {
+    #[arg(long = "raw-data", global = true)]
+    pub raw_data: bool,
+    #[command(subcommand)]
+    pub command: RpcSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+#[command(rename_all = "snake_case")]
+pub enum RpcSubcommands {
+    GetBlock(RpcGetBlockArgs),
+    GetBlockByNumber(RpcGetBlockByNumberArgs),
+    GetBlockHash(RpcGetBlockHashArgs),
+    GetCurrentEpoch,
+    GetEpochByNumber(RpcGetEpochByNumberArgs),
+    GetHeader(RpcGetHeaderArgs),
+    GetHeaderByNumber(RpcGetHeaderByNumberArgs),
+    GetLiveCell(RpcGetLiveCellArgs),
+    GetTipBlockNumber,
+    GetTipHeader(RpcGetTipHeaderArgs),
+    GetTransaction(RpcGetTransactionArgs),
+    GetTransactionProof(RpcGetTransactionProofArgs),
+    VerifyTransactionProof(RpcVerifyTransactionProofArgs),
+    GetForkBlock(RpcGetForkBlockArgs),
+    GetConsensus,
+    GetBlockMedianTime(RpcGetBlockMedianTimeArgs),
+    GetBlockEconomicState(RpcGetBlockEconomicStateArgs),
+    EstimateCycles(RpcEstimateCyclesArgs),
+    GetFeeRateStatics(RpcGetFeeRateStaticsArgs),
+    GetFeeRateStatistics(RpcGetFeeRateStatisticsArgs),
+    GetDeploymentsInfo,
+    GetTransactionAndWitnessProof(RpcGetTransactionAndWitnessProofArgs),
+    VerifyTransactionAndWitnessProof(RpcVerifyTransactionAndWitnessProofArgs),
+    GetBannedAddresses,
+    GetPeers,
+    LocalNodeInfo,
+    SetBan(RpcSetBanArgs),
+    SyncState,
+    SetNetworkActive(RpcSetNetworkActiveArgs),
+    AddNode(RpcAddNodeArgs),
+    RemoveNode(RpcRemoveNodeArgs),
+    ClearBannedAddresses,
+    PingPeers,
+    RemoveTransaction(RpcRemoveTransactionArgs),
+    TxPoolInfo,
+    ClearTxVerifyQueue,
+    TestTxPoolAccept(RpcTestTxPoolAcceptArgs),
+    ClearTxPool,
+    GetRawTxPool(RpcGetRawTxPoolArgs),
+    TxPoolReady,
+    GetBlockchainInfo,
+    SendAlert(RpcSendAlertArgs),
+    NotifyTransaction(RpcNotifyTransactionArgs),
+    Truncate(RpcTruncateArgs),
+    GenerateBlock,
+    GenerateEpochs(RpcGenerateEpochsArgs),
+    GetIndexerTip,
+    GetCells(RpcGetCellsArgs),
+    GetTransactions(RpcGetTransactionsArgs),
+    GetCellsCapacity(RpcGetCellsCapacityArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetBlockArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+    #[arg(long = "with-cycles", id = "with-cycles")]
+    pub with_cycles: bool,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetBlockByNumberArgs {
+    #[arg(long = "number", id = "number", value_parser = parse_u64)]
+    pub number: String,
+    #[arg(long = "with-cycles", id = "with-cycles")]
+    pub with_cycles: bool,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetBlockHashArgs {
+    #[arg(long = "number", id = "number", value_parser = parse_u64)]
+    pub number: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetEpochByNumberArgs {
+    #[arg(long = "number", id = "number", value_parser = parse_u64)]
+    pub number: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetHeaderArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetHeaderByNumberArgs {
+    #[arg(long = "number", id = "number", value_parser = parse_u64)]
+    pub number: String,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetLiveCellArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", value_parser = parse_h256)]
+    pub tx_hash: String,
+    #[arg(long = "index", id = "index", value_parser = parse_u32)]
+    pub index: String,
+    #[arg(long = "include-tx-pool", id = "include-tx-pool")]
+    pub include_tx_pool: bool,
+    #[arg(long = "with-data", id = "with-data")]
+    pub with_data: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetTipHeaderArgs {
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetTransactionArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetTransactionProofArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", action = ArgAction::Append, num_args = 1.., value_parser = parse_h256)]
+    pub tx_hash: Vec<String>,
+    #[arg(long = "block-hash", id = "block-hash", value_parser = parse_h256)]
+    pub block_hash: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcVerifyTransactionProofArgs {
+    #[arg(long = "tx-proof-path", id = "tx-proof-path", value_parser = parse_file_path)]
+    pub tx_proof_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetForkBlockArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+    #[arg(long = "packed", id = "packed")]
+    pub packed: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetBlockMedianTimeArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetBlockEconomicStateArgs {
+    #[arg(long = "hash", id = "hash", value_parser = parse_h256)]
+    pub hash: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcEstimateCyclesArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetFeeRateStaticsArgs {
+    #[arg(long = "target", id = "target", value_parser = parse_fee_rate_target)]
+    pub target: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetFeeRateStatisticsArgs {
+    #[arg(long = "target", id = "target", value_parser = parse_fee_rate_target)]
+    pub target: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetTransactionAndWitnessProofArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", action = ArgAction::Append, num_args = 1.., value_parser = parse_h256)]
+    pub tx_hash: Vec<String>,
+    #[arg(long = "block-hash", id = "block-hash", value_parser = parse_h256)]
+    pub block_hash: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcVerifyTransactionAndWitnessProofArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcSetBanArgs {
+    #[arg(long = "address", id = "address", value_parser = parse_ip_network)]
+    pub address: String,
+    #[arg(long = "command", id = "command", value_parser = ["insert", "delete"])]
+    pub command: String,
+    #[arg(long = "ban_time", id = "ban_time", default_value = "24h", value_parser = parse_duration)]
+    pub ban_time: String,
+    #[arg(long = "reason", id = "reason")]
+    pub reason: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcSetNetworkActiveArgs {
+    #[arg(long = "state", id = "state", value_parser = ["enable", "disable"])]
+    pub state: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcAddNodeArgs {
+    #[arg(long = "peer-id", id = "peer-id")]
+    pub peer_id: String,
+    #[arg(long = "address", id = "address", value_parser = parse_multiaddr)]
+    pub address: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcRemoveNodeArgs {
+    #[arg(long = "peer-id", id = "peer-id")]
+    pub peer_id: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcRemoveTransactionArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", value_parser = parse_h256)]
+    pub tx_hash: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcTestTxPoolAcceptArgs {
+    #[arg(long = "tx-file", id = "tx-file")]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetRawTxPoolArgs {
+    #[arg(long = "verbose", id = "verbose")]
+    pub verbose: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcSendAlertArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcNotifyTransactionArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcTruncateArgs {
+    #[arg(long = "tip-hash", id = "tip-hash", value_parser = parse_h256)]
+    pub tip_hash: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGenerateEpochsArgs {
+    #[arg(long = "num-epochs", id = "num-epochs")]
+    pub num_epochs: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetCellsArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+    #[arg(long = "order", id = "order", value_parser = ["asc", "desc"])]
+    pub order: String,
+    #[arg(long = "limit", id = "limit", value_parser = parse_u64)]
+    pub limit: String,
+    #[arg(long = "after", id = "after", value_parser = parse_hex)]
+    pub after: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetTransactionsArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+    #[arg(long = "order", id = "order", value_parser = ["asc", "desc"])]
+    pub order: String,
+    #[arg(long = "limit", id = "limit", value_parser = parse_u64)]
+    pub limit: String,
+    #[arg(long = "after", id = "after", value_parser = parse_hex)]
+    pub after: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct RpcGetCellsCapacityArgs {
+    #[arg(long = "json-path", id = "json-path", value_parser = parse_file_path)]
+    pub json_path: String,
+}
+
 impl<'a> RpcSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
@@ -45,401 +400,7 @@ impl<'a> RpcSubCommand<'a> {
     }
 
     pub fn subcommand() -> Command {
-        let arg_hash = Arg::new("hash")
-            .long("hash")
-            .num_args(1)
-            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-            .required(true);
-        let arg_number = Arg::new("number")
-            .long("number")
-            .num_args(1)
-            .validator(|input| FromStrParser::<u64>::default().validate(input))
-            .required(true)
-            .help("Block number");
-        let arg_peer_id = Arg::new("peer-id")
-            .long("peer-id")
-            .num_args(1)
-            .required(true)
-            .help("Node's peer id");
-        let with_cycles = Arg::new("with-cycles")
-            .long("with-cycles")
-            .help("get block info with cycles");
-        let packed = Arg::new("packed")
-            .long("packed")
-            .help("returns a 0x-prefixed hex string");
-
-        Command::new("rpc")
-            .about("Invoke RPC call to node")
-            .arg(
-                Arg::new("raw-data")
-                    .long("raw-data")
-                    .global(true)
-                    .help("Output raw jsonrpc data")
-            )
-            .subcommands(vec![
-                // [Chain]
-                Command::new("get_block")
-                    .about("Get block content by hash")
-                    .arg(arg_hash.clone().help("Block hash"))
-                    .arg(with_cycles.clone())
-                    .arg(packed.clone()),
-                Command::new("get_block_by_number")
-                    .about("Get block content by block number")
-                    .arg(arg_number.clone())
-                    .arg(with_cycles.clone())
-                    .arg(packed.clone()),
-                Command::new("get_block_hash")
-                    .about("Get block hash by block number")
-                    .arg(arg_number.clone()),
-                Command::new("get_current_epoch").about("Get current epoch information"),
-                Command::new("get_epoch_by_number")
-                    .about("Get epoch information by epoch number")
-                    .arg(arg_number.clone().help("Epoch number")),
-                Command::new("get_header")
-                    .about("Get block header content by hash")
-                    .arg(arg_hash.clone().help("Block hash"))
-                    .arg(packed.clone()),
-                Command::new("get_header_by_number")
-                    .about("Get block header by block number")
-                    .arg(arg_number.clone())
-                    .arg(packed.clone()),
-                Command::new("get_live_cell")
-                    .about("Get live cell (live means unspent)")
-                    .arg(
-                        Arg::new("tx-hash")
-                            .long("tx-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .help("Tx hash"),
-                    )
-                    .arg(
-                        Arg::new("index")
-                            .long("index")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .required(true)
-                            .help("Output index"),
-                    )
-                    .arg(
-                        Arg::new("include-tx-pool")
-                            .long("include-tx-pool")
-                            .help("Weather to check live cell in tx-pool")
-                    )
-                    .arg(
-                        Arg::new("with-data")
-                            .long("with-data")
-                            .help("Get live cell with data")
-                    ),
-                Command::new("get_tip_block_number").about("Get tip block number"),
-                Command::new("get_tip_header").about("Get tip header")
-                .arg(packed.clone()),
-                Command::new("get_transaction")
-                    .about("Get transaction content by transaction hash")
-                    .arg(arg_hash.clone().help("Tx hash"))
-                    .arg(packed.clone()),
-                Command::new("get_transaction_proof")
-                    .about("Returns a Merkle proof that transactions are included in a block")
-                    .arg(
-                        Arg::new("tx-hash")
-                            .long("tx-hash")
-                            .num_args(1)
-                            .action(ArgAction::Append).num_args(1..)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("Transaction hashes, all transactions must be in the same block")
-                    )
-                    .arg(
-                        Arg::new("block-hash")
-                            .long("block-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("Looks for transactions in the block with this hash")
-                    ),
-                Command::new("verify_transaction_proof")
-                    .about("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to")
-                    .arg(
-                        Arg::new("tx-proof-path")
-                            .long("tx-proof-path")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("File path of proof generated by `get_transaction_proof` (JSON format)")
-                    ),
-                Command::new("get_fork_block")
-                    .about("Returns the information about a fork block by hash")
-                    .arg(arg_hash.clone().help("The fork block hash"))
-                    .arg(packed.clone()),
-                Command::new("get_consensus")
-                    .about("Return various consensus parameters"),
-                Command::new("get_block_median_time")
-                    .about("Returns the past median time by block hash")
-                    .arg(arg_hash.clone().help("A median time is calculated for a consecutive block sequence. `block_hash` indicates the highest block of the sequence")),
-                Command::new("get_block_economic_state")
-                    .about("Returns increased issuance, miner reward, and the total transaction fee of a block")
-                    .arg(arg_hash.clone().help("Specifies the block hash which rewards should be analyzed")),
-                Command::new("estimate_cycles")
-                    .arg(
-                        Arg::new("json-path")
-                        .long("json-path")
-                        .num_args(1)
-                        .required(true)
-                        .validator(|input| FilePathParser::new(true).validate(input))
-                        .help("Transaction content (json format, see rpc estimate_cycles)")
-                    )
-                    .help("estimate_cycles run a transaction and return the execution consumed cycles."),
-                Command::new("get_fee_rate_statics")
-                    .arg(
-                        Arg::new("target")
-                            .long("target")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .help("[Deprecated! please use get_fee_rate_statistics] Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
-                    )
-                    .help("[Deprecated! please use get_fee_rate_statistics] Returns the fee_rate statistics of confirmed blocks on the chain."),
-                Command::new("get_fee_rate_statistics")
-                    .arg(
-                        Arg::new("target")
-                            .long("target")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .help("Specify the number (1 - 101) of confirmed blocks to be counted. If the number is even, automatically add one. Default is 21.")
-                    )
-                    .help("Returns the fee_rate statistics of confirmed blocks on the chain."),
-                Command::new("get_deployments_info").about("Returns the information about all deployments"),
-                Command::new("get_transaction_and_witness_proof")
-                    .arg(
-                        Arg::new("tx-hash")
-                            .long("tx-hash")
-                            .num_args(1)
-                            .action(ArgAction::Append).num_args(1..)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("Transaction hashes")
-                    )
-                    .arg(
-                        Arg::new("block-hash")
-                            .long("block-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .help("Looks for transactions in the block with this hash")
-                    ).help("Returns a Merkle proof that transactions and witnesses are included in a block"),
-                Command::new("verify_transaction_and_witness_proof")
-                    .arg(
-                        Arg::new("json-path")
-                            .long("json-path")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("File path of proof which is a `TransactionAndWitnessProof` (JSON format)")
-                    )
-                    .help("Verifies that a proof points to transactions in a block, returning the transaction hashes it commits to"),
-                // [Net]
-                Command::new("get_banned_addresses").about("Get all banned IPs/Subnets"),
-                Command::new("get_peers").about("Get connected peers"),
-                Command::new("local_node_info").about("Get local node information"),
-                Command::new("set_ban")
-                    .arg(
-                        Arg::new("address")
-                            .long("address")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<IpNetwork>::new().validate(input))
-                            .required(true)
-                            .help("The IP/Subnet with an optional netmask (default is /32 = single IP)")
-                    )
-                    .arg(
-                        Arg::new("command")
-                            .long("command")
-                            .num_args(1)
-                            .value_parser(["insert", "delete"])
-                            .required(true)
-                            .help("`insert` to insert an IP/Subnet to the list, `delete` to delete an IP/Subnet from the list")
-                    )
-                    .arg(
-                        Arg::new("ban_time")
-                            .long("ban_time")
-                            .num_args(1)
-                            .validator(|input| DurationParser.validate(input))
-                            .required(true)
-                            .default_value("24h")
-                            .help("How long the IP is banned")
-                    )
-                    .arg(
-                        Arg::new("reason")
-                            .long("reason")
-                            .num_args(1)
-                            .help("Ban reason, optional parameter")
-                    )
-                    .help("Insert or delete an IP/Subnet from the banned list"),
-                Command::new("sync_state").about("Returns sync state of this node"),
-                Command::new("set_network_active")
-                    .arg(
-                        Arg::new("state")
-                            .long("state")
-                            .num_args(1)
-                            .value_parser(["enable", "disable"])
-                            .required(true)
-                            .help("The network state to set")
-                    )
-                    .help("Disable/enable all p2p network activity"),
-                Command::new("add_node")
-                    .arg(arg_peer_id.clone())
-                    .arg(
-                        Arg::new("address")
-                            .long("address")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<Multiaddr>::new().validate(input))
-                            .required(true)
-                            .help("Target node's address (multiaddr)")
-                    )
-                    .help("Connect to a node"),
-                Command::new("remove_node")
-                    .arg(arg_peer_id.clone())
-                    .help("Disconnect a node"),
-                Command::new("clear_banned_addresses").about("Clears all banned IPs/Subnets"),
-                Command::new("ping_peers").about("Requests that a ping is sent to all connected peers, to measure ping time"),
-                // [Pool]
-                Command::new("remove_transaction")
-                    .about("Removes a transaction and all transactions which depends on it from tx pool if it exists")
-                    .arg(
-                        Arg::new("tx-hash")
-                            .long("tx-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .help("Hash of a transaction"),
-                    ),
-                Command::new("tx_pool_info").about("Get transaction pool information"),
-                Command::new("clear_tx_verify_queue").about("Clear TxPool verify_queue"),
-                Command::new("test_tx_pool_accept")
-                .about("Test if transaction can be accepted by Tx Pool")
-                .arg(
-                    Arg::new("tx-file").long("tx-file").num_args(1).required(true).help("transaction data file(format json)")
-                ),
-                Command::new("clear_tx_pool").about("Removes all transactions from the transaction pool"),
-                Command::new("get_raw_tx_pool")
-                    .about("Returns all transaction ids in tx pool as a json array of string transaction ids")
-                    .arg(Arg::new("verbose").long("verbose").help("True for a json object, false for array of transaction ids")),
-                Command::new("tx_pool_ready").about("Returns whether tx-pool service is started, ready for request"),
-                // [`Stats`]
-                Command::new("get_blockchain_info").about("Get chain information"),
-                // [Alert]
-                Command::new("send_alert")
-                    .arg(
-                        Arg::new("json-path")
-                            .long("json-path")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .help("The alert message (json format)")
-                    )
-                    .help("Sends an alert"),
-                // [`IntegrationTest`]
-                Command::new("notify_transaction")
-                    .arg(
-                        Arg::new("json-path")
-                         .long("json-path")
-                         .num_args(1)
-                         .required(true)
-                         .validator(|input| FilePathParser::new(true).validate(input))
-                         .help("[TEST ONLY] Transaction content (json format, see rpc send_transaction)")
-                    )
-                    .help("[TEST ONLY] Notify transaction"),
-                Command::new("truncate")
-                    .arg(
-                        Arg::new("tip-hash")
-                            .long("tip-hash")
-                            .num_args(1)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .help("Target tip block hash")
-                    )
-                    .help("[TEST ONLY] Truncate blocks to target tip block"),
-                Command::new("generate_block")
-                    .about("[TEST ONLY] Generate an empty block"),
-                Command::new("generate_epochs")
-                    .arg(
-                        Arg::new("num-epochs")
-                            .long("num-epochs")
-                            .num_args(1)
-                            .required(true)
-                            .help("The number of epochs to generate.")
-                    )
-                    .help("[TEST ONLY] Generate epochs"),
-                // [`Indexer`]
-                Command::new("get_indexer_tip").about("Returns the indexed tip"),
-                Command::new("get_cells")
-                    .arg(
-                        Arg::new("json-path")
-                        .long("json-path")
-                        .num_args(1)
-                        .validator(|input| FilePathParser::new(true).validate(input))
-                        .required(true)
-                        .help("Indexer search key"))
-                    .arg(
-                        Arg::new("order")
-                            .long("order")
-                            .num_args(1)
-                            .value_parser(["asc", "desc"])
-                            .required(true)
-                            .help("Indexer search order")
-                    )
-                    .arg(
-                        Arg::new("limit")
-                            .long("limit")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .help("Limit the number of results")
-                    )
-                    .arg(
-                        Arg::new("after")
-                            .long("after")
-                            .num_args(1)
-                            .validator(|input| HexParser.validate(input))
-                            .help("Pagination parameter")
-                    )
-                    .help("Returns the live cells collection by the lock or type script"),
-                Command::new("get_transactions")
-                    .arg(
-                        Arg::new("json-path")
-                        .long("json-path")
-                        .num_args(1)
-                        .validator(|input| FilePathParser::new(true).validate(input))
-                        .required(true)
-                        .help("Indexer search key"))
-                    .arg(
-                        Arg::new("order")
-                            .long("order")
-                            .num_args(1)
-                            .value_parser(["asc", "desc"])
-                            .required(true)
-                            .help("Indexer search order")
-                    )
-                    .arg(
-                        Arg::new("limit")
-                            .long("limit")
-                            .num_args(1)
-                            .validator(|input| FromStrParser::<u64>::default().validate(input))
-                            .required(true)
-                            .help("Limit the number of results")
-                    )
-                    .arg(
-                        Arg::new("after")
-                            .long("after")
-                            .num_args(1)
-                            .validator(|input| HexParser.validate(input))
-                            .help("Pagination parameter")
-                    )
-                    .help("Returns the transactions collection by the lock or type script"),
-                Command::new("get_cells_capacity")
-                    .arg(
-                        Arg::new("json-path")
-                        .long("json-path")
-                        .num_args(1)
-                        .validator(|input| FilePathParser::new(true).validate(input))
-                        .required(true)
-                        .help("Indexer search key"))
-                    .help("Returns the live cells capacity by the lock or type script"),
-            ])
+        RpcCmd::command()
     }
 }
 
