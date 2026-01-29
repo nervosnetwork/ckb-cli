@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use bitcoin::bip32::DerivationPath;
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use crate::utils::arg_parser::ArgMatchesExt;
 use serde::{Deserialize, Serialize};
 
@@ -39,10 +39,9 @@ use plugin_protocol::LiveCellInfo;
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PrivkeyWrapper,
     },
     genesis_info::GenesisInfo,
     other::{
@@ -52,6 +51,139 @@ use crate::utils::{
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_address(input: &str) -> Result<String, String> {
+    AddressParser::default().validate(input).map(|_| input.to_string())
+}
+
+fn parse_lock_arg(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_from_account(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .or_else(|err| {
+            AddressParser::default()
+                .validate(input)
+                .and_then(|()| AddressParser::new_sighash().validate(input))
+                .map_err(|_| err)
+        })
+        .map(|_| input.to_string())
+}
+
+fn parse_capacity(input: &str) -> Result<String, String> {
+    CapacityParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_u64(input: &str) -> Result<String, String> {
+    FromStrParser::<u64>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_file_path(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u32(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_usize(input: &str) -> Result<String, String> {
+    FromStrParser::<usize>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "wallet", about = "Transfer / query balance (with local index) / key utils")]
+pub struct WalletCmd {
+    #[command(subcommand)]
+    pub command: WalletSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WalletSubcommands {
+    /// Transfer capacity to an address (can have data)
+    Transfer(WalletTransferArgs),
+    /// Get capacity address or lock arg or pubkey
+    GetCapacity(WalletGetCapacityArgs),
+    /// Get live cells by address
+    GetLiveCells(WalletGetLiveCellsArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct WalletTransferArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path", conflicts_with = "privkey-path", value_parser = parse_from_account)]
+    pub from_account: Option<String>,
+    #[arg(long = "from-locked-address", id = "from-locked-address", value_parser = parse_address)]
+    pub from_locked_address: Option<String>,
+    #[arg(long = "to-address", id = "to-address", value_parser = parse_address)]
+    pub to_address: String,
+    #[arg(long = "to-data", id = "to-data", value_parser = parse_hex)]
+    pub to_data: Option<String>,
+    #[arg(long = "to-data-path", id = "to-data-path", value_parser = parse_file_path)]
+    pub to_data_path: Option<String>,
+    #[arg(long = "capacity", id = "capacity", value_parser = parse_capacity)]
+    pub capacity: String,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_u64)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_capacity)]
+    pub max_tx_fee: Option<String>,
+    #[arg(long = "derive-receiving-address-length", id = "derive-receiving-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_receiving_address_length: String,
+    #[arg(long = "derive-change-address", id = "derive-change-address", conflicts_with = "privkey-path", value_parser = parse_address)]
+    pub derive_change_address: Option<String>,
+    #[arg(long = "skip-check-to-address", id = "skip-check-to-address")]
+    pub skip_check_to_address: bool,
+    #[arg(long = "type-id", id = "type-id")]
+    pub type_id: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct WalletGetCapacityArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: Option<String>,
+    #[arg(long = "pubkey", id = "pubkey")]
+    pub pubkey: Option<String>,
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: Option<String>,
+    #[arg(long = "derive-receiving-address-length", id = "derive-receiving-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_receiving_address_length: String,
+    #[arg(long = "derive-change-address-length", id = "derive-change-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_change_address_length: String,
+    #[arg(long = "derived", id = "derived")]
+    pub derived: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct WalletGetLiveCellsArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: String,
+    #[arg(long = "limit", id = "limit", default_value = "15", value_parser = parse_usize)]
+    pub limit: String,
+    #[arg(long = "from", id = "from", value_parser = parse_u64)]
+    pub from: Option<String>,
+    #[arg(long = "to", id = "to", value_parser = parse_u64)]
+    pub to: Option<String>,
+}
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
@@ -81,52 +213,7 @@ impl<'a> WalletSubCommand<'a> {
     }
 
     pub fn subcommand() -> Command {
-        Command::new("wallet")
-            .about("Transfer / query balance (with local index) / key utils")
-            .subcommands(vec![
-                Command::new("transfer")
-                    .about("Transfer capacity to an address (can have data)")
-                    .arg(arg::privkey_path().required_unless_present("from-account"))
-                    .arg(
-                        arg::from_account()
-                            .required_unless_present("privkey-path")
-                            .conflicts_with("privkey-path"),
-                    )
-                    .arg(arg::from_locked_address())
-                    .arg(arg::to_address().required(true))
-                    .arg(arg::to_data())
-                    .arg(arg::to_data_path())
-                    .arg(arg::capacity().required(true))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee())
-                    .arg(arg::derive_receiving_address_length())
-                    .arg(
-                        arg::derive_change_address().conflicts_with("privkey-path"),
-                    )
-                    .arg(
-                        Arg::new("skip-check-to-address")
-                            .long("skip-check-to-address")
-                            .help("Skip check <to-address> (default only allow sighash/multisig address), be cautious to use this flag"))
-                    .arg(
-                        Arg::new("type-id")
-                            .long("type-id")
-                            .help("Add type id type script to target output cell"),
-                    ),
-                Command::new("get-capacity")
-                    .about("Get capacity address or lock arg or pubkey")
-                    .arg(arg::address())
-                    .arg(arg::pubkey())
-                    .arg(arg::lock_arg())
-                    .arg(arg::derive_receiving_address_length())
-                    .arg(arg::derive_change_address_length())
-                    .arg(arg::derived()),
-                Command::new("get-live-cells")
-                    .about("Get live cells by address")
-                    .arg(arg::address())
-                    .arg(arg::live_cells_limit())
-                    .arg(arg::from_block_number())
-                    .arg(arg::to_block_number())
-            ])
+        WalletCmd::command()
     }
 
     pub fn transfer(
