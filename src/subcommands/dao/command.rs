@@ -1,7 +1,6 @@
 use crate::subcommands::dao::util::{calculate_dao_maximum_withdraw, send_transaction};
 use crate::subcommands::{CliSubCommand, DAOSubCommand, Output};
 use crate::utils::{
-    arg,
     arg_parser::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, OutPointParser,
         PrivkeyPathParser, PrivkeyWrapper,
@@ -11,8 +10,82 @@ use crate::utils::{
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{packed::Script, H160};
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use std::collections::HashSet;
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_address(input: &str) -> Result<String, String> {
+    AddressParser::default().validate(input).map(|_| input.to_string())
+}
+
+fn parse_capacity(input: &str) -> Result<String, String> {
+    CapacityParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_out_point(input: &str) -> Result<String, String> {
+    OutPointParser.validate(input).map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "dao",
+    about = "Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils"
+)]
+pub struct DaoCmd {
+    #[command(subcommand)]
+    pub command: DaoSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DaoSubcommands {
+    /// Deposit capacity into NervosDAO
+    Deposit(DaoDepositArgs),
+    /// Prepare specified cells from NervosDAO
+    Prepare(DaoOutPointArgs),
+    /// Withdraw specified cells from NervosDAO
+    Withdraw(DaoOutPointArgs),
+    /// Query NervosDAO deposited capacity by address
+    QueryDepositedCells(DaoAddressArgs),
+    /// Query NervosDAO prepared capacity by address
+    QueryPreparedCells(DaoAddressArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct DaoTransactArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path")]
+    pub from_account: Option<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000")]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_capacity)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct DaoDepositArgs {
+    #[command(flatten)]
+    pub tx: DaoTransactArgs,
+    #[arg(long, value_parser = parse_capacity)]
+    pub capacity: String,
+}
+
+#[derive(Args, Debug)]
+pub struct DaoOutPointArgs {
+    #[command(flatten)]
+    pub tx: DaoTransactArgs,
+    #[arg(long = "out-point", id = "out-point", action = ArgAction::Append, num_args = 1.., value_parser = parse_out_point)]
+    pub out_point: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct DaoAddressArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: String,
+}
 
 impl CliSubCommand for DAOSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
@@ -80,28 +153,7 @@ impl CliSubCommand for DAOSubCommand<'_> {
 
 impl DAOSubCommand<'_> {
     pub fn subcommand() -> Command {
-        Command::new("dao")
-            .about("Deposit / prepare / withdraw / query NervosDAO balance (with local index) / key utils")
-            .subcommands(vec![
-                Command::new("deposit")
-                    .about("Deposit capacity into NervosDAO")
-                    .args(TransactArgs::args())
-                    .arg(arg::capacity().required(true)),
-                Command::new("prepare")
-                    .about("Prepare specified cells from NervosDAO")
-                    .args(TransactArgs::args())
-                    .arg(arg::out_point().required(true).action(ArgAction::Append).num_args(1..)),
-                Command::new("withdraw")
-                    .about("Withdraw specified cells from NervosDAO")
-                    .args(TransactArgs::args())
-                    .arg(arg::out_point().required(true).action(ArgAction::Append).num_args(1..)),
-                Command::new("query-deposited-cells")
-                    .about("Query NervosDAO deposited capacity by address")
-                    .arg(arg::address()),
-                Command::new("query-prepared-cells")
-                    .about("Query NervosDAO prepared capacity by address")
-                    .arg(arg::address())
-            ])
+        DaoCmd::command()
     }
 }
 
@@ -154,12 +206,4 @@ impl TransactArgs {
         })
     }
 
-    fn args() -> Vec<Arg> {
-        vec![
-            arg::privkey_path().required_unless_present("from-account"),
-            arg::from_account().required_unless_present("privkey-path"),
-            arg::fee_rate(),
-            arg::max_tx_fee(),
-        ]
-    }
 }
