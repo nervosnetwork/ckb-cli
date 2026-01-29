@@ -7,7 +7,7 @@ use std::process;
 
 use ckb_build_info::Version;
 use clap::crate_version;
-use clap::{Arg, ColorChoice, Command};
+use clap::{Arg, ColorChoice, Command, CommandFactory};
 
 use interactive::InteractiveEnv;
 use plugin::PluginManager;
@@ -26,6 +26,7 @@ use utils::{
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
+mod cli;
 mod interactive;
 mod plugin;
 #[allow(clippy::mutable_key_type)]
@@ -226,10 +227,12 @@ pub fn get_version() -> Version {
 pub fn build_cli(version_short: &str, version_long: &str) -> Command {
     let version_short: &'static str = Box::leak(version_short.to_owned().into_boxed_str());
     let version_long: &'static str = Box::leak(version_long.to_owned().into_boxed_str());
-    Command::new("ckb-cli")
+    let mut cmd = cli::CliArgs::command();
+    cmd = cmd
         .version(version_short)
         .long_version(version_long)
-        .color(ColorChoice::Auto)
+        .color(ColorChoice::Auto);
+    cmd
         .subcommand(RpcSubCommand::subcommand().subcommand(PubSubCommand::subcommand()))
         .subcommand(AccountSubCommand::subcommand("account"))
         .subcommand(MockTxSubCommand::subcommand("mock-tx"))
@@ -242,45 +245,6 @@ pub fn build_cli(version_short: &str, version_long: &str) -> Command {
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
         .subcommand(DeploySubCommand::subcommand("deploy"))
-        .arg(
-
-            Arg::new("url")
-                .long("url")
-                .num_args(1)
-                .validator(|input| UrlParser.validate(input))
-                .help(
-                    r#"CKB RPC server url.
-The default value is http://127.0.0.1:8114
-You may also use some public available nodes, check the list of public nodes: https://github.com/nervosnetwork/ckb/wiki/Public-JSON-RPC-nodes"#,
-                ),
-        )
-        .arg(
-            Arg::new("output-format")
-                .long("output-format")
-                .num_args(1)
-                .value_parser(["yaml", "json"])
-                .default_value("yaml")
-                .global(true)
-                .help("Select output format"),
-        )
-        .arg(
-            Arg::new("no-color")
-                .long("no-color")
-                .global(true)
-                .help("Do not highlight(color) output json"),
-        )
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .global(true)
-                .help("Display request parameters"),
-        )
-        .arg(
-            Arg::new("local-only")
-                .long("local-only")
-                .global(true)
-                .help("This is a local only subcommand, do not check alerts and get network type"),
-        )
 }
 
 pub fn build_interactive() -> Command {

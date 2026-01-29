@@ -34,7 +34,7 @@ bitcoin = { git="https://github.com/rust-bitcoin/rust-bitcoin", rev="436de8ef12a
 faster-hex = "0.6"
 env_logger = "0.6"
 crossbeam-channel = "0.5.8"
-clap = { version = "4.5.0", features = ["cargo", "deprecated", "string"] }
+clap = { version = "4.5.0", features = ["cargo", "deprecated", "string", "derive"] }
 clap_complete = "4.5.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_derive = "1.0"
