@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use clap::{Arg, ArgAction, ArgMatches, Command};
-use crate::utils::arg::ArgValidatorExt;
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
 use crate::utils::arg_parser::ArgMatchesExt;
 
 use ckb_jsonrpc_types as json_types;
@@ -39,7 +38,6 @@ use crate::{
     plugin::PluginManager,
     subcommands::{CliSubCommand, Output},
     utils::{
-        arg,
         arg_parser::{
             AddressParser, ArgParser, CellDepsParser, FromStrParser, PrivkeyPathParser,
             PrivkeyWrapper, UdtTargetParser,
@@ -69,6 +67,222 @@ struct SudtCommonArgs {
     debug: bool,
 }
 
+fn parse_owner(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_sender(input: &str) -> Result<String, String> {
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_capacity_provider(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_udt_to(input: &str) -> Result<String, String> {
+    UdtTargetParser::new(AddressParser::default())
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_sighash_address(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_address(input: &str) -> Result<String, String> {
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_cell_deps(input: &str) -> Result<String, String> {
+    CellDepsParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_fee_rate(input: &str) -> Result<String, String> {
+    FromStrParser::<u64>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_max_tx_fee(input: &str) -> Result<String, String> {
+    FromStrParser::<HumanCapacity>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "SUDT issue/transfer operations (currently only support sudt)")]
+pub struct SudtCmd {
+    #[command(subcommand)]
+    pub command: SudtSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+#[command(rename_all = "kebab-case")]
+pub enum SudtSubcommands {
+    /// Issue SUDT to multiple addresses
+    Issue(SudtIssueArgs),
+    /// Transfer SUDT to multiple addresses (all target addresses must have same lock script id)
+    Transfer(SudtTransferArgs),
+    /// Get SUDT total amount of an address
+    GetAmount(SudtGetAmountArgs),
+    /// Create a SUDT cell with 0 amount and an acp lock script
+    NewEmptyAcp(SudtNewEmptyAcpArgs),
+    /// Claim all cheque cells identified by given lock script and type script
+    ChequeClaim(SudtChequeClaimArgs),
+    /// Withdraw all cheque cells identified by given lock script and type script
+    ChequeWithdraw(SudtChequeWithdrawArgs),
+    /// Build an anyone-can-pay address by sighash address and anyone-can-pay script id.
+    BuildAcpAddress(SudtBuildAcpAddressArgs),
+    /// Build a cheque address by cheque script id and receiver+sender address
+    BuildChequeAddress(SudtBuildChequeAddressArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct SudtIssueArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "udt-to", id = "udt-to", action = ArgAction::Append, num_args = 1.., required = true, value_parser = parse_udt_to)]
+    pub udt_to: Vec<String>,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "to-acp-address", id = "to-acp-address")]
+    pub to_acp_address: bool,
+    #[arg(long = "to-cheque-address", id = "to-cheque-address")]
+    pub to_cheque_address: bool,
+    #[arg(long = "privkey-path", id = "privkey-path", action = ArgAction::Append, num_args = 1.., value_parser = parse_privkey_path)]
+    pub privkey_path: Vec<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_fee_rate)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_max_tx_fee)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtTransferArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "sender", id = "sender", value_parser = parse_sender)]
+    pub sender: String,
+    #[arg(long = "udt-to", id = "udt-to", action = ArgAction::Append, num_args = 1.., required = true, value_parser = parse_udt_to)]
+    pub udt_to: Vec<String>,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "to-acp-address", id = "to-acp-address")]
+    pub to_acp_address: bool,
+    #[arg(long = "to-cheque-address", id = "to-cheque-address")]
+    pub to_cheque_address: bool,
+    #[arg(long = "capacity-provider", id = "capacity-provider", value_parser = parse_capacity_provider)]
+    pub capacity_provider: Option<String>,
+    #[arg(long = "privkey-path", id = "privkey-path", action = ArgAction::Append, num_args = 1.., value_parser = parse_privkey_path)]
+    pub privkey_path: Vec<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_fee_rate)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_max_tx_fee)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtGetAmountArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "address", id = "address", value_parser = parse_address)]
+    pub address: String,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtNewEmptyAcpArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "capacity-provider", id = "capacity-provider", value_parser = parse_capacity_provider)]
+    pub capacity_provider: Option<String>,
+    #[arg(long = "to", id = "to", value_parser = parse_sighash_address)]
+    pub to: String,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "privkey-path", id = "privkey-path", action = ArgAction::Append, num_args = 1.., value_parser = parse_privkey_path)]
+    pub privkey_path: Vec<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_fee_rate)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_max_tx_fee)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtChequeClaimArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "sender", id = "sender", value_parser = parse_sender)]
+    pub sender: String,
+    #[arg(long = "receiver", id = "receiver", value_parser = parse_sighash_address)]
+    pub receiver: String,
+    #[arg(long = "capacity-provider", id = "capacity-provider", value_parser = parse_capacity_provider)]
+    pub capacity_provider: Option<String>,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "privkey-path", id = "privkey-path", action = ArgAction::Append, num_args = 1.., value_parser = parse_privkey_path)]
+    pub privkey_path: Vec<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_fee_rate)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_max_tx_fee)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtChequeWithdrawArgs {
+    #[arg(long = "owner", id = "owner", value_parser = parse_owner)]
+    pub owner: String,
+    #[arg(long = "sender", id = "sender", value_parser = parse_sender)]
+    pub sender: String,
+    #[arg(long = "receiver", id = "receiver", value_parser = parse_sighash_address)]
+    pub receiver: String,
+    #[arg(long = "capacity-provider", id = "capacity-provider", value_parser = parse_capacity_provider)]
+    pub capacity_provider: Option<String>,
+    #[arg(long = "to-acp-address", id = "to-acp-address")]
+    pub to_acp_address: bool,
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "privkey-path", id = "privkey-path", action = ArgAction::Append, num_args = 1.., value_parser = parse_privkey_path)]
+    pub privkey_path: Vec<String>,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_fee_rate)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_max_tx_fee)]
+    pub max_tx_fee: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtBuildAcpAddressArgs {
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "sighash-address", id = "sighash-address", value_parser = parse_sighash_address)]
+    pub sighash_address: String,
+}
+
+#[derive(Args, Debug)]
+pub struct SudtBuildChequeAddressArgs {
+    #[arg(long = "cell-deps", id = "cell-deps", value_parser = parse_cell_deps)]
+    pub cell_deps: String,
+    #[arg(long = "receiver", id = "receiver", value_parser = parse_sighash_address)]
+    pub receiver: String,
+    #[arg(long = "sender", id = "sender", value_parser = parse_sender)]
+    pub sender: String,
+}
+
 impl<'a> SudtSubCommand<'a> {
     pub fn new(
         rpc_client: &'a mut HttpRpcClient,
@@ -90,129 +304,7 @@ impl<'a> SudtSubCommand<'a> {
     }
 
     pub fn subcommand(name: &'static str) -> Command {
-        let arg_udt_to = Arg::new("udt-to")
-            .long("udt-to")
-            .num_args(1)
-            .action(ArgAction::Append).num_args(1..)
-            .required(true)
-            .validator(|input| UdtTargetParser::new(AddressParser::default()).validate(input));
-        let arg_to_cheque_address = Arg::new("to-cheque-address").long("to-cheque-address");
-        let arg_receiver = Arg::new("receiver")
-            .long("receiver")
-            .num_args(1)
-            .required(true)
-            .validator(|input| AddressParser::new_sighash().validate(input));
-
-        Command::new(name)
-            .about("SUDT issue/transfer operations (currently only support sudt)")
-            .subcommands(vec![
-                Command::new("issue")
-                    .about("Issue SUDT to multiple addresses")
-                    .arg(arg_owner())
-                    .arg(
-                        arg_udt_to.clone()
-                            .help("The issue target, format: {address}:{amount}, the address type can be: [acp, sighash]")
-                    )
-                    .arg(arg_cell_deps())
-                    .arg(arg_to_acp_address())
-                    .arg(
-                        arg_to_cheque_address
-                            .clone()
-                            .help("Treat all addresses in <udt-to> as cheque receiver (sighash address, and the cheque sender is the <owner>), otherwise the address will be used as the lock script of the SUDT cell")
-                    )
-                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee()),
-                Command::new("transfer")
-                    .about("Transfer SUDT to multiple addresses (all target addresses must have same lock script id)")
-                    .arg(arg_owner())
-                    .arg(arg_sender().help("SUDT sender address, the address type can be: [acp, sighash], when address type is `acp` this address will be used to build a sighash lock script for build cheque address or provide capacity, if <capacity-provider> is not given <sender> will also use as capacity provider."))
-                    .arg(
-                        arg_udt_to
-                         .help("The transfer target, format: {address}:{amount}, the address type can be: [acp, sighash]")
-                    )
-                    .arg(arg_cell_deps())
-                    .arg(arg_to_acp_address())
-                    .arg(
-                        arg_to_cheque_address
-                            .clone()
-                            .help("Treat all addresses in <udt-to> as cheque receiver (sighash address), otherwise the address will be used as the lock script of the SUDT cell. When this flag is presented <cheque> cell_dep must be given")
-                    )
-                    .arg(arg_capacity_provider())
-                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee()),
-                Command::new("get-amount")
-                    .about("Get SUDT total amount of an address")
-                    .arg(arg_owner())
-                    .arg(arg_cell_deps())
-                    .arg(
-                        Arg::new("address")
-                            .long("address")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| AddressParser::default().validate(input))
-                            .help("The target address of those SUDT cells"),
-                    ),
-                Command::new("new-empty-acp")
-                    .about("Create a SUDT cell with 0 amount and an acp lock script")
-                    .arg(arg_owner())
-                    .arg(arg_capacity_provider())
-                    .arg(
-                        Arg::new("to")
-                            .long("to")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| AddressParser::new_sighash().validate(input))
-                            .help("The target address (sighash), used to create anyone-can-pay address, if <capacity-provider> is not given <to> will also use as capacity provider"),
-                    )
-                    .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee()),
-                Command::new("cheque-claim")
-                    .about("Claim all cheque cells identified by given lock script and type script")
-                    .arg(arg_owner())
-                    .arg(arg_sender().help("The cheque sender address (sighash)"))
-                    .arg(
-                        arg_receiver
-                            .clone()
-                            .help("The cheque receiver address (sighash), for searching an input to save the claimed amount, this address will be used to build anyone-can-pay address, if <capacity-provider> not given <receiver> will also be used as capacity provider")
-                    )
-                    .arg(arg_capacity_provider())
-                    .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee()),
-                Command::new("cheque-withdraw")
-                    .about("Withdraw all cheque cells identified by given lock script and type script")
-                    .arg(arg_owner())
-                    .arg(arg_sender().help("The cheque sender address (sighash), if <capacity-provider> not given <sender> will use as capacity provider"))
-                    .arg(arg_receiver.clone().help("The cheque receiver address (sighash)"))
-                    .arg(arg_capacity_provider())
-                    .arg(arg_to_acp_address().help("Withdraw to anyone-can-pay address, will use <sender> to build the anyone-can-pay address, the cell must be already exists"))
-                    .arg(arg_cell_deps())
-                    .arg(arg::privkey_path().action(ArgAction::Append).num_args(1..))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee()),
-                // TODO: move this subcommand to `util`
-                Command::new("build-acp-address")
-                    .about("Build an anyone-can-pay address by sighash address and anyone-can-pay script id.")
-                    .arg(arg_cell_deps())
-                    .arg(
-                        Arg::new("sighash-address")
-                            .long("sighash-address")
-                            .num_args(1)
-                            .required(true)
-                            .validator(|input| AddressParser::new_sighash().validate(input))
-                            .help("The sighash address")
-                    ),
-                Command::new("build-cheque-address")
-                    .about("Build a cheque address by cheque script id and receiver+sender address")
-                    .arg(arg_cell_deps())
-                    .arg(arg_receiver.help("The receiver address"))
-                    .arg(arg_sender()),
-            ])
+        SudtCmd::command().name(name)
     }
 
     fn issue(
@@ -1201,43 +1293,6 @@ struct WithdrawArgs {
     receiver: Address,
     capacity_provider: Option<Address>,
     to_acp_address: bool,
-}
-
-pub fn arg_owner() -> Arg {
-    Arg::new("owner")
-        .long("owner")
-        .num_args(1)
-        .required(true)
-        .validator(|input| AddressParser::new_sighash().validate(input))
-        .help("The owner address of the SUDT cell (the admin address, only sighash address is supported)")
-}
-pub fn arg_sender() -> Arg {
-    Arg::new("sender")
-        .long("sender")
-        .num_args(1)
-        .required(true)
-        .validator(|input| AddressParser::default().validate(input))
-        .help("Sender address")
-}
-pub fn arg_capacity_provider() -> Arg {
-    Arg::new("capacity-provider")
-        .long("capacity-provider")
-        .num_args(1)
-        .validator(|input| AddressParser::new_sighash().validate(input))
-        .help("Capacity provider address (provide transaction fee or needed capacity)")
-}
-pub fn arg_to_acp_address() -> Arg {
-    Arg::new("to-acp-address")
-        .long("to-acp-address")
-        .help("Treat all addresses in <udt-to> as anyone-can-pay address")
-}
-pub fn arg_cell_deps() -> Arg {
-    Arg::new("cell-deps")
-        .long("cell-deps")
-        .num_args(1)
-        .required(true)
-        .validator(|input| CellDepsParser.validate(input))
-        .help("The cell deps information (for resolve cell_dep by script id or build lock/type script)")
 }
 
 pub struct UdtTxBuilder<'a> {
