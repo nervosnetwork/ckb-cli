@@ -101,6 +101,7 @@ Key Considerations:
 - No Recovery Mechanism: If vulnerabilities or defects exist in the script, there is no way to upgrade, patch, or revoke it.
 - Use with Caution: Thoroughly audit and test the script before deployment. This option is recommended only for scenarios requiring absolute finality, where script behavior must remain tamper-proof indefinitely.";
 
+#[allow(dead_code)]
 fn arg_multisig_code_hash() -> Arg {
     let arg_multisig_code_hash = Arg::new("multisig-code-hash")
             .long("multisig-code-hash")

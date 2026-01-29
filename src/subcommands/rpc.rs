@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use super::tx::ReprTxHelper;
 use super::{CliSubCommand, Output};
+use crate::utils::arg_parser::ArgMatchesExt;
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
     FromStrParser, HexParser,

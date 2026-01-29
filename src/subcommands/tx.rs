@@ -26,8 +26,7 @@ use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-    arg_get_multisig_code_hash, arg_multisig_code_hash, CliSubCommand, Output,
-    ALLOW_ZERO_LOCK_HELP_MSG,
+    arg_get_multisig_code_hash, CliSubCommand, Output,
 };
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{

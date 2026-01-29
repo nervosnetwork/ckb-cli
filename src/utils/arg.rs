@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::utils::arg_parser::{
     AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
     HexParser, OutPointParser, PrivkeyPathParser, PubkeyHexParser,
