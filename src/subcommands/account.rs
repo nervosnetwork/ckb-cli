@@ -147,7 +147,7 @@ pub struct AccountExportArgs {
     #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
     pub lock_arg: String,
     /// Output extended private key path (PrivKey + ChainCode)
-    #[arg(long = "extended-privkey-path", id = "extended-privkey-path", value_parser = parse_extended_privkey_path)]
+    #[arg(long = "extended-privkey-path", id = "extended-privkey-path")]
     pub extended_privkey_path: String,
 }
 
