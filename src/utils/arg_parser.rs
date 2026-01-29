@@ -72,6 +72,7 @@ pub trait ArgParser<T> {
             .transpose()
     }
 
+    #[allow(dead_code)]
     fn from_matches_vec<R: From<T>>(
         &self,
         matches: &ArgMatches,

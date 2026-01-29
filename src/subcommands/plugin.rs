@@ -1,5 +1,4 @@
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::path::PathBuf;
 
 use super::{CliSubCommand, Output};
@@ -66,24 +65,25 @@ impl<'a> PluginSubCommand<'a> {
 
 impl CliSubCommand for PluginSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("active", m)) => {
-                let name = m.value_of("name").unwrap();
+        let cmd = PluginCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            PluginSubcommands::Active(args) => {
+                let name = args.name.as_str();
                 self.plugin_mgr.active(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
                     "Plugin {} is actived!",
                     name
                 ))))
             }
-            Some(("deactive", m)) => {
-                let name = m.value_of("name").unwrap();
+            PluginSubcommands::Deactive(args) => {
+                let name = args.name.as_str();
                 self.plugin_mgr.deactive(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
                     "Plugin {} is deactived!",
                     name
                 ))))
             }
-            Some(("list", _)) => {
+            PluginSubcommands::List => {
                 let resp = self
                     .plugin_mgr
                     .plugins()
@@ -98,8 +98,8 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            Some(("info", m)) => {
-                let name = m.value_of("name").unwrap();
+            PluginSubcommands::Info(args) => {
+                let name = args.name.as_str();
                 if let Some((plugin, config)) = self.plugin_mgr.plugins().get(name) {
                     let resp = serde_json::json!({
                         "name": config.name,
@@ -113,9 +113,9 @@ impl CliSubCommand for PluginSubCommand<'_> {
                     Err(format!("Plugin {} not found", name))
                 }
             }
-            Some(("install", m)) => {
-                let path: PathBuf = FilePathParser::new(true).from_matches(m, "binary-path")?;
-                let active = !m.is_present("inactive");
+            PluginSubcommands::Install(args) => {
+                let path: PathBuf = args.binary_path;
+                let active = !args.inactive;
                 let config = self.plugin_mgr.install(path, active)?;
                 let resp = serde_json::json!({
                     "name": config.name,
@@ -124,15 +124,14 @@ impl CliSubCommand for PluginSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("uninstall", m)) => {
-                let name = m.value_of("name").unwrap();
+            PluginSubcommands::Uninstall(args) => {
+                let name = args.name.as_str();
                 self.plugin_mgr.uninstall(name)?;
                 Ok(Output::new_output(serde_json::json!(format!(
                     "Plugin {} uninstalled!",
                     name
                 ))))
             }
-            _ => Err(Self::subcommand("plugin").render_usage().to_string()),
         }
     }
 }

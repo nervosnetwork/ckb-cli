@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use ckb_hash::blake2b_256;
 use ckb_jsonrpc_types::{self as json_types, JsonBytes};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde_derive::{Deserialize, Serialize};
 
 use super::{CliSubCommand, Output};
@@ -98,14 +97,16 @@ impl MoleculeSubCommand {
 
 impl CliSubCommand for MoleculeSubCommand {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("decode", m)) => {
-                let type_name = m.value_of("type").unwrap();
-                let binary_opt: Option<Vec<u8>> = HexParser.from_matches_opt(m, "binary-hex")?;
-                let binary = if let Some(binary) = binary_opt {
-                    binary
+        let cmd = MoleculeCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            MoleculeSubcommands::Decode(args) => {
+                let type_name = args.r#type.as_str();
+                let binary = if let Some(binary_hex) = args.binary_hex.as_ref() {
+                    HexParser.parse(binary_hex)?
+                } else if let Some(hex_binary_path) = args.hex_binary_path.as_ref() {
+                    HexFilePathParser.parse(hex_binary_path)?
                 } else {
-                    HexFilePathParser.from_matches(m, "hex-binary-path")?
+                    return Err("<binary-hex> or <hex-binary-path> is required".to_string());
                 };
                 match type_name {
                     "Uint32" => packed::Uint32::from_slice(&binary)
@@ -161,10 +162,10 @@ impl CliSubCommand for MoleculeSubCommand {
                     _ => Err(format!("Unsupported molecule type name: {}", type_name)),
                 }
             }
-            Some(("encode", m)) => {
-                let type_name = m.value_of("type").unwrap();
-                let output_type = m.value_of("output-type").unwrap();
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+            MoleculeSubcommands::Encode(args) => {
+                let type_name = args.r#type.as_str();
+                let output_type = args.output_type.as_str();
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
 
                 let binary_result = match type_name {
@@ -226,10 +227,13 @@ impl CliSubCommand for MoleculeSubCommand {
                 };
                 Ok(Output::new_output(serde_json::Value::String(output)))
             }
-            Some(("default", m)) => {
-                let type_name = m.value_of("type").unwrap();
-                let json_path: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "json-path")?;
+            MoleculeSubcommands::Default(args) => {
+                let type_name = args.r#type.as_str();
+                let json_path: Option<PathBuf> = args
+                    .json_path
+                    .as_ref()
+                    .map(|path| FilePathParser::new(false).parse(path))
+                    .transpose()?;
                 if let Some(path) = json_path.as_ref() {
                     if path.exists() {
                         return Err(format!("File exists: {:?}", path));
@@ -272,7 +276,6 @@ impl CliSubCommand for MoleculeSubCommand {
                     Ok(Output::new_output(value))
                 }
             }
-            _ => Err(Self::subcommand("molecule").render_usage().to_string()),
         }
     }
 }

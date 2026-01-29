@@ -287,6 +287,7 @@ pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), Strin
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
     let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data")?;
     match to_data_opt {
@@ -327,6 +328,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
+#[allow(dead_code)]
 pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {
     matches
         .value_of(name)

@@ -20,13 +20,12 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
 use super::{
-    arg_get_multisig_code_hash, CliSubCommand, Output,
+    CliSubCommand, Output,
 };
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
@@ -37,7 +36,7 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password,
+        get_network_type, get_privkey_signer, read_password,
     },
     rpc::HttpRpcClient,
     tx_helper::{SignerFn, TxHelper},
@@ -113,6 +112,14 @@ fn parse_signature(input: &str) -> Result<String, String> {
         Ok(data) if data.len() == SECP_SIGNATURE_SIZE => Ok(input.to_string()),
         Ok(data) => Err(format!("invalid data length: {}", data.len())),
         Err(err) => Err(err),
+    }
+}
+
+fn parse_multisig_code_hash_value(input: &str) -> Result<H256, String> {
+    match input {
+        "legacy" => Ok(MultisigScript::Legacy.script_id().code_hash),
+        "v2" => Ok(MultisigScript::V2.script_id().code_hash),
+        _ => FixedHashParser::<H256>::default().parse(input),
     }
 }
 
@@ -318,27 +325,22 @@ impl CliSubCommand for TxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
 
-        match matches.subcommand() {
-            Some(("init", m)) => {
-                let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "tx-file")?;
+        let cmd = TxCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            TxSubcommands::Init(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
                 let helper = TxHelper::default();
                 let repr = ReprTxHelper::new(helper, network);
 
-                if let Some(tx_file) = tx_file_opt {
-                    let mut file = fs::File::create(tx_file).map_err(|err| err.to_string())?;
-                    let content =
-                        serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
-                    file.write_all(content.as_bytes())
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_success())
-                } else {
-                    Ok(Output::new_output(repr))
-                }
+                let mut file = fs::File::create(tx_file).map_err(|err| err.to_string())?;
+                let content = serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
+                file.write_all(content.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                Ok(Output::new_success())
             }
-            Some(("clear-field", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let field = m.value_of("field").unwrap();
+            TxSubcommands::ClearField(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let field = args.field.as_str();
                 modify_tx_file(&tx_file, network, |helper| {
                     match field {
                         "inputs" => helper.clear_inputs(),
@@ -350,15 +352,17 @@ impl CliSubCommand for TxSubCommand<'_> {
                 })?;
                 Ok(Output::new_success())
             }
-            Some(("add-input", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
-                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
-                let since_absolute_epoch_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
+            TxSubcommands::AddInput(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
+                let index: u32 = FromStrParser::<u32>::default().parse(&args.index)?;
+                let since_absolute_epoch_opt: Option<u64> = args
+                    .since_absolute_epoch
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
-                let skip_check: bool = m.is_present("skip-check");
+                let skip_check: bool = args.skip_check;
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -379,27 +383,45 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            Some(("add-output", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+            TxSubcommands::AddOutput(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let capacity: u64 = CapacityParser.parse(&args.capacity)?.into();
 
-                let to_sighash_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "to-sighash-address")?;
-                let to_short_multisig_address_opt: Option<Address> =
-                    AddressParser::new_multisig(MultisigScript::Legacy)
-                        .from_matches_opt(m, "to-short-multisig-address")
-                        .or_else(|_| {
-                            AddressParser::new_multisig(MultisigScript::V2)
-                                .from_matches_opt(m, "to-short-multisig-address")
-                        })?;
-                let to_long_multisig_address_opt: Option<Address> = {
-                    AddressParser::new_multisig(MultisigScript::Legacy)
-                        .from_matches_opt(m, "to-long-multisig-address")
-                        .or(AddressParser::new_multisig(MultisigScript::V2)
-                            .from_matches_opt(m, "to-long-multisig-address"))?
+                let to_sighash_address_opt: Option<Address> = args
+                    .to_sighash_address
+                    .as_ref()
+                    .map(|value| AddressParser::new_sighash().parse(value))
+                    .transpose()?;
+                let to_short_multisig_address_opt: Option<Address> = args
+                    .to_short_multisig_address
+                    .as_ref()
+                    .map(|value| {
+                        AddressParser::new_multisig(MultisigScript::Legacy)
+                            .parse(value)
+                            .or_else(|_| {
+                                AddressParser::new_multisig(MultisigScript::V2).parse(value)
+                            })
+                    })
+                    .transpose()?;
+                let to_long_multisig_address_opt: Option<Address> = args
+                    .to_long_multisig_address
+                    .as_ref()
+                    .map(|value| {
+                        AddressParser::new_multisig(MultisigScript::Legacy)
+                            .parse(value)
+                            .or_else(|_| {
+                                AddressParser::new_multisig(MultisigScript::V2).parse(value)
+                            })
+                    })
+                    .transpose()?;
+
+                let to_data = if let Some(hex) = args.to_data.as_ref() {
+                    Bytes::from(HexParser.parse(hex)?)
+                } else if let Some(path) = args.to_data_path.as_ref() {
+                    Bytes::from(fs::read(path).map_err(|err| err.to_string())?)
+                } else {
+                    Bytes::new()
                 };
-
-                let to_data = get_to_data(m)?;
                 check_capacity(capacity, to_data.len())?;
                 if let Some(address) = to_long_multisig_address_opt.as_ref() {
                     let payload = address.payload();
@@ -427,18 +449,19 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            Some(("add-signature", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let lock_arg: Bytes = HexParser.from_matches(m, "lock-arg")?;
-                let signature: Bytes = HexParser.from_matches(m, "signature")?;
+            TxSubcommands::AddSignature(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let lock_arg: Bytes = Bytes::from(HexParser.parse(&args.lock_arg)?);
+                let signature: Bytes = Bytes::from(HexParser.parse(&args.signature)?);
 
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_signature(lock_arg, signature)
                 })?;
                 Ok(Output::new_success())
             }
-            Some(("add-multisig-config", m)) => {
-                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+            TxSubcommands::AddMultisigConfig(args) => {
+                let multisig_lock_code_hash: H256 =
+                    parse_multisig_code_hash_value(&args.multisig_code_hash)?;
                 let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
                     .map_err(|_err| {
                         format!(
@@ -447,13 +470,15 @@ impl CliSubCommand for TxSubCommand<'_> {
                         )
                     })?;
 
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
-                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
-                    .set_network(network)
-                    .from_matches_vec(m, "sighash-address")?;
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
+                let sighash_addresses: Vec<Address> = args
+                    .sighash_address
+                    .iter()
+                    .map(|value| AddressParser::new_sighash().set_network(network).parse(value))
+                    .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
-                    FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
-                let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
+                    FromStrParser::<u8>::default().parse(&args.require_first_n)?;
+                let threshold: u8 = FromStrParser::<u8>::default().parse(&args.threshold)?;
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
@@ -472,8 +497,8 @@ impl CliSubCommand for TxSubCommand<'_> {
                 })?;
                 Ok(Output::new_success())
             }
-            Some(("info", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+            TxSubcommands::Info(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -545,19 +570,22 @@ impl CliSubCommand for TxSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("sign-inputs", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let account_opt: Option<H160> = m
-                    .value_of("from-account")
+            TxSubcommands::SignInputs(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
                     .map(|input| {
                         FixedHashParser::<H160>::default()
                             .parse(input)
                             .or_else(|err| {
-                                let result: Result<Address, String> = AddressParser::new_sighash()
-                                    .set_network(network)
-                                    .parse(input);
+                                let result: Result<Address, String> =
+                                    AddressParser::new_sighash().set_network(network).parse(input);
                                 result
                                     .map(|address| {
                                         H160::from_slice(&address.payload().args()).unwrap()
@@ -566,7 +594,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                             })
                     })
                     .transpose()?;
-                let skip_check: bool = m.is_present("skip-check");
+                let skip_check: bool = args.skip_check;
 
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
@@ -596,7 +624,7 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
                     let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
-                    if m.is_present("add-signatures") {
+                    if args.add_signatures {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
                         }
@@ -614,11 +642,11 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            Some(("send", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
-                let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
-                let skip_check: bool = m.is_present("skip-check");
-                let allow_zero_lock: bool = m.is_present("zero-lock");
+            TxSubcommands::Send(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
+                let max_tx_fee: u64 = CapacityParser.parse(&args.max_tx_fee)?.into();
+                let skip_check: bool = args.skip_check;
+                let allow_zero_lock: bool = args.zero_lock;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -663,8 +691,9 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
-            Some(("build-multisig-address", m)) => {
-                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+            TxSubcommands::BuildMultisigAddress(args) => {
+                let multisig_lock_code_hash: H256 =
+                    parse_multisig_code_hash_value(&args.multisig_code_hash)?;
                 let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
                     .map_err(|_err| {
                         format!(
@@ -673,14 +702,19 @@ impl CliSubCommand for TxSubCommand<'_> {
                         )
                     })?;
 
-                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
-                    .set_network(network)
-                    .from_matches_vec(m, "sighash-address")?;
+                let sighash_addresses: Vec<Address> = args
+                    .sighash_address
+                    .iter()
+                    .map(|value| AddressParser::new_sighash().set_network(network).parse(value))
+                    .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
-                    FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
-                let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
-                let since_absolute_epoch_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
+                    FromStrParser::<u8>::default().parse(&args.require_first_n)?;
+                let threshold: u8 = FromStrParser::<u8>::default().parse(&args.threshold)?;
+                let since_absolute_epoch_opt: Option<u64> = args
+                    .since_absolute_epoch
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
@@ -704,7 +738,6 @@ impl CliSubCommand for TxSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand("tx").render_usage().to_string()),
         }
     }
 }

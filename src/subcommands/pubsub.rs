@@ -1,6 +1,6 @@
 use ckb_jsonrpc_types::{BlockView, HeaderView, PoolTransactionEntry, PoolTransactionReject};
 use ckb_sdk::pubsub::Client;
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use futures::StreamExt;
 use std::io;
 use std::net::SocketAddr;
@@ -94,9 +94,10 @@ impl PubSubCommand {
 
 impl CliSubCommand for PubSubCommand {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("new_tip_header", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+        let cmd = PubSubCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            PubSubSubcommands::NewTipHeader(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
                 let ret = block_on!(
                     tcp,
                     ["new_tip_header"].iter(),
@@ -106,8 +107,8 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            Some(("new_tip_block", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+            PubSubSubcommands::NewTipBlock(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
                 let ret = block_on!(
                     tcp,
                     ["new_tip_block"].iter(),
@@ -117,8 +118,8 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            Some(("new_transaction", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+            PubSubSubcommands::NewTransaction(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
                 let ret = block_on!(
                     tcp,
                     ["new_transaction"].iter(),
@@ -128,8 +129,8 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            Some(("proposed_transaction", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+            PubSubSubcommands::ProposedTransaction(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
                 let ret = block_on!(
                     tcp,
                     ["proposed_transaction"].iter(),
@@ -139,8 +140,8 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            Some(("rejected_transaction", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
+            PubSubSubcommands::RejectedTransaction(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
                 let ret = block_on!(
                     tcp,
                     ["rejected_transaction"].iter(),
@@ -150,18 +151,17 @@ impl CliSubCommand for PubSubCommand {
                 );
                 ret.map_err(|e| e.to_string())
             }
-            Some(("list", m)) => {
-                let tcp: SocketAddr = SocketParser.from_matches(m, "tcp")?;
-                let list: Vec<_> = m
-                    .get_many::<String>("topics")
-                    .into_iter()
-                    .flatten()
-                    .map(String::as_str)
-                    .collect();
-                let ret = block_on!(tcp, list.iter(), ListOutput, self.format, self.color);
+            PubSubSubcommands::List(args) => {
+                let tcp: SocketAddr = SocketParser.parse(&args.tcp)?;
+                let ret = block_on!(
+                    tcp,
+                    args.topics.iter().map(String::as_str),
+                    ListOutput,
+                    self.format,
+                    self.color
+                );
                 ret.map_err(|e| e.to_string())
             }
-            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

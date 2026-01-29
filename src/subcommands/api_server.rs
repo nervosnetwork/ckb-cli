@@ -6,8 +6,7 @@ use std::time::Duration;
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
 use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
-use clap::{ArgMatches, Command, CommandFactory, Parser};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Command, CommandFactory, FromArgMatches, Parser};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
 use jsonrpc_http_server::{Server, ServerBuilder};
@@ -71,9 +70,10 @@ impl<'a> ApiServerSubCommand<'a> {
 
 impl CliSubCommand for ApiServerSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
+        let cmd = ApiServerCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
         let listen_addr: SocketAddr =
-            FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;
-        let privkey_path: Option<String> = matches.value_of("privkey-path").map(Into::into);
+            FromStrParser::<SocketAddr>::new().parse(&cmd.listen)?;
+        let privkey_path = cmd.privkey_path;
 
         let network_result = get_network_type(self.rpc_client);
         if privkey_path.is_some() && listen_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
@@ -83,8 +83,8 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
             ));
         }
         let privkey_opt: Option<PrivkeyWrapper> = privkey_path
-            .clone()
-            .map(|input| PrivkeyPathParser.parse(&input))
+            .as_ref()
+            .map(|input| PrivkeyPathParser.parse(input))
             .transpose()?;
         let network = match network_result {
             Ok(network) => network,

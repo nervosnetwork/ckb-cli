@@ -3,7 +3,7 @@ use ckb_jsonrpc_types::{
 };
 use ckb_types::packed::{CellOutput, OutPoint};
 use ckb_types::{bytes::Bytes, packed, prelude::*, H256};
-use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
+use clap::{ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use ipnetwork::IpNetwork;
 use multiaddr::Multiaddr;
 use serde_derive::{Deserialize, Serialize};
@@ -14,7 +14,6 @@ use std::time::Duration;
 
 use super::tx::ReprTxHelper;
 use super::{CliSubCommand, Output};
-use crate::utils::arg_parser::ArgMatchesExt;
 use crate::utils::arg_parser::{
     ArgParser, DurationParser, FeeRateStatisticsTargetParser, FilePathParser, FixedHashParser,
     FromStrParser, HexParser,
@@ -407,14 +406,14 @@ impl<'a> RpcSubCommand<'a> {
 
 impl CliSubCommand for RpcSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        let is_raw_data = matches.is_present("raw-data");
-        match matches.subcommand() {
+        let cmd = RpcCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        let is_raw_data = cmd.raw_data;
+        match cmd.command {
             // [Chain]
-            Some(("get_block", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let with_cycles = m.is_present("with-cycles");
-                let packed = m.is_present("packed");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetBlock(args) => {
+                let with_cycles = args.with_cycles;
+                let packed = args.packed;
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     let verbose = if packed {
@@ -458,11 +457,10 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     }
                 }
             }
-            Some(("get_block_by_number", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let with_cycles = m.is_present("with-cycles");
-                let packed = m.is_present("packed");
-                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+            RpcSubcommands::GetBlockByNumber(args) => {
+                let with_cycles = args.with_cycles;
+                let packed = args.packed;
+                let number: u64 = FromStrParser::<u64>::default().parse(&args.number)?;
 
                 if is_raw_data {
                     let verbose = if packed {
@@ -509,14 +507,13 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     }
                 }
             }
-            Some(("get_block_hash", m)) => {
-                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+            RpcSubcommands::GetBlockHash(args) => {
+                let number: u64 = FromStrParser::<u64>::default().parse(&args.number)?;
 
                 let resp = self.rpc_client.get_block_hash(number).map(OptionH256)?;
                 Ok(Output::new_output(resp))
             }
-            Some(("get_current_epoch", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetCurrentEpoch => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -528,9 +525,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_epoch_by_number", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+            RpcSubcommands::GetEpochByNumber(args) => {
+                let number: u64 = FromStrParser::<u64>::default().parse(&args.number)?;
 
                 if is_raw_data {
                     let resp = self
@@ -547,10 +543,9 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_header", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let packed = m.is_present("packed");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetHeader(args) => {
+                let packed = args.packed;
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     if packed {
@@ -579,10 +574,9 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_header_by_number", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let packed = m.is_present("packed");
-                let number: u64 = FromStrParser::<u64>::default().from_matches(m, "number")?;
+            RpcSubcommands::GetHeaderByNumber(args) => {
+                let packed = args.packed;
+                let number: u64 = FromStrParser::<u64>::default().parse(&args.number)?;
 
                 if is_raw_data {
                     if packed {
@@ -614,13 +608,11 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_live_cell", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let include_tx_pool = m.is_present("include-tx-pool");
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
-                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
-                let with_data = m.is_present("with-data");
+            RpcSubcommands::GetLiveCell(args) => {
+                let include_tx_pool = args.include_tx_pool;
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
+                let index: u32 = FromStrParser::<u32>::default().parse(&args.index)?;
+                let with_data = args.with_data;
 
                 let out_point = packed::OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -652,8 +644,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_tip_block_number", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetTipBlockNumber => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -668,9 +659,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_tip_header", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let packed = m.is_present("packed");
+            RpcSubcommands::GetTipHeader(args) => {
+                let packed = args.packed;
                 if is_raw_data {
                     if packed {
                         let resp = self
@@ -695,10 +685,9 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_transaction", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let packed = m.is_present("packed");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetTransaction(args) => {
+                let packed = args.packed;
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     let verbosity = if packed { Some("0x0") } else { None };
@@ -722,12 +711,17 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_transaction_proof", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let tx_hashes: Vec<H256> =
-                    FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
-                let block_hash: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
+            RpcSubcommands::GetTransactionProof(args) => {
+                let tx_hashes: Vec<H256> = args
+                    .tx_hash
+                    .iter()
+                    .map(|value| FixedHashParser::<H256>::default().parse(value))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let block_hash: Option<H256> = args
+                    .block_hash
+                    .as_ref()
+                    .map(|value| FixedHashParser::<H256>::default().parse(value))
+                    .transpose()?;
 
                 if is_raw_data {
                     let resp = self
@@ -742,9 +736,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("verify_transaction_proof", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-proof-path")?;
+            RpcSubcommands::VerifyTransactionProof(args) => {
+                let path: PathBuf = FilePathParser::new(true).parse(&args.tx_proof_path)?;
                 let content = fs::read_to_string(path).map_err(|err| err.to_string())?;
 
                 if is_raw_data {
@@ -762,10 +755,9 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_fork_block", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let packed = m.is_present("packed");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetForkBlock(args) => {
+                let packed = args.packed;
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     if packed {
@@ -788,8 +780,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_consensus", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetConsensus => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -801,9 +792,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_block_median_time", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetBlockMedianTime(args) => {
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     let resp = self
@@ -820,9 +810,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_block_economic_state", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let hash: H256 = FixedHashParser::<H256>::default().from_matches(m, "hash")?;
+            RpcSubcommands::GetBlockEconomicState(args) => {
+                let hash: H256 = FixedHashParser::<H256>::default().parse(&args.hash)?;
 
                 if is_raw_data {
                     let resp = self
@@ -839,9 +828,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("estimate_cycles", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+            RpcSubcommands::EstimateCycles(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
@@ -856,10 +844,12 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_fee_rate_statics", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let target: Option<u64> =
-                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+            RpcSubcommands::GetFeeRateStatics(args) => {
+                let target: Option<u64> = args
+                    .target
+                    .as_ref()
+                    .map(|value| FeeRateStatisticsTargetParser {}.parse(value))
+                    .transpose()?;
 
                 if is_raw_data {
                     let resp = self
@@ -872,10 +862,12 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_fee_rate_statistics", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let target: Option<u64> =
-                    FeeRateStatisticsTargetParser {}.from_matches_opt(m, "target")?;
+            RpcSubcommands::GetFeeRateStatistics(args) => {
+                let target: Option<u64> = args
+                    .target
+                    .as_ref()
+                    .map(|value| FeeRateStatisticsTargetParser {}.parse(value))
+                    .transpose()?;
 
                 if is_raw_data {
                     let resp = self
@@ -888,9 +880,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_deployments_info", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-
+            RpcSubcommands::GetDeploymentsInfo => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -902,12 +892,17 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_transaction_and_witness_proof", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let tx_hashes: Vec<H256> =
-                    FixedHashParser::<H256>::default().from_matches_vec(m, "tx-hash")?;
-                let block_hash: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "block-hash")?;
+            RpcSubcommands::GetTransactionAndWitnessProof(args) => {
+                let tx_hashes: Vec<H256> = args
+                    .tx_hash
+                    .iter()
+                    .map(|value| FixedHashParser::<H256>::default().parse(value))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let block_hash: Option<H256> = args
+                    .block_hash
+                    .as_ref()
+                    .map(|value| FixedHashParser::<H256>::default().parse(value))
+                    .transpose()?;
 
                 if is_raw_data {
                     let resp = self
@@ -922,10 +917,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("verify_transaction_and_witness_proof", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+            RpcSubcommands::VerifyTransactionAndWitnessProof(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
 
                 let tx_and_witness_proof: rpc_types::TransactionAndWitnessProof =
@@ -944,8 +937,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Net]
-            Some(("get_banned_addresses", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetBannedAddresses => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -958,8 +950,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_peers", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetPeers => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -972,8 +963,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("local_node_info", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::LocalNodeInfo => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -985,12 +975,11 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("set_ban", m)) => {
-                let address: IpNetwork =
-                    FromStrParser::<IpNetwork>::new().from_matches(m, "address")?;
-                let ban_time: Duration = DurationParser.from_matches(m, "ban_time")?;
-                let command = m.value_of("command").map(|v| v.to_string()).unwrap();
-                let reason = m.value_of("reason").map(|v| v.to_string());
+            RpcSubcommands::SetBan(args) => {
+                let address: IpNetwork = FromStrParser::<IpNetwork>::new().parse(&args.address)?;
+                let ban_time: Duration = DurationParser.parse(&args.ban_time)?;
+                let command = args.command.clone();
+                let reason = args.reason.clone();
                 let absolute = Some(false);
                 let ban_time = Some(ban_time.as_secs() * 1000);
 
@@ -1003,8 +992,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 )?;
                 Ok(Output::new_success())
             }
-            Some(("sync_state", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::SyncState => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1016,40 +1004,37 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("set_network_active", m)) => {
-                let state = m.value_of("state").unwrap() == "enable";
+            RpcSubcommands::SetNetworkActive(args) => {
+                let state = args.state == "enable";
                 self.rpc_client.set_network_active(state)?;
                 Ok(Output::new_success())
             }
-            Some(("add_node", m)) => {
-                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
-                let address: Multiaddr =
-                    FromStrParser::<Multiaddr>::new().from_matches(m, "address")?;
+            RpcSubcommands::AddNode(args) => {
+                let peer_id = args.peer_id.clone();
+                let address: Multiaddr = FromStrParser::<Multiaddr>::new().parse(&args.address)?;
                 self.rpc_client.add_node(peer_id, address.to_string())?;
                 Ok(Output::new_success())
             }
-            Some(("remove_node", m)) => {
-                let peer_id = m.value_of("peer-id").map(|v| v.to_string()).unwrap();
+            RpcSubcommands::RemoveNode(args) => {
+                let peer_id = args.peer_id.clone();
                 self.rpc_client.remove_node(peer_id)?;
                 Ok(Output::new_success())
             }
-            Some(("clear_banned_addresses", _)) => {
+            RpcSubcommands::ClearBannedAddresses => {
                 self.rpc_client.clear_banned_addresses()?;
                 Ok(Output::new_success())
             }
-            Some(("ping_peers", _)) => {
+            RpcSubcommands::PingPeers => {
                 self.rpc_client.ping_peers()?;
                 Ok(Output::new_success())
             }
             // [Pool]
-            Some(("remove_transaction", m)) => {
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
+            RpcSubcommands::RemoveTransaction(args) => {
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
                 let resp = self.rpc_client.remove_transaction(tx_hash)?;
                 Ok(Output::new_output(resp))
             }
-            Some(("tx_pool_info", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::TxPoolInfo => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1061,8 +1046,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("clear_tx_verify_queue", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::ClearTxVerifyQueue => {
                 if is_raw_data {
                     self.raw_rpc_client
                         .clear_tx_verify_queue()
@@ -1073,8 +1057,8 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(()))
                 }
             }
-            Some(("test_tx_pool_accept", m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+            RpcSubcommands::TestTxPoolAccept(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -1096,7 +1080,6 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 let tx_view = helper.build_tx(&mut get_live_cell, true)?;
                 let tx = tx_view.data();
 
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1108,17 +1091,16 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("clear_tx_pool", _)) => {
+            RpcSubcommands::ClearTxPool => {
                 self.rpc_client.clear_tx_pool()?;
                 Ok(Output::new_success())
             }
-            Some(("tx_pool_ready", _)) => {
+            RpcSubcommands::TxPoolReady => {
                 let resp = self.rpc_client.tx_pool_ready()?;
                 Ok(Output::new_output(resp))
             }
-            Some(("get_raw_tx_pool", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
-                let verbose = m.is_present("verbose");
+            RpcSubcommands::GetRawTxPool(args) => {
+                let verbose = args.verbose;
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1131,8 +1113,7 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Stats]
-            Some(("get_blockchain_info", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetBlockchainInfo => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1145,41 +1126,40 @@ impl CliSubCommand for RpcSubCommand<'_> {
                 }
             }
             // [Alert]
-            Some(("send_alert", m)) => {
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+            RpcSubcommands::SendAlert(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let alert: Alert = serde_json::from_str(&content).map_err(|err| err.to_string())?;
                 self.rpc_client.send_alert(alert)?;
                 Ok(Output::new_success())
             }
             // [IntegrationTest]
-            Some(("notify_transaction", m)) => {
-                let json_path: PathBuf = FilePathParser::new(true).from_matches(m, "json-path")?;
+            RpcSubcommands::NotifyTransaction(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let tx: Transaction =
                     serde_json::from_str(&content).map_err(|err| err.to_string())?;
                 let resp = self.rpc_client.notify_transaction(tx.into())?;
                 Ok(Output::new_output(resp))
             }
-            Some(("truncate", m)) => {
+            RpcSubcommands::Truncate(args) => {
                 let target_tip_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tip-hash")?;
+                    FixedHashParser::<H256>::default().parse(&args.tip_hash)?;
                 self.rpc_client.truncate(target_tip_hash)?;
                 Ok(Output::new_success())
             }
-            Some(("generate_block", _m)) => {
+            RpcSubcommands::GenerateBlock => {
                 let resp = self.rpc_client.generate_block()?;
                 Ok(Output::new_output(resp))
             }
-            Some(("generate_epochs", m)) => {
+            RpcSubcommands::GenerateEpochs(args) => {
                 let num_epochs: u64 =
-                    FromStrParser::<u64>::default().from_matches(m, "num-epochs")?;
+                    FromStrParser::<u64>::default().parse(&args.num_epochs)?;
                 let resp = self.rpc_client.generate_epochs(num_epochs)?;
                 Ok(Output::new_output(resp))
             }
             // [Indexer]
-            Some(("get_indexer_tip", m)) => {
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+            RpcSubcommands::GetIndexerTip => {
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1191,20 +1171,17 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_cells", m)) => {
-                let json_path: PathBuf = FilePathParser::new(true)
-                    .from_matches_opt(m, "json-path")?
-                    .expect("json-path is required");
+            RpcSubcommands::GetCells(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
-                let order_str = m.value_of("order").expect("order is required");
-                let order = parse_order(order_str)?;
-                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
-                let after_opt: Option<JsonBytes> = HexParser
-                    .from_matches_opt::<Bytes>(m, "after")?
-                    .map(JsonBytes::from_bytes);
-
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let order = parse_order(&args.order)?;
+                let limit: u32 = FromStrParser::<u32>::default().parse(&args.limit)?;
+                let after_opt: Option<JsonBytes> = args
+                    .after
+                    .as_ref()
+                    .map(|value| HexParser.parse(value).map(Bytes::from).map(JsonBytes::from_bytes))
+                    .transpose()?;
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1218,20 +1195,17 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_transactions", m)) => {
-                let json_path: PathBuf = FilePathParser::new(true)
-                    .from_matches_opt(m, "json-path")?
-                    .expect("json-path is required");
+            RpcSubcommands::GetTransactions(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
-                let order_str = m.value_of("order").expect("order is required");
-                let order = parse_order(order_str)?;
-                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
-                let after_opt: Option<JsonBytes> = HexParser
-                    .from_matches_opt::<Bytes>(m, "after")?
-                    .map(JsonBytes::from_bytes);
-
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
+                let order = parse_order(&args.order)?;
+                let limit: u32 = FromStrParser::<u32>::default().parse(&args.limit)?;
+                let after_opt: Option<JsonBytes> = args
+                    .after
+                    .as_ref()
+                    .map(|value| HexParser.parse(value).map(Bytes::from).map(JsonBytes::from_bytes))
+                    .transpose()?;
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1248,14 +1222,10 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("get_cells_capacity", m)) => {
-                let json_path: PathBuf = FilePathParser::new(true)
-                    .from_matches_opt(m, "json-path")?
-                    .expect("json-path is required");
+            RpcSubcommands::GetCellsCapacity(args) => {
+                let json_path: PathBuf = FilePathParser::new(true).parse(&args.json_path)?;
                 let content = fs::read_to_string(json_path).map_err(|err| err.to_string())?;
                 let search_key = serde_json::from_str(&content).map_err(|err| err.to_string())?;
-
-                let is_raw_data = is_raw_data || m.is_present("raw-data");
                 if is_raw_data {
                     let resp = self
                         .raw_rpc_client
@@ -1267,7 +1237,6 @@ impl CliSubCommand for RpcSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

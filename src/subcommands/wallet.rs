@@ -1,8 +1,7 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fs, str::FromStr};
 
 use bitcoin::bip32::DerivationPath;
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
@@ -41,12 +40,12 @@ use crate::plugin::PluginManager;
 use crate::utils::{
     arg_parser::{
         AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
-        HexParser, PrivkeyPathParser, PrivkeyWrapper,
+        HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     genesis_info::GenesisInfo,
     other::{
-        check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, map_tx_builder_error_2_str, read_password, to_live_cell_info,
+        check_capacity, get_genesis_info, get_network_type, map_tx_builder_error_2_str,
+        read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
@@ -666,28 +665,33 @@ impl<'a> WalletSubCommand<'a> {
 
 impl CliSubCommand for WalletSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("transfer", m)) => {
-                let to_data = get_to_data(m)?;
+        let cmd = WalletCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            WalletSubcommands::Transfer(args) => {
+                let to_data = if let Some(hex) = args.to_data.as_ref() {
+                    Bytes::from(HexParser.parse(hex)?)
+                } else if let Some(path) = args.to_data_path.as_ref() {
+                    let content = fs::read(path).map_err(|err| err.to_string())?;
+                    Bytes::from(content)
+                } else {
+                    Bytes::new()
+                };
                 let args = TransferArgs {
-                    privkey_path: m.value_of("privkey-path").map(|s| s.to_string()),
-                    from_account: m.value_of("from-account").map(|s| s.to_string()),
-                    from_locked_address: m.value_of("from-locked-address").map(|s| s.to_string()),
+                    privkey_path: args.privkey_path.clone(),
+                    from_account: args.from_account.clone(),
+                    from_locked_address: args.from_locked_address.clone(),
                     password: None,
-                    capacity: get_arg_value(m, "capacity")?,
-                    fee_rate: get_arg_value(m, "fee-rate")?,
-                    force_small_change_as_fee: m.value_of("max-tx-fee").map(|s| s.to_string()),
-                    derive_receiving_address_length: Some(get_arg_value(
-                        m,
-                        "derive-receiving-address-length",
-                    )?),
-                    derive_change_address: m
-                        .value_of("derive-change-address")
-                        .map(|s| s.to_string()),
-                    to_address: get_arg_value(m, "to-address")?,
+                    capacity: args.capacity.clone(),
+                    fee_rate: args.fee_rate.clone(),
+                    force_small_change_as_fee: args.max_tx_fee.clone(),
+                    derive_receiving_address_length: Some(
+                        args.derive_receiving_address_length.clone(),
+                    ),
+                    derive_change_address: args.derive_change_address.clone(),
+                    to_address: args.to_address.clone(),
                     to_data: Some(to_data),
-                    is_type_id: m.is_present("type-id"),
-                    skip_check_to_address: m.is_present("skip-check-to-address"),
+                    is_type_id: args.type_id,
+                    skip_check_to_address: args.skip_check_to_address,
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
@@ -698,24 +702,31 @@ impl CliSubCommand for WalletSubCommand<'_> {
                     Ok(Output::new_output(tx_hash))
                 }
             }
-            Some(("get-capacity", m)) => {
+            WalletSubcommands::GetCapacity(args) => {
                 let network_type = get_network_type(self.rpc_client)?;
 
-                let receiving_address_length: u32 = FromStrParser::<u32>::default()
-                    .from_matches(m, "derive-receiving-address-length")?;
-                let change_address_length: u32 = FromStrParser::<u32>::default()
-                    .from_matches(m, "derive-change-address-length")?;
-                let address_payload = if let Some(address_str) = m.value_of("address") {
+                let receiving_address_length: u32 =
+                    FromStrParser::<u32>::default().parse(&args.derive_receiving_address_length)?;
+                let change_address_length: u32 =
+                    FromStrParser::<u32>::default().parse(&args.derive_change_address_length)?;
+                let address_payload = if let Some(address_str) = args.address.as_ref() {
                     AddressParser::default()
                         .set_network(network_type)
                         .parse(address_str)?
                         .payload()
                         .clone()
+                } else if let Some(pubkey_str) = args.pubkey.as_ref() {
+                    let pubkey = PubkeyHexParser.parse(pubkey_str)?;
+                    AddressPayload::from_pubkey(&pubkey)
+                } else if let Some(lock_arg_str) = args.lock_arg.as_ref() {
+                    let lock_arg: H160 =
+                        FixedHashParser::<H160>::default().parse(lock_arg_str)?;
+                    AddressPayload::from_pubkey_hash(lock_arg)
                 } else {
-                    get_address(Some(network_type), m)?
+                    return Err("Please give one argument".to_string());
                 };
                 let mut lock_scripts = vec![Script::from(&address_payload)];
-                if m.is_present("derived") {
+                if args.derived {
                     let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
 
                     let key_set = self
@@ -750,17 +761,23 @@ impl CliSubCommand for WalletSubCommand<'_> {
                 }
                 Ok(Output::new_output(resp))
             }
-            Some(("get-live-cells", m)) => {
-                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
-                let from_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "from")?;
-                let to_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "to")?;
+            WalletSubcommands::GetLiveCells(args) => {
+                let limit: u32 = FromStrParser::<u32>::default().parse(&args.limit)?;
+                let from_number_opt: Option<u64> = args
+                    .from
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
+                let to_number_opt: Option<u64> = args
+                    .to
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
                 let network_type = get_network_type(self.rpc_client)?;
                 let address: Address = AddressParser::default()
                     .set_network(network_type)
-                    .from_matches(m, "address")?;
+                    .parse(&args.address)?;
                 let lock_script = Script::from(address.payload());
                 let live_cells = self.get_live_cells(
                     lock_script,
@@ -785,7 +802,6 @@ impl CliSubCommand for WalletSubCommand<'_> {
 
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand().render_usage().to_string()),
         }
     }
 }

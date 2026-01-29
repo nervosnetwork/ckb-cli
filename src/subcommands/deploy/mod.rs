@@ -16,8 +16,7 @@ use ckb_sdk::{
     Address, HumanCapacity,
 };
 use ckb_types::{bytes::Bytes, core::ScriptHashType, packed, prelude::*, H160, H256};
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
-use crate::utils::arg_parser::ArgMatchesExt;
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use super::{CliSubCommand, Output, ALLOW_ZERO_LOCK_HELP_MSG};
 use crate::plugin::PluginManager;
@@ -192,19 +191,20 @@ impl<'a> DeploySubCommand<'a> {
 
 impl CliSubCommand for DeploySubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            Some(("gen-txs", m)) => {
+        let cmd = DeployCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            DeploySubcommands::GenTxs(args) => {
                 let network = get_network_type(self.rpc_client)?;
                 let from_address: Address = AddressParser::new_sighash()
                     .set_network(network)
-                    .from_matches(m, "from-address")?;
-                let fee_rate: u64 = FromStrParser::<u64>::default().from_matches(m, "fee-rate")?;
+                    .parse(&args.from_address)?;
+                let fee_rate: u64 = FromStrParser::<u64>::default().parse(&args.fee_rate)?;
                 let deployment_config: PathBuf =
-                    FilePathParser::new(true).from_matches(m, "deployment-config")?;
+                    FilePathParser::new(true).parse(&args.deployment_config)?;
                 let migration_dir: PathBuf =
-                    DirPathParser::new(true).from_matches(m, "migration-dir")?;
-                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
-                let allow_zero_lock: bool = m.is_present("zero-lock");
+                    DirPathParser::new(true).parse(&args.migration_dir)?;
+                let info_file: PathBuf = FilePathParser::new(false).parse(&args.info_file)?;
+                let allow_zero_lock: bool = args.zero_lock;
 
                 if info_file.exists() {
                     return Err(format!("Output info-file already exists: {:?}", info_file));
@@ -354,7 +354,7 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 explain_txs(&info).map_err(|err| err.to_string())?;
 
                 // Sign if required
-                if m.is_present("sign-now") {
+                if args.sign_now {
                     let account = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
                     let signer = {
                         let handler = self.plugin_mgr.keystore_handler();
@@ -405,12 +405,16 @@ impl CliSubCommand for DeploySubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            Some(("sign-txs", m)) => {
-                let info_file: PathBuf = FilePathParser::new(true).from_matches(m, "info-file")?;
-                let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let account_opt: Option<H160> = m
-                    .value_of("from-account")
+            DeploySubcommands::SignTxs(args) => {
+                let info_file: PathBuf = FilePathParser::new(true).parse(&args.info_file)?;
+                let privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
                     .map(|input| {
                         FixedHashParser::<H160>::default()
                             .parse(input)
@@ -497,17 +501,17 @@ impl CliSubCommand for DeploySubCommand<'_> {
                         info,
                         self.rpc_client,
                         signer_fn,
-                        m.is_present("add-signatures"),
-                        m.is_present("zero-lock"),
+                        args.add_signatures,
+                        args.zero_lock,
                     )
                 })
                 .map_err(|err| err.to_string())?;
                 Ok(Output::new_output(all_signatures))
             }
-            Some(("explain-txs", m)) => {
+            DeploySubcommands::ExplainTxs(args) => {
                 // * Report cell transaction summary
                 // * Report dep_group transaction summary
-                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
+                let info_file: PathBuf = FilePathParser::new(false).parse(&args.info_file)?;
 
                 let file = fs::File::open(info_file).map_err(|err| err.to_string())?;
                 let info: IntermediumInfo =
@@ -517,17 +521,16 @@ impl CliSubCommand for DeploySubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            Some(("apply-txs", m)) => {
-                let info_file: PathBuf = FilePathParser::new(false).from_matches(m, "info-file")?;
-                let migration_dir: PathBuf =
-                    DirPathParser::new(true).from_matches(m, "migration-dir")?;
+            DeploySubcommands::ApplyTxs(args) => {
+                let info_file: PathBuf = FilePathParser::new(false).parse(&args.info_file)?;
+                let migration_dir: PathBuf = DirPathParser::new(true).parse(&args.migration_dir)?;
 
                 let file = fs::File::open(info_file).map_err(|err| err.to_string())?;
                 let info: IntermediumInfo =
                     serde_json::from_reader(&file).map_err(|err| err.to_string())?;
                 let skip_check = false;
 
-                let allow_zero_lock: bool = m.is_present("zero-lock");
+                let allow_zero_lock: bool = args.zero_lock;
 
                 let (cell_tx_opt, dep_group_tx_opt) = {
                     let mut live_cell_cache: HashMap<
@@ -615,9 +618,9 @@ impl CliSubCommand for DeploySubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("init-config", m)) => {
+            DeploySubcommands::InitConfig(args) => {
                 let deployment_config: PathBuf =
-                    FilePathParser::new(false).from_matches(m, "deployment-config")?;
+                    FilePathParser::new(false).parse(&args.deployment_config)?;
 
                 if deployment_config.exists() {
                     return Err(format!(
@@ -633,7 +636,6 @@ impl CliSubCommand for DeploySubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            _ => Err(Self::subcommand("deploy").render_usage().to_string()),
         }
     }
 }

@@ -19,7 +19,7 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{ArgMatches, Args, Command, CommandFactory, Parser, Subcommand};
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use super::{tx::ReprTxHelper, CliSubCommand, Output};
 use crate::plugin::PluginManager;
@@ -135,11 +135,9 @@ impl<'a> MockTxSubCommand<'a> {
 
 impl CliSubCommand for MockTxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, _debug: bool) -> Result<Output, String> {
-        let mut complete_tx = |m: &ArgMatches,
-                               complete: bool,
-                               verify: bool|
-         -> Result<(MockTransaction, u64), String> {
-            let path: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
+        let mut complete_tx =
+            |tx_file: &str, complete: bool, verify: bool| -> Result<(MockTransaction, u64), String> {
+            let path: PathBuf = FilePathParser::new(true).parse(tx_file)?;
             let mut content = String::new();
             let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
             file.read_to_string(&mut content)
@@ -176,11 +174,12 @@ impl CliSubCommand for MockTxSubCommand<'_> {
             Ok((mock_tx, cycle))
         };
 
-        let output_tx = |m: &ArgMatches,
+        let output_tx = |output_file: Option<&String>,
                          mock_tx: &MockTransaction|
          -> Result<Option<ReprMockTransaction>, String> {
-            let output_opt: Option<PathBuf> =
-                FilePathParser::new(false).from_matches_opt(m, "output-file")?;
+            let output_opt: Option<PathBuf> = output_file
+                .map(|path| FilePathParser::new(false).parse(path))
+                .transpose()?;
             let repr_mock_tx = ReprMockTransaction::from(mock_tx.clone());
             if let Some(output) = output_opt {
                 let mut out_file = fs::File::create(output).map_err(|err| err.to_string())?;
@@ -197,10 +196,14 @@ impl CliSubCommand for MockTxSubCommand<'_> {
             }
         };
 
-        match matches.subcommand() {
-            Some(("template", m)) => {
-                let lock_arg_opt: Option<H160> =
-                    FixedHashParser::<H160>::default().from_matches_opt(m, "lock-arg")?;
+        let cmd = MockTxCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            MockTxSubcommands::Template(args) => {
+                let lock_arg_opt: Option<H160> = args
+                    .lock_arg
+                    .as_ref()
+                    .map(|value| FixedHashParser::<H160>::default().parse(value))
+                    .transpose()?;
                 let lock_arg = lock_arg_opt.unwrap_or_default();
 
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
@@ -256,16 +259,16 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                     let mut helper = MockTransactionHelper::new(&mut mock_tx);
                     helper.fill_deps(&genesis_info, |_| unreachable!())?;
                 }
-                if let Some(output) = output_tx(m, &mock_tx)? {
+                if let Some(output) = output_tx(args.output_file.as_ref(), &mock_tx)? {
                     Ok(Output::new_output(output))
                 } else {
                     Ok(Output::new_success())
                 }
             }
-            Some(("complete", m)) => {
-                let (mock_tx, _cycle) = complete_tx(m, true, false)?;
+            MockTxSubcommands::Complete(args) => {
+                let (mock_tx, _cycle) = complete_tx(&args.tx_file, true, false)?;
                 let tx_hash: H256 = mock_tx.core_transaction().hash().unpack();
-                if let Some(repr_mock_tx) = output_tx(m, &mock_tx)? {
+                if let Some(repr_mock_tx) = output_tx(args.output_file.as_ref(), &mock_tx)? {
                     let mut value = serde_json::to_value(repr_mock_tx).unwrap();
                     value["tx-hash"] = serde_json::json!(tx_hash);
                     Ok(Output::new_output(value))
@@ -276,13 +279,18 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                     Ok(Output::new_output(resp))
                 }
             }
-            Some(("dump", m)) => {
-                let output_path: PathBuf =
-                    FilePathParser::new(false).from_matches(m, "output-file")?;
-                let tx_hash_opt: Option<H256> =
-                    FixedHashParser::<H256>::default().from_matches_opt(m, "tx-hash")?;
-                let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(true).from_matches_opt(m, "tx-file")?;
+            MockTxSubcommands::Dump(args) => {
+                let output_path: PathBuf = FilePathParser::new(false).parse(&args.output_file)?;
+                let tx_hash_opt: Option<H256> = args
+                    .tx_hash
+                    .as_ref()
+                    .map(|value| FixedHashParser::<H256>::default().parse(value))
+                    .transpose()?;
+                let tx_file_opt: Option<PathBuf> = args
+                    .tx_file
+                    .as_ref()
+                    .map(|value| FilePathParser::new(true).parse(value))
+                    .transpose()?;
 
                 let src_tx: json_types::Transaction = if let Some(path) = tx_file_opt {
                     let mut content = String::new();
@@ -401,8 +409,8 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                     .map_err(|err| err.to_string())?;
                 Ok(Output::new_success())
             }
-            Some(("verify", m)) => {
-                let (mock_tx, cycle) = complete_tx(m, false, true)?;
+            MockTxSubcommands::Verify(args) => {
+                let (mock_tx, cycle) = complete_tx(&args.tx_file, false, true)?;
                 let tx_hash: H256 = mock_tx.core_transaction().hash().unpack();
                 let resp = serde_json::json!({
                     "tx-hash": tx_hash,
@@ -410,8 +418,8 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            Some(("send", m)) => {
-                let (mock_tx, _cycle) = complete_tx(m, false, true)?;
+            MockTxSubcommands::Send(args) => {
+                let (mock_tx, _cycle) = complete_tx(&args.tx_file, false, true)?;
                 let resp = self
                     .rpc_client
                     .send_transaction(
@@ -421,7 +429,6 @@ impl CliSubCommand for MockTxSubCommand<'_> {
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand("mock-tx").render_usage().to_string()),
         }
     }
 }
