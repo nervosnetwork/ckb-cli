@@ -66,13 +66,19 @@ threshold = 1
             "used_input_txs should not be empty"
         );
 
+        fn h256_from_low_u64_be(value: u64) -> H256 {
+            let mut bytes = [0u8; 32];
+            bytes[24..].copy_from_slice(&value.to_be_bytes());
+            H256::from_slice(&bytes).expect("value should fit in H256")
+        }
+
         let sample_tx = used_input_txs.values().next().cloned().unwrap();
         let mut reordered_map = Map::new();
         let extra_keys = vec![
-            H256::from_low_u64_be(3),
-            H256::from_low_u64_be(1),
-            H256::from_low_u64_be(4),
-            H256::from_low_u64_be(2),
+            h256_from_low_u64_be(3),
+            h256_from_low_u64_be(1),
+            h256_from_low_u64_be(4),
+            h256_from_low_u64_be(2),
         ];
         for key in &extra_keys {
             reordered_map.insert(format!("{:#x}", key), sample_tx.clone());
