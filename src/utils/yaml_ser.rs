@@ -429,13 +429,11 @@ impl ser::Serializer for Serializer {
         Ok(Yaml::Integer(v))
     }
 
-    serde::serde_if_integer128! {
-        fn serialize_i128(self, v: i128) -> Result<Yaml, Self::Error> {
-            if v <= i64::MAX as i128 && v >= i64::MIN as i128 {
-                self.serialize_i64(v as i64)
-            } else {
-                Ok(Yaml::Real(v.to_string()))
-            }
+    fn serialize_i128(self, v: i128) -> Result<Yaml, Self::Error> {
+        if v <= i64::MAX as i128 && v >= i64::MIN as i128 {
+            self.serialize_i64(v as i64)
+        } else {
+            Ok(Yaml::Real(v.to_string()))
         }
     }
 
@@ -459,13 +457,11 @@ impl ser::Serializer for Serializer {
         }
     }
 
-    serde::serde_if_integer128! {
-        fn serialize_u128(self, v: u128) -> Result<Yaml, Self::Error> {
-            if v <= i64::MAX as u128 {
-                self.serialize_i64(v as i64)
-            } else {
-                Ok(Yaml::Real(v.to_string()))
-            }
+    fn serialize_u128(self, v: u128) -> Result<Yaml, Self::Error> {
+        if v <= i64::MAX as u128 {
+            self.serialize_i64(v as i64)
+        } else {
+            Ok(Yaml::Real(v.to_string()))
         }
     }
 
