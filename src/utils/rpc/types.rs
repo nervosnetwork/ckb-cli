@@ -359,6 +359,7 @@ impl From<rpc_types::TransactionView> for TransactionView {
 
 /// The enum `Either` with variants `Left` and `Right` is a general purpose
 /// sum type with two cases.
+#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(untagged)]
 pub enum Either<L, R> {
@@ -374,6 +375,7 @@ pub enum Either<L, R> {
 ///
 /// `ResponseFormat<BlockView>` returns the block in its Json format or molecule serialized
 /// Hex format.
+#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 #[serde(transparent)]
 pub struct ResponseFormat<V> {
@@ -458,6 +460,7 @@ impl TryFrom<rpc_types::TransactionWithStatusResponse> for PackedTransactionWith
 }
 
 /// The JSON view of a transaction as well as its status.
+#[allow(dead_code)]
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Debug)]
 pub struct TransactionWithStatusResponse {
     /// The transaction.

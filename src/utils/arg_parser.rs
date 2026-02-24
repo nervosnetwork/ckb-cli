@@ -158,7 +158,7 @@ impl ArgParser<Vec<u8>> for HexParser {
         if input.starts_with("0x") || input.starts_with("0X") {
             input = &input[2..];
         }
-        if input.len() % 2 != 0 {
+        if !input.len().is_multiple_of(2) {
             return Err(format!("Invalid hex string lenth: {}", input.len()));
         }
         let mut bytes = vec![0u8; input.len() / 2];
@@ -515,6 +515,7 @@ impl ArgParser<(Address, u128)> for UdtTargetParser {
     }
 }
 
+#[allow(dead_code)]
 pub struct ScriptIdParser;
 
 impl ArgParser<ScriptId> for ScriptIdParser {

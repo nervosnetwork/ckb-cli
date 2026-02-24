@@ -48,7 +48,7 @@ impl GlobalConfig {
         self
     }
 
-    pub fn get(&self, key: Option<&str>) -> KV {
+    pub fn get(&self, key: Option<&str>) -> KV<'_> {
         match key {
             Some(key) => {
                 let mut parts_iter = key.split('.');

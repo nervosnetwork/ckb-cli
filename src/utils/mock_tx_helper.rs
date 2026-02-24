@@ -266,7 +266,6 @@ impl<'a> MockTransactionHelper<'a> {
             witnesses[init_witness_idx] = init_witness.as_bytes().pack();
             rpc_tx.witnesses = witnesses
                 .iter()
-                .cloned()
                 .map(|witness| rpc_types::JsonBytes::from_bytes(witness.raw_data()))
                 .collect();
             let sig =
