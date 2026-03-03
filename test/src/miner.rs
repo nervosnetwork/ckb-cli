@@ -160,6 +160,35 @@ impl Miner {
             }
             thread::sleep(Duration::from_millis(20));
         }
+        self.wait_indexer_synced();
+    }
+
+    pub fn wait_indexer_synced(&self) {
+        let tip_number = self
+            .rpc
+            .lock()
+            .unwrap()
+            .get_tip_block_number()
+            .expect("get_tip_block_number");
+        let mut count = 0;
+        loop {
+            let indexer_tip = self
+                .rpc
+                .lock()
+                .unwrap()
+                .get_indexer_tip()
+                .expect("get_indexer_tip");
+            if let Some(tip) = indexer_tip {
+                if tip.block_number >= tip_number {
+                    break;
+                }
+            }
+            count += 1;
+            if count > 900 {
+                panic!("wait indexer synced timeout");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 
     pub fn privkey_path(&self) -> &str {
