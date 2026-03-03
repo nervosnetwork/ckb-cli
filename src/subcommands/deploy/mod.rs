@@ -717,7 +717,11 @@ fn sign_info(
             }
             info.cell_tx_signatures = cell_tx_signatures
                 .into_iter()
-                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .map(|(lock_arg, sigs)| {
+                    let mut sorted: Vec<_> = sigs.into_iter().collect();
+                    sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+                    (lock_arg, sorted)
+                })
                 .collect();
         }
         all_signatures.insert("cell_tx_signatures".to_string(), signatures);
@@ -748,7 +752,11 @@ fn sign_info(
             }
             info.dep_group_tx_signatures = dep_group_tx_signatures
                 .into_iter()
-                .map(|(lock_arg, sigs)| (lock_arg, sigs.into_iter().collect()))
+                .map(|(lock_arg, sigs)| {
+                    let mut sorted: Vec<_> = sigs.into_iter().collect();
+                    sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+                    (lock_arg, sorted)
+                })
                 .collect();
         }
         all_signatures.insert("dep_group_tx_signatures".to_string(), signatures);
