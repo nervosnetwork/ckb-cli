@@ -18,7 +18,7 @@ scrypt = "0.2.0"
 rand = "0.7.3"
 tiny-keccak = "1.4"
 uuid = { version = "0.7.4", features = ["v4"] }
-bitcoin = { git="https://github.com/rust-bitcoin/rust-bitcoin", rev="436de8ef12ab371aab6e9f6fbfb098238b42657d" }
+bitcoin = "0.33.0-beta"
 chrono = "0.4"
 thiserror = "1.0.30"
 parking_lot = "0.11"
