@@ -584,9 +584,10 @@ impl CkbRoot {
         let parent_fingerprint = Default::default();
         let child_number = ChildNumber::from_hardened_idx(0).expect("child number");
         let pubkey_bin = util::get_hex_bin(value, "pubkey")?;
-        let public_key = secp256k1::PublicKey::from_slice(&pubkey_bin[..]).map_err(|err| {
-            Error::ParseJsonFailed(format!("Invalid pubkey for ckb root: {}", err))
-        })?;
+        let public_key =
+            bitcoin::secp256k1::PublicKey::from_slice(&pubkey_bin[..]).map_err(|err| {
+                Error::ParseJsonFailed(format!("Invalid pubkey for ckb root: {}", err))
+            })?;
         let chain_code_bin = util::get_hex_bin(value, "chain_code")?;
         if chain_code_bin.len() != 32 {
             return Err(Error::ParseJsonFailed(format!(
@@ -676,10 +677,7 @@ impl CkbRoot {
             ChildNumber::from_normal_idx(index).expect("normal child"),
         ];
         let path = DerivationPath::from(children);
-        let extended_pubkey = self
-            .extended_pubkey
-            .derive_pub(&SECP256K1, &path)
-            .expect("derive_pub");
+        let extended_pubkey = self.extended_pubkey.derive_pub(&path).expect("derive_pub");
         let full_path_string = format!("{}/{}/{}", CKB_ROOT_PATH, chain as u8, index);
         let full_path =
             DerivationPath::from_str(full_path_string.as_str()).expect("parse full path");
@@ -858,10 +856,13 @@ impl MasterPrivKey {
             depth: 0,
             parent_fingerprint: Default::default(),
             child_number: ChildNumber::Normal { index: 0 },
-            private_key: self.secp_secret_key,
+            private_key: bitcoin::secp256k1::SecretKey::from_secret_bytes(
+                self.secp_secret_key.secret_bytes(),
+            )
+            .expect("valid secp256k1 secret key"),
             chain_code: ChainCode::from(&self.chain_code),
         };
-        sk.derive_priv(&SECP256K1, path)
+        sk.derive_priv(path).expect("derive_priv")
     }
 
     pub fn sign<P>(&self, message: &H256, path: &P) -> Signature
@@ -871,7 +872,9 @@ impl MasterPrivKey {
         let message = secp256k1::Message::from_digest_slice(message.as_bytes())
             .expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign_ecdsa(&message, &sub_sk.private_key)
+        let private_key = secp256k1::SecretKey::from_slice(&sub_sk.private_key.to_secret_bytes())
+            .expect("valid secp256k1 secret key");
+        SECP256K1.sign_ecdsa(&message, &private_key)
     }
 
     pub fn sign_recoverable<P>(&self, message: &H256, path: &P) -> RecoverableSignature
@@ -881,7 +884,9 @@ impl MasterPrivKey {
         let message = secp256k1::Message::from_digest_slice(message.as_bytes())
             .expect("Convert to message failed");
         let sub_sk = self.sub_privkey(path);
-        SECP256K1.sign_ecdsa_recoverable(&message, &sub_sk.private_key)
+        let private_key = secp256k1::SecretKey::from_slice(&sub_sk.private_key.to_secret_bytes())
+            .expect("valid secp256k1 secret key");
+        SECP256K1.sign_ecdsa_recoverable(&message, &private_key)
     }
 
     pub fn extended_pubkey<P>(&self, path: &P) -> Xpub
@@ -889,7 +894,7 @@ impl MasterPrivKey {
         P: AsRef<[ChildNumber]>,
     {
         let sub_sk = self.sub_privkey(path);
-        Xpub::from_priv(&SECP256K1, &sub_sk)
+        Xpub::from_priv(&sub_sk)
     }
 
     pub fn ckb_root(&self) -> CkbRoot {
@@ -906,7 +911,9 @@ impl MasterPrivKey {
         P: AsRef<[ChildNumber]>,
     {
         let sub_sk = self.sub_privkey(path);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &sub_sk.private_key);
+        let private_key = secp256k1::SecretKey::from_slice(&sub_sk.private_key.to_secret_bytes())
+            .expect("valid secp256k1 secret key");
+        let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &private_key);
         H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
             .expect("Generate hash(H160) from pubkey failed")
     }
