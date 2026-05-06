@@ -460,7 +460,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 }
 
                 let mut output_total = 0;
-                for (output, data) in tx.outputs().into_iter().zip(tx.outputs_data().into_iter()) {
+                for (output, data) in tx.outputs().into_iter().zip(tx.outputs_data()) {
                     let capacity: u64 = output.capacity().unpack();
                     output_total += capacity;
                     let data_len = data.raw_data().len();
