@@ -866,7 +866,7 @@ fn search_path(
     for (path, hash) in key_set
         .external
         .into_iter()
-        .chain(key_set.change.into_iter())
+        .chain(key_set.change)
     {
         if hash == target {
             return Ok(path);
