@@ -290,7 +290,7 @@ impl<'a> WalletSubCommand<'a> {
                 for (path, hash160) in key_set
                     .external
                     .into_iter()
-                    .chain(key_set.change.into_iter())
+                    .chain(key_set.change)
                 {
                     if hash160 == change_last {
                         change_path_opt = Some(path.clone());
