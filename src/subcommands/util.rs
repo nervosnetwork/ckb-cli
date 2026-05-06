@@ -863,11 +863,7 @@ fn search_path(
     let key_set = plugin_mgr
         .keystore_handler()
         .derived_key_set_by_index(hash160, 0, 2000, 0, 2000, password)?;
-    for (path, hash) in key_set
-        .external
-        .into_iter()
-        .chain(key_set.change)
-    {
+    for (path, hash) in key_set.external.into_iter().chain(key_set.change) {
         if hash == target {
             return Ok(path);
         }
