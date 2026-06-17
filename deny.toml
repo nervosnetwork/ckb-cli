@@ -72,7 +72,13 @@ feature-depth = 1
 ignore = [
     "RUSTSEC-2021-0145",
     "RUSTSEC-2024-0421", # https://rustsec.org/advisories/RUSTSEC-2024-0421
-    "RUSTSEC-2026-0009" # CVE: RFC2822 parser stack recursion in time 0.3.41
+    "RUSTSEC-2026-0009", # CVE: RFC2822 parser stack recursion in time 0.3.41
+    # RUSTSEC-2026-0097: rand 0.7.3 unsoundness requires calling
+    # rand::thread_rng() from inside a custom log::Log implementation while
+    # trace-level logging is active. ckb-cli uses rand only in normal code
+    # paths (keystore salt generation, mock tx helper), never in a logger.
+    # Cannot semver-bump rand due to ckb-vm / jsonrpc-pubsub dep constraints.
+    "RUSTSEC-2026-0097",
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
