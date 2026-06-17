@@ -309,7 +309,8 @@ impl CliSubCommand for DeploySubCommand<'_> {
 
                 // Sign if required
                 if m.is_present("sign-now") {
-                    let account = H160::from_slice(from_address.payload().args().as_ref()).unwrap();
+                    let account = H160::from_slice(from_address.payload().args().as_ref())
+                        .map_err(|err| format!("invalid H160 from from-address: {}", err))?;
                     let signer = {
                         let handler = self.plugin_mgr.keystore_handler();
                         let change_path = handler.root_key_path(account.clone())?;
@@ -380,8 +381,11 @@ impl CliSubCommand for DeploySubCommand<'_> {
                                 }
                                 let result: Result<Address, String> = parser.parse(input);
                                 result
-                                    .map(|address| {
-                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    .and_then(|address| {
+                                        H160::from_slice(address.payload().args().as_ref())
+                                            .map_err(|e| {
+                                                format!("invalid H160 from address: {}", e)
+                                            })
                                     })
                                     .map_err(|_| err)
                             })

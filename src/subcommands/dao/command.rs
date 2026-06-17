@@ -130,7 +130,9 @@ impl TransactArgs {
                     result
                         .map(|address_opt| {
                             address_opt
-                                .map(|address| H160::from_slice(&address.payload().args()).unwrap())
+                                .and_then(|address| {
+                                    H160::from_slice(address.payload().args().as_ref()).ok()
+                                })
                         })
                         .map_err(|_| format!("Invalid value for '--from-account': {}", err))
                 })?
