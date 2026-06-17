@@ -70,7 +70,23 @@ feature-depth = 1
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
-    "RUSTSEC-2021-0145"
+    "RUSTSEC-2021-0145",
+    # RUSTSEC-2026-0097: rand 0.7.3 unsoundness requires calling rand::thread_rng()
+    # from inside a custom log::Log implementation while trace-level logging is active.
+    # ckb-cli uses rand only in normal code paths (keystore salt, mock tx helper),
+    # never inside a custom logger. The advisory does not apply.
+    # Can't upgrade rand semver-major without upstream ckb-vm / jsonrpc-pubsub changes.
+    "RUSTSEC-2026-0097",
+    # RUSTSEC-2024-0421: idna 0.1.5 Punycode label masking, pulled by url 1.7.2.
+    # ckb-cli uses url 1.x only for validating RPC URL format in arg_parser.rs.
+    # Actual DNS resolution and HTTP connections use reqwest -> url 2.x -> idna 1.1.0.
+    # The idna 0.1.5 advisory path is not exercised in network connections.
+    "RUSTSEC-2024-0421",
+    # RUSTSEC-2025-0004 / RUSTSEC-2025-0022: openssl < 0.10.70 use-after-free.
+    # Upgrading requires rustc >= 1.80 (openssl-sys v0.9.104+), but project
+    # uses rustc 1.75.0. Fix requires toolchain upgrade.
+    "RUSTSEC-2025-0004",
+    "RUSTSEC-2025-0022",
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
