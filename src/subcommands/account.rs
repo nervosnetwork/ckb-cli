@@ -493,8 +493,10 @@ impl CliSubCommand for AccountSubCommand<'_> {
                     .keystore_handler()
                     .extended_pubkey(lock_arg, &path, password)?;
                 let address_payload = AddressPayload::from_pubkey(&extended_pubkey);
+                let lock_arg = H160::from_slice(address_payload.args().as_ref())
+                    .map_err(|err| format!("invalid H160 from address payload: {}", err))?;
                 let resp = serde_json::json!({
-                    "lock_arg": format!("{:#x}", H160::from_slice(address_payload.args().as_ref()).unwrap()),
+                    "lock_arg": format!("{:#x}", lock_arg),
                     "address(deprecated)": address_json(address_payload.clone(), false),
                     "address": address_json(address_payload, true),
                 });

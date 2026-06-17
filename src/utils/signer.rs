@@ -77,7 +77,9 @@ impl PrivkeySigner {
 
     pub fn add_privkey(&mut self, privkey: PrivkeyWrapper) {
         let pubkey = secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey);
-        let id = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20]).unwrap();
+        // Safe: blake2b_256 always produces 32 bytes, [0..20] is always exactly 20 bytes
+        let id = H160::from_slice(&blake2b_256(&pubkey.serialize()[..])[0..20])
+            .expect("H160::from_slice on 20-byte hash output should never fail");
         self.privkeys.insert(id.clone(), privkey);
         self.ids.insert(id.clone(), id);
     }
@@ -90,7 +92,9 @@ impl PrivkeySigner {
                 .args(Bytes::from(account.as_bytes().to_vec()).pack())
                 .build()
                 .calc_script_hash();
-            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
+            // Safe: script_hash is always 32 bytes, [0..20] is always exactly 20 bytes
+            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20])
+                .expect("H160::from_slice on 20-byte script hash should never fail");
             self.ids.insert(lock_hash160, account);
             true
         } else {
@@ -104,7 +108,8 @@ impl Signer for PrivkeySigner {
         if id.len() != 20 {
             return false;
         }
-        self.ids.contains_key(&H160::from_slice(id).unwrap())
+        // Safe: guarded by id.len() != 20 check above
+        self.ids.contains_key(&H160::from_slice(id).expect("H160::from_slice on 20-byte id should never fail"))
     }
 
     fn sign(
@@ -117,7 +122,9 @@ impl Signer for PrivkeySigner {
         if id.len() != 20 {
             return Err(SignerError::IdNotFound);
         }
-        let hash160 = H160::from_slice(id).unwrap();
+        // Safe: guarded by id.len() != 20 check above
+        let hash160 = H160::from_slice(id)
+            .map_err(|_| SignerError::IdNotFound)?;
         let account = self.ids.get(&hash160).ok_or(SignerError::IdNotFound)?;
         let privkey = self.privkeys.get(account).expect("no privkey found");
         privkey.sign(id, message, recoverable, tx)
@@ -165,7 +172,9 @@ impl KeyStoreHandlerSigner {
                 .args(Bytes::from(account.as_bytes().to_vec()).pack())
                 .build()
                 .calc_script_hash();
-            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20]).unwrap();
+            // Safe: script_hash is always 32 bytes, [0..20] is always exactly 20 bytes
+            let lock_hash160 = H160::from_slice(&script_hash.as_slice()[0..20])
+                .expect("H160::from_slice on 20-byte script hash should never fail");
             self.ids
                 .insert(lock_hash160, (DerivationPath::default(), None, account));
             true

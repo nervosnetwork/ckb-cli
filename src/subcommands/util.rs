@@ -328,7 +328,8 @@ impl CliSubCommand for UtilSubCommand<'_> {
                     Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
                     None => get_address(None, m)?,
                 };
-                let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
+                let lock_arg = H160::from_slice(address_payload.args().as_ref())
+                    .map_err(|err| format!("invalid H160 from address payload: {}", err))?;
                 let old_address = OldAddress::new_default(lock_arg.clone());
 
                 eprintln!(
@@ -369,8 +370,8 @@ message = "0x"
                             AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
+                                address_opt.and_then(|address| {
+                                    H160::from_slice(address.payload().args().as_ref()).ok()
                                 })
                             })
                             .map_err(|_| err)
@@ -444,8 +445,8 @@ message = "0x"
                             AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
+                                address_opt.and_then(|address| {
+                                    H160::from_slice(address.payload().args().as_ref()).ok()
                                 })
                             })
                             .map_err(|_| err)
@@ -505,8 +506,8 @@ message = "0x"
                             AddressParser::new_sighash().from_matches_opt(m, "from-account");
                         result
                             .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
+                                address_opt.and_then(|address| {
+                                    H160::from_slice(address.payload().args().as_ref()).ok()
                                 })
                             })
                             .map_err(|_| err)

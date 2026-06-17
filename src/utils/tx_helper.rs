@@ -198,7 +198,8 @@ impl TxHelper {
             ]
             .contains(&code_hash)
             {
-                let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
+                let hash160 = H160::from_slice(&lock_arg[..20])
+                    .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?;
                 if !self.multisig_configs.contains_key(&hash160) {
                     return Err(format!(
                         "No mutisig config found for input(no.{}) lock_arg prefix: {:#x}",
@@ -260,7 +261,8 @@ impl TxHelper {
                 continue;
             }
 
-            let multisig_hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
+            let multisig_hash160 = H160::from_slice(&lock_arg[..20])
+                .map_err(|err| format!("invalid multisig H160 from lock_arg: {}", err))?;
             let lock_args = if [
                 MultisigScript::Legacy.script_id().code_hash.pack(),
                 MultisigScript::V2.script_id().code_hash.pack(),
@@ -273,7 +275,10 @@ impl TxHelper {
                     .clone()
             } else {
                 let mut lock_args = HashSet::default();
-                lock_args.insert(H160::from_slice(lock_arg.as_ref()).unwrap());
+                lock_args.insert(
+                    H160::from_slice(lock_arg.as_ref())
+                        .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?,
+                );
                 lock_args
             };
             if signer(&lock_args, &h256!("0x0"), &Transaction::default().into())?.is_some() {
@@ -324,7 +329,8 @@ impl TxHelper {
             ]
             .contains(&code_hash)
             {
-                let hash160 = H160::from_slice(&lock_arg[..20]).unwrap();
+                let hash160 = H160::from_slice(&lock_arg[..20])
+                    .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?;
                 let multisig_config = self.multisig_configs.get(&hash160).unwrap();
                 let threshold = multisig_config.threshold() as usize;
                 let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);

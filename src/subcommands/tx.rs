@@ -397,10 +397,13 @@ impl CliSubCommand for TxSubCommand<'_> {
                     FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
                 let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
 
-                let sighash_addresses = sighash_addresses
+                let sighash_addresses: Vec<H160> = sighash_addresses
                     .into_iter()
-                    .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|address| {
+                        H160::from_slice(address.payload().args().as_ref())
+                            .map_err(|e| format!("invalid H160 from sighash address: {}", e))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let cfg = MultisigConfig::new_with(
                     multisig_script,
                     sighash_addresses,
@@ -501,8 +504,11 @@ impl CliSubCommand for TxSubCommand<'_> {
                                     .set_network(network)
                                     .parse(input);
                                 result
-                                    .map(|address| {
-                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    .and_then(|address| {
+                                        H160::from_slice(address.payload().args().as_ref())
+                                            .map_err(|e| {
+                                                format!("invalid H160 from address: {}", e)
+                                            })
                                     })
                                     .map_err(|_| err)
                             })
@@ -624,10 +630,13 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let since_absolute_epoch_opt: Option<u64> =
                     FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
 
-                let sighash_addresses = sighash_addresses
+                let sighash_addresses: Vec<H160> = sighash_addresses
                     .into_iter()
-                    .map(|address| H160::from_slice(address.payload().args().as_ref()).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|address| {
+                        H160::from_slice(address.payload().args().as_ref())
+                            .map_err(|e| format!("invalid H160 from sighash address: {}", e))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 let cfg = MultisigConfig::new_with(
                     multisig_script,
                     sighash_addresses,

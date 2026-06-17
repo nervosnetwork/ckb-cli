@@ -244,7 +244,8 @@ impl<'a> SudtSubCommand<'a> {
         } else {
             None
         };
-        let owner_account = H160::from_slice(owner.payload().args().as_ref()).unwrap();
+        let owner_account = H160::from_slice(owner.payload().args().as_ref())
+            .map_err(|err| format!("invalid H160 from owner address: {}", err))?;
         let owner_script = Script::from(&owner);
         let owner_script_hash = owner_script.calc_script_hash();
         let receivers = udt_to_vec
@@ -368,7 +369,14 @@ impl<'a> SudtSubCommand<'a> {
         };
 
         let owner_script_hash = Script::from(&owner).calc_script_hash();
-        let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
+        let sender_args = sender.payload().args();
+        let args_bytes: &[u8] = sender_args.as_ref();
+        let sender_account = H160::from_slice(
+            args_bytes
+                .get(0..20)
+                .ok_or_else(|| "sender address payload too short for H160".to_string())?,
+        )
+        .map_err(|err| format!("invalid H160 from sender address: {}", err))?;
         let sender_script = Script::from(&sender);
         let type_script = udt_type.build_script(&udt_script_id, &owner_script_hash);
         let cheque_sender_script_hash = Script::new_builder()
@@ -426,7 +434,8 @@ impl<'a> SudtSubCommand<'a> {
         let mut accounts = vec![(format!("sender({})", sender_sighash), sender_account)];
         if let Some(addr) = capacity_provider.as_ref() {
             if *addr != sender {
-                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                let account = H160::from_slice(addr.payload().args().as_ref())
+                    .map_err(|err| format!("invalid H160 from address: {}", err))?;
                 accounts.push((format!("capacity provider({})", addr), account));
             }
         }
@@ -550,7 +559,8 @@ impl<'a> SudtSubCommand<'a> {
         let owner_script_hash = Script::from(&owner).calc_script_hash();
         let capacity_provider = capacity_provider.unwrap_or_else(|| to.clone());
         let capacity_provider_account =
-            H160::from_slice(capacity_provider.payload().args().as_ref()).unwrap();
+            H160::from_slice(capacity_provider.payload().args().as_ref())
+                .map_err(|err| format!("invalid H160 from capacity provider: {}", err))?;
         let acp_lock = Script::new_builder()
             .code_hash(acp_script_id.code_hash.pack())
             .hash_type(acp_script_id.hash_type)
@@ -702,12 +712,19 @@ impl<'a> SudtSubCommand<'a> {
             sender_lock_script: sender_script,
         };
 
-        let receiver_account =
-            H160::from_slice(&receiver.payload().args().as_ref()[0..20]).unwrap();
+        let receiver_args = receiver.payload().args();
+        let args_bytes: &[u8] = receiver_args.as_ref();
+        let receiver_account = H160::from_slice(
+            args_bytes
+                .get(0..20)
+                .ok_or_else(|| "receiver address payload too short for H160".to_string())?,
+        )
+        .map_err(|err| format!("invalid H160 from receiver address: {}", err))?;
         let mut accounts = vec![("receiver".to_string(), receiver_account)];
         if let Some(addr) = capacity_provider.as_ref() {
             if *addr != receiver {
-                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                let account = H160::from_slice(addr.payload().args().as_ref())
+                    .map_err(|err| format!("invalid H160 from address: {}", err))?;
                 accounts.push(("capacity provider".to_string(), account));
             }
         }
@@ -818,11 +835,19 @@ impl<'a> SudtSubCommand<'a> {
             acp_script_id: acp_script_id.clone(),
         };
 
-        let sender_account = H160::from_slice(&sender.payload().args().as_ref()[0..20]).unwrap();
+        let sender_args = sender.payload().args();
+        let args_bytes: &[u8] = sender_args.as_ref();
+        let sender_account = H160::from_slice(
+            args_bytes
+                .get(0..20)
+                .ok_or_else(|| "sender address payload too short for H160".to_string())?,
+        )
+        .map_err(|err| format!("invalid H160 from sender address: {}", err))?;
         let mut accounts = vec![("sender".to_string(), sender_account)];
         if let Some(addr) = capacity_provider.as_ref() {
             if *addr != receiver {
-                let account = H160::from_slice(addr.payload().args().as_ref()).unwrap();
+                let account = H160::from_slice(addr.payload().args().as_ref())
+                    .map_err(|err| format!("invalid H160 from address: {}", err))?;
                 accounts.push(("capacity provider".to_string(), account));
             }
         }
