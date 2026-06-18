@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::utils::arg_parser::ArgMatchesExt;
 use ckb_hash::{blake2b_256, new_blake2b};
 use ckb_jsonrpc_types as rpc_types;
 use ckb_jsonrpc_types::Status;
@@ -69,6 +70,7 @@ pub fn get_key_store(ckb_cli_dir: PathBuf) -> Result<KeyStore, String> {
     KeyStore::from_dir(keystore_dir, ScryptType::default()).map_err(|err| err.to_string())
 }
 
+#[allow(dead_code)]
 pub fn get_address(network: Option<NetworkType>, m: &ArgMatches) -> Result<AddressPayload, String> {
     let address_opt: Option<Address> = AddressParser::new_sighash()
         .set_network_opt(network)
@@ -286,6 +288,7 @@ pub fn check_lack_of_capacity(transaction: &TransactionView) -> Result<(), Strin
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn get_to_data(m: &ArgMatches) -> Result<Bytes, String> {
     let to_data_opt: Option<Bytes> = HexParser.from_matches_opt(m, "to-data")?;
     match to_data_opt {
@@ -326,6 +329,7 @@ pub fn get_privkey_signer(privkey: PrivkeyWrapper) -> SignerFn {
     )
 }
 
+#[allow(dead_code)]
 pub fn get_arg_value(matches: &ArgMatches, name: &str) -> Result<String, String> {
     matches
         .value_of(name)

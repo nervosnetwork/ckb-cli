@@ -1,11 +1,10 @@
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
 
 use bitcoin::bip32::{ChildNumber, DerivationPath};
 use chrono::prelude::*;
-use clap::{App, Arg, ArgMatches};
-use clap_generate::generators::{Bash, Elvish, Fish, PowerShell, Zsh};
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap_complete::Shell;
 use eaglesong::EagleSongBuilder;
 use faster_hex::hex_string;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId, Signature};
@@ -27,16 +26,15 @@ use ckb_types::{
     H160, H256, U256,
 };
 
-use super::{arg_get_multisig_code_hash, arg_multisig_code_hash, CliSubCommand, Output};
+use super::{CliSubCommand, Output};
 use crate::plugin::{PluginManager, SignTarget};
 use crate::utils::{
-    arg,
     arg_parser::{
         AddressParser, ArgParser, FilePathParser, FixedHashParser, FromStrParser, HexParser,
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     genesis_info::GenesisInfo,
-    other::{address_json, get_address, get_network_type, read_password},
+    other::{address_json, get_network_type, read_password},
     rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};
@@ -47,6 +45,275 @@ const FLAG_SINCE_EPOCH_NUMBER: u64 =
     0b010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
 const EPOCH_LENGTH: u64 = 1800;
 const BLOCK_PERIOD: u64 = 8 * 1000; // 8 seconds
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_pubkey_hex(input: &str) -> Result<String, String> {
+    PubkeyHexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_address(input: &str) -> Result<String, String> {
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_sighash_address(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_sighash_address_mainnet(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .set_network(NetworkType::Mainnet)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_message_hash(input: &str) -> Result<String, String> {
+    FixedHashParser::<H256>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_file_path_exists(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_compact_target(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .or_else(|_| {
+            let trimmed = if input.starts_with("0x") || input.starts_with("0X") {
+                &input[2..]
+            } else {
+                input
+            };
+            u32::from_str_radix(trimmed, 16)
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        })
+        .map(|_| input.to_string())
+}
+
+fn parse_difficulty(input: &str) -> Result<String, String> {
+    let trimmed = if input.starts_with("0x") || input.starts_with("0X") {
+        &input[2..]
+    } else {
+        input
+    };
+    U256::from_hex_str(trimmed)
+        .map(|_| input.to_string())
+        .map_err(|err| err.to_string())
+}
+
+fn parse_u32(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_locktime_rfc3339(input: &str) -> Result<String, String> {
+    DateTime::parse_from_rfc3339(input)
+        .map(|_| input.to_string())
+        .map_err(|err| err.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(name = "util", about = "Utilities")]
+pub struct UtilCmd {
+    #[command(subcommand)]
+    pub command: UtilSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UtilSubcommands {
+    /// Show public information of a secp256k1 private key (from file) or public key
+    KeyInfo(UtilKeyInfoArgs),
+    /// Sign data with secp256k1 signature
+    SignData(UtilSignDataArgs),
+    /// Sign message with secp256k1 signature
+    SignMessage(UtilSignMessageArgs),
+    /// Verify a compact format signature
+    VerifySignature(UtilVerifySignatureArgs),
+    /// Hash binary use eaglesong algorithm
+    Eaglesong(UtilBinaryHexArgs),
+    /// Hash binary use blake2b algorithm (personalization: 'ckb-default-hash')
+    Blake2b(UtilBlake2bArgs),
+    /// Convert compact target value to difficulty value
+    CompactToDifficulty(UtilCompactToDifficultyArgs),
+    /// Convert difficulty value to compact target value
+    DifficultyToCompact(UtilDifficultyToCompactArgs),
+    /// Show information about an address
+    AddressInfo(UtilAddressInfoArgs),
+    /// Convert address in single signature format to multisig format (only for mainnet genesis cells)
+    ToGenesisMultisigAddr(UtilToGenesisMultisigAddrArgs),
+    /// Convert address in single signature format to multisig format
+    ToMultisigAddr(UtilToMultisigAddrArgs),
+    /// Query live cell's metadata
+    CellMeta(UtilCellMetaArgs),
+    /// Show genesis scripts code hash and cell_deps information
+    GenesisScripts,
+    /// Generates completion scripts for your shell
+    Completions(UtilCompletionsArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct UtilKeyInfoArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", value_parser = parse_privkey_path, conflicts_with = "pubkey")]
+    pub privkey_path: Option<String>,
+    #[arg(long, value_parser = parse_pubkey_hex)]
+    pub pubkey: Option<String>,
+    #[arg(long, value_parser = parse_address)]
+    pub address: Option<String>,
+    #[arg(long = "lock-arg", id = "lock-arg")]
+    pub lock_arg: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilSignDataArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path",
+        conflicts_with = "privkey-path"
+    )]
+    pub from_account: Option<String>,
+    #[arg(long)]
+    pub recoverable: bool,
+    #[arg(long = "extended-address", id = "extended-address", conflicts_with = "privkey-path", value_parser = parse_sighash_address)]
+    pub extended_address: Option<String>,
+    #[arg(long = "binary-hex", id = "binary-hex", required_unless_present = "utf8-string", conflicts_with = "utf8-string", value_parser = parse_hex)]
+    pub binary_hex: Option<String>,
+    #[arg(long = "no-magic-bytes", id = "no-magic-bytes")]
+    pub no_magic_bytes: bool,
+    #[arg(
+        long = "utf8-string",
+        id = "utf8-string",
+        required_unless_present = "binary-hex",
+        conflicts_with = "binary-hex"
+    )]
+    pub utf8_string: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilSignMessageArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(
+        long = "from-account",
+        id = "from-account",
+        required_unless_present = "privkey-path",
+        conflicts_with = "privkey-path"
+    )]
+    pub from_account: Option<String>,
+    #[arg(long)]
+    pub recoverable: bool,
+    #[arg(long = "extended-address", id = "extended-address", conflicts_with = "privkey-path", value_parser = parse_sighash_address)]
+    pub extended_address: Option<String>,
+    #[arg(long = "message", id = "message", value_parser = parse_message_hash)]
+    pub message: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilVerifySignatureArgs {
+    #[arg(long, value_parser = parse_pubkey_hex)]
+    pub pubkey: Option<String>,
+    #[arg(long = "privkey-path", id = "privkey-path", value_parser = parse_privkey_path, conflicts_with = "pubkey")]
+    pub privkey_path: Option<String>,
+    #[arg(long = "from-account", id = "from-account", conflicts_with_all = ["privkey-path", "pubkey"])]
+    pub from_account: Option<String>,
+    #[arg(long = "message", id = "message", value_parser = parse_message_hash)]
+    pub message: String,
+    #[arg(long = "extended-address", id = "extended-address", conflicts_with = "pubkey", value_parser = parse_sighash_address)]
+    pub extended_address: Option<String>,
+    #[arg(long, value_parser = parse_hex)]
+    pub signature: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilBinaryHexArgs {
+    #[arg(long = "binary-hex", id = "binary-hex", value_parser = parse_hex)]
+    pub binary_hex: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilBlake2bArgs {
+    #[arg(long = "binary-hex", id = "binary-hex", value_parser = parse_hex)]
+    pub binary_hex: Option<String>,
+    #[arg(long = "binary-path", id = "binary-path", value_parser = parse_file_path_exists)]
+    pub binary_path: Option<String>,
+    #[arg(long = "prefix-160", id = "prefix-160")]
+    pub prefix_160: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilCompactToDifficultyArgs {
+    #[arg(long = "compact-target", id = "compact-target", value_parser = parse_compact_target)]
+    pub compact_target: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilDifficultyToCompactArgs {
+    #[arg(long, value_parser = parse_difficulty)]
+    pub difficulty: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilAddressInfoArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilToGenesisMultisigAddrArgs {
+    #[arg(long = "sighash-address", id = "sighash-address", value_parser = parse_sighash_address_mainnet)]
+    pub sighash_address: String,
+    #[arg(long)]
+    pub locktime: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilToMultisigAddrArgs {
+    #[arg(long = "sighash-address", id = "sighash-address", value_parser = parse_sighash_address)]
+    pub sighash_address: String,
+    #[arg(long = "multisig-code-hash", id = "multisig-code-hash", value_parser = [
+        "legacy",
+        "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+        "v2",
+        "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
+    ])]
+    pub multisig_code_hash: String,
+    #[arg(long, value_parser = parse_locktime_rfc3339)]
+    pub locktime: String,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilCellMetaArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", value_parser = parse_message_hash)]
+    pub tx_hash: String,
+    #[arg(long, value_parser = parse_u32)]
+    pub index: String,
+    #[arg(long = "with-data", id = "with-data")]
+    pub with_data: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct UtilCompletionsArgs {
+    #[arg(value_parser = ["bash", "zsh", "fish", "elvish", "powershell"])]
+    pub shell: String,
+}
 
 pub struct UtilSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
@@ -64,259 +331,34 @@ impl<'a> UtilSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_privkey = Arg::with_name("privkey-path")
-            .long("privkey-path")
-            .takes_value(true)
-            .validator(|input| PrivkeyPathParser.validate(input))
-            .about("Private key file path (only read first line)");
-        let arg_pubkey = Arg::with_name("pubkey")
-            .long("pubkey")
-            .takes_value(true)
-            .validator(|input| PubkeyHexParser.validate(input))
-            .about("Public key (hex string, compressed format)");
-        let arg_address = Arg::with_name("address")
-            .long("address")
-            .takes_value(true)
-            .validator(|input| AddressParser::default().validate(input))
-            .required(true)
-            .about("Target address (see: https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)");
+    pub fn subcommand(name: &'static str) -> Command {
+        UtilCmd::command().name(name)
+    }
+}
 
-        let binary_hex_arg = Arg::with_name("binary-hex")
-            .long("binary-hex")
-            .takes_value(true)
-            .required(true)
-            .validator(|input| HexParser.validate(input));
-        let arg_sighash_address = Arg::with_name("sighash-address")
-            .long("sighash-address")
-            .required(true)
-            .takes_value(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
-            .about("The address in single signature format");
-
-        let arg_recoverable = Arg::with_name("recoverable")
-            .long("recoverable")
-            .about("Sign use recoverable signature");
-
-        let arg_message = Arg::with_name("message")
-            .long("message")
-            .takes_value(true)
-            .required(true)
-            .validator(|input| FixedHashParser::<H256>::default().validate(input));
-
-        let arg_extended_address = Arg::with_name("extended-address")
-            .long("extended-address")
-            .takes_value(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
-            .conflicts_with(arg::privkey_path().get_name())
-            .about("The address extended from `m/44'/309'/0'` (Search 2000 receiving addresses and 2000 change addresses max)");
-
-        App::new(name)
-            .about("Utilities")
-            .subcommands(vec![
-                App::new("key-info")
-                    .about(
-                        "Show public information of a secp256k1 private key (from file) or public key",
-                    )
-                    .arg(arg_privkey.clone().conflicts_with("pubkey"))
-                    .arg(arg_pubkey.clone().required(false))
-                    .arg(arg_address.clone().required(false))
-                    .arg(arg::lock_arg().clone()),
-                App::new("sign-data")
-                    .about("Sign data with secp256k1 signature ")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
-                    .arg(
-                        arg::from_account()
-                            .required_unless(arg::privkey_path().get_name())
-                            .conflicts_with(arg::privkey_path().get_name()),
-                    )
-                    .arg(arg_recoverable.clone())
-                    .arg(arg_extended_address.clone())
-                    .arg(
-                        binary_hex_arg
-                            .clone()
-                            .required(false)
-                            .required_unless("utf8-string")
-                            .conflicts_with("utf8-string")
-                            .about("The data to be signed. The input data will be hashed using blake2b with 'ckb-default-hash' personalization first.")
-                    )
-                    .arg(
-                        Arg::with_name("no-magic-bytes")
-                            .long("no-magic-bytes")
-                            .about("Don't add magic bytes before binary data (magic bytes: \"Nervos Message:\")")
-                    )
-                    .arg(
-                        Arg::with_name("utf8-string")
-                            .long("utf8-string")
-                            .takes_value(true)
-                            .required_unless(binary_hex_arg.get_name())
-                            .conflicts_with(binary_hex_arg.get_name())
-                            .about("The utf-8 string to be signed. The input string will be hashed using blake2b with 'ckb-default-hash' personalization first.")
-                    ),
-                App::new("sign-message")
-                    .about("Sign message with secp256k1 signature")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
-                    .arg(
-                        arg::from_account()
-                            .required_unless(arg::privkey_path().get_name())
-                            .conflicts_with(arg::privkey_path().get_name()),
-                    )
-                    .arg(arg_recoverable.clone())
-                    .arg(arg_extended_address.clone())
-                    .arg(arg_message.clone().about("The message to be signed (32 bytes)")),
-                App::new("verify-signature")
-                    .about("Verify a compact format signature")
-                    .arg(arg::pubkey())
-                    .arg(arg::privkey_path().conflicts_with(arg::pubkey().get_name()))
-                    .arg(
-                        arg::from_account()
-                            .conflicts_with_all(&[arg::privkey_path().get_name(), arg::pubkey().get_name()]),
-                    )
-                    .arg(arg_message.clone().about("The message to be verify (32 bytes)"))
-                    .arg(
-                        arg_extended_address
-                            .clone()
-                            .conflicts_with(arg::pubkey().get_name())
-                    )
-                    .arg(
-                        Arg::with_name("signature")
-                            .long("signature")
-                            .takes_value(true)
-                            .required(true)
-                            .validator(|input| HexParser.validate(input))
-                            .about("The compact format signature (support recoverable signature)")
-                    ),
-                App::new("eaglesong")
-                    .about("Hash binary use eaglesong algorithm")
-                    .arg(binary_hex_arg.clone().about("The binary in hex format to hash")),
-                App::new("blake2b")
-                    .about("Hash binary use blake2b algorithm (personalization: 'ckb-default-hash')")
-                    .arg(binary_hex_arg.clone().required(false).about("The binary in hex format to hash"))
-                    .arg(
-                        Arg::with_name("binary-path")
-                            .long("binary-path")
-                            .takes_value(true)
-                            .validator(|input| FilePathParser::new(true).validate(input))
-                            .about("The binary file path")
-                    )
-                    .arg(
-                        Arg::with_name("prefix-160")
-                            .long("prefix-160")
-                            .about("Only show prefix 160 bits (Example: calculate lock_arg from pubkey)")
-                    ),
-                App::new("compact-to-difficulty")
-                    .about("Convert compact target value to difficulty value")
-                    .arg(Arg::with_name("compact-target")
-                         .long("compact-target")
-                         .takes_value(true)
-                         .validator(|input| {
-                             FromStrParser::<u32>::default()
-                                 .validate(input)
-                                 .or_else(|_| {
-                                     let input = if input.starts_with("0x") || input.starts_with("0X") {
-                                         &input[2..]
-                                     } else {
-                                         input
-                                     };
-                                     u32::from_str_radix(input, 16).map(|_| ()).map_err(|err| err.to_string())
-                                 })
-                         })
-                         .required(true)
-                         .about("The compact target value")
-                    ),
-                App::new("difficulty-to-compact")
-                    .about("Convert difficulty value to compact target value")
-                    .arg(Arg::with_name("difficulty")
-                         .long("difficulty")
-                         .takes_value(true)
-                         .validator(|input| {
-                             let input = if input.starts_with("0x") || input.starts_with("0X") {
-                                 &input[2..]
-                             } else {
-                                 input
-                             };
-                             U256::from_hex_str(input).map(|_| ()).map_err(|err| err.to_string())
-                         })
-                         .required(true)
-                         .about("The difficulty value")
-                    ),
-                App::new("address-info")
-                    .about("Show information about an address")
-                    .arg(arg_address),
-                App::new("to-genesis-multisig-addr")
-                    .about("Convert address in single signature format to multisig format (only for mainnet genesis cells)")
-                    .arg(
-                        arg_sighash_address
-                            .clone()
-                            .validator(|input| {
-                                AddressParser::new_sighash()
-                                    .set_network(NetworkType::Mainnet)
-                                    .validate(input)
-                            }))
-                    .arg(
-                        Arg::with_name("locktime")
-                            .long("locktime")
-                            .required(true)
-                            .takes_value(true)
-                            .about("The locktime in UTC format date. Example: 2022-05-01")
-                    ),
-                App::new("to-multisig-addr")
-                    .about("Convert address in single signature format to multisig format")
-                .arg(arg_sighash_address.clone())
-                .arg(arg_multisig_code_hash())
-                    .arg(
-                        Arg::with_name("locktime")
-                            .long("locktime")
-                            .required(true)
-                            .takes_value(true)
-                            .validator(|input| DateTime::parse_from_rfc3339(input).map(|_| ()).map_err(|err| err.to_string()))
-                            .about("The locktime in RFC3339 format. Example: 2014-11-28T21:00:00+00:00")
-                    ),
-                App::new("cell-meta")
-                    .about("Query live cell's metadata")
-                    .arg(
-                        Arg::with_name("tx-hash")
-                            .long("tx-hash")
-                            .takes_value(true)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .about("Tx hash"),
-                    )
-                    .arg(
-                        Arg::with_name("index")
-                            .long("index")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .required(true)
-                            .about("Output index"),
-                    )
-                    .arg(
-                        Arg::with_name("with-data")
-                            .long("with-data")
-                            .about("Get live cell with data")
-                    ),
-                App::new("genesis-scripts")
-                    .about("Show genesis scripts code hash and cell_deps information, include: [sighash, multisig, dao, secp256k1_data, type_id], see RFC24 for more details."),
-                App::new("completions")
-                    .about("Generates completion scripts for your shell")
-                    .arg(
-                        Arg::with_name("shell")
-                            .required(true)
-                            .possible_values(&["bash", "zsh", "fish", "elvish", "powershell"])
-                            .about("The shell to generate the script for")
-                    ),
-        ])
+fn parse_multisig_code_hash_value(input: &str) -> Result<H256, String> {
+    match input {
+        "legacy" => Ok(MultisigScript::Legacy.script_id().code_hash),
+        "v2" => Ok(MultisigScript::V2.script_id().code_hash),
+        _ => FixedHashParser::<H256>::default().parse(input),
     }
 }
 
 impl CliSubCommand for UtilSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            ("key-info", Some(m)) => {
-                let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey")?;
+        let cmd = UtilCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            UtilSubcommands::KeyInfo(args) => {
+                let privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let pubkey_opt: Option<secp256k1::PublicKey> = args
+                    .pubkey
+                    .as_ref()
+                    .map(|value| PubkeyHexParser.parse(value))
+                    .transpose()?;
                 let pubkey_opt = privkey_opt
                     .map(|privkey| secp256k1::PublicKey::from_secret_key(&SECP256K1, &privkey))
                     .or(pubkey_opt);
@@ -326,7 +368,17 @@ impl CliSubCommand for UtilSubCommand<'_> {
 
                 let address_payload = match pubkey_opt {
                     Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
-                    None => get_address(None, m)?,
+                    None => {
+                        if let Some(address) = args.address.as_ref() {
+                            AddressParser::default().parse(address)?.payload().clone()
+                        } else if let Some(lock_arg) = args.lock_arg.as_ref() {
+                            let lock_arg: H160 =
+                                FixedHashParser::<H160>::default().parse(lock_arg)?;
+                            AddressPayload::from_pubkey_hash(lock_arg)
+                        } else {
+                            return Err("Please give one argument".to_string());
+                        }
+                    }
                 };
                 let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
                 let old_address = OldAddress::new_default(lock_arg.clone());
@@ -357,33 +409,47 @@ message = "0x"
                 });
                 Ok(Output::new_output(resp))
             }
-            ("sign-data", Some(m)) => {
-                let binary_opt: Option<Vec<u8>> = HexParser.from_matches_opt(m, "binary-hex")?;
-                let recoverable = m.is_present("recoverable");
-                let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account")
-                    .or_else(|err| {
-                        let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
-                        result
-                            .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
-                                })
+            UtilSubcommands::SignData(args) => {
+                let binary_opt: Option<Vec<u8>> = args
+                    .binary_hex
+                    .as_ref()
+                    .map(|value| HexParser.parse(value))
+                    .transpose()?;
+                let recoverable = args.recoverable;
+                let from_privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let from_account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
+                    .map(|input| {
+                        FixedHashParser::<H160>::default()
+                            .parse(input)
+                            .or_else(|err| {
+                                let result: Result<Address, String> =
+                                    AddressParser::new_sighash().parse(input);
+                                result
+                                    .map(|address| {
+                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    })
+                                    .map_err(|_| err)
                             })
-                            .map_err(|_| err)
-                    })?;
-                let no_magic_bytes = m.is_present("no-magic-bytes");
+                    })
+                    .transpose()?;
+                let no_magic_bytes = args.no_magic_bytes;
                 let password =
                     if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
                         Some(read_password(false, None)?)
                     } else {
                         None
                     };
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
+                let extended_address_opt: Option<Address> = args
+                    .extended_address
+                    .as_ref()
+                    .map(|value| AddressParser::new_sighash().parse(value))
+                    .transpose()?;
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
                 } else {
@@ -400,11 +466,12 @@ message = "0x"
                 let (mut binary, target) = if let Some(data) = binary_opt {
                     (data.clone(), SignTarget::AnyData(JsonBytes::from_vec(data)))
                 } else {
-                    let utf8_string = m
-                        .value_of("utf8-string")
+                    let utf8_string = args
+                        .utf8_string
+                        .as_ref()
                         .ok_or_else(|| "<binary-hex> or <string> is required".to_string())?;
                     let binary = utf8_string.as_bytes().to_vec();
-                    (binary, SignTarget::AnyString(utf8_string.to_string()))
+                    (binary, SignTarget::AnyString(utf8_string.clone()))
                 };
 
                 if !no_magic_bytes {
@@ -431,33 +498,42 @@ message = "0x"
                 });
                 Ok(Output::new_output(result))
             }
-            ("sign-message", Some(m)) => {
-                let message: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "message")?;
-                let recoverable = m.is_present("recoverable");
-                let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account")
-                    .or_else(|err| {
-                        let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
-                        result
-                            .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
-                                })
+            UtilSubcommands::SignMessage(args) => {
+                let message: H256 = FixedHashParser::<H256>::default().parse(&args.message)?;
+                let recoverable = args.recoverable;
+                let from_privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let from_account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
+                    .map(|input| {
+                        FixedHashParser::<H160>::default()
+                            .parse(input)
+                            .or_else(|err| {
+                                let result: Result<Address, String> =
+                                    AddressParser::new_sighash().parse(input);
+                                result
+                                    .map(|address| {
+                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    })
+                                    .map_err(|_| err)
                             })
-                            .map_err(|_| err)
-                    })?;
+                    })
+                    .transpose()?;
                 let password =
                     if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
                         Some(read_password(false, None)?)
                     } else {
                         None
                     };
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
+                let extended_address_opt: Option<Address> = args
+                    .extended_address
+                    .as_ref()
+                    .map(|value| AddressParser::new_sighash().parse(value))
+                    .transpose()?;
 
                 let root_path = if let Some(ref account) = from_account_opt {
                     self.plugin_mgr.root_key_path(account.clone())?
@@ -490,29 +566,41 @@ message = "0x"
                 });
                 Ok(Output::new_output(result))
             }
-            ("verify-signature", Some(m)) => {
-                let message: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "message")?;
-                let signature: Vec<u8> = HexParser.from_matches(m, "signature")?;
-                let pubkey_opt: Option<secp256k1::PublicKey> =
-                    PubkeyHexParser.from_matches_opt(m, "pubkey")?;
-                let from_privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let from_account_opt: Option<H160> = FixedHashParser::<H160>::default()
-                    .from_matches_opt(m, "from-account")
-                    .or_else(|err| {
-                        let result: Result<Option<Address>, String> =
-                            AddressParser::new_sighash().from_matches_opt(m, "from-account");
-                        result
-                            .map(|address_opt| {
-                                address_opt.map(|address| {
-                                    H160::from_slice(&address.payload().args()).unwrap()
-                                })
+            UtilSubcommands::VerifySignature(args) => {
+                let message: H256 = FixedHashParser::<H256>::default().parse(&args.message)?;
+                let signature: Vec<u8> = HexParser.parse(&args.signature)?;
+                let pubkey_opt: Option<secp256k1::PublicKey> = args
+                    .pubkey
+                    .as_ref()
+                    .map(|value| PubkeyHexParser.parse(value))
+                    .transpose()?;
+                let from_privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let from_account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
+                    .map(|input| {
+                        FixedHashParser::<H160>::default()
+                            .parse(input)
+                            .or_else(|err| {
+                                let result: Result<Address, String> =
+                                    AddressParser::new_sighash().parse(input);
+                                result
+                                    .map(|address| {
+                                        H160::from_slice(&address.payload().args()).unwrap()
+                                    })
+                                    .map_err(|_| err)
                             })
-                            .map_err(|_| err)
-                    })?;
-                let extended_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "extended-address")?;
+                    })
+                    .transpose()?;
+                let extended_address_opt: Option<Address> = args
+                    .extended_address
+                    .as_ref()
+                    .map(|value| AddressParser::new_sighash().parse(value))
+                    .transpose()?;
                 let password =
                     if self.plugin_mgr.keystore_require_password() && from_account_opt.is_some() {
                         Some(read_password(false, None)?)
@@ -572,30 +660,29 @@ message = "0x"
                 });
                 Ok(Output::new_output(result))
             }
-            ("eaglesong", Some(m)) => {
-                let binary: Vec<u8> = HexParser.from_matches(m, "binary-hex")?;
+            UtilSubcommands::Eaglesong(args) => {
+                let binary: Vec<u8> = HexParser.parse(&args.binary_hex)?;
                 let mut builder = EagleSongBuilder::new();
                 builder.update(&binary);
                 let output_string = format!("{:#x}", H256::from(builder.finalize()));
                 Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
-            ("blake2b", Some(m)) => {
-                let binary: Vec<u8> = HexParser
-                    .from_matches_opt(m, "binary-hex")?
-                    .ok_or_else(String::new)
-                    .or_else(|_| -> Result<_, String> {
-                        let path: PathBuf = FilePathParser::new(true)
-                            .from_matches(m, "binary-path")
-                            .map_err(|err| {
-                                format!("<binary-hex> or <binary-path> is required: {}", err)
-                            })?;
-                        let mut data = Vec::new();
-                        let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
-                        file.read_to_end(&mut data).map_err(|err| err.to_string())?;
-                        Ok(data)
+            UtilSubcommands::Blake2b(args) => {
+                let binary: Vec<u8> = if let Some(hex) = args.binary_hex.as_ref() {
+                    HexParser.parse(hex)?
+                } else if let Some(path) = args.binary_path.as_ref() {
+                    let path = FilePathParser::new(true).parse(path).map_err(|err| {
+                        format!("<binary-hex> or <binary-path> is required: {}", err)
                     })?;
+                    let mut data = Vec::new();
+                    let mut file = fs::File::open(path).map_err(|err| err.to_string())?;
+                    file.read_to_end(&mut data).map_err(|err| err.to_string())?;
+                    data
+                } else {
+                    return Err("<binary-hex> or <binary-path> is required".to_string());
+                };
                 let hash_data = blake2b_256(binary);
-                let slice = if m.is_present("prefix-160") {
+                let slice = if args.prefix_160 {
                     &hash_data[0..20]
                 } else {
                     &hash_data[..]
@@ -603,15 +690,16 @@ message = "0x"
                 let output_string = format!("0x{}", hex_string(slice));
                 Ok(Output::new_output(serde_json::Value::String(output_string)))
             }
-            ("compact-to-difficulty", Some(m)) => {
+            UtilSubcommands::CompactToDifficulty(args) => {
                 let compact_target: u32 = FromStrParser::<u32>::default()
-                    .from_matches(m, "compact-target")
+                    .parse(&args.compact_target)
                     .or_else(|_| {
-                        let input = m.value_of("compact-target").unwrap();
-                        let input = if input.starts_with("0x") || input.starts_with("0X") {
-                            &input[2..]
+                        let input = if args.compact_target.starts_with("0x")
+                            || args.compact_target.starts_with("0X")
+                        {
+                            &args.compact_target[2..]
                         } else {
-                            input
+                            args.compact_target.as_str()
                         };
                         u32::from_str_radix(input, 16).map_err(|err| err.to_string())
                     })?;
@@ -620,21 +708,21 @@ message = "0x"
                 });
                 Ok(Output::new_output(resp))
             }
-            ("difficulty-to-compact", Some(m)) => {
-                let input = m.value_of("difficulty").unwrap();
-                let input = if input.starts_with("0x") || input.starts_with("0X") {
-                    &input[2..]
-                } else {
-                    input
-                };
+            UtilSubcommands::DifficultyToCompact(args) => {
+                let input =
+                    if args.difficulty.starts_with("0x") || args.difficulty.starts_with("0X") {
+                        &args.difficulty[2..]
+                    } else {
+                        args.difficulty.as_str()
+                    };
                 let difficulty = U256::from_hex_str(input).map_err(|err| err.to_string())?;
                 let resp = serde_json::json!({
                     "compact-target": format!("{:#x}", difficulty_to_compact(difficulty)),
                 });
                 Ok(Output::new_output(resp))
             }
-            ("address-info", Some(m)) => {
-                let address: Address = AddressParser::default().from_matches(m, "address")?;
+            UtilSubcommands::AddressInfo(args) => {
+                let address: Address = AddressParser::default().parse(&args.address)?;
                 if matches!(address.network(), NetworkType::Staging | NetworkType::Dev)
                     && address.payload().is_short_acp()
                 {
@@ -665,7 +753,7 @@ message = "0x"
                 .to_string());
                 Ok(Output::new_output(resp))
             }
-            ("to-genesis-multisig-addr", Some(m)) => {
+            UtilSubcommands::ToGenesisMultisigAddr(args) => {
                 let chain_info: ChainInfo = self
                     .rpc_client
                     .get_blockchain_info()
@@ -674,12 +762,11 @@ message = "0x"
                     return Err("Node is not in mainnet spec".to_owned());
                 }
 
-                let locktime = m.value_of("locktime").unwrap();
+                let locktime = args.locktime.as_str();
                 let address = {
-                    let input = m.value_of("sighash-address").unwrap();
                     AddressParser::new_sighash()
                         .set_network(NetworkType::Mainnet)
-                        .parse(input)?
+                        .parse(&args.sighash_address)?
                 };
 
                 let genesis_timestamp =
@@ -707,15 +794,14 @@ message = "0x"
                 }
                 Ok(Output::new_output(serde_json::json!(resp)))
             }
-            ("to-multisig-addr", Some(m)) => {
-                let address: Address =
-                    AddressParser::new_sighash().from_matches(m, "sighash-address")?;
-                let locktime_timestamp =
-                    DateTime::parse_from_rfc3339(m.value_of("locktime").unwrap())
-                        .map(|dt| dt.timestamp_millis() as u64)
-                        .map_err(|err| err.to_string())?;
+            UtilSubcommands::ToMultisigAddr(args) => {
+                let address: Address = AddressParser::new_sighash().parse(&args.sighash_address)?;
+                let locktime_timestamp = DateTime::parse_from_rfc3339(&args.locktime)
+                    .map(|dt| dt.timestamp_millis() as u64)
+                    .map_err(|err| err.to_string())?;
 
-                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+                let multisig_lock_code_hash: H256 =
+                    parse_multisig_code_hash_value(&args.multisig_code_hash)?;
 
                 let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
                     .map_err(|_err| {
@@ -743,11 +829,10 @@ message = "0x"
                 });
                 Ok(Output::new_output(resp))
             }
-            ("cell-meta", Some(m)) => {
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
-                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
-                let with_data = m.is_present("with-data");
+            UtilSubcommands::CellMeta(args) => {
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
+                let index: u32 = FromStrParser::<u32>::default().parse(&args.index)?;
+                let with_data = args.with_data;
                 let out_point = packed::OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
                     .index(index)
@@ -781,7 +866,7 @@ message = "0x"
                     Ok(Output::new_output(resp))
                 }
             }
-            ("genesis-scripts", _) => {
+            UtilSubcommands::GenesisScripts => {
                 let genesis_block: BlockView = self
                     .rpc_client
                     .get_block_by_number(0)?
@@ -827,27 +912,25 @@ message = "0x"
                 });
                 Ok(Output::new_output(resp))
             }
-            ("completions", Some(m)) => {
-                let shell = m.value_of("shell").unwrap();
+            UtilSubcommands::Completions(args) => {
+                let shell = args.shell.as_str();
                 let version = get_version();
                 let version_short = version.short();
                 let version_long = version.long();
                 let mut app = build_cli(&version_short, &version_long);
                 let bin_name = "ckb-cli";
                 let output = &mut std::io::stdout();
-                match shell {
-                    "bash" => clap_generate::generate::<Bash, _>(&mut app, bin_name, output),
-                    "zsh" => clap_generate::generate::<Zsh, _>(&mut app, bin_name, output),
-                    "fish" => clap_generate::generate::<Fish, _>(&mut app, bin_name, output),
-                    "elvish" => clap_generate::generate::<Elvish, _>(&mut app, bin_name, output),
-                    "powershell" => {
-                        clap_generate::generate::<PowerShell, _>(&mut app, bin_name, output)
-                    }
+                let shell = match shell {
+                    "bash" => Shell::Bash,
+                    "zsh" => Shell::Zsh,
+                    "fish" => Shell::Fish,
+                    "elvish" => Shell::Elvish,
+                    "powershell" => Shell::PowerShell,
                     _ => panic!("Invalid shell: {}", shell),
-                }
+                };
+                clap_complete::generate(shell, &mut app, bin_name, output);
                 Ok(Output::new_success())
             }
-            _ => Err(Self::subcommand("util").generate_usage()),
         }
     }
 }

@@ -1,7 +1,7 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fs, str::FromStr};
 
 use bitcoin::bip32::DerivationPath;
-use clap::{App, Arg, ArgMatches};
+use clap::{ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 use ckb_chain_spec::consensus::TYPE_ID_CODE_HASH;
@@ -38,19 +38,156 @@ use plugin_protocol::LiveCellInfo;
 use super::{CliSubCommand, Output};
 use crate::plugin::PluginManager;
 use crate::utils::{
-    arg,
     arg_parser::{
-        AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser,
-        PrivkeyPathParser, PrivkeyWrapper,
+        AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
+        HexParser, PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     genesis_info::GenesisInfo,
     other::{
-        check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, map_tx_builder_error_2_str, read_password, to_live_cell_info,
+        check_capacity, get_genesis_info, get_network_type, map_tx_builder_error_2_str,
+        read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
 };
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_address(input: &str) -> Result<String, String> {
+    AddressParser::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_lock_arg(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_from_account(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .or_else(|err| {
+            AddressParser::default()
+                .validate(input)
+                .and_then(|()| AddressParser::new_sighash().validate(input))
+                .map_err(|_| err)
+        })
+        .map(|_| input.to_string())
+}
+
+fn parse_capacity(input: &str) -> Result<String, String> {
+    CapacityParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_u64(input: &str) -> Result<String, String> {
+    FromStrParser::<u64>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_file_path(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u32(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_usize(input: &str) -> Result<String, String> {
+    FromStrParser::<usize>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "wallet",
+    about = "Transfer / query balance (with local index) / key utils"
+)]
+pub struct WalletCmd {
+    #[command(subcommand)]
+    pub command: WalletSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WalletSubcommands {
+    /// Transfer capacity to an address (can have data)
+    Transfer(WalletTransferArgs),
+    /// Get capacity address or lock arg or pubkey
+    GetCapacity(WalletGetCapacityArgs),
+    /// Get live cells by address
+    GetLiveCells(WalletGetLiveCellsArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct WalletTransferArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path", conflicts_with = "privkey-path", value_parser = parse_from_account)]
+    pub from_account: Option<String>,
+    #[arg(long = "from-locked-address", id = "from-locked-address", value_parser = parse_address)]
+    pub from_locked_address: Option<String>,
+    #[arg(long = "to-address", id = "to-address", value_parser = parse_address)]
+    pub to_address: String,
+    #[arg(long = "to-data", id = "to-data", value_parser = parse_hex)]
+    pub to_data: Option<String>,
+    #[arg(long = "to-data-path", id = "to-data-path", value_parser = parse_file_path)]
+    pub to_data_path: Option<String>,
+    #[arg(long = "capacity", id = "capacity", value_parser = parse_capacity)]
+    pub capacity: String,
+    #[arg(long = "fee-rate", id = "fee-rate", default_value = "1000", value_parser = parse_u64)]
+    pub fee_rate: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", value_parser = parse_capacity)]
+    pub max_tx_fee: Option<String>,
+    #[arg(long = "derive-receiving-address-length", id = "derive-receiving-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_receiving_address_length: String,
+    #[arg(long = "derive-change-address", id = "derive-change-address", conflicts_with = "privkey-path", value_parser = parse_address)]
+    pub derive_change_address: Option<String>,
+    #[arg(long = "skip-check-to-address", id = "skip-check-to-address")]
+    pub skip_check_to_address: bool,
+    #[arg(long = "type-id", id = "type-id")]
+    pub type_id: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct WalletGetCapacityArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: Option<String>,
+    #[arg(long = "pubkey", id = "pubkey")]
+    pub pubkey: Option<String>,
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg)]
+    pub lock_arg: Option<String>,
+    #[arg(long = "derive-receiving-address-length", id = "derive-receiving-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_receiving_address_length: String,
+    #[arg(long = "derive-change-address-length", id = "derive-change-address-length", default_value = "1000", value_parser = parse_u32)]
+    pub derive_change_address_length: String,
+    #[arg(long = "derived", id = "derived")]
+    pub derived: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct WalletGetLiveCellsArgs {
+    #[arg(long, value_parser = parse_address)]
+    pub address: String,
+    #[arg(long = "limit", id = "limit", default_value = "15", value_parser = parse_usize)]
+    pub limit: String,
+    #[arg(long = "from", id = "from", value_parser = parse_u64)]
+    pub from: Option<String>,
+    #[arg(long = "to", id = "to", value_parser = parse_u64)]
+    pub to: Option<String>,
+}
 
 // Max derived change address to search
 const DERIVE_CHANGE_ADDRESS_MAX_LEN: u32 = 10000;
@@ -79,53 +216,8 @@ impl<'a> WalletSubCommand<'a> {
         Ok(self.genesis_info.clone().unwrap())
     }
 
-    pub fn subcommand() -> App<'static> {
-        App::new("wallet")
-            .about("Transfer / query balance (with local index) / key utils")
-            .subcommands(vec![
-                App::new("transfer")
-                    .about("Transfer capacity to an address (can have data)")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
-                    .arg(
-                        arg::from_account()
-                            .required_unless(arg::privkey_path().get_name())
-                            .conflicts_with(arg::privkey_path().get_name()),
-                    )
-                    .arg(arg::from_locked_address())
-                    .arg(arg::to_address().required(true))
-                    .arg(arg::to_data())
-                    .arg(arg::to_data_path())
-                    .arg(arg::capacity().required(true))
-                    .arg(arg::fee_rate())
-                    .arg(arg::max_tx_fee())
-                    .arg(arg::derive_receiving_address_length())
-                    .arg(
-                        arg::derive_change_address().conflicts_with(arg::privkey_path().get_name()),
-                    )
-                    .arg(
-                        Arg::with_name("skip-check-to-address")
-                            .long("skip-check-to-address")
-                            .about("Skip check <to-address> (default only allow sighash/multisig address), be cautious to use this flag"))
-                    .arg(
-                        Arg::with_name("type-id")
-                            .long("type-id")
-                            .about("Add type id type script to target output cell"),
-                    ),
-                App::new("get-capacity")
-                    .about("Get capacity address or lock arg or pubkey")
-                    .arg(arg::address())
-                    .arg(arg::pubkey())
-                    .arg(arg::lock_arg())
-                    .arg(arg::derive_receiving_address_length())
-                    .arg(arg::derive_change_address_length())
-                    .arg(arg::derived()),
-                App::new("get-live-cells")
-                    .about("Get live cells by address")
-                    .arg(arg::address())
-                    .arg(arg::live_cells_limit())
-                    .arg(arg::from_block_number())
-                    .arg(arg::to_block_number())
-            ])
+    pub fn subcommand() -> Command {
+        WalletCmd::command()
     }
 
     pub fn transfer(
@@ -574,28 +666,33 @@ impl<'a> WalletSubCommand<'a> {
 
 impl CliSubCommand for WalletSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
-        match matches.subcommand() {
-            ("transfer", Some(m)) => {
-                let to_data = get_to_data(m)?;
+        let cmd = WalletCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            WalletSubcommands::Transfer(args) => {
+                let to_data = if let Some(hex) = args.to_data.as_ref() {
+                    Bytes::from(HexParser.parse(hex)?)
+                } else if let Some(path) = args.to_data_path.as_ref() {
+                    let content = fs::read(path).map_err(|err| err.to_string())?;
+                    Bytes::from(content)
+                } else {
+                    Bytes::new()
+                };
                 let args = TransferArgs {
-                    privkey_path: m.value_of("privkey-path").map(|s| s.to_string()),
-                    from_account: m.value_of("from-account").map(|s| s.to_string()),
-                    from_locked_address: m.value_of("from-locked-address").map(|s| s.to_string()),
+                    privkey_path: args.privkey_path.clone(),
+                    from_account: args.from_account.clone(),
+                    from_locked_address: args.from_locked_address.clone(),
                     password: None,
-                    capacity: get_arg_value(m, "capacity")?,
-                    fee_rate: get_arg_value(m, "fee-rate")?,
-                    force_small_change_as_fee: m.value_of("max-tx-fee").map(|s| s.to_string()),
-                    derive_receiving_address_length: Some(get_arg_value(
-                        m,
-                        "derive-receiving-address-length",
-                    )?),
-                    derive_change_address: m
-                        .value_of("derive-change-address")
-                        .map(|s| s.to_string()),
-                    to_address: get_arg_value(m, "to-address")?,
+                    capacity: args.capacity.clone(),
+                    fee_rate: args.fee_rate.clone(),
+                    force_small_change_as_fee: args.max_tx_fee.clone(),
+                    derive_receiving_address_length: Some(
+                        args.derive_receiving_address_length.clone(),
+                    ),
+                    derive_change_address: args.derive_change_address.clone(),
+                    to_address: args.to_address.clone(),
                     to_data: Some(to_data),
-                    is_type_id: m.is_present("type-id"),
-                    skip_check_to_address: m.is_present("skip-check-to-address"),
+                    is_type_id: args.type_id,
+                    skip_check_to_address: args.skip_check_to_address,
                 };
                 let tx = self.transfer(args, false)?;
                 if debug {
@@ -606,24 +703,30 @@ impl CliSubCommand for WalletSubCommand<'_> {
                     Ok(Output::new_output(tx_hash))
                 }
             }
-            ("get-capacity", Some(m)) => {
+            WalletSubcommands::GetCapacity(args) => {
                 let network_type = get_network_type(self.rpc_client)?;
 
-                let receiving_address_length: u32 = FromStrParser::<u32>::default()
-                    .from_matches(m, "derive-receiving-address-length")?;
-                let change_address_length: u32 = FromStrParser::<u32>::default()
-                    .from_matches(m, "derive-change-address-length")?;
-                let address_payload = if let Some(address_str) = m.value_of("address") {
+                let receiving_address_length: u32 =
+                    FromStrParser::<u32>::default().parse(&args.derive_receiving_address_length)?;
+                let change_address_length: u32 =
+                    FromStrParser::<u32>::default().parse(&args.derive_change_address_length)?;
+                let address_payload = if let Some(address_str) = args.address.as_ref() {
                     AddressParser::default()
                         .set_network(network_type)
                         .parse(address_str)?
                         .payload()
                         .clone()
+                } else if let Some(pubkey_str) = args.pubkey.as_ref() {
+                    let pubkey = PubkeyHexParser.parse(pubkey_str)?;
+                    AddressPayload::from_pubkey(&pubkey)
+                } else if let Some(lock_arg_str) = args.lock_arg.as_ref() {
+                    let lock_arg: H160 = FixedHashParser::<H160>::default().parse(lock_arg_str)?;
+                    AddressPayload::from_pubkey_hash(lock_arg)
                 } else {
-                    get_address(Some(network_type), m)?
+                    return Err("Please give one argument".to_string());
                 };
                 let mut lock_scripts = vec![Script::from(&address_payload)];
-                if m.is_present("derived") {
+                if args.derived {
                     let lock_arg = H160::from_slice(address_payload.args().as_ref()).unwrap();
 
                     let key_set = self
@@ -658,17 +761,23 @@ impl CliSubCommand for WalletSubCommand<'_> {
                 }
                 Ok(Output::new_output(resp))
             }
-            ("get-live-cells", Some(m)) => {
-                let limit: u32 = FromStrParser::<u32>::default().from_matches(m, "limit")?;
-                let from_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "from")?;
-                let to_number_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "to")?;
+            WalletSubcommands::GetLiveCells(args) => {
+                let limit: u32 = FromStrParser::<u32>::default().parse(&args.limit)?;
+                let from_number_opt: Option<u64> = args
+                    .from
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
+                let to_number_opt: Option<u64> = args
+                    .to
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
                 let network_type = get_network_type(self.rpc_client)?;
                 let address: Address = AddressParser::default()
                     .set_network(network_type)
-                    .from_matches(m, "address")?;
+                    .parse(&args.address)?;
                 let lock_script = Script::from(address.payload());
                 let live_cells = self.get_live_cells(
                     lock_script,
@@ -693,7 +802,6 @@ impl CliSubCommand for WalletSubCommand<'_> {
 
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand().generate_usage()),
         }
     }
 }

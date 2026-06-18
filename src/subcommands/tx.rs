@@ -20,17 +20,15 @@ use ckb_types::{
     prelude::*,
     H160, H256,
 };
-use clap::{App, Arg, ArgMatches};
+use clap::{
+    ArgAction, ArgMatches, Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand,
+};
 use faster_hex::hex_string;
 use serde_derive::{Deserialize, Serialize};
 
-use super::{
-    arg_get_multisig_code_hash, arg_multisig_code_hash, CliSubCommand, Output,
-    ALLOW_ZERO_LOCK_HELP_MSG,
-};
+use super::{CliSubCommand, Output};
 use crate::plugin::{KeyStoreHandler, PluginManager, SignTarget};
 use crate::utils::{
-    arg,
     arg_parser::{
         AddressParser, ArgParser, CapacityParser, FilePathParser, FixedHashParser, FromStrParser,
         HexParser, PrivkeyPathParser, PrivkeyWrapper,
@@ -38,7 +36,7 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password,
+        get_network_type, get_privkey_signer, read_password,
     },
     rpc::HttpRpcClient,
     tx_helper::{SignerFn, TxHelper},
@@ -48,6 +46,261 @@ pub struct TxSubCommand<'a> {
     rpc_client: &'a mut HttpRpcClient,
     plugin_mgr: &'a mut PluginManager,
     genesis_info: Option<GenesisInfo>,
+}
+
+fn parse_tx_file(input: &str) -> Result<String, String> {
+    FilePathParser::new(false)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_sighash_address(input: &str) -> Result<String, String> {
+    AddressParser::new_sighash()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_multisig_address(input: &str) -> Result<String, String> {
+    AddressParser::new_multisig(MultisigScript::Legacy)
+        .validate(input)
+        .or_else(|_| AddressParser::new_multisig(MultisigScript::V2).validate(input))
+        .map(|_| input.to_string())
+}
+
+fn parse_u8(input: &str) -> Result<String, String> {
+    FromStrParser::<u8>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u32(input: &str) -> Result<String, String> {
+    FromStrParser::<u32>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_u64(input: &str) -> Result<String, String> {
+    FromStrParser::<u64>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_h256(input: &str) -> Result<String, String> {
+    FixedHashParser::<H256>::default()
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+fn parse_capacity(input: &str) -> Result<String, String> {
+    CapacityParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_hex(input: &str) -> Result<String, String> {
+    HexParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_lock_arg_20_28(input: &str) -> Result<String, String> {
+    match HexParser.parse(input) {
+        Ok(data) if data.len() == 20 || data.len() == 28 => Ok(input.to_string()),
+        Ok(data) => Err(format!("invalid data length: {}", data.len())),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_signature(input: &str) -> Result<String, String> {
+    match HexParser.parse(input) {
+        Ok(data) if data.len() == SECP_SIGNATURE_SIZE => Ok(input.to_string()),
+        Ok(data) => Err(format!("invalid data length: {}", data.len())),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_multisig_code_hash_value(input: &str) -> Result<H256, String> {
+    match input {
+        "legacy" => Ok(MultisigScript::Legacy.script_id().code_hash),
+        "v2" => Ok(MultisigScript::V2.script_id().code_hash),
+        _ => FixedHashParser::<H256>::default().parse(input),
+    }
+}
+
+fn parse_privkey_path(input: &str) -> Result<String, String> {
+    PrivkeyPathParser.validate(input).map(|_| input.to_string())
+}
+
+fn parse_from_account(input: &str) -> Result<String, String> {
+    FixedHashParser::<H160>::default()
+        .validate(input)
+        .or_else(|err| {
+            AddressParser::default()
+                .validate(input)
+                .and_then(|()| AddressParser::new_sighash().validate(input))
+                .map_err(|_| err)
+        })
+        .map(|_| input.to_string())
+}
+
+fn parse_to_data_path(input: &str) -> Result<String, String> {
+    FilePathParser::new(true)
+        .validate(input)
+        .map(|_| input.to_string())
+}
+
+#[derive(Parser, Debug)]
+#[command(about = "Handle common sighash/multisig transaction")]
+pub struct TxCmd {
+    #[command(subcommand)]
+    pub command: TxSubcommands,
+}
+
+#[derive(Subcommand, Debug)]
+#[command(rename_all = "kebab-case")]
+pub enum TxSubcommands {
+    /// Init a common (sighash/multisig) transaction
+    Init(TxInitArgs),
+    /// Add multisig config
+    AddMultisigConfig(TxAddMultisigConfigArgs),
+    /// Remove all field items in transaction
+    ClearField(TxClearFieldArgs),
+    /// Add cell input (with secp/multisig lock)
+    AddInput(TxAddInputArgs),
+    /// Add cell output
+    AddOutput(TxAddOutputArgs),
+    /// Add signature
+    AddSignature(TxAddSignatureArgs),
+    /// Show detail of this multisig transaction (capacity, tx-fee, etc.)
+    Info(TxInfoArgs),
+    /// Sign all sighash/multisig inputs in this transaction
+    SignInputs(TxSignInputsArgs),
+    /// Send multisig transaction
+    Send(TxSendArgs),
+    /// Build multisig address with multisig config and since(optional) argument
+    BuildMultisigAddress(TxBuildMultisigAddressArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct TxInitArgs {
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxAddMultisigConfigArgs {
+    #[arg(long = "sighash-address", id = "sighash-address", action = ArgAction::Append, num_args = 1.., required = true, value_parser = parse_sighash_address)]
+    pub sighash_address: Vec<String>,
+    #[arg(long = "multisig-code-hash", id = "multisig-code-hash", value_parser = [
+        "legacy",
+        "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+        "v2",
+        "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
+    ])]
+    pub multisig_code_hash: String,
+    #[arg(long = "require-first-n", id = "require-first-n", default_value = "0", value_parser = parse_u8)]
+    pub require_first_n: String,
+    #[arg(long = "threshold", id = "threshold", default_value = "1", value_parser = parse_u8)]
+    pub threshold: String,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxClearFieldArgs {
+    #[arg(long = "field", id = "field", value_parser = ["inputs", "outputs", "signatures"])]
+    pub field: String,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxAddInputArgs {
+    #[arg(long = "tx-hash", id = "tx-hash", value_parser = parse_h256)]
+    pub tx_hash: String,
+    #[arg(long = "index", id = "index", value_parser = parse_u32)]
+    pub index: String,
+    #[arg(long = "since-absolute-epoch", id = "since-absolute-epoch", value_parser = parse_u64)]
+    pub since_absolute_epoch: Option<String>,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+    #[arg(long = "skip-check", id = "skip-check")]
+    pub skip_check: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct TxAddOutputArgs {
+    #[arg(long = "to-sighash-address", id = "to-sighash-address", conflicts_with_all = ["to-short-multisig-address", "to-long-multisig-address"], value_parser = parse_sighash_address)]
+    pub to_sighash_address: Option<String>,
+    #[arg(long = "to-short-multisig-address", id = "to-short-multisig-address", conflicts_with = "to-long-multisig-address", value_parser = parse_multisig_address)]
+    pub to_short_multisig_address: Option<String>,
+    #[arg(long = "to-long-multisig-address", id = "to-long-multisig-address", value_parser = parse_multisig_address)]
+    pub to_long_multisig_address: Option<String>,
+    #[arg(long = "capacity", id = "capacity", value_parser = parse_capacity)]
+    pub capacity: String,
+    #[arg(long = "to-data", id = "to-data", value_parser = parse_hex)]
+    pub to_data: Option<String>,
+    #[arg(long = "to-data-path", id = "to-data-path", value_parser = parse_to_data_path)]
+    pub to_data_path: Option<String>,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxAddSignatureArgs {
+    #[arg(long = "lock-arg", id = "lock-arg", value_parser = parse_lock_arg_20_28)]
+    pub lock_arg: String,
+    #[arg(long = "signature", id = "signature", value_parser = parse_signature)]
+    pub signature: String,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxInfoArgs {
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+}
+
+#[derive(Args, Debug)]
+pub struct TxSignInputsArgs {
+    #[arg(long = "privkey-path", id = "privkey-path", required_unless_present = "from-account", value_parser = parse_privkey_path)]
+    pub privkey_path: Option<String>,
+    #[arg(long = "from-account", id = "from-account", required_unless_present = "privkey-path", value_parser = parse_from_account)]
+    pub from_account: Option<String>,
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+    #[arg(long = "add-signatures", id = "add-signatures")]
+    pub add_signatures: bool,
+    #[arg(long = "skip-check", id = "skip-check")]
+    pub skip_check: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct TxSendArgs {
+    #[arg(long = "tx-file", id = "tx-file", value_parser = parse_tx_file)]
+    pub tx_file: String,
+    #[arg(long = "max-tx-fee", id = "max-tx-fee", default_value = "1.0", value_parser = parse_capacity)]
+    pub max_tx_fee: String,
+    #[arg(long = "skip-check", id = "skip-check")]
+    pub skip_check: bool,
+    #[arg(long = "zero-lock", id = "zero-lock")]
+    pub zero_lock: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct TxBuildMultisigAddressArgs {
+    #[arg(long = "sighash-address", id = "sighash-address", action = ArgAction::Append, num_args = 1.., required = true, value_parser = parse_sighash_address)]
+    pub sighash_address: Vec<String>,
+    #[arg(long = "require-first-n", id = "require-first-n", default_value = "0", value_parser = parse_u8)]
+    pub require_first_n: String,
+    #[arg(long = "multisig-code-hash", id = "multisig-code-hash", value_parser = [
+        "legacy",
+        "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+        "v2",
+        "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
+    ])]
+    pub multisig_code_hash: String,
+    #[arg(long = "threshold", id = "threshold", default_value = "1", value_parser = parse_u8)]
+    pub threshold: String,
+    #[arg(long = "since-absolute-epoch", id = "since-absolute-epoch", value_parser = parse_u64)]
+    pub since_absolute_epoch: Option<String>,
 }
 
 impl<'a> TxSubCommand<'a> {
@@ -63,196 +316,8 @@ impl<'a> TxSubCommand<'a> {
         }
     }
 
-    pub fn subcommand(name: &'static str) -> App<'static> {
-        let arg_tx_file = Arg::with_name("tx-file")
-            .long("tx-file")
-            .takes_value(true)
-            .validator(|input| FilePathParser::new(false).validate(input))
-            .required(true)
-            .about("Multisig transaction data file (format: json)");
-        let arg_sighash_address = Arg::with_name("sighash-address")
-            .long("sighash-address")
-            .takes_value(true)
-            .multiple(true)
-            .required(true)
-            .validator(|input| AddressParser::new_sighash().validate(input))
-            .about("Normal sighash address");
-        let arg_require_first_n = Arg::with_name("require-first-n")
-            .long("require-first-n")
-            .takes_value(true)
-            .default_value("0")
-            .validator(|input| FromStrParser::<u8>::default().validate(input))
-            .about("Require first n signatures of corresponding pubkey");
-        let arg_threshold = Arg::with_name("threshold")
-            .long("threshold")
-            .takes_value(true)
-            .default_value("1")
-            .validator(|input| FromStrParser::<u8>::default().validate(input))
-            .about("Multisig threshold");
-        let arg_since_absolute_epoch = Arg::with_name("since-absolute-epoch")
-            .long("since-absolute-epoch")
-            .takes_value(true)
-            .validator(|input| FromStrParser::<u64>::default().validate(input))
-            .about("Since absolute epoch number");
-        let arg_skip_check = Arg::with_name("skip-check")
-            .long("skip-check")
-            .about("Send transaction without any check, be cautious to use this flag");
-        let arg_allow_zero_lock = Arg::with_name("zero-lock")
-            .long("zero-lock")
-            .about(ALLOW_ZERO_LOCK_HELP_MSG);
-
-        App::new(name)
-            .about("Handle common sighash/multisig transaction")
-            .subcommands(vec![
-                App::new("init")
-                    .about("Init a common (sighash/multisig) transaction")
-                    .arg(arg_tx_file.clone()),
-                App::new("add-multisig-config")
-                    .about("Add multisig config")
-                    .arg(arg_sighash_address.clone())
-                    .arg(arg_multisig_code_hash().required(true))
-                    .arg(arg_require_first_n.clone())
-                    .arg(arg_threshold.clone())
-                    .arg(arg_tx_file.clone()),
-                App::new("clear-field")
-                    .about("Remove all field items in transaction")
-                    .arg(
-                        Arg::with_name("field")
-                            .long("field")
-                            .takes_value(true)
-                            .required(true)
-                            .possible_values(&["inputs", "outputs", "signatures"])
-                            .about("The transaction field"),
-                    )
-                    .arg(arg_tx_file.clone()),
-                App::new("add-input")
-                    .about("Add cell input (with secp/multisig lock)")
-                    .arg(
-                        Arg::with_name("tx-hash")
-                            .long("tx-hash")
-                            .takes_value(true)
-                            .validator(|input| FixedHashParser::<H256>::default().validate(input))
-                            .required(true)
-                            .about("Transaction hash"),
-                    )
-                    .arg(
-                        Arg::with_name("index")
-                            .long("index")
-                            .takes_value(true)
-                            .validator(|input| FromStrParser::<u32>::default().validate(input))
-                            .required(true)
-                            .about("Transaction output index"),
-                    )
-                    .arg(arg_since_absolute_epoch.clone())
-                    .arg(arg_tx_file.clone())
-                    .arg(arg_skip_check.clone()),
-                App::new("add-output")
-                    .about("Add cell output")
-                    .arg(
-                        Arg::with_name("to-sighash-address")
-                            .long("to-sighash-address")
-                            .conflicts_with_all(&[
-                                "to-short-multisig-address",
-                                "to-long-multisig-address",
-                            ])
-                            .takes_value(true)
-                            .validator(|input| AddressParser::new_sighash().validate(input))
-                            .about("To normal sighash address"),
-                    )
-                    .arg(
-                        Arg::with_name("to-short-multisig-address")
-                            .long("to-short-multisig-address")
-                            .conflicts_with("to-long-multisig-address")
-                            .takes_value(true)
-                            .validator(|input| {
-                                AddressParser::new_multisig(MultisigScript::Legacy)
-                                    .validate(input)
-                                    .or(AddressParser::new_multisig(MultisigScript::V2)
-                                        .validate(input))
-                            })
-                            .about("To short multisig address(encode with legacy multisig script)"),
-                    )
-                    .arg(
-                        Arg::with_name("to-long-multisig-address")
-                            .long("to-long-multisig-address")
-                            .takes_value(true)
-                            .requires("multisig-code-hash")
-                            .validator(|input| {
-                                AddressParser::new_multisig(MultisigScript::Legacy)
-                                    .validate(input)
-                                    .or(AddressParser::new_multisig(MultisigScript::V2)
-                                        .validate(input))
-                            })
-                            .about("To long multisig address (special case, include since)"),
-                    )
-                    .arg(arg::capacity().required(true))
-                    .arg(arg::to_data())
-                    .arg(arg::to_data_path())
-                    .arg(arg_tx_file.clone()),
-                App::new("add-signature")
-                    .about("Add signature")
-                    .arg(
-                        Arg::with_name("lock-arg")
-                            .long("lock-arg")
-                            .takes_value(true)
-                            .required(true)
-                            .validator(|input| match HexParser.parse(input) {
-                                Ok(ref data) if data.len() == 20 || data.len() == 28 => Ok(()),
-                                Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err),
-                            })
-                            .about("The lock_arg of input lock script (20 bytes or 28 bytes)"),
-                    )
-                    .arg(
-                        Arg::with_name("signature")
-                            .long("signature")
-                            .takes_value(true)
-                            .required(true)
-                            .validator(|input| match HexParser.parse(input) {
-                                Ok(ref data) if data.len() == SECP_SIGNATURE_SIZE => Ok(()),
-                                Ok(ref data) => Err(format!("invalid data length: {}", data.len())),
-                                Err(err) => Err(err),
-                            })
-                            .about("The signature"),
-                    )
-                    .arg(arg_tx_file.clone()),
-                App::new("info")
-                    .about("Show detail of this multisig transaction (capacity, tx-fee, etc.)")
-                    .arg(arg_tx_file.clone()),
-                App::new("sign-inputs")
-                    .about("Sign all sighash/multisig inputs in this transaction")
-                    .arg(arg::privkey_path().required_unless(arg::from_account().get_name()))
-                    .arg(arg::from_account().required_unless(arg::privkey_path().get_name()))
-                    .arg(arg_tx_file.clone())
-                    .arg(
-                        Arg::with_name("add-signatures")
-                            .long("add-signatures")
-                            .about("Sign and add signatures"),
-                    )
-                    .arg(arg_skip_check.clone()),
-                App::new("send")
-                    .about("Send multisig transaction")
-                    .arg(arg_tx_file.clone())
-                    .arg(
-                        Arg::with_name("max-tx-fee")
-                            .long("max-tx-fee")
-                            .takes_value(true)
-                            .default_value("1.0")
-                            .validator(|input| CapacityParser.validate(input))
-                            .about("Max transaction fee (unit: CKB)"),
-                    )
-                    .arg(arg_skip_check)
-                    .arg(arg_allow_zero_lock),
-                App::new("build-multisig-address")
-                    .about(
-                        "Build multisig address with multisig config and since(optional) argument",
-                    )
-                    .arg(arg_sighash_address.clone())
-                    .arg(arg_require_first_n.clone())
-                    .arg(arg_multisig_code_hash().required(true))
-                    .arg(arg_threshold.clone())
-                    .arg(arg_since_absolute_epoch.clone()),
-            ])
+    pub fn subcommand(name: &'static str) -> Command {
+        TxCmd::command().name(name)
     }
 }
 
@@ -260,27 +325,22 @@ impl CliSubCommand for TxSubCommand<'_> {
     fn process(&mut self, matches: &ArgMatches, debug: bool) -> Result<Output, String> {
         let network = get_network_type(self.rpc_client)?;
 
-        match matches.subcommand() {
-            ("init", Some(m)) => {
-                let tx_file_opt: Option<PathBuf> =
-                    FilePathParser::new(false).from_matches_opt(m, "tx-file")?;
+        let cmd = TxCmd::from_arg_matches(matches).map_err(|err| err.to_string())?;
+        match cmd.command {
+            TxSubcommands::Init(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
                 let helper = TxHelper::default();
                 let repr = ReprTxHelper::new(helper, network);
 
-                if let Some(tx_file) = tx_file_opt {
-                    let mut file = fs::File::create(tx_file).map_err(|err| err.to_string())?;
-                    let content =
-                        serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
-                    file.write_all(content.as_bytes())
-                        .map_err(|err| err.to_string())?;
-                    Ok(Output::new_success())
-                } else {
-                    Ok(Output::new_output(repr))
-                }
+                let mut file = fs::File::create(tx_file).map_err(|err| err.to_string())?;
+                let content = serde_json::to_string_pretty(&repr).map_err(|err| err.to_string())?;
+                file.write_all(content.as_bytes())
+                    .map_err(|err| err.to_string())?;
+                Ok(Output::new_success())
             }
-            ("clear-field", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let field = m.value_of("field").unwrap();
+            TxSubcommands::ClearField(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let field = args.field.as_str();
                 modify_tx_file(&tx_file, network, |helper| {
                     match field {
                         "inputs" => helper.clear_inputs(),
@@ -292,15 +352,17 @@ impl CliSubCommand for TxSubCommand<'_> {
                 })?;
                 Ok(Output::new_success())
             }
-            ("add-input", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let tx_hash: H256 =
-                    FixedHashParser::<H256>::default().from_matches(m, "tx-hash")?;
-                let index: u32 = FromStrParser::<u32>::default().from_matches(m, "index")?;
-                let since_absolute_epoch_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
+            TxSubcommands::AddInput(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let tx_hash: H256 = FixedHashParser::<H256>::default().parse(&args.tx_hash)?;
+                let index: u32 = FromStrParser::<u32>::default().parse(&args.index)?;
+                let since_absolute_epoch_opt: Option<u64> = args
+                    .since_absolute_epoch
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
-                let skip_check: bool = m.is_present("skip-check");
+                let skip_check: bool = args.skip_check;
                 let genesis_info = get_genesis_info(&self.genesis_info, self.rpc_client)?;
                 let out_point = OutPoint::new_builder()
                     .tx_hash(tx_hash.pack())
@@ -321,27 +383,45 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            ("add-output", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let capacity: u64 = CapacityParser.from_matches(m, "capacity")?;
+            TxSubcommands::AddOutput(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let capacity: u64 = CapacityParser.parse(&args.capacity)?.into();
 
-                let to_sighash_address_opt: Option<Address> =
-                    AddressParser::new_sighash().from_matches_opt(m, "to-sighash-address")?;
-                let to_short_multisig_address_opt: Option<Address> =
-                    AddressParser::new_multisig(MultisigScript::Legacy)
-                        .from_matches_opt(m, "to-short-multisig-address")
-                        .or_else(|_| {
-                            AddressParser::new_multisig(MultisigScript::V2)
-                                .from_matches_opt(m, "to-short-multisig-address")
-                        })?;
-                let to_long_multisig_address_opt: Option<Address> = {
-                    AddressParser::new_multisig(MultisigScript::Legacy)
-                        .from_matches_opt(m, "to-long-multisig-address")
-                        .or(AddressParser::new_multisig(MultisigScript::V2)
-                            .from_matches_opt(m, "to-long-multisig-address"))?
+                let to_sighash_address_opt: Option<Address> = args
+                    .to_sighash_address
+                    .as_ref()
+                    .map(|value| AddressParser::new_sighash().parse(value))
+                    .transpose()?;
+                let to_short_multisig_address_opt: Option<Address> = args
+                    .to_short_multisig_address
+                    .as_ref()
+                    .map(|value| {
+                        AddressParser::new_multisig(MultisigScript::Legacy)
+                            .parse(value)
+                            .or_else(|_| {
+                                AddressParser::new_multisig(MultisigScript::V2).parse(value)
+                            })
+                    })
+                    .transpose()?;
+                let to_long_multisig_address_opt: Option<Address> = args
+                    .to_long_multisig_address
+                    .as_ref()
+                    .map(|value| {
+                        AddressParser::new_multisig(MultisigScript::Legacy)
+                            .parse(value)
+                            .or_else(|_| {
+                                AddressParser::new_multisig(MultisigScript::V2).parse(value)
+                            })
+                    })
+                    .transpose()?;
+
+                let to_data = if let Some(hex) = args.to_data.as_ref() {
+                    Bytes::from(HexParser.parse(hex)?)
+                } else if let Some(path) = args.to_data_path.as_ref() {
+                    Bytes::from(fs::read(path).map_err(|err| err.to_string())?)
+                } else {
+                    Bytes::new()
                 };
-
-                let to_data = get_to_data(m)?;
                 check_capacity(capacity, to_data.len())?;
                 if let Some(address) = to_long_multisig_address_opt.as_ref() {
                     let payload = address.payload();
@@ -369,18 +449,19 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 Ok(Output::new_success())
             }
-            ("add-signature", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let lock_arg: Bytes = HexParser.from_matches(m, "lock-arg")?;
-                let signature: Bytes = HexParser.from_matches(m, "signature")?;
+            TxSubcommands::AddSignature(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let lock_arg: Bytes = Bytes::from(HexParser.parse(&args.lock_arg)?);
+                let signature: Bytes = Bytes::from(HexParser.parse(&args.signature)?);
 
                 modify_tx_file(&tx_file, network, |helper| {
                     helper.add_signature(lock_arg, signature)
                 })?;
                 Ok(Output::new_success())
             }
-            ("add-multisig-config", Some(m)) => {
-                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+            TxSubcommands::AddMultisigConfig(args) => {
+                let multisig_lock_code_hash: H256 =
+                    parse_multisig_code_hash_value(&args.multisig_code_hash)?;
                 let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
                     .map_err(|_err| {
                         format!(
@@ -389,13 +470,19 @@ impl CliSubCommand for TxSubCommand<'_> {
                         )
                     })?;
 
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
-                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
-                    .set_network(network)
-                    .from_matches_vec(m, "sighash-address")?;
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
+                let sighash_addresses: Vec<Address> = args
+                    .sighash_address
+                    .iter()
+                    .map(|value| {
+                        AddressParser::new_sighash()
+                            .set_network(network)
+                            .parse(value)
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
-                    FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
-                let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
+                    FromStrParser::<u8>::default().parse(&args.require_first_n)?;
+                let threshold: u8 = FromStrParser::<u8>::default().parse(&args.threshold)?;
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
@@ -414,8 +501,8 @@ impl CliSubCommand for TxSubCommand<'_> {
                 })?;
                 Ok(Output::new_success())
             }
-            ("info", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
+            TxSubcommands::Info(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -487,12 +574,16 @@ impl CliSubCommand for TxSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            ("sign-inputs", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(true).from_matches(m, "tx-file")?;
-                let privkey_opt: Option<PrivkeyWrapper> =
-                    PrivkeyPathParser.from_matches_opt(m, "privkey-path")?;
-                let account_opt: Option<H160> = m
-                    .value_of("from-account")
+            TxSubcommands::SignInputs(args) => {
+                let tx_file: PathBuf = FilePathParser::new(true).parse(&args.tx_file)?;
+                let privkey_opt: Option<PrivkeyWrapper> = args
+                    .privkey_path
+                    .as_ref()
+                    .map(|value| PrivkeyPathParser.parse(value))
+                    .transpose()?;
+                let account_opt: Option<H160> = args
+                    .from_account
+                    .as_ref()
                     .map(|input| {
                         FixedHashParser::<H160>::default()
                             .parse(input)
@@ -508,7 +599,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                             })
                     })
                     .transpose()?;
-                let skip_check: bool = m.is_present("skip-check");
+                let skip_check: bool = args.skip_check;
 
                 let mut signer = if let Some(privkey) = privkey_opt {
                     get_privkey_signer(privkey)
@@ -538,7 +629,7 @@ impl CliSubCommand for TxSubCommand<'_> {
 
                 let signatures = modify_tx_file(&tx_file, network, |helper| {
                     let signatures = helper.sign_inputs(&mut signer, get_live_cell, skip_check)?;
-                    if m.is_present("add-signatures") {
+                    if args.add_signatures {
                         for (lock_arg, signature) in signatures.clone() {
                             helper.add_signature(lock_arg, signature)?;
                         }
@@ -556,11 +647,11 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .collect::<Vec<_>>();
                 Ok(Output::new_output(resp))
             }
-            ("send", Some(m)) => {
-                let tx_file: PathBuf = FilePathParser::new(false).from_matches(m, "tx-file")?;
-                let max_tx_fee: u64 = CapacityParser.from_matches(m, "max-tx-fee")?;
-                let skip_check: bool = m.is_present("skip-check");
-                let allow_zero_lock: bool = m.is_present("zero-lock");
+            TxSubcommands::Send(args) => {
+                let tx_file: PathBuf = FilePathParser::new(false).parse(&args.tx_file)?;
+                let max_tx_fee: u64 = CapacityParser.parse(&args.max_tx_fee)?.into();
+                let skip_check: bool = args.skip_check;
+                let allow_zero_lock: bool = args.zero_lock;
 
                 let mut live_cell_cache: HashMap<(OutPoint, bool), (CellOutput, Bytes)> =
                     Default::default();
@@ -605,8 +696,9 @@ impl CliSubCommand for TxSubCommand<'_> {
                     .map_err(|err| format!("Send transaction error: {}", err))?;
                 Ok(Output::new_output(resp))
             }
-            ("build-multisig-address", Some(m)) => {
-                let multisig_lock_code_hash: H256 = arg_get_multisig_code_hash(m)?;
+            TxSubcommands::BuildMultisigAddress(args) => {
+                let multisig_lock_code_hash: H256 =
+                    parse_multisig_code_hash_value(&args.multisig_code_hash)?;
                 let multisig_script = MultisigScript::try_from(multisig_lock_code_hash.clone())
                     .map_err(|_err| {
                         format!(
@@ -615,14 +707,23 @@ impl CliSubCommand for TxSubCommand<'_> {
                         )
                     })?;
 
-                let sighash_addresses: Vec<Address> = AddressParser::new_sighash()
-                    .set_network(network)
-                    .from_matches_vec(m, "sighash-address")?;
+                let sighash_addresses: Vec<Address> = args
+                    .sighash_address
+                    .iter()
+                    .map(|value| {
+                        AddressParser::new_sighash()
+                            .set_network(network)
+                            .parse(value)
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
                 let require_first_n: u8 =
-                    FromStrParser::<u8>::default().from_matches(m, "require-first-n")?;
-                let threshold: u8 = FromStrParser::<u8>::default().from_matches(m, "threshold")?;
-                let since_absolute_epoch_opt: Option<u64> =
-                    FromStrParser::<u64>::default().from_matches_opt(m, "since-absolute-epoch")?;
+                    FromStrParser::<u8>::default().parse(&args.require_first_n)?;
+                let threshold: u8 = FromStrParser::<u8>::default().parse(&args.threshold)?;
+                let since_absolute_epoch_opt: Option<u64> = args
+                    .since_absolute_epoch
+                    .as_ref()
+                    .map(|value| FromStrParser::<u64>::default().parse(value))
+                    .transpose()?;
 
                 let sighash_addresses = sighash_addresses
                     .into_iter()
@@ -646,7 +747,6 @@ impl CliSubCommand for TxSubCommand<'_> {
                 });
                 Ok(Output::new_output(resp))
             }
-            _ => Err(Self::subcommand("tx").generate_usage()),
         }
     }
 }

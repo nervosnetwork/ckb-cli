@@ -32,7 +32,7 @@ use clap::{Arg, ArgMatches};
 use serde::Serialize;
 
 use crate::utils::{
-    arg_parser::{ArgParser, FixedHashParser},
+    arg_parser::{ArgMatchesExt, ArgParser, FixedHashParser},
     printer::{OutputFormat, Printable},
 };
 
@@ -101,24 +101,25 @@ Key Considerations:
 - No Recovery Mechanism: If vulnerabilities or defects exist in the script, there is no way to upgrade, patch, or revoke it.
 - Use with Caution: Thoroughly audit and test the script before deployment. This option is recommended only for scenarios requiring absolute finality, where script behavior must remain tamper-proof indefinitely.";
 
-fn arg_multisig_code_hash() -> Arg<'static> {
-    let arg_multisig_code_hash = Arg::with_name("multisig-code-hash")
-            .long("multisig-code-hash")
-            .takes_value(true)
-            .multiple(false)
-            .required(true)
-            .possible_values(&[
-                // legacy code hash
-                "legacy",
-                "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
-                // V2 code hash
-                "v2",
-                "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
-            ])
-        .about("Specifies the multisig code hash to use:\n    - v2(default): `0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29`. \n    - legacy(deprecated): `0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8` is NOT recommended for use.\n\n");
+#[allow(dead_code)]
+fn arg_multisig_code_hash() -> Arg {
+    let arg_multisig_code_hash = Arg::new("multisig-code-hash")
+        .long("multisig-code-hash")
+        .num_args(1)
+        .required(true)
+        .value_parser([
+            // legacy code hash
+            "legacy",
+            "0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8",
+            // V2 code hash
+            "v2",
+            "0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29",
+        ])
+        .help("Specifies the multisig code hash to use:\n    - v2(default): `0x36c971b8d41fbd94aabca77dc75e826729ac98447b46f91e00796155dddb0d29`. \n    - legacy(deprecated): `0x5c5069eb0857efc65e1bca0c07df34c31663b3622fd3876c876320fc9634e2a8` is NOT recommended for use.\n\n");
     arg_multisig_code_hash
 }
 
+#[allow(dead_code)]
 fn arg_get_multisig_code_hash(m: &ArgMatches) -> Result<H256, String> {
     match m.value_of("multisig-code-hash").unwrap() {
         "legacy" => Ok(MultisigScript::Legacy.script_id().code_hash),
