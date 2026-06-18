@@ -36,7 +36,7 @@ use crate::utils::{
         PrivkeyPathParser, PrivkeyWrapper, PubkeyHexParser,
     },
     genesis_info::GenesisInfo,
-    other::{address_json, get_address, get_network_type, read_password},
+    other::{address_json, get_address, get_network_type, h160_from_slice, read_password},
     rpc::{ChainInfo, HttpRpcClient},
 };
 use crate::{build_cli, get_version};
@@ -328,8 +328,7 @@ impl CliSubCommand for UtilSubCommand<'_> {
                     Some(pubkey) => AddressPayload::from_pubkey(&pubkey),
                     None => get_address(None, m)?,
                 };
-                let lock_arg = H160::from_slice(address_payload.args().as_ref())
-                    .map_err(|err| format!("invalid H160 from address payload: {}", err))?;
+                let lock_arg = h160_from_slice(address_payload.args().as_ref(), "address payload")?;
                 let old_address = OldAddress::new_default(lock_arg.clone());
 
                 eprintln!(
@@ -371,7 +370,8 @@ message = "0x"
                         result
                             .map(|address_opt| {
                                 address_opt.and_then(|address| {
-                                    H160::from_slice(address.payload().args().as_ref()).ok()
+                                    h160_from_slice(address.payload().args().as_ref(), "address")
+                                        .ok()
                                 })
                             })
                             .map_err(|_| err)
@@ -446,7 +446,8 @@ message = "0x"
                         result
                             .map(|address_opt| {
                                 address_opt.and_then(|address| {
-                                    H160::from_slice(address.payload().args().as_ref()).ok()
+                                    h160_from_slice(address.payload().args().as_ref(), "address")
+                                        .ok()
                                 })
                             })
                             .map_err(|_| err)
@@ -507,7 +508,8 @@ message = "0x"
                         result
                             .map(|address_opt| {
                                 address_opt.and_then(|address| {
-                                    H160::from_slice(address.payload().args().as_ref()).ok()
+                                    h160_from_slice(address.payload().args().as_ref(), "address")
+                                        .ok()
                                 })
                             })
                             .map_err(|_| err)
@@ -859,8 +861,10 @@ fn search_path(
     extended_address: Address,
     password: Option<String>,
 ) -> Result<DerivationPath, String> {
-    let target = H160::from_slice(extended_address.payload().args().as_ref())
-        .map_err(|err| format!("parse extended address lock args error: {}", err))?;
+    let target = h160_from_slice(
+        extended_address.payload().args().as_ref(),
+        "extended address",
+    )?;
     let key_set = plugin_mgr
         .keystore_handler()
         .derived_key_set_by_index(hash160, 0, 2000, 0, 2000, password)?;

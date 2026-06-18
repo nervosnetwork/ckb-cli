@@ -38,7 +38,7 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_genesis_info, get_live_cell, get_live_cell_with_cache,
-        get_network_type, get_privkey_signer, get_to_data, read_password,
+        get_network_type, get_privkey_signer, get_to_data, h160_from_slice, read_password,
     },
     rpc::HttpRpcClient,
     tx_helper::{SignerFn, TxHelper},
@@ -400,8 +400,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let sighash_addresses: Vec<H160> = sighash_addresses
                     .into_iter()
                     .map(|address| {
-                        H160::from_slice(address.payload().args().as_ref())
-                            .map_err(|e| format!("invalid H160 from sighash address: {}", e))
+                        h160_from_slice(address.payload().args().as_ref(), "sighash address")
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let cfg = MultisigConfig::new_with(
@@ -505,8 +504,9 @@ impl CliSubCommand for TxSubCommand<'_> {
                                     .parse(input);
                                 result
                                     .and_then(|address| {
-                                        H160::from_slice(address.payload().args().as_ref()).map_err(
-                                            |e| format!("invalid H160 from address: {}", e),
+                                        h160_from_slice(
+                                            address.payload().args().as_ref(),
+                                            "address",
                                         )
                                     })
                                     .map_err(|_| err)
@@ -632,8 +632,7 @@ impl CliSubCommand for TxSubCommand<'_> {
                 let sighash_addresses: Vec<H160> = sighash_addresses
                     .into_iter()
                     .map(|address| {
-                        H160::from_slice(address.payload().args().as_ref())
-                            .map_err(|e| format!("invalid H160 from sighash address: {}", e))
+                        h160_from_slice(address.payload().args().as_ref(), "sighash address")
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let cfg = MultisigConfig::new_with(
@@ -893,7 +892,7 @@ impl TryFrom<ReprMultisigConfig> for MultisigConfig {
             .into_iter()
             .map(|address_string| {
                 Address::from_str(&address_string)
-                    .map(|addr| H160::from_slice(addr.payload().args().as_ref()))?
+                    .map(|addr| h160_from_slice(addr.payload().args().as_ref(), "address"))?
                     .map_err(|err| format!("invalid address: {address_string} error: {err:?}"))
             })
             .collect::<Result<Vec<_>, String>>()?;

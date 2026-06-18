@@ -383,3 +383,16 @@ pub(crate) fn map_tx_builder_error_2_str(no_max_tx_fee: bool, err: TxBuilderErro
     }
     err.to_string()
 }
+
+/// Convert a byte slice to H160 with a context-specific error message.
+pub(crate) fn h160_from_slice(data: &[u8], context: &str) -> Result<H160, String> {
+    H160::from_slice(data).map_err(|e| format!("invalid H160 from {}: {}", context, e))
+}
+
+/// Take the first 20 bytes of a slice and convert to H160 with context error.
+pub(crate) fn h160_from_slice_prefix(data: &[u8], context: &str) -> Result<H160, String> {
+    let bytes = data
+        .get(0..20)
+        .ok_or_else(|| format!("{} payload too short for H160", context))?;
+    H160::from_slice(bytes).map_err(|e| format!("invalid H160 from {}: {}", context, e))
+}

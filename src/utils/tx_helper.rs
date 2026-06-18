@@ -17,6 +17,7 @@ use ckb_sdk::constants::{MultisigScript, SECP_SIGNATURE_SIZE, SIGHASH_TYPE_HASH}
 use ckb_sdk::{unlock::MultisigConfig, Since};
 
 use crate::utils::genesis_info::GenesisInfo;
+use crate::utils::other::{h160_from_slice, h160_from_slice_prefix};
 
 // TODO: Add dao support
 
@@ -198,8 +199,7 @@ impl TxHelper {
             ]
             .contains(&code_hash)
             {
-                let hash160 = H160::from_slice(&lock_arg[..20])
-                    .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?;
+                let hash160 = h160_from_slice_prefix(&lock_arg, "lock_arg")?;
                 if !self.multisig_configs.contains_key(&hash160) {
                     return Err(format!(
                         "No mutisig config found for input(no.{}) lock_arg prefix: {:#x}",
@@ -261,8 +261,7 @@ impl TxHelper {
                 continue;
             }
 
-            let multisig_hash160 = H160::from_slice(&lock_arg[..20])
-                .map_err(|err| format!("invalid multisig H160 from lock_arg: {}", err))?;
+            let multisig_hash160 = h160_from_slice_prefix(&lock_arg, "lock_arg")?;
             let lock_args = if [
                 MultisigScript::Legacy.script_id().code_hash.pack(),
                 MultisigScript::V2.script_id().code_hash.pack(),
@@ -275,10 +274,7 @@ impl TxHelper {
                     .clone()
             } else {
                 let mut lock_args = HashSet::default();
-                lock_args.insert(
-                    H160::from_slice(lock_arg.as_ref())
-                        .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?,
-                );
+                lock_args.insert(h160_from_slice(lock_arg.as_ref(), "lock_arg")?);
                 lock_args
             };
             if signer(&lock_args, &h256!("0x0"), &Transaction::default().into())?.is_some() {
@@ -329,8 +325,7 @@ impl TxHelper {
             ]
             .contains(&code_hash)
             {
-                let hash160 = H160::from_slice(&lock_arg[..20])
-                    .map_err(|err| format!("invalid H160 from lock_arg: {}", err))?;
+                let hash160 = h160_from_slice_prefix(&lock_arg, "lock_arg")?;
                 let multisig_config = self.multisig_configs.get(&hash160).unwrap();
                 let threshold = multisig_config.threshold() as usize;
                 let mut data = BytesMut::from(&multisig_config.to_witness_data()[..]);

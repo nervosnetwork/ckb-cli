@@ -27,7 +27,7 @@ use crate::utils::{
         PrivkeyPathParser, PrivkeyWrapper,
     },
     genesis_info::GenesisInfo,
-    other::{get_live_cell_with_cache, get_network_type, read_password},
+    other::{get_live_cell_with_cache, get_network_type, h160_from_slice, read_password},
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
     tx_helper::{SignerFn, ZERO_HASH},
@@ -309,8 +309,8 @@ impl CliSubCommand for DeploySubCommand<'_> {
 
                 // Sign if required
                 if m.is_present("sign-now") {
-                    let account = H160::from_slice(from_address.payload().args().as_ref())
-                        .map_err(|err| format!("invalid H160 from from-address: {}", err))?;
+                    let account =
+                        h160_from_slice(from_address.payload().args().as_ref(), "from-address")?;
                     let signer = {
                         let handler = self.plugin_mgr.keystore_handler();
                         let change_path = handler.root_key_path(account.clone())?;
@@ -382,8 +382,9 @@ impl CliSubCommand for DeploySubCommand<'_> {
                                 let result: Result<Address, String> = parser.parse(input);
                                 result
                                     .and_then(|address| {
-                                        H160::from_slice(address.payload().args().as_ref()).map_err(
-                                            |e| format!("invalid H160 from address: {}", e),
+                                        h160_from_slice(
+                                            address.payload().args().as_ref(),
+                                            "address",
                                         )
                                     })
                                     .map_err(|_| err)
