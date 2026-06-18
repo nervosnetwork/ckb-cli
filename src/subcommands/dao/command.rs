@@ -6,7 +6,7 @@ use crate::utils::{
         AddressParser, ArgParser, CapacityParser, FixedHashParser, FromStrParser, OutPointParser,
         PrivkeyPathParser, PrivkeyWrapper,
     },
-    other::{get_address, get_network_type},
+    other::{get_address, get_network_type, h160_from_slice},
 };
 use ckb_crypto::secp::SECP256K1;
 use ckb_sdk::{Address, AddressPayload, HumanCapacity, NetworkType};
@@ -130,7 +130,7 @@ impl TransactArgs {
                     result
                         .map(|address_opt| {
                             address_opt.and_then(|address| {
-                                H160::from_slice(address.payload().args().as_ref()).ok()
+                                h160_from_slice(address.payload().args().as_ref(), "address").ok()
                             })
                         })
                         .map_err(|_| format!("Invalid value for '--from-account': {}", err))

@@ -46,7 +46,7 @@ use crate::utils::{
     genesis_info::GenesisInfo,
     other::{
         check_capacity, get_address, get_arg_value, get_genesis_info, get_network_type,
-        get_to_data, map_tx_builder_error_2_str, read_password, to_live_cell_info,
+        get_to_data, h160_from_slice, map_tx_builder_error_2_str, read_password, to_live_cell_info,
     },
     rpc::HttpRpcClient,
     signer::KeyStoreHandlerSigner,
@@ -163,8 +163,7 @@ impl<'a> WalletSubCommand<'a> {
                             .parse(&input);
                         result
                             .and_then(|address| {
-                                H160::from_slice(address.payload().args().as_ref())
-                                    .map_err(|e| format!("invalid H160 from address: {}", e))
+                                h160_from_slice(address.payload().args().as_ref(), "address")
                             })
                             .map_err(|_| err)
                     })
@@ -275,45 +274,46 @@ impl<'a> WalletSubCommand<'a> {
             SinceSource::default(),
         )];
 
-        let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref())
-            .map_err(|err| format!("invalid H160 from from-address: {}", err))?;
+        let from_lock_arg =
+            h160_from_slice(from_address.payload().args().as_ref(), "from-address")?;
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
-        let (change_address_payload, change_path) = if let Some(last_change_address) =
-            last_change_address_opt.as_ref()
-        {
-            // Behave like HD wallet
-            let change_last = H160::from_slice(last_change_address.payload().args().as_ref())
-                .map_err(|err| format!("invalid H160 from change-address: {}", err))?;
-            let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
-                from_lock_arg.clone(),
-                receiving_address_length,
-                change_last.clone(),
-                DERIVE_CHANGE_ADDRESS_MAX_LEN,
-                None,
-            )?;
-            let mut change_path_opt = None;
-            for (path, hash160) in key_set.external.into_iter().chain(key_set.change) {
-                if hash160 == change_last {
-                    change_path_opt = Some(path.clone());
+        let (change_address_payload, change_path) =
+            if let Some(last_change_address) = last_change_address_opt.as_ref() {
+                // Behave like HD wallet
+                let change_last = h160_from_slice(
+                    last_change_address.payload().args().as_ref(),
+                    "change-address",
+                )?;
+                let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
+                    from_lock_arg.clone(),
+                    receiving_address_length,
+                    change_last.clone(),
+                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                    None,
+                )?;
+                let mut change_path_opt = None;
+                for (path, hash160) in key_set.external.into_iter().chain(key_set.change) {
+                    if hash160 == change_last {
+                        change_path_opt = Some(path.clone());
+                    }
+                    path_map.insert(hash160.clone(), path);
+                    let payload = AddressPayload::from_pubkey_hash(hash160);
+                    lock_scripts.push((
+                        Script::from(&payload),
+                        sighash_placeholder_witness.clone(),
+                        Default::default(),
+                    ));
                 }
-                path_map.insert(hash160.clone(), path);
-                let payload = AddressPayload::from_pubkey_hash(hash160);
-                lock_scripts.push((
-                    Script::from(&payload),
-                    sighash_placeholder_witness.clone(),
-                    Default::default(),
-                ));
-            }
-            (
-                last_change_address.payload().clone(),
-                change_path_opt.expect("change path not exists"),
-            )
-        } else {
-            (
-                from_address.payload().clone(),
-                self.plugin_mgr.root_key_path(from_lock_arg.clone())?,
-            )
-        };
+                (
+                    last_change_address.payload().clone(),
+                    change_path_opt.expect("change path not exists"),
+                )
+            } else {
+                (
+                    from_address.payload().clone(),
+                    self.plugin_mgr.root_key_path(from_lock_arg.clone())?,
+                )
+            };
 
         let get_signer = || -> Result<Box<dyn Signer>, String> {
             if let Some(privkey) = from_privkey.as_ref() {
@@ -630,8 +630,8 @@ impl CliSubCommand for WalletSubCommand<'_> {
                 };
                 let mut lock_scripts = vec![Script::from(&address_payload)];
                 if m.is_present("derived") {
-                    let lock_arg = H160::from_slice(address_payload.args().as_ref())
-                        .map_err(|err| format!("invalid H160 from address payload: {}", err))?;
+                    let lock_arg =
+                        h160_from_slice(address_payload.args().as_ref(), "address payload")?;
 
                     let key_set = self
                         .plugin_mgr
