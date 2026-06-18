@@ -382,10 +382,9 @@ impl CliSubCommand for DeploySubCommand<'_> {
                                 let result: Result<Address, String> = parser.parse(input);
                                 result
                                     .and_then(|address| {
-                                        H160::from_slice(address.payload().args().as_ref())
-                                            .map_err(|e| {
-                                                format!("invalid H160 from address: {}", e)
-                                            })
+                                        H160::from_slice(address.payload().args().as_ref()).map_err(
+                                            |e| format!("invalid H160 from address: {}", e),
+                                        )
                                     })
                                     .map_err(|_| err)
                             })

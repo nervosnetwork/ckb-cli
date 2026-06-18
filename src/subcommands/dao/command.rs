@@ -129,10 +129,9 @@ impl TransactArgs {
                         .from_matches_opt(m, "from-account");
                     result
                         .map(|address_opt| {
-                            address_opt
-                                .and_then(|address| {
-                                    H160::from_slice(address.payload().args().as_ref()).ok()
-                                })
+                            address_opt.and_then(|address| {
+                                H160::from_slice(address.payload().args().as_ref()).ok()
+                            })
                         })
                         .map_err(|_| format!("Invalid value for '--from-account': {}", err))
                 })?

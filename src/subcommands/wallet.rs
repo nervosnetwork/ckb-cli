@@ -278,42 +278,42 @@ impl<'a> WalletSubCommand<'a> {
         let from_lock_arg = H160::from_slice(from_address.payload().args().as_ref())
             .map_err(|err| format!("invalid H160 from from-address: {}", err))?;
         let mut path_map: HashMap<H160, DerivationPath> = Default::default();
-        let (change_address_payload, change_path) =
-            if let Some(last_change_address) = last_change_address_opt.as_ref() {
-                // Behave like HD wallet
-                let change_last =
-                    H160::from_slice(last_change_address.payload().args().as_ref())
-                        .map_err(|err| format!("invalid H160 from change-address: {}", err))?;
-                let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
-                    from_lock_arg.clone(),
-                    receiving_address_length,
-                    change_last.clone(),
-                    DERIVE_CHANGE_ADDRESS_MAX_LEN,
-                    None,
-                )?;
-                let mut change_path_opt = None;
-                for (path, hash160) in key_set.external.into_iter().chain(key_set.change) {
-                    if hash160 == change_last {
-                        change_path_opt = Some(path.clone());
-                    }
-                    path_map.insert(hash160.clone(), path);
-                    let payload = AddressPayload::from_pubkey_hash(hash160);
-                    lock_scripts.push((
-                        Script::from(&payload),
-                        sighash_placeholder_witness.clone(),
-                        Default::default(),
-                    ));
+        let (change_address_payload, change_path) = if let Some(last_change_address) =
+            last_change_address_opt.as_ref()
+        {
+            // Behave like HD wallet
+            let change_last = H160::from_slice(last_change_address.payload().args().as_ref())
+                .map_err(|err| format!("invalid H160 from change-address: {}", err))?;
+            let key_set = self.plugin_mgr.keystore_handler().derived_key_set(
+                from_lock_arg.clone(),
+                receiving_address_length,
+                change_last.clone(),
+                DERIVE_CHANGE_ADDRESS_MAX_LEN,
+                None,
+            )?;
+            let mut change_path_opt = None;
+            for (path, hash160) in key_set.external.into_iter().chain(key_set.change) {
+                if hash160 == change_last {
+                    change_path_opt = Some(path.clone());
                 }
-                (
-                    last_change_address.payload().clone(),
-                    change_path_opt.expect("change path not exists"),
-                )
-            } else {
-                (
-                    from_address.payload().clone(),
-                    self.plugin_mgr.root_key_path(from_lock_arg.clone())?,
-                )
-            };
+                path_map.insert(hash160.clone(), path);
+                let payload = AddressPayload::from_pubkey_hash(hash160);
+                lock_scripts.push((
+                    Script::from(&payload),
+                    sighash_placeholder_witness.clone(),
+                    Default::default(),
+                ));
+            }
+            (
+                last_change_address.payload().clone(),
+                change_path_opt.expect("change path not exists"),
+            )
+        } else {
+            (
+                from_address.payload().clone(),
+                self.plugin_mgr.root_key_path(from_lock_arg.clone())?,
+            )
+        };
 
         let get_signer = || -> Result<Box<dyn Signer>, String> {
             if let Some(privkey) = from_privkey.as_ref() {

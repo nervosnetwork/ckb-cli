@@ -109,7 +109,9 @@ impl Signer for PrivkeySigner {
             return false;
         }
         // Safe: guarded by id.len() != 20 check above
-        self.ids.contains_key(&H160::from_slice(id).expect("H160::from_slice on 20-byte id should never fail"))
+        self.ids.contains_key(
+            &H160::from_slice(id).expect("H160::from_slice on 20-byte id should never fail"),
+        )
     }
 
     fn sign(
@@ -123,8 +125,7 @@ impl Signer for PrivkeySigner {
             return Err(SignerError::IdNotFound);
         }
         // Safe: guarded by id.len() != 20 check above
-        let hash160 = H160::from_slice(id)
-            .map_err(|_| SignerError::IdNotFound)?;
+        let hash160 = H160::from_slice(id).map_err(|_| SignerError::IdNotFound)?;
         let account = self.ids.get(&hash160).ok_or(SignerError::IdNotFound)?;
         let privkey = self.privkeys.get(account).expect("no privkey found");
         privkey.sign(id, message, recoverable, tx)
