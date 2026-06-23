@@ -681,9 +681,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-error"
-version = "1.0.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de47e9a184320eeacfe882c7d3080148a850448f4f1be33e2e3e4702d3a58499"
+checksum = "c062a4634615a2ad2a96d027ae08d76fe27cb3670b05648cdee83dfc2fd3e0c4"
 dependencies = [
  "anyhow",
  "ckb-occupied-capacity",
