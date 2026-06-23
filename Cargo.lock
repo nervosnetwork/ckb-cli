@@ -657,9 +657,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-crypto"
-version = "1.0.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab6e4dda4c1ffbc459cc42b0d4588ca043ee1194b7c915e1c013dd9f54b51f1d"
+checksum = "42c46d018105d08f0cdbe885014228a2a205d8b9c6a8050d9d2c271d7a7d8e31"
 dependencies = [
  "ckb-fixed-hash",
  "faster-hex",
