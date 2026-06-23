@@ -867,9 +867,9 @@ dependencies = [
 
 [[package]]
 name = "ckb-script"
-version = "1.0.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8806961e94e46bca8c9f1612237fa49a479b43116627c25030b77e72cd3f0bed"
+checksum = "136ae4f4647f41daafc8c6d52b9eaa89b211214a22cf17aac22257dde07cf88a"
 dependencies = [
  "byteorder",
  "ckb-chain-spec",
