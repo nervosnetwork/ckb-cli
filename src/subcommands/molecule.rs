@@ -393,21 +393,31 @@ impl From<RawTransaction> for packed::RawTransaction {
             .cell_deps(
                 json.cell_deps
                     .into_iter()
-                    .map(Into::into)
+                    .map(Into::<packed::CellDep>::into)
                     .collect::<Vec<_>>(),
             )
             .header_deps(
                 json.header_deps
                     .into_iter()
-                    .map(Into::into)
+                    .map(Into::<packed::Byte32>::into)
                     .collect::<Vec<_>>(),
             )
-            .inputs(json.inputs.into_iter().map(Into::into).collect::<Vec<_>>())
-            .outputs(json.outputs.into_iter().map(Into::into).collect::<Vec<_>>())
+            .inputs(
+                json.inputs
+                    .into_iter()
+                    .map(Into::<packed::CellInput>::into)
+                    .collect::<Vec<_>>(),
+            )
+            .outputs(
+                json.outputs
+                    .into_iter()
+                    .map(Into::<packed::CellOutput>::into)
+                    .collect::<Vec<_>>(),
+            )
             .outputs_data(
                 json.outputs_data
                     .into_iter()
-                    .map(Into::into)
+                    .map(Into::<packed::Bytes>::into)
                     .collect::<Vec<_>>(),
             )
             .build()
