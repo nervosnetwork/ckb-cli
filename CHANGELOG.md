@@ -1,6 +1,6 @@
 # Unreleased
 * `rpc get_live_cell` now returns `block_hash` (upgrade `ckb-jsonrpc-types` to 1.2)
-* Update `ckb-types` and related ckb crates to 1.1
+* Update `ckb-types` and related ckb crates to the 1.1/1.2 wave
 * Update `ckb-sdk` to 5.1
 
 # v2.0.0
