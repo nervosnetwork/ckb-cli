@@ -46,7 +46,7 @@ impl CliSubCommand for TuiSubCommand {
             matches.value_of("tcp-url").map(|x| x.to_string()),
             matches.value_of_t("refresh-interval").unwrap(),
             matches.value_of("theme-file").map(|x| x.to_string()),
-            debug
+            debug,
         ) {
             Ok(_) => Ok(super::Output {
                 stderr: None,

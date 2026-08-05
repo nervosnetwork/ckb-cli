@@ -8,6 +8,19 @@ updates:
     timezone: Asia/Shanghai
   open-pull-requests-limit: 10
   versioning-strategy: lockfile-only
+  groups:
+    # ckb-* crates are released in lockstep and must move together — they share
+    # schemars/JsonSchema wiring, so a PR bumping a single ckb-* crate in
+    # isolation does not compile.
+    ckb-stack:
+      patterns:
+      - "ckb-*"
+    # All other Rust dependencies bundled into a single PR.
+    rust-dependencies:
+      patterns:
+      - "*"
+      exclude-patterns:
+      - "ckb-*"
   ignore:
   - dependency-name: reqwest
     versions:

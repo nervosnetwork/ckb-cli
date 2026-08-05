@@ -314,31 +314,31 @@ impl From<Transaction> for packed::Transaction {
             .cell_deps(
                 cell_deps
                     .into_iter()
-                    .map(packed::CellDep::from)
+                    .map(Into::<packed::CellDep>::into)
                     .collect::<Vec<_>>(),
             )
             .header_deps(
                 header_deps
                     .into_iter()
-                    .map(packed::Byte32::from)
+                    .map(Into::<packed::Byte32>::into)
                     .collect::<Vec<_>>(),
             )
             .inputs(
                 inputs
                     .into_iter()
-                    .map(packed::CellInput::from)
+                    .map(Into::<packed::CellInput>::into)
                     .collect::<Vec<_>>(),
             )
             .outputs(
                 outputs
                     .into_iter()
-                    .map(packed::CellOutput::from)
+                    .map(Into::<packed::CellOutput>::into)
                     .collect::<Vec<_>>(),
             )
             .outputs_data(
                 outputs_data
                     .into_iter()
-                    .map(packed::Bytes::from)
+                    .map(Into::<packed::Bytes>::into)
                     .collect::<Vec<_>>(),
             )
             .build();
@@ -347,7 +347,7 @@ impl From<Transaction> for packed::Transaction {
             .witnesses(
                 witnesses
                     .into_iter()
-                    .map(packed::Bytes::from)
+                    .map(Into::<packed::Bytes>::into)
                     .collect::<Vec<_>>(),
             )
             .build()
@@ -623,7 +623,7 @@ impl From<UncleBlock> for packed::UncleBlock {
             .proposals(
                 proposals
                     .into_iter()
-                    .map(packed::ProposalShortId::from)
+                    .map(Into::<packed::ProposalShortId>::into)
                     .collect::<Vec<_>>(),
             )
             .build()
@@ -675,19 +675,19 @@ impl From<Block> for packed::Block {
             .uncles(
                 uncles
                     .into_iter()
-                    .map(packed::UncleBlock::from)
+                    .map(Into::<packed::UncleBlock>::into)
                     .collect::<Vec<_>>(),
             )
             .transactions(
                 transactions
                     .into_iter()
-                    .map(packed::Transaction::from)
+                    .map(Into::<packed::Transaction>::into)
                     .collect::<Vec<_>>(),
             )
             .proposals(
                 proposals
                     .into_iter()
-                    .map(packed::ProposalShortId::from)
+                    .map(Into::<packed::ProposalShortId>::into)
                     .collect::<Vec<_>>(),
             )
             .build()
@@ -1438,7 +1438,7 @@ impl From<Alert> for packed::Alert {
             .signatures(
                 signatures
                     .into_iter()
-                    .map(packed::Bytes::from)
+                    .map(Into::<packed::Bytes>::into)
                     .collect::<Vec<_>>(),
             )
             .build()

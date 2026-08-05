@@ -1,3 +1,8 @@
+# Unreleased
+* `rpc get_live_cell` now returns `block_hash` (upgrade `ckb-jsonrpc-types` to 1.2)
+* Update `ckb-types` and related ckb crates to the 1.1/1.2 wave
+* Update `ckb-sdk` to 5.1
+
 # v2.0.0
 * Fix: detect multisig type from input cells in deploy #652
 * Warn user if lock script is not well-known during deploy #653
