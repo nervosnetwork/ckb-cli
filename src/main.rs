@@ -25,6 +25,8 @@ use utils::{
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
+use crate::subcommands::TuiSubCommand;
+
 mod interactive;
 mod plugin;
 #[allow(clippy::mutable_key_type)]
@@ -166,6 +168,7 @@ async fn main() -> Result<(), io::Error> {
                     .process(sub_matches, debug)
             })
         }
+        ("tui", Some(sub_matches)) => TuiSubCommand::new().process(sub_matches, debug),
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, plugin_mgr, key_store)
@@ -240,6 +243,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
         .subcommand(DeploySubCommand::subcommand("deploy"))
+        .subcommand(TuiSubCommand::subcommand("tui"))
         .arg(
 
             Arg::with_name("url")
