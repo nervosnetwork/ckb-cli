@@ -69,10 +69,6 @@ async-trait = "0.1.88"
 
 ckb-tui = { path = "./ckb-tui" }
 
-[target.'cfg(unix)'.dependencies]
-tui = "0.6.0"
-termion = "1.5"
-
 [dev-dependencies]
 rand = "0.7"
 
