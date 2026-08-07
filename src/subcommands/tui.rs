@@ -1,7 +1,10 @@
 use ckb_tui::start_ckb_tui;
 use clap::{App, Arg};
 
-use crate::subcommands::CliSubCommand;
+use crate::{
+    subcommands::CliSubCommand,
+    utils::arg_parser::{ArgParser, FilePathParser, FromStrParser},
+};
 
 pub struct TuiSubCommand;
 
@@ -24,8 +27,9 @@ impl TuiSubCommand {
             .default_value("300")
             .takes_value(true)
             .required(false)
-            .about("Refresh interval of displayed data, defaults to 300ms");
-        let arg_theme_file = Arg::with_name("theme-file").long("theme-file").takes_value(true).required(false).about("Theme file to use for cursive. See https://github.com/gyscos/cursive/blob/main/cursive/examples/assets/style.toml for an example.");
+            .about("Refresh interval of displayed data, defaults to 300ms")
+            .validator(|input| FromStrParser::<usize>::new().validate(input));
+        let arg_theme_file = Arg::with_name("theme-file").long("theme-file").takes_value(true).required(false).about("Theme file to use for cursive. See https://github.com/gyscos/cursive/blob/main/cursive/examples/assets/style.toml for an example.").validator(|input|FilePathParser::new(true).validate(input));
         App::new(name).about("Start ckb-tui").args(vec![
             arg_rpc_url,
             arg_tcp_url,
