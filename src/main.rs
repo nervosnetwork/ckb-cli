@@ -25,6 +25,8 @@ use utils::{
     rpc::{HttpRpcClient, RawHttpRpcClient},
 };
 
+use crate::subcommands::TuiSubCommand;
+
 mod interactive;
 mod plugin;
 #[allow(clippy::mutable_key_type)]
@@ -114,7 +116,7 @@ async fn main() -> Result<(), io::Error> {
     }
     let mut key_store = get_key_store(ckb_cli_dir.clone())
         .map_err(|err| io::Error::other(format!("Open file based key store error: {}", err)))?;
-    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url).unwrap();
+    let mut plugin_mgr = PluginManager::init(&ckb_cli_dir, ckb_url.clone()).unwrap();
     let result = match matches.subcommand() {
         ("rpc", Some(sub_matches)) => match sub_matches.subcommand() {
             ("subscribe", Some(sub_sub_matches)) => {
@@ -166,6 +168,7 @@ async fn main() -> Result<(), io::Error> {
                     .process(sub_matches, debug)
             })
         }
+        ("tui", Some(sub_matches)) => TuiSubCommand::new(ckb_url).process(sub_matches, debug),
         _ => {
             if let Err(err) =
                 InteractiveEnv::from_config(ckb_cli_dir, config, plugin_mgr, key_store)
@@ -240,6 +243,7 @@ pub fn build_cli<'a>(version_short: &'a str, version_long: &'a str) -> App<'a> {
         .subcommand(DAOSubCommand::subcommand())
         .subcommand(SudtSubCommand::subcommand("sudt"))
         .subcommand(DeploySubCommand::subcommand("deploy"))
+        .subcommand(TuiSubCommand::subcommand("tui"))
         .arg(
 
             Arg::with_name("url")

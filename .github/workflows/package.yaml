@@ -25,6 +25,8 @@ jobs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set tag
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -45,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set Env
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -80,6 +84,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set Env
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -119,6 +125,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set Env
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -154,6 +162,8 @@ jobs:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set Env
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -205,6 +215,8 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set Env
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
@@ -251,6 +263,8 @@ jobs:
           echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           echo "LIBCLANG_PATH=$env:USERPROFILE\scoop\apps\llvm\current\bin" >> $env:GITHUB_ENV
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Build
         run: |
           make prod
@@ -308,6 +322,8 @@ jobs:
       - package-for-centos
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Set tag
         run: |
           export GIT_TAG_NAME=` echo ${{ github.ref }} | awk -F '/' '{print $4}' `
