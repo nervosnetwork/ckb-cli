@@ -1048,6 +1048,7 @@ dependencies = [
 [[package]]
 name = "ckb-tui"
 version = "0.1.2"
+source = "git+https://github.com/nervosnetwork/ckb-tui?rev=cde7293#cde7293356bf2a14fa54114b4a9f441f01430aa1"
 dependencies = [
  "anyhow",
  "bs58 0.5.1",

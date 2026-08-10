@@ -6,18 +6,19 @@ use crate::{
     utils::arg_parser::{ArgParser, FilePathParser, FromStrParser},
 };
 
-pub struct TuiSubCommand;
+pub struct TuiSubCommand {
+    rpc_url: String,
+}
 
 impl TuiSubCommand {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rpc_url: String) -> Self {
+        Self { rpc_url }
     }
     pub fn subcommand(name: &str) -> App<'static> {
         let arg_rpc_url = Arg::with_name("rpc-url")
             .long("rpc-url")
             .short('r')
-            .default_value("http://127.0.0.1:8114")
-            .about("RPC endpoint of CKB node")
+            .about("RPC endpoint of CKB node (overrides the global RPC URL)")
             .takes_value(true)
             .required(false);
         let arg_tcp_url= Arg::with_name("tcp-url").long("tcp-url").short('t').takes_value(true).required(false).about("TCP endpoint of CKB node, used for receiving pushed transactions data\nIf not provided, latest transactions and rejected transactions won't be displayed");
@@ -46,7 +47,7 @@ impl CliSubCommand for TuiSubCommand {
         debug: bool,
     ) -> Result<super::Output, String> {
         match start_ckb_tui(
-            matches.value_of("rpc-url").unwrap(),
+            matches.value_of("rpc-url").unwrap_or(&self.rpc_url),
             matches.value_of("tcp-url").map(|x| x.to_string()),
             matches.value_of_t("refresh-interval").unwrap(),
             matches.value_of("theme-file").map(|x| x.to_string()),
