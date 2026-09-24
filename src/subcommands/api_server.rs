@@ -18,7 +18,9 @@ use super::{CliSubCommand, Output, TransferArgs, WalletSubCommand};
 use crate::plugin::PluginManager;
 use crate::utils::{
     arg,
-    arg_parser::{AddressParser, ArgParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper},
+    arg_parser::{
+        AddressParser, ArgParser, CapacityParser, FromStrParser, PrivkeyPathParser, PrivkeyWrapper,
+    },
     genesis_info::GenesisInfo,
     other::{get_genesis_info, get_network_type},
     rpc::HttpRpcClient,
@@ -217,7 +219,8 @@ impl ApiRpcImpl {
 
 impl ApiRpc for ApiRpcImpl {
     fn transfer(&self, args: HttpTransferArgs) -> RpcResult<H256> {
-        log::info!("[call]: tranfer({:?})", args);
+        log::info!("[call]: transfer({:?})", args);
+        validate_force_small_change_as_fee(args.force_small_change_as_fee.as_deref())?;
         if let Some(privkey_path) = self.privkey_path.clone() {
             self.with_wallet(|cmd| {
                 cmd.transfer(args.into_full_args(privkey_path), false)
@@ -374,6 +377,17 @@ fn internal_err(message: String) -> RpcError {
     }
 }
 
+/// Validate the client-supplied `force_small_change_as_fee` before any wallet lock is
+/// taken, so a value that cannot be parsed as a capacity is reported as invalid params.
+fn validate_force_small_change_as_fee(input: Option<&str>) -> RpcResult<()> {
+    if let Some(fee) = input {
+        CapacityParser
+            .parse(fee)
+            .map_err(RpcError::invalid_params)?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HttpTransferArgs {
@@ -412,4 +426,39 @@ pub struct GetCapacityResponse {
     pub total: u64,
     pub immature: u64,
     pub dao: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_force_small_change_as_fee, HttpTransferArgs, RpcErrorCode};
+
+    fn transfer_args(force_small_change_as_fee: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "capacity": 10000000000u64,
+            "fee_rate": 1000u64,
+            "to_address": "ckt1qyqdfjzl8ju2vfwjtl4mttx6me09hayzfldq8m3a0y",
+            "force_small_change_as_fee": force_small_change_as_fee,
+        })
+    }
+
+    #[test]
+    fn reject_malformed_force_small_change_as_fee() {
+        let err = validate_force_small_change_as_fee(Some("NOT_A_CAPACITY")).unwrap_err();
+        assert_eq!(err.code, RpcErrorCode::InvalidParams);
+    }
+
+    #[test]
+    fn accept_valid_or_absent_force_small_change_as_fee() {
+        assert!(validate_force_small_change_as_fee(Some("0.001")).is_ok());
+        assert!(validate_force_small_change_as_fee(None).is_ok());
+    }
+
+    #[test]
+    fn force_small_change_as_fee_stays_a_capacity_string() {
+        let args = transfer_args(serde_json::json!("0.001"));
+        let parsed: HttpTransferArgs = serde_json::from_value(args).expect("valid transfer args");
+        assert_eq!(parsed.force_small_change_as_fee.as_deref(), Some("0.001"));
+        let full = parsed.into_full_args("/tmp/privkey".to_string());
+        assert_eq!(full.force_small_change_as_fee.as_deref(), Some("0.001"));
+    }
 }

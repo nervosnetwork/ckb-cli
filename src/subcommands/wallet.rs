@@ -181,8 +181,9 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let to_capacity: u64 = CapacityParser.parse(&capacity)?.into();
         let fee_rate: u64 = FromStrParser::<u64>::default().parse(&fee_rate)?;
-        let force_small_change_as_fee: Option<u64> =
-            force_small_change_as_fee.map(|s| CapacityParser.parse(&s).unwrap().into());
+        let force_small_change_as_fee: Option<u64> = force_small_change_as_fee
+            .map(|s| CapacityParser.parse(&s).map(Into::into))
+            .transpose()?;
         let receiving_address_length: u32 = derive_receiving_address_length
             .map(|input| FromStrParser::<u32>::default().parse(&input))
             .transpose()?
@@ -463,7 +464,8 @@ impl<'a> WalletSubCommand<'a> {
                         if msg.contains(prefix) {
                             let left_capacity = HumanCapacity::from_str(&msg[prefix.len()..]);
                             if let Ok(left_capacity) = left_capacity {
-                                let suggest_capacity = HumanCapacity(left_capacity.0 + to_capacity);
+                                let suggest_capacity =
+                                    HumanCapacity(left_capacity.0.saturating_add(to_capacity));
 
                                 return format!("{}, try to transfer {} or try parameter `--max-tx-fee` to make small left capacity as transaction fee", err, suggest_capacity);
                             }
