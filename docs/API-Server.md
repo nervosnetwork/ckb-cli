@@ -6,7 +6,7 @@ ckb-cli server --help
 Start advanced API server
 
 USAGE:
-    ckb-cli server [FLAGS] [OPTIONS] --listen <listen>
+    ckb-cli server [FLAGS] [OPTIONS] --listen <listen> --auth-token <auth-token>
 
 FLAGS:
         --wait-for-sync    Ensure the index-store synchronizes completely before command being executed
@@ -15,7 +15,16 @@ OPTIONS:
         --listen <listen>                  Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)
                                            [default: 127.0.0.1:3000]
         --privkey-path <privkey-path>      Private key file path (only read first line)
+        --auth-token <auth-token>          Token that clients must send in the `Authorization: Bearer <token>` header
 ```
+
+## Authentication
+
+The server must be started with `--auth-token`, and every request must carry the header `Authorization: Bearer <token>`. Other requests get a `401 Unauthorized` response and no method is run.
+
+Anyone who can send requests to the server can use its methods, including `transfer`, which needs no further confirmation when the server is started with `--privkey-path`. This includes any website opened in a browser on the same machine. Use a long random token, for example the output of `openssl rand -hex 32`.
+
+The token is visible to other local users in the process list while the server is running.
 
 * API Doc
   * [`transfer`](#transfer)
@@ -31,7 +40,7 @@ OPTIONS:
 
 ### `transfer`
 
-Transfer capacity to an address. Enabled when start server with `--privkey-path** argument.
+Transfer capacity to an address. Enabled when start server with `--privkey-path` argument.
 
 **Attention**: `capacity` unit are Shannon.
 
@@ -66,7 +75,7 @@ echo '{
     }]
 }' \
 | tr -d '\n' \
-| curl -H 'content-type: application/json' -d @- \
+| curl -H 'content-type: application/json' -H "Authorization: Bearer $AUTH_TOKEN" -d @- \
 http://localhost:3000
 ```
 
