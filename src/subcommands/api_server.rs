@@ -51,7 +51,6 @@ impl<'a> ApiServerSubCommand<'a> {
                 Arg::with_name("listen")
                     .long("listen")
                     .takes_value(true)
-                    .required(true)
                     .default_value("127.0.0.1:3000")
                     .validator(|input| FromStrParser::<SocketAddr>::new().validate(input))
                     .about("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
@@ -586,5 +585,7 @@ mod tests {
             .try_get_matches_from(vec!["server", "--auth-token", TOKEN])
             .unwrap();
         assert_eq!(with_token.value_of("auth-token"), Some(TOKEN));
+        // `--listen` is optional and falls back to its default
+        assert_eq!(with_token.value_of("listen"), Some("127.0.0.1:3000"));
     }
 }
