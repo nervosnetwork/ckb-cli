@@ -79,6 +79,12 @@ ignore = [
     # paths (keystore salt generation, mock tx helper), never in a logger.
     # Cannot semver-bump rand due to ckb-vm / jsonrpc-pubsub dep constraints.
     "RUSTSEC-2026-0097",
+    # RUSTSEC-2026-0306: the unsound AVX2 path is in `hex_decode_unchecked`, which neither
+    # ckb-cli, ckb-cli-plugin-protocol nor ckb-crypto 1.1.1 call (they only use `hex_string`
+    # and `hex_decode`). faster-hex cannot be bumped to >= 0.10.1 here: the published
+    # ckb-crypto 1.1.1 still requires `faster-hex ^0.6`, so a second, vulnerable copy stays in
+    # the tree. Revisit once a ckb release ships with faster-hex >= 0.10.
+    "RUSTSEC-2026-0306",
     #"RUSTSEC-0000-0000",
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
