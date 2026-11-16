@@ -181,8 +181,9 @@ impl<'a> WalletSubCommand<'a> {
             .transpose()?;
         let to_capacity: u64 = CapacityParser.parse(&capacity)?.into();
         let fee_rate: u64 = FromStrParser::<u64>::default().parse(&fee_rate)?;
-        let force_small_change_as_fee: Option<u64> =
-            force_small_change_as_fee.map(|s| CapacityParser.parse(&s).unwrap().into());
+        let force_small_change_as_fee: Option<u64> = force_small_change_as_fee
+            .map(|s| CapacityParser.parse(&s).map(Into::into))
+            .transpose()?;
         let receiving_address_length: u32 = derive_receiving_address_length
             .map(|input| FromStrParser::<u32>::default().parse(&input))
             .transpose()?
