@@ -49,6 +49,7 @@ TransferArgs fields:
     to_address          - Target address
     from_locked_address - (optional) The time locked multisig address to search live cells
     to_data             - (optional) Hex data store in target cell
+    force_small_change_as_fee - (optional) When there is no more inputs to create a change cell, force the remaining capacity as fee (unit: CKB, passed as a string, example: "0.001")
 
 #### Examples
 

@@ -464,7 +464,8 @@ impl<'a> WalletSubCommand<'a> {
                         if msg.contains(prefix) {
                             let left_capacity = HumanCapacity::from_str(&msg[prefix.len()..]);
                             if let Ok(left_capacity) = left_capacity {
-                                let suggest_capacity = HumanCapacity(left_capacity.0 + to_capacity);
+                                let suggest_capacity =
+                                    HumanCapacity(left_capacity.0.saturating_add(to_capacity));
 
                                 return format!("{}, try to transfer {} or try parameter `--max-tx-fee` to make small left capacity as transaction fee", err, suggest_capacity);
                             }
