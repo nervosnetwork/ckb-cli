@@ -6,22 +6,25 @@ ckb-cli server --help
 Start advanced API server
 
 USAGE:
-    ckb-cli server [FLAGS] [OPTIONS] --auth-token <auth-token>
+    ckb-cli server [FLAGS] [OPTIONS]
 
 OPTIONS:
         --listen <listen>                  Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)
                                            [default: 127.0.0.1:3000]
         --privkey-path <privkey-path>      Private key file path (only read first line)
         --auth-token <auth-token>          Token that clients must send in the `Authorization: Bearer <token>` header
+                                           (without it, requests are not authenticated)
 ```
 
 ## Authentication
 
-The server must be started with `--auth-token`. The token must be non-empty printable ASCII without spaces; use a long random value, for example the output of `openssl rand -hex 32`.
+Start the server with `--auth-token` to authenticate requests. The token must be non-empty printable ASCII without spaces; use a long random value, for example the output of `openssl rand -hex 32`.
 
-Every request that calls a method must carry the header `Authorization: Bearer <token>`, including read-only methods and servers started without `--privkey-path`. Requests without the header or with a wrong token get a `401 Unauthorized` response, and no method is run.
+With `--auth-token`, every request that calls a method must carry the header `Authorization: Bearer <token>`, including read-only methods and servers started without `--privkey-path`. Requests without the header or with a wrong token get a `401 Unauthorized` response, and no method is run.
 
 `OPTIONS` requests (CORS preflight) are answered without the token, because they don't run any method.
+
+**Without `--auth-token`, requests are not authenticated**, and the server prints a warning when it starts. Then any program or website that can reach the server can use every method, including `transfer` when the server is started with `--privkey-path`; this includes any website opened in a browser on the same machine. Only omit the token when nothing untrusted can reach the server.
 
 Anyone who knows the token can use every method, including `transfer`, which spends from the key given by `--privkey-path` without further confirmation. A website opened in a browser on the same machine can still send requests to the server, but without the token it can't make the server run any method. Keep the token secret: it is visible to other local users in the process list while the server is running.
 
@@ -32,7 +35,7 @@ AUTH_TOKEN=$(openssl rand -hex 32)
 ckb-cli server --auth-token "$AUTH_TOKEN" --privkey-path ./privkey
 ```
 
-Omit `--privkey-path` to start the server without `transfer`. The examples below send `$AUTH_TOKEN` from the same shell; clients in other shells or programs need the same token value.
+Omit `--privkey-path` to start the server without `transfer`. The examples below send `$AUTH_TOKEN` from the same shell; clients in other shells or programs need the same token value. When the server is started without `--auth-token`, the `Authorization` header is not needed and is ignored.
 
 * API Doc
   * [`transfer`](#transfer)

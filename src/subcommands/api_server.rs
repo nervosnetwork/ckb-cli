@@ -63,9 +63,8 @@ impl<'a> ApiServerSubCommand<'a> {
                 Arg::with_name("auth-token")
                     .long("auth-token")
                     .takes_value(true)
-                    .required(true)
                     .validator(validate_auth_token)
-                    .about("Token that clients must send in the `Authorization: Bearer <token>` header"),
+                    .about("Token that clients must send in the `Authorization: Bearer <token>` header (without it, requests are not authenticated)"),
             )
     }
 }
@@ -75,7 +74,7 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         let listen_addr: SocketAddr =
             FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;
         let privkey_path: Option<String> = matches.value_of("privkey-path").map(Into::into);
-        let auth_token = matches.value_of("auth-token").unwrap();
+        let auth_token = matches.value_of("auth-token");
 
         let network_result = get_network_type(self.rpc_client);
         if privkey_path.is_some() && listen_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
@@ -117,6 +116,17 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         log::info!("Network: {:?}", network_result);
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
+        if auth_token.is_none() {
+            eprintln!(
+                "WARNING: --auth-token is not given, so requests are not authenticated. Any program or website that can reach {} can call every method{}.",
+                listen_addr,
+                if address_opt.is_some() {
+                    ", including `transfer`, which spends from the given private key"
+                } else {
+                    ""
+                }
+            );
+        }
         RpcServer::start(&listen_addr, io_handler, auth_token).wait();
         Ok(Output::new_error(serde_json::json!({
             "status": "stopped",
@@ -129,17 +139,24 @@ struct RpcServer {
 }
 
 impl RpcServer {
-    fn start(listen_addr: &SocketAddr, io_handler: IoHandler, auth_token: &str) -> RpcServer {
-        let server = ServerBuilder::new(io_handler)
+    /// Without `auth_token`, requests are not authenticated.
+    fn start(
+        listen_addr: &SocketAddr,
+        io_handler: IoHandler,
+        auth_token: Option<&str>,
+    ) -> RpcServer {
+        let builder = ServerBuilder::new(io_handler)
             .cors(DomainsValidation::AllowOnly(vec![
                 AccessControlAllowOrigin::Null,
                 AccessControlAllowOrigin::Any,
             ]))
             .threads(2)
-            .max_request_body_size(50 * 1024 * 1024)
-            .request_middleware(AuthTokenMiddleware::new(auth_token))
-            .start_http(listen_addr)
-            .expect("Jsonrpc initialize");
+            .max_request_body_size(50 * 1024 * 1024);
+        let builder = match auth_token {
+            Some(token) => builder.request_middleware(AuthTokenMiddleware::new(token)),
+            None => builder,
+        };
+        let server = builder.start_http(listen_addr).expect("Jsonrpc initialize");
         RpcServer { server }
     }
 
@@ -488,7 +505,7 @@ mod tests {
     const TOKEN: &str = "test-token";
 
     // Starts a server whose `transfer` method counts its calls
-    fn start_server() -> (RpcServer, Arc<AtomicUsize>) {
+    fn start_server_with(auth_token: Option<&str>) -> (RpcServer, Arc<AtomicUsize>) {
         let calls = Arc::new(AtomicUsize::new(0));
         let mut io_handler = IoHandler::new();
         let method_calls = Arc::clone(&calls);
@@ -496,8 +513,12 @@ mod tests {
             method_calls.fetch_add(1, Ordering::SeqCst);
             Ok(serde_json::Value::Null)
         });
-        let server = RpcServer::start(&"127.0.0.1:0".parse().unwrap(), io_handler, TOKEN);
+        let server = RpcServer::start(&"127.0.0.1:0".parse().unwrap(), io_handler, auth_token);
         (server, calls)
+    }
+
+    fn start_server() -> (RpcServer, Arc<AtomicUsize>) {
+        start_server_with(Some(TOKEN))
     }
 
     // Sends a request and returns the HTTP status code
@@ -554,6 +575,18 @@ mod tests {
     }
 
     #[test]
+    fn test_request_without_auth_token_configured_is_processed() {
+        let (server, calls) = start_server_with(None);
+
+        assert_eq!(send(&server, "POST", &[]), 200);
+        assert_eq!(
+            send(&server, "POST", &["Authorization: Bearer any-token"]),
+            200
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
     fn test_preflight_does_not_run_any_method() {
         let (server, calls) = start_server();
 
@@ -573,13 +606,18 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_token_argument_is_required() {
-        let without_token =
-            ApiServerSubCommand::subcommand("server").try_get_matches_from(vec!["server"]);
-        assert_eq!(
-            without_token.unwrap_err().kind,
-            clap::ErrorKind::MissingRequiredArgument
-        );
+    fn test_auth_token_argument_is_optional() {
+        let without_token = ApiServerSubCommand::subcommand("server")
+            .try_get_matches_from(vec!["server"])
+            .unwrap();
+        assert_eq!(without_token.value_of("auth-token"), None);
+
+        let empty_token = ApiServerSubCommand::subcommand("server").try_get_matches_from(vec![
+            "server",
+            "--auth-token",
+            "",
+        ]);
+        assert!(empty_token.is_err());
 
         let with_token = ApiServerSubCommand::subcommand("server")
             .try_get_matches_from(vec!["server", "--auth-token", TOKEN])
