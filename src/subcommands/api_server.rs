@@ -9,7 +9,8 @@ use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
-use jsonrpc_http_server::{Server, ServerBuilder};
+use jsonrpc_http_server::hyper::{self, header, Body, Method, StatusCode};
+use jsonrpc_http_server::{RequestMiddleware, RequestMiddlewareAction, Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use serde::{Deserialize, Serialize};
@@ -52,7 +53,6 @@ impl<'a> ApiServerSubCommand<'a> {
                 Arg::with_name("listen")
                     .long("listen")
                     .takes_value(true)
-                    .required(true)
                     .default_value("127.0.0.1:3000")
                     .validator(|input| FromStrParser::<SocketAddr>::new().validate(input))
                     .about("Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)"),
@@ -60,6 +60,13 @@ impl<'a> ApiServerSubCommand<'a> {
             .arg(
                 arg::privkey_path()
                  .about("Private key file path (only read first line)")
+            )
+            .arg(
+                Arg::with_name("auth-token")
+                    .long("auth-token")
+                    .takes_value(true)
+                    .validator(validate_auth_token)
+                    .about("Token that clients must send in the `Authorization: Bearer <token>` header (without it, requests are not authenticated)"),
             )
     }
 }
@@ -69,6 +76,7 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         let listen_addr: SocketAddr =
             FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;
         let privkey_path: Option<String> = matches.value_of("privkey-path").map(Into::into);
+        let auth_token = matches.value_of("auth-token");
 
         let network_result = get_network_type(self.rpc_client);
         if privkey_path.is_some() && listen_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
@@ -110,7 +118,18 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         log::info!("Network: {:?}", network_result);
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
-        RpcServer::start(&listen_addr, io_handler).wait();
+        if auth_token.is_none() {
+            eprintln!(
+                "WARNING: --auth-token is not given, so requests are not authenticated. Any program or website that can reach {} can call every method{}.",
+                listen_addr,
+                if address_opt.is_some() {
+                    ", including `transfer`, which spends from the given private key"
+                } else {
+                    ""
+                }
+            );
+        }
+        RpcServer::start(&listen_addr, io_handler, auth_token).wait();
         Ok(Output::new_error(serde_json::json!({
             "status": "stopped",
         })))
@@ -122,22 +141,84 @@ struct RpcServer {
 }
 
 impl RpcServer {
-    fn start(listen_addr: &SocketAddr, io_handler: IoHandler) -> RpcServer {
-        let server = ServerBuilder::new(io_handler)
+    /// Without `auth_token`, requests are not authenticated.
+    fn start(
+        listen_addr: &SocketAddr,
+        io_handler: IoHandler,
+        auth_token: Option<&str>,
+    ) -> RpcServer {
+        let builder = ServerBuilder::new(io_handler)
             .cors(DomainsValidation::AllowOnly(vec![
                 AccessControlAllowOrigin::Null,
                 AccessControlAllowOrigin::Any,
             ]))
             .threads(2)
-            .max_request_body_size(50 * 1024 * 1024)
-            .start_http(listen_addr)
-            .expect("Jsonrpc initialize");
+            .max_request_body_size(50 * 1024 * 1024);
+        let builder = match auth_token {
+            Some(token) => builder.request_middleware(AuthTokenMiddleware::new(token)),
+            None => builder,
+        };
+        let server = builder.start_http(listen_addr).expect("Jsonrpc initialize");
         RpcServer { server }
     }
 
     fn wait(self) {
         self.server.wait()
     }
+}
+
+fn validate_auth_token(token: &str) -> Result<(), String> {
+    if !token.is_empty() && token.bytes().all(|byte| byte.is_ascii_graphic()) {
+        Ok(())
+    } else {
+        Err("auth-token must be non-empty printable ASCII without spaces".to_string())
+    }
+}
+
+/// Rejects requests without the expected `Authorization: Bearer <token>` header.
+///
+/// Browsers send CORS preflight requests without this header, and these requests don't run any
+/// RPC method, so `OPTIONS` requests are passed through.
+struct AuthTokenMiddleware {
+    expected_header: Vec<u8>,
+}
+
+impl AuthTokenMiddleware {
+    fn new(token: &str) -> Self {
+        Self {
+            expected_header: format!("Bearer {}", token).into_bytes(),
+        }
+    }
+
+    fn is_authorized(&self, request: &hyper::Request<Body>) -> bool {
+        request
+            .headers()
+            .get(header::AUTHORIZATION)
+            .is_some_and(|value| constant_time_eq(value.as_bytes(), &self.expected_header))
+    }
+}
+
+impl RequestMiddleware for AuthTokenMiddleware {
+    fn on_request(&self, request: hyper::Request<Body>) -> RequestMiddlewareAction {
+        if request.method() == Method::OPTIONS || self.is_authorized(&request) {
+            return request.into();
+        }
+        hyper::Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .header(header::WWW_AUTHENTICATE, "Bearer")
+            .body(Body::from("Invalid or missing auth token\n"))
+            .expect("valid response")
+            .into()
+    }
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .fold(0, |diff, (left, right)| diff | (left ^ right))
+            == 0
 }
 
 #[rpc]
@@ -430,7 +511,135 @@ pub struct GetCapacityResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_force_small_change_as_fee, HttpTransferArgs, RpcErrorCode};
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const TOKEN: &str = "test-token";
+
+    // Starts a server whose `transfer` method counts its calls
+    fn start_server_with(auth_token: Option<&str>) -> (RpcServer, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut io_handler = IoHandler::new();
+        let method_calls = Arc::clone(&calls);
+        io_handler.add_sync_method("transfer", move |_| {
+            method_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(serde_json::Value::Null)
+        });
+        let server = RpcServer::start(&"127.0.0.1:0".parse().unwrap(), io_handler, auth_token);
+        (server, calls)
+    }
+
+    fn start_server() -> (RpcServer, Arc<AtomicUsize>) {
+        start_server_with(Some(TOKEN))
+    }
+
+    // Sends a request and returns the HTTP status code
+    fn send(server: &RpcServer, method: &str, extra_headers: &[&str]) -> u16 {
+        let addr = server.server.address();
+        let body = r#"{"jsonrpc":"2.0","method":"transfer","params":[],"id":1}"#;
+        let mut request = format!(
+            "{} / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n",
+            method,
+            addr,
+            body.len()
+        );
+        for extra_header in extra_headers {
+            request.push_str(extra_header);
+            request.push_str("\r\n");
+        }
+        request.push_str("\r\n");
+        request.push_str(body);
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        response.split_whitespace().nth(1).unwrap().parse().unwrap()
+    }
+
+    #[test]
+    fn test_request_without_valid_token_is_rejected() {
+        let (server, calls) = start_server();
+
+        for headers in [
+            vec![],
+            vec!["Authorization: Bearer wrong-token"],
+            vec!["Authorization: Bearer test-token-suffix"],
+            vec!["Authorization: test-token"],
+            // A request from another website doesn't get through because of its origin
+            vec!["Origin: https://example.com"],
+            vec!["Origin: null"],
+        ] {
+            assert_eq!(send(&server, "POST", &headers), 401, "{:?}", headers);
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_request_with_valid_token_is_processed() {
+        let (server, calls) = start_server();
+
+        assert_eq!(
+            send(&server, "POST", &["Authorization: Bearer test-token"]),
+            200
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_request_without_auth_token_configured_is_processed() {
+        let (server, calls) = start_server_with(None);
+
+        assert_eq!(send(&server, "POST", &[]), 200);
+        assert_eq!(
+            send(&server, "POST", &["Authorization: Bearer any-token"]),
+            200
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn test_preflight_does_not_run_any_method() {
+        let (server, calls) = start_server();
+
+        assert_eq!(
+            send(&server, "OPTIONS", &["Origin: https://example.com"]),
+            200
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn test_validate_auth_token() {
+        assert!(validate_auth_token(TOKEN).is_ok());
+        assert!(validate_auth_token("").is_err());
+        assert!(validate_auth_token("with space").is_err());
+        assert!(validate_auth_token("line\nbreak").is_err());
+    }
+
+    #[test]
+    fn test_auth_token_argument_is_optional() {
+        let without_token = ApiServerSubCommand::subcommand("server")
+            .try_get_matches_from(vec!["server"])
+            .unwrap();
+        assert_eq!(without_token.value_of("auth-token"), None);
+
+        let empty_token = ApiServerSubCommand::subcommand("server").try_get_matches_from(vec![
+            "server",
+            "--auth-token",
+            "",
+        ]);
+        assert!(empty_token.is_err());
+
+        let with_token = ApiServerSubCommand::subcommand("server")
+            .try_get_matches_from(vec!["server", "--auth-token", TOKEN])
+            .unwrap();
+        assert_eq!(with_token.value_of("auth-token"), Some(TOKEN));
+        // `--listen` is optional and falls back to its default
+        assert_eq!(with_token.value_of("listen"), Some("127.0.0.1:3000"));
+    }
 
     fn transfer_args(force_small_change_as_fee: serde_json::Value) -> serde_json::Value {
         serde_json::json!({

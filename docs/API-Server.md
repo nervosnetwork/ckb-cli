@@ -6,32 +6,47 @@ ckb-cli server --help
 Start advanced API server
 
 USAGE:
-    ckb-cli server [FLAGS] [OPTIONS] --listen <listen>
-
-FLAGS:
-        --wait-for-sync    Ensure the index-store synchronizes completely before command being executed
+    ckb-cli server [FLAGS] [OPTIONS]
 
 OPTIONS:
         --listen <listen>                  Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)
                                            [default: 127.0.0.1:3000]
         --privkey-path <privkey-path>      Private key file path (only read first line)
+        --auth-token <auth-token>          Token that clients must send in the `Authorization: Bearer <token>` header
+                                           (without it, requests are not authenticated)
 ```
+
+## Authentication
+
+Start the server with `--auth-token` to authenticate requests. The token must be non-empty printable ASCII without spaces; use a long random value, for example the output of `openssl rand -hex 32`.
+
+With `--auth-token`, every request that calls a method must carry the header `Authorization: Bearer <token>`, including read-only methods and servers started without `--privkey-path`. Requests without the header or with a wrong token get a `401 Unauthorized` response, and no method is run.
+
+`OPTIONS` requests (CORS preflight) are answered without the token, because they don't run any method.
+
+**Without `--auth-token`, requests are not authenticated**, and the server prints a warning when it starts. Then any program or website that can reach the server can use every method, including `transfer` when the server is started with `--privkey-path`; this includes any website opened in a browser on the same machine. Only omit the token when nothing untrusted can reach the server.
+
+Anyone who knows the token can use every method, including `transfer`, which spends from the key given by `--privkey-path` without further confirmation. A website opened in a browser on the same machine can still send requests to the server, but without the token it can't make the server run any method. Keep the token secret: it is visible to other local users in the process list while the server is running.
+
+## Starting the server
+
+```bash
+AUTH_TOKEN=$(openssl rand -hex 32)
+ckb-cli server --auth-token "$AUTH_TOKEN" --privkey-path ./privkey
+```
+
+Omit `--privkey-path` to start the server without `transfer`. The examples below send `$AUTH_TOKEN` from the same shell; clients in other shells or programs need the same token value. When the server is started without `--auth-token`, the `Authorization` header is not needed and is ignored.
 
 * API Doc
   * [`transfer`](#transfer)
   * [`get_capacity_by_address`](#get_capacity_by_address)
-  * [`get_capacity_by_lock_hash`](#get_capacity_by_lock_hash)
-  * [`get_live_cells_by_address`](#get_live_cells_by_address)
-  * [`get_live_cells_by_lock_hash`](#get_live_cells_by_lock_hash)
-  * [`get_live_cells_by_type_hash`](#get_live_cells_by_type_hash)
-  * [`get_live_cells_by_code_hash`](#get_live_cells_by_code_hash)
 
 
 ## API Doc
 
 ### `transfer`
 
-Transfer capacity to an address. Enabled when start server with `--privkey-path** argument.
+Transfer capacity to an address. Enabled when start server with `--privkey-path` argument.
 
 **Attention**: `capacity` unit are Shannon.
 
@@ -67,7 +82,7 @@ echo '{
     }]
 }' \
 | tr -d '\n' \
-| curl -H 'content-type: application/json' -d @- \
+| curl -H 'content-type: application/json' -H "Authorization: Bearer $AUTH_TOKEN" -d @- \
 http://localhost:3000
 ```
 
@@ -100,7 +115,7 @@ echo '{
     "params": ["ckt1qyqdfjzl8ju2vfwjtl4mttx6me09hayzfldq8m3a0y"]
 }' \
 | tr -d '\n' \
-| curl -H 'content-type: application/json' -d @- \
+| curl -H 'content-type: application/json' -H "Authorization: Bearer $AUTH_TOKEN" -d @- \
 http://localhost:3000
 ```
 
@@ -115,142 +130,3 @@ http://localhost:3000
   "id": 2
 }
 ```
-
-
-### `get_capacity_by_lock_hash`
-
-Get capacity by lock script hash
-
-See: `ckb-cli wallet get-capacity --help`
-
-#### Parameters
-
-    lock_hash - Lock script hash
-
-
-#### Examples
-
-```bash
-echo '{
-    "id": 2,
-    "jsonrpc": "2.0",
-    "method": "get_capacity_by_lock_hash",
-    "params": ["0x951f5af7606e2905a556a2774b99de803f0dac47e06129ecd3d4c42243b290ed"]
-}' \
-| tr -d '\n' \
-| curl -H 'content-type: application/json' -d @- \
-http://localhost:3000
-```
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "dao": 0,
-    "immature": 0,
-    "total": 3000000009000
-  },
-  "id": 2
-}
-```
-
-
-### `get_live_cells_by_address`
-
-Get live cells by address
-
-See: `ckb-cli wallet get-live-cells --help`
-
-#### Parameters
-
-    address - Target address
-    from    - (optional) Search from block number (included)
-    to      - (optional) Search to block number (included)
-    limit   - Get live cells <= limit
-
-
-#### Examples
-
-```bash
-echo '{
-    "id": 2,
-    "jsonrpc": "2.0",
-    "method": "get_live_cells_by_address",
-    "params": ["ckt1qyqdfjzl8ju2vfwjtl4mttx6me09hayzfldq8m3a0y", null, null, 2]
-}' \
-| tr -d '\n' \
-| curl -H 'content-type: application/json' -d @- \
-http://localhost:3000
-```
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "current_capacity": 2200000009000,
-    "current_count": 2,
-    "live_cells": [
-      {
-        "info": {
-          "capacity": 2000000009000,
-          "data_bytes": 0,
-          "index": {
-            "output_index": 1,
-            "tx_index": 1
-          },
-          "lock_hash": "0x951f5af7606e2905a556a2774b99de803f0dac47e06129ecd3d4c42243b290ed",
-          "number": 62800,
-          "tx_hash": "0xd3f1df20a4b87c01d77b0ab9877c9270c512ce3e9a4443deb0eb685112fc24e5",
-          "output_index": 1,
-          "type_hashes": null
-        },
-        "mature": true
-      },
-      {
-        "info": {
-          "capacity": 200000000000,
-          "data_bytes": 0,
-          "index": {
-            "output_index": 0,
-            "tx_index": 1
-          },
-          "lock_hash": "0x951f5af7606e2905a556a2774b99de803f0dac47e06129ecd3d4c42243b290ed",
-          "number": 86682,
-          "tx_hash": "0x962562e730cbab29fcfed8c2aff9da8936f669c2236957107da12c357d6847af",
-          "output_index": 0,
-          "type_hashes": null
-        },
-        "mature": true
-      }
-    ]
-  },
-  "id": 2
-}
-```
-
-
-### `get_live_cells_by_lock_hash`
-
-Get live cells by lock script hash
-
-See: `ckb-cli wallet get-live-cells --help`
-
-`Parameters`/`Examples` are similar to `get_live_cells_by_address`.
-
-
-### `get_live_cells_by_type_hash`
-
-Get live cells by type script hash
-
-See: `ckb-cli wallet get-live-cells --help`
-
-`Parameters`/`Examples` are similar to `get_live_cells_by_address`.
-
-
-### `get_live_cells_by_code_hash`
-
-Get live cells by type script's code hash
-
-See: `ckb-cli wallet get-live-cells --help`
-
-`Parameters`/`Examples` are similar to `get_live_cells_by_address`.
