@@ -57,6 +57,71 @@ pub struct PluginManager {
 pub type PluginHandler = Sender<Request<(u64, PluginRequest), (u64, PluginResponse)>>;
 pub type ServiceHandler = Sender<Request<ServiceRequest, ServiceResponse>>;
 
+/// The runtime registries `PluginManager` keeps, derived from the loaded plugins.
+#[derive(Default)]
+struct Registries {
+    keystores: Vec<String>,
+    indexers: Vec<String>,
+    sub_commands: HashMap<String, String>,
+    callbacks: HashMap<CallbackName, Vec<String>>,
+    keystore_plugin: Option<(Plugin, PluginConfig)>,
+    indexer_plugin: Option<(Plugin, PluginConfig)>,
+    daemon_plugins: Vec<(Plugin, PluginConfig)>,
+}
+
+/// Split the loaded plugins into the runtime registries.
+///
+/// `load` also scans `plugins/inactive/`, so that a deactivated plugin can still be listed and
+/// re-activated. A deactivated plugin must not take any runtime role, though: registering its
+/// sub-command, its callbacks or a daemon process here would silently undo `plugin deactive` on
+/// the next start, and `plugin uninstall` too, because the removed plugin's process used to keep
+/// running after its file was gone.
+fn build_registries(plugins: &HashMap<String, (Plugin, PluginConfig)>) -> Registries {
+    let mut registries = Registries::default();
+    // TODO plugins order matters
+    for (plugin_name, (plugin, config)) in plugins {
+        if !plugin.is_active() {
+            log::info!("Skip inactive plugin: {}", config.name);
+            continue;
+        }
+        for role in &config.roles {
+            match role {
+                PluginRole::KeyStore { .. } => {
+                    if registries.keystore_plugin.is_none() {
+                        registries.keystore_plugin = Some((plugin.clone(), config.clone()));
+                    }
+                    registries.keystores.push(plugin_name.clone());
+                }
+                PluginRole::Indexer => {
+                    if registries.indexer_plugin.is_none() {
+                        registries.indexer_plugin = Some((plugin.clone(), config.clone()));
+                    }
+                    registries.indexers.push(plugin_name.clone());
+                }
+                PluginRole::SubCommand { name } => {
+                    registries
+                        .sub_commands
+                        .insert(name.clone(), plugin_name.clone());
+                }
+                PluginRole::Callback { name } => {
+                    registries
+                        .callbacks
+                        .entry(name.clone())
+                        .or_default()
+                        .push(plugin_name.clone());
+                }
+            }
+        }
+        if config.is_normal_daemon() {
+            log::info!("Start daemon plugin: {}", config.name);
+            registries
+                .daemon_plugins
+                .push((plugin.clone(), config.clone()));
+        }
+    }
+    registries
+}
+
 impl PluginManager {
     pub fn load(ckb_cli_dir: &Path) -> Result<HashMap<String, (Plugin, PluginConfig)>, io::Error> {
         let plugin_dir = ckb_cli_dir.join(PLUGINS_DIRNAME);
@@ -105,46 +170,16 @@ impl PluginManager {
         let default_indexer = DefaultIndexer::start();
 
         // Make sure ServiceProvider start before all daemon processes
-        let mut daemon_plugins = Vec::new();
         let mut daemon_processes = HashMap::new();
-        let mut keystores = Vec::new();
-        let mut indexers = Vec::new();
-        let mut sub_commands = HashMap::new();
-        let mut callbacks: HashMap<CallbackName, Vec<String>> = HashMap::new();
-        let mut keystore_plugin = None;
-        let mut indexer_plugin = None;
-        // TODO plugins order matters
-        for (plugin_name, (plugin, config)) in &plugins {
-            for role in &config.roles {
-                match role {
-                    PluginRole::KeyStore { .. } => {
-                        if plugin.is_active() && keystore_plugin.is_none() {
-                            keystore_plugin = Some((plugin.clone(), config.clone()));
-                        }
-                        keystores.push(plugin_name.clone());
-                    }
-                    PluginRole::Indexer => {
-                        if plugin.is_active() && indexer_plugin.is_none() {
-                            indexer_plugin = Some((plugin.clone(), config.clone()));
-                        }
-                        indexers.push(plugin_name.clone());
-                    }
-                    PluginRole::SubCommand { name } => {
-                        sub_commands.insert(name.clone(), plugin_name.clone());
-                    }
-                    PluginRole::Callback { name } => {
-                        callbacks
-                            .entry(name.clone())
-                            .or_default()
-                            .push(plugin_name.clone());
-                    }
-                }
-            }
-            if config.is_normal_daemon() {
-                log::info!("Start daemon plugin: {}", config.name);
-                daemon_plugins.push((plugin.clone(), config.clone()));
-            }
-        }
+        let Registries {
+            keystores,
+            indexers,
+            sub_commands,
+            callbacks,
+            keystore_plugin,
+            indexer_plugin,
+            daemon_plugins,
+        } = build_registries(&plugins);
         let default_keystore_handler = default_keystore.handler().clone();
         let service_provider = ServiceProvider::start(
             default_keystore,
@@ -414,6 +449,15 @@ impl PluginManager {
         func: F,
     ) -> Result<T, String> {
         if let Some(process) = self.daemon_processes.get(name) {
+            // `deactive()` drops the entry, so this is only reachable with a stale handle. Check
+            // the activation state anyway: the daemon fast path must not outrun the check below.
+            if self
+                .plugins
+                .get(name)
+                .is_some_and(|(plugin, _)| !plugin.is_active())
+            {
+                return Err(format!("Plugin {} is inactive", name));
+            }
             func(process.handler())
         } else if let Some((plugin, config)) = self.plugins.get(name) {
             if plugin.is_active() {
@@ -866,7 +910,7 @@ impl ServiceProvider {
 
 pub struct PluginProcess {
     // For kill the process
-    _child: Child,
+    child: Child,
     _stdin_thread: JoinHandle<()>,
     _stdout_thread: JoinHandle<()>,
     // Send message to stdin thread, and expect a response from stdout thread
@@ -875,7 +919,22 @@ pub struct PluginProcess {
 
 impl Drop for PluginProcess {
     fn drop(&mut self) {
-        // TODO: send term signal to the process
+        terminate(&mut self.child);
+    }
+}
+
+/// Terminate a plugin process and reap it.
+///
+/// Dropping a `std::process::Child` neither kills nor waits for the process, so a plugin that
+/// `plugin deactive`/`plugin uninstall` removed kept running as an orphan. Terminate it before
+/// the handles are released.
+fn terminate(child: &mut Child) {
+    if let Err(err) = child.kill() {
+        // The process may have exited on its own already; `wait` below still reaps it.
+        log::debug!("Failed to kill plugin process: {}", err);
+    }
+    if let Err(err) = child.wait() {
+        log::error!("Failed to reap plugin process: {}", err);
     }
 }
 
@@ -1052,7 +1111,7 @@ impl PluginProcess {
         });
 
         Ok(PluginProcess {
-            _child: child,
+            child,
             _stdin_thread: stdin_thread,
             _stdout_thread: stdout_thread,
             handler: request_sender,
@@ -1088,6 +1147,15 @@ impl Plugin {
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|err| err.to_string())?;
+        let config = self.ask_config(&mut child);
+        // The probe process is only started to read the config, so terminate it instead of
+        // leaving it behind: a plugin that does not exit on stdin EOF would stay resident for
+        // every `load`/`install` call.
+        terminate(&mut child);
+        config
+    }
+
+    fn ask_config(&self, child: &mut Child) -> Result<PluginConfig, String> {
         let mut stdin = child
             .stdin
             .take()
@@ -1692,5 +1760,87 @@ impl IndexerHandler {
         } else {
             Err("Invalid plugin response".to_string())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plugin_config(name: &str, sub_command: &str, daemon: bool) -> PluginConfig {
+        PluginConfig {
+            name: name.to_string(),
+            description: String::new(),
+            daemon,
+            roles: vec![PluginRole::SubCommand {
+                name: sub_command.to_string(),
+            }],
+        }
+    }
+
+    fn plugin(path: &str, is_active: bool) -> Plugin {
+        Plugin::new(PathBuf::from(path), Vec::new(), is_active)
+    }
+
+    // A plugin loaded from `plugins/inactive/` may still be listed, but it must not be able to
+    // take a runtime role: no sub-command, no daemon process. Otherwise `plugin deactive` is
+    // undone by the next start.
+    #[test]
+    fn inactive_plugin_takes_no_runtime_role() {
+        let mut plugins = HashMap::new();
+        plugins.insert(
+            "shadow".to_string(),
+            (
+                plugin("/tmp/inactive/shadow.bin", false),
+                plugin_config("shadow", "account", true),
+            ),
+        );
+
+        let registries = build_registries(&plugins);
+
+        assert!(registries.sub_commands.is_empty());
+        assert!(registries.daemon_plugins.is_empty());
+        assert!(registries.keystores.is_empty());
+        assert!(registries.indexers.is_empty());
+        assert!(registries.callbacks.is_empty());
+    }
+
+    #[test]
+    fn active_plugin_keeps_its_roles() {
+        let mut plugins = HashMap::new();
+        plugins.insert(
+            "shadow".to_string(),
+            (
+                plugin("/tmp/active/shadow.bin", true),
+                plugin_config("shadow", "account", true),
+            ),
+        );
+
+        let registries = build_registries(&plugins);
+
+        assert_eq!(
+            registries.sub_commands.get("account"),
+            Some(&"shadow".to_string())
+        );
+        assert_eq!(registries.daemon_plugins.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminate_kills_and_reaps_the_child() {
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("spawn sleep");
+        assert!(child.try_wait().expect("try_wait").is_none());
+
+        terminate(&mut child);
+
+        assert!(
+            child.try_wait().expect("try_wait").is_some(),
+            "child should be terminated and reaped"
+        );
     }
 }
