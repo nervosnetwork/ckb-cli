@@ -73,6 +73,10 @@ ignore = [
     "RUSTSEC-2021-0145",
     "RUSTSEC-2024-0421", # https://rustsec.org/advisories/RUSTSEC-2024-0421
     "RUSTSEC-2026-0009", # CVE: RFC2822 parser stack recursion in time 0.3.41
+    # jsonrpc-client-transports 18 and parity-multiaddr 0.4 require url 1.x.
+    # The CLI does not call Url::origin() on values from these dependency paths;
+    # the direct url dependency is kept on the fixed 2.5.9 release.
+    "RUSTSEC-2026-0592",
     # RUSTSEC-2026-0097: rand 0.7.3 unsoundness requires calling
     # rand::thread_rng() from inside a custom log::Log implementation while
     # trace-level logging is active. ckb-cli uses rand only in normal code
