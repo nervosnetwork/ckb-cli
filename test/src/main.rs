@@ -8,11 +8,12 @@ use crate::app::App;
 use crate::setup::Setup;
 use crate::spec::{
     AccountKeystoreExportPerm, AccountKeystorePerm, AccountKeystoreUpdatePassword,
-    DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple, DeployDepGroupEnableTypeIdLater,
-    DeployDepGroupTypeIdTracking, DeployDepGroupWithTypeId, DeployDepGroupWithoutTypeId,
-    DeployInfoOrdering, Plugin, RpcGetTipBlockNumber, Spec, SudtIssueToAcp, SudtIssueToCheque,
-    SudtTransferToChequeForClaim, SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util,
-    WalletTimelockedAddress, WalletTransfer,
+    ApiServerOrigins, DaoPrepareMultiple, DaoPrepareOne, DaoWithdrawMultiple,
+    DeployDepGroupEnableTypeIdLater, DeployDepGroupTypeIdTracking, DeployDepGroupWithTypeId,
+    DeployDepGroupWithoutTypeId, DeployInfoOrdering, Plugin, RpcGetTipBlockNumber, Spec,
+    SudtIssueToAcp, SudtIssueToCheque, SudtTransferToChequeForClaim,
+    SudtTransferToChequeForWithdraw, SudtTransferToMultiAcp, Util, WalletTimelockedAddress,
+    WalletTransfer,
 };
 use crate::util::{find_available_port, run_cmd, temp_dir};
 use std::env;
@@ -107,6 +108,7 @@ fn all_specs() -> Vec<Box<dyn Spec>> {
         Box::new(AccountKeystorePerm),
         Box::new(AccountKeystoreExportPerm),
         Box::new(AccountKeystoreUpdatePassword),
+        Box::new(ApiServerOrigins),
         Box::new(SudtIssueToCheque),
         Box::new(SudtIssueToAcp),
         Box::new(SudtTransferToMultiAcp),

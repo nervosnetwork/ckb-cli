@@ -12,10 +12,15 @@ FLAGS:
         --wait-for-sync    Ensure the index-store synchronizes completely before command being executed
 
 OPTIONS:
+        --allowed-origin <allowed-origin>  Allow a browser origin to access the signing server (repeatable)
         --listen <listen>                  Rpc server listen address (when --privkey-path is given ip MUST be 127.0.0.1)
                                            [default: 127.0.0.1:3000]
         --privkey-path <privkey-path>      Private key file path (only read first line)
 ```
+
+When `--privkey-path` is set, browser requests with an `Origin` header are rejected by default. To trust a browser application, pass its exact HTTP(S) origin, for example `--allowed-origin https://wallet.example`. Repeat the option for multiple origins. Use the browser's serialized origin: no trailing slash, path, wildcard, `null`, or explicit default port. Only authorize origins whose scripts you trust to initiate transfers. IPv6 browser origins are not supported by the HTTP server.
+
+Requests without an `Origin` header remain allowed, so this is not authentication against local programs or other non-browser clients. Protect access to the machine and its loopback interface. The signing server also restricts the HTTP `Host` header to its loopback listen address or `localhost`. Without `--privkey-path`, the server retains its permissive CORS policy and transfers are disabled.
 
 * API Doc
   * [`transfer`](#transfer)
@@ -31,7 +36,7 @@ OPTIONS:
 
 ### `transfer`
 
-Transfer capacity to an address. Enabled when start server with `--privkey-path** argument.
+Transfer capacity to an address. Enabled when starting the server with the `--privkey-path` argument.
 
 **Attention**: `capacity` unit are Shannon.
 

@@ -82,6 +82,10 @@ impl Setup {
         format!("http://127.0.0.1:{}", self.rpc_port)
     }
 
+    pub fn cli_bin(&self) -> &str {
+        &self.cli_bin
+    }
+
     pub fn consensus(&self) -> Consensus {
         let path = Path::new(&self.ckb_dir).join("specs").join("dev.toml");
         let content = fs::read_to_string(path).unwrap();
