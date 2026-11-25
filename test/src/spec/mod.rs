@@ -1,4 +1,5 @@
 mod account_keystore_perm;
+mod api_server;
 mod dao;
 mod deploy_info_ordering;
 mod deploy_type_id;
@@ -9,6 +10,7 @@ mod util;
 mod wallet;
 
 pub use account_keystore_perm::*;
+pub use api_server::*;
 pub use dao::*;
 pub use deploy_info_ordering::*;
 pub use deploy_type_id::*;

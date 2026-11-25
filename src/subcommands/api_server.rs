@@ -9,7 +9,7 @@ use ckb_types::{bytes::Bytes, packed::Script, prelude::*, H256};
 use clap::{App, Arg, ArgMatches};
 use jsonrpc_core::{Error as RpcError, ErrorCode as RpcErrorCode, IoHandler, Result as RpcResult};
 use jsonrpc_derive::rpc;
-use jsonrpc_http_server::{Server, ServerBuilder};
+use jsonrpc_http_server::{hyper, RequestMiddlewareAction, Response, Server, ServerBuilder};
 use jsonrpc_server_utils::cors::AccessControlAllowOrigin;
 use jsonrpc_server_utils::hosts::DomainsValidation;
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,15 @@ impl<'a> ApiServerSubCommand<'a> {
                 arg::privkey_path()
                  .about("Private key file path (only read first line)")
             )
+            .arg(
+                Arg::with_name("allowed-origin")
+                    .long("allowed-origin")
+                    .takes_value(true)
+                    .multiple(true)
+                    .requires("privkey-path")
+                    .validator(RpcServer::validate_allowed_origin)
+                    .about("Allow a browser origin to access the signing server (repeatable)"),
+            )
     }
 }
 
@@ -69,6 +78,11 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         let listen_addr: SocketAddr =
             FromStrParser::<SocketAddr>::new().from_matches(matches, "listen")?;
         let privkey_path: Option<String> = matches.value_of("privkey-path").map(Into::into);
+        let signing_enabled = privkey_path.is_some();
+        let allowed_origins: Vec<String> = matches
+            .values_of("allowed-origin")
+            .map(|values| values.map(str::to_owned).collect())
+            .unwrap_or_default();
 
         let network_result = get_network_type(self.rpc_client);
         if privkey_path.is_some() && listen_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
@@ -110,7 +124,7 @@ impl CliSubCommand for ApiServerSubCommand<'_> {
         log::info!("Network: {:?}", network_result);
         log::info!("Wallet address: {:?}", address_opt);
         log::info!("Listen on {}", listen_addr);
-        RpcServer::start(&listen_addr, io_handler).wait();
+        RpcServer::start(&listen_addr, io_handler, signing_enabled, allowed_origins).wait();
         Ok(Output::new_error(serde_json::json!({
             "status": "stopped",
         })))
@@ -122,17 +136,66 @@ struct RpcServer {
 }
 
 impl RpcServer {
-    fn start(listen_addr: &SocketAddr, io_handler: IoHandler) -> RpcServer {
-        let server = ServerBuilder::new(io_handler)
-            .cors(DomainsValidation::AllowOnly(vec![
+    fn start(
+        listen_addr: &SocketAddr,
+        io_handler: IoHandler,
+        signing_enabled: bool,
+        allowed_origins: Vec<String>,
+    ) -> RpcServer {
+        let cors = if signing_enabled {
+            allowed_origins
+                .iter()
+                .map(|origin| AccessControlAllowOrigin::from(origin.clone()))
+                .collect()
+        } else {
+            vec![
                 AccessControlAllowOrigin::Null,
                 AccessControlAllowOrigin::Any,
-            ]))
+            ]
+        };
+        let mut builder = ServerBuilder::new(io_handler)
+            .cors(DomainsValidation::AllowOnly(cors))
             .threads(2)
-            .max_request_body_size(50 * 1024 * 1024)
-            .start_http(listen_addr)
-            .expect("Jsonrpc initialize");
+            .max_request_body_size(50 * 1024 * 1024);
+        if signing_enabled {
+            builder = builder.allow_only_bind_host().request_middleware(
+                move |request: hyper::Request<hyper::Body>| {
+                    let mut origins = request.headers().get_all(hyper::header::ORIGIN).iter();
+                    match (origins.next(), origins.next()) {
+                        (None, _) => RequestMiddlewareAction::from(request),
+                        (Some(origin), None)
+                            if origin
+                                .to_str()
+                                .map(|origin| {
+                                    allowed_origins.iter().any(|allowed| allowed == origin)
+                                })
+                                .unwrap_or(false) =>
+                        {
+                            RequestMiddlewareAction::from(request)
+                        }
+                        _ => RequestMiddlewareAction::from(Response::invalid_allow_origin()),
+                    }
+                },
+            );
+        }
+        let server = builder.start_http(listen_addr).expect("Jsonrpc initialize");
         RpcServer { server }
+    }
+
+    fn validate_allowed_origin(input: &str) -> Result<(), String> {
+        let url = url::Url::parse(input).map_err(|err| format!("Invalid origin: {}", err))?;
+        if matches!(url.host(), Some(url::Host::Ipv6(_))) {
+            return Err("IPv6 browser origins are not supported by the HTTP server".to_string());
+        }
+        if !matches!(url.scheme(), "http" | "https")
+            || input.contains('*')
+            || url.origin().ascii_serialization() != input
+        {
+            return Err(
+                "Origin must be an exact HTTP(S) origin, without a path or wildcard".to_string(),
+            );
+        }
+        Ok(())
     }
 
     fn wait(self) {
